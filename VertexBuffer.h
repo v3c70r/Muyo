@@ -45,8 +45,27 @@ uint32_t mFindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
     assert(false);
 }
 
+// GPU buffer prototype
+class GpuBuffer
+{
+public:
+    void createBuffer(uint32_t size)
+    {
+    }
+    virtual ~GpuBuffer(){};
+protected:
+    VkBuffer mBuffer;   //!< Internal buffer object (handle)
+    VkDeviceMemory mDeviceMemory; //!< the real data memory
+    VkDevice mDevice;   //!< The device on which the buffer is created
+    VkMemoryRequirements mMemRequirements;
+    VkBufferCreateInfo mBufferInfo;
+    bool released;
+    bool destroyed;
+};
+
 
 // RAII, probably not a good idea since it need to be deleted before logical device become invalid
+// Better to refactor it when abstract the rest of the object creations
 class VertexBuffer {
 public:
     VertexBuffer(const VkDevice& device, const std::vector<Vertex>& vertices)
@@ -59,6 +78,7 @@ public:
         assert(vkCreateBuffer(mDevice, &mBufferInfo, nullptr, &mBuffer) ==
                VK_SUCCESS);
         vkGetBufferMemoryRequirements(mDevice, mBuffer, &mMemRequirements);
+        destroyed = false;
     }
     void allocate(VkPhysicalDevice physicalDevice)
     {
@@ -72,6 +92,7 @@ public:
         assert(vkAllocateMemory(mDevice, &allocInfo, nullptr,
                                 &mVertexBufferMemory) == VK_SUCCESS);
         vkBindBufferMemory(mDevice, mBuffer, mVertexBufferMemory, 0);
+        released = false;
     }
     void setData(const std::vector<Vertex>& vertices)
     {
@@ -87,11 +108,26 @@ public:
     void release()
     {
         vkFreeMemory(mDevice, mVertexBufferMemory, nullptr);
+        released = true;
+    }
+    void destroy()
+    {
+        vkDestroyBuffer(mDevice, mBuffer, nullptr);
+        destroyed = true;
     }
     ~VertexBuffer()
     {
-        std::cout<<"Destroy vertex buffer";
-        vkDestroyBuffer(mDevice, mBuffer, nullptr);
+        // Garding memory leak
+        if (!released)
+        {
+            std::cout<<" Memory not released, trying to release"<<std::endl;
+            destroy();
+        }
+        if (!destroyed)
+        {
+            std::cout<<" Memory object not destroyed, trying to destroy"<<std::endl;
+            release();
+        }
     }
 private:
     VkBuffer mBuffer;   //!< Internal buffer object (handle)
@@ -99,5 +135,7 @@ private:
     VkDevice mDevice;   //!< The device on which the buffer is created
     VkMemoryRequirements mMemRequirements;
     VkBufferCreateInfo mBufferInfo;
+    bool released;
+    bool destroyed;
 };
 

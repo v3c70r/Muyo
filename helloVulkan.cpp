@@ -1056,7 +1056,7 @@ int main()
         drawFrame();
     }
     vb.release();
-    vb.~VertexBuffer();
+    vb.destroy();
     vkDeviceWaitIdle(s_device);
     cleanup();
     return 0;
