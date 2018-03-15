@@ -44,6 +44,8 @@ static std::vector<VkImage> s_swapChainImages;
 static std::vector<VkImageView> s_swapChainImageViews;
 static std::vector<VkFramebuffer> s_swapChainFramebuffers;
 
+static VertexBuffer* s_pVertexBuffer = nullptr;
+
 VkRenderPass s_renderPass;
 
 // Pipeline
@@ -965,8 +967,7 @@ void recreateSwapChain()
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
-    // todo: fix this
-    //createCommandBuffers();
+    createCommandBuffers(*s_pVertexBuffer);
 }
 
 
@@ -1044,10 +1045,10 @@ int main()
     createFramebuffers();
     createCommandPool();
 
-    VertexBuffer vb(s_device, getVertices());
-    vb.allocate(s_physicalDevice);
-    vb.setData(getVertices());
-    createCommandBuffers(vb);
+    s_pVertexBuffer = new VertexBuffer(s_device, getVertices());
+    s_pVertexBuffer->allocate(s_physicalDevice);
+    s_pVertexBuffer->setData(getVertices());
+    createCommandBuffers(*s_pVertexBuffer);
     createSemaphores();
 
     // Mainloop
@@ -1055,8 +1056,9 @@ int main()
         glfwPollEvents();
         drawFrame();
     }
-    vb.release();
-    vb.destroy();
+    s_pVertexBuffer->release();
+    s_pVertexBuffer->destroy();
+    delete s_pVertexBuffer;
     vkDeviceWaitIdle(s_device);
     cleanup();
     return 0;
