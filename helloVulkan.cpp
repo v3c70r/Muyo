@@ -915,7 +915,7 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer)
         vkCmdBeginRenderPass(s_commandBuffers[i], &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        VkBuffer vb = vertexBuffer.getBuffer();
+        VkBuffer vb = vertexBuffer.buffer();
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(s_commandBuffers[i], 0, 1, &vb, &offset);
         vkCmdBindPipeline(s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -1045,9 +1045,8 @@ int main()
     createFramebuffers();
     createCommandPool();
 
-    s_pVertexBuffer = new VertexBuffer(s_device, getVertices());
-    s_pVertexBuffer->allocate(s_physicalDevice);
-    s_pVertexBuffer->setData(getVertices());
+    s_pVertexBuffer = new VertexBuffer(s_device, s_physicalDevice, sizeof(Vertex) * getVertices().size());
+    s_pVertexBuffer->setData(getVertices(), s_commandPool, s_graphicsQueue);
     createCommandBuffers(*s_pVertexBuffer);
     createSemaphores();
 
@@ -1056,8 +1055,6 @@ int main()
         glfwPollEvents();
         drawFrame();
     }
-    s_pVertexBuffer->release();
-    s_pVertexBuffer->destroy();
     delete s_pVertexBuffer;
     vkDeviceWaitIdle(s_device);
     cleanup();

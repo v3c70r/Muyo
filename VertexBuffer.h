@@ -1,11 +1,12 @@
 #include <vulkan/vulkan.h>
-#include <vector>
 #include <array>
 #include <cassert>
 #include <glm/glm.hpp>
 #include <iostream>
+#include <vector>
+#include "Buffer.h"
 
-struct Vertex{
+struct Vertex {
     glm::vec3 pos;
     glm::vec3 color;
     static VkVertexInputBindingDescription getBindingDescription()
@@ -17,7 +18,8 @@ struct Vertex{
         return desc;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions()
+    static std::array<VkVertexInputAttributeDescription, 2>
+    getAttributeDescriptions()
     {
         std::array<VkVertexInputAttributeDescription, 2> attribDesc = {};
         attribDesc[0].location = 0;
@@ -33,109 +35,66 @@ struct Vertex{
     }
 };
 
-uint32_t mFindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
-                         VkMemoryPropertyFlags properties)
-{
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
-        if (typeFilter & (1 << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-                return i;
-    // No available type
-    assert(false);
-}
-
-// GPU buffer prototype
-class GpuBuffer
-{
-public:
-    void createBuffer(uint32_t size)
-    {
-    }
-    virtual ~GpuBuffer(){};
-protected:
-    VkBuffer mBuffer;   //!< Internal buffer object (handle)
-    VkDeviceMemory mDeviceMemory; //!< the real data memory
-    VkDevice mDevice;   //!< The device on which the buffer is created
-    VkMemoryRequirements mMemRequirements;
-    VkBufferCreateInfo mBufferInfo;
-    bool released;
-    bool destroyed;
-};
-
-
-// RAII, probably not a good idea since it need to be deleted before logical device become invalid
-// Better to refactor it when abstract the rest of the object creations
 class VertexBuffer {
 public:
-    VertexBuffer(const VkDevice& device, const std::vector<Vertex>& vertices)
-        : mBuffer(VK_NULL_HANDLE), mDevice(device), mBufferInfo({})
+    VertexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
+                 size_t size)
+        : mBuffer(device, physicalDevice, size,
+                  VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     {
-        mBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        mBufferInfo.size = sizeof(vertices[0]) * vertices.size();
-        mBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        mBufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        assert(vkCreateBuffer(mDevice, &mBufferInfo, nullptr, &mBuffer) ==
-               VK_SUCCESS);
-        vkGetBufferMemoryRequirements(mDevice, mBuffer, &mMemRequirements);
-        destroyed = false;
     }
-    void allocate(VkPhysicalDevice physicalDevice)
+    VertexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
+                 const std::vector<Vertex>& vertices, VkCommandPool commandPool,
+                 VkQueue queue)
+        : VertexBuffer(device, physicalDevice, sizeof(Vertex) * vertices.size())
     {
-        VkMemoryAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = mMemRequirements.size;
-        allocInfo.memoryTypeIndex =
-            mFindMemoryType(physicalDevice, mMemRequirements.memoryTypeBits,
-                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        assert(vkAllocateMemory(mDevice, &allocInfo, nullptr,
-                                &mVertexBufferMemory) == VK_SUCCESS);
-        vkBindBufferMemory(mDevice, mBuffer, mVertexBufferMemory, 0);
-        released = false;
+        setData(vertices, commandPool, queue);
     }
-    void setData(const std::vector<Vertex>& vertices)
+    void setData(const std::vector<Vertex>& vertices, VkCommandPool commandPool,
+                 VkQueue queue)
     {
-        void *data;
-        vkMapMemory(mDevice, mVertexBufferMemory, 0, mBufferInfo.size, 0, &data);
-        memcpy(data, vertices.data(), (size_t) mBufferInfo.size);
-        vkUnmapMemory(mDevice, mVertexBufferMemory);
-    }
-    VkBuffer getBuffer() const
-    {
-        return mBuffer;
-    }
-    void release()
-    {
-        vkFreeMemory(mDevice, mVertexBufferMemory, nullptr);
-        released = true;
-    }
-    void destroy()
-    {
-        vkDestroyBuffer(mDevice, mBuffer, nullptr);
-        destroyed = true;
-    }
-    ~VertexBuffer()
-    {
-        // Garding memory leak
-        if (!released)
-        {
-            std::cout<<" Memory not released, trying to release"<<std::endl;
-            destroy();
-        }
-        if (!destroyed)
-        {
-            std::cout<<" Memory object not destroyed, trying to destroy"<<std::endl;
-            release();
-        }
-    }
-private:
-    VkBuffer mBuffer;   //!< Internal buffer object (handle)
-    VkDeviceMemory mVertexBufferMemory; //!< the real data memory
-    VkDevice mDevice;   //!< The device on which the buffer is created
-    VkMemoryRequirements mMemRequirements;
-    VkBufferCreateInfo mBufferInfo;
-    bool released;
-    bool destroyed;
-};
+        Buffer stagingBuffer(mBuffer.device(), mBuffer.physicalDevice(),
+                             mBuffer.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        stagingBuffer.setData((void*)vertices.data());
 
+        // Allocate command buffer
+        VkCommandBufferAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = commandPool;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(mBuffer.device(), &allocInfo, &commandBuffer);
+
+        // record command buffer
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        VkBufferCopy copyRegion = {};
+        copyRegion.size = mBuffer.size();
+        vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer(), mBuffer.buffer(),
+                        1, &copyRegion);
+        vkEndCommandBuffer(commandBuffer);
+
+        // execute it right away
+        VkSubmitInfo submitInfo = {};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+        vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(queue);  // wait for it to finish
+
+        vkFreeCommandBuffers(mBuffer.device(), commandPool, 1, &commandBuffer);
+
+        // stagingBuffer will be automatically destroyed when out of this scope
+    }
+    VkBuffer buffer() const { return mBuffer.buffer(); }
+private:
+    Buffer mBuffer;
+};
