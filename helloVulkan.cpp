@@ -9,9 +9,12 @@
 #include <set>
 #include <vector>
 #include <array>
+#include <chrono>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "VertexBuffer.h"
+#include "UniformBuffer.h"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -21,7 +24,7 @@ static VkInstance s_instance;
 static std::vector<const char*> s_validationLayers{
     "VK_LAYER_LUNARG_standard_validation"};
 
-static bool s_isValidationEnabled = false;
+static bool s_isValidationEnabled = true;
 
 static GLFWwindow* s_pWindow = nullptr;
 
@@ -45,11 +48,21 @@ static std::vector<VkImageView> s_swapChainImageViews;
 static std::vector<VkFramebuffer> s_swapChainFramebuffers;
 
 static VertexBuffer* s_pVertexBuffer = nullptr;
+static IndexBuffer* s_pIndexBuffer = nullptr;
+static UniformBuffer* s_pUniformBuffer = nullptr;
 
 VkRenderPass s_renderPass;
 
+// DescriptorLayout, which is part of the pipeline layout
+static VkDescriptorSetLayout s_descriptorSetLayout;
 // Pipeline
 static VkPipelineLayout s_pipelineLayout;
+
+// Descriptor pool
+static VkDescriptorPool s_descriptorPool;
+
+static VkDescriptorSet s_descriptorSet;
+
 
 static VkPipeline s_graphicsPipeline;
 
@@ -65,12 +78,23 @@ static VkSemaphore s_renderFinishedSemaphore;
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
+// Hardcoded vertices and indices
 std::vector<Vertex> getVertices()
 {
-    std::vector<Vertex> res = {{{0.0f, -0.5f, 0.0}, {1.0f, 0.0f, 0.0f}},
-                               {{0.5f, 0.5f, 0.0}, {0.0f, 1.0f, 0.0f}},
-                               {{-0.5f, 0.5f, 0.0}, {0.0f, 0.0f, 1.0f}}};
+    // std::vector<Vertex> res = {{{0.0f, -0.5f, 0.0}, {1.0f, 0.0f, 0.0f}},
+    //                           {{0.5f, 0.5f, 0.0}, {0.0f, 1.0f, 0.0f}},
+    //                           {{-0.5f, 0.5f, 0.0}, {0.0f, 0.0f, 1.0f}}};
+    const std::vector<Vertex> res = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
+                                     {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
+                                     {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+                                     {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
     return res;
+}
+
+std::vector<uint16_t> getIndices()
+{
+    std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
+    return indices;
 }
 
 // Callback function
@@ -140,13 +164,13 @@ void setupDebugCallback()
     if (!s_isValidationEnabled) return;
     VkDebugReportCallbackCreateInfoEXT createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    //   createInfo.flags =
-    //       VK_DEBUG_REPORT_INFORMATION_BIT_EXT |
-    //       VK_DEBUG_REPORT_WARNING_BIT_EXT |
-    //       VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-    //       VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
-    createInfo.flags = VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-                       VK_DEBUG_REPORT_ERROR_BIT_EXT;
+    createInfo.flags =
+        VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT |
+        VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
+        VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
+    // createInfo.flags = VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
+    //                   VK_DEBUG_REPORT_ERROR_BIT_EXT |
+    //                   VK_DEBUG_REPORT_WARNING_BIT_EXT;
     createInfo.pfnCallback = debugCallback;
 
     assert(createDebugReportCallbackEXT(s_instance, &createInfo, nullptr,
@@ -802,13 +826,24 @@ void createGraphicsPipeline()
     // dynamicStateInfo.dynamicStateCount = 2;
     // dynamicStateInfo.pDynamicStates = dynamicStates;
 
+    // 7.5. DescriptorSetLayout
+    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+    descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptorSetLayoutInfo.bindingCount = 1;
+    VkDescriptorSetLayoutBinding binding = UnifromBufferObject::getDescriptorSetLayoutBinding();
+    descriptorSetLayoutInfo.pBindings = &binding;
+
+    assert(vkCreateDescriptorSetLayout(s_device, &descriptorSetLayoutInfo,
+                                       nullptr,
+                                       &s_descriptorSetLayout) == VK_SUCCESS);
+
     // 8. Pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pSetLayouts = nullptr;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges = 0;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &s_descriptorSetLayout;
+    //pipelineLayoutInfo.pushConstantRangeCount = 0;
+    //pipelineLayoutInfo.pPushConstantRanges = 0;
     assert(vkCreatePipelineLayout(s_device, &pipelineLayoutInfo, nullptr,
                                   &s_pipelineLayout) == VK_SUCCESS);
 
@@ -879,7 +914,7 @@ void createCommandPool()
                                &s_commandPool) == VK_SUCCESS);
 }
 
-void createCommandBuffers(const VertexBuffer& vertexBuffer)
+void createCommandBuffers(const VertexBuffer& vertexBuffer, const IndexBuffer& indexBuffer)
 {
     s_commandBuffers.resize(s_swapChainFramebuffers.size());
     VkCommandBufferAllocateInfo cmdAllocInfo = {};
@@ -916,12 +951,18 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer)
                              VK_SUBPASS_CONTENTS_INLINE);
 
         VkBuffer vb = vertexBuffer.buffer();
+        VkBuffer ib = indexBuffer.buffer();
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(s_commandBuffers[i], 0, 1, &vb, &offset);
+        vkCmdBindIndexBuffer(s_commandBuffers[i], ib, 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindPipeline(s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                           s_graphicsPipeline);
+        vkCmdBindDescriptorSets(
+            s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+            s_pipelineLayout, 0, 1, &s_descriptorSet, 0, nullptr);
 
-        vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
+        //vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
+        vkCmdDrawIndexed(s_commandBuffers[i], static_cast<uint32_t>(getIndices().size()), 1, 0, 0, 0);
 
         vkCmdEndRenderPass(s_commandBuffers[i]);
 
@@ -937,6 +978,48 @@ void createSemaphores()
                              &s_imageAvailableSemaphore) == VK_SUCCESS);
     assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
                              &s_renderFinishedSemaphore) == VK_SUCCESS);
+}
+
+
+void createDescriptorPool()
+{
+    VkDescriptorPoolSize poolSize = {};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 1;
+    assert(vkCreateDescriptorPool(s_device, &poolInfo, nullptr,
+                                  &s_descriptorPool) == VK_SUCCESS);
+};
+
+void createDescriptorSet()
+{
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = s_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &s_descriptorSetLayout;
+    assert( vkAllocateDescriptorSets(s_device, &allocInfo, &s_descriptorSet) == VK_SUCCESS);
+
+    VkDescriptorBufferInfo bufferInfo = {};
+    bufferInfo.buffer = s_pUniformBuffer->buffer();
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(UniformBuffer);
+
+    VkWriteDescriptorSet descriptorWrite = {};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = s_descriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &bufferInfo;
+
+    vkUpdateDescriptorSets(s_device, 1, &descriptorWrite, 0, nullptr);
 }
 
 void cleanupSwapChain()
@@ -967,7 +1050,7 @@ void recreateSwapChain()
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
-    createCommandBuffers(*s_pVertexBuffer);
+    createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
 }
 
 
@@ -975,6 +1058,8 @@ void recreateSwapChain()
 void cleanup()
 {
     cleanupSwapChain();
+    vkDestroyDescriptorPool(s_device, s_descriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(s_device, s_descriptorSetLayout, nullptr);
     vkDestroySemaphore(s_device, s_imageAvailableSemaphore, nullptr);
     vkDestroySemaphore(s_device, s_renderFinishedSemaphore, nullptr);
 
@@ -1029,6 +1114,32 @@ void drawFrame()
     vkQueuePresentKHR(s_presentQueue, &presentInfo);
 }
 
+void updateUniformBuffer(UniformBuffer* ub)
+{
+    static auto startTime = std::chrono::high_resolution_clock::now();
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(
+                     currentTime - startTime)
+                     .count();
+    UnifromBufferObject ubo = {};
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+                            glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.view =
+        glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
+                    glm::vec3(0.0f, 0.0f, 1.0f));
+    ubo.proj = glm::perspective(
+        glm::radians(45.0f),
+        s_swapChainExtent.width / (float)s_swapChainExtent.height, 0.1f, 10.0f);
+    ubo.proj[1][1] *= -1;
+
+    //ubo.model = glm::mat4(1.0);
+    ubo.view = glm::mat4(1.0);
+    ubo.proj = glm::mat4(1.0);
+
+    ub->setData(ubo);
+};
+
 int main()
 {
     initWindow();
@@ -1047,16 +1158,24 @@ int main()
 
     s_pVertexBuffer = new VertexBuffer(s_device, s_physicalDevice, sizeof(Vertex) * getVertices().size());
     s_pVertexBuffer->setData(getVertices(), s_commandPool, s_graphicsQueue);
-    createCommandBuffers(*s_pVertexBuffer);
+    s_pIndexBuffer = new IndexBuffer(s_device, s_physicalDevice, sizeof(uint16_t) * getIndices().size());
+    s_pIndexBuffer->setData(getIndices(), s_commandPool, s_graphicsQueue);
+    s_pUniformBuffer = new UniformBuffer(s_device, s_physicalDevice, sizeof(UnifromBufferObject));
+    createDescriptorPool();
+    createDescriptorSet();
+    createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
     createSemaphores();
 
     // Mainloop
     while (!glfwWindowShouldClose(s_pWindow)) {
         glfwPollEvents();
+        updateUniformBuffer(s_pUniformBuffer);
         drawFrame();
     }
-    delete s_pVertexBuffer;
     vkDeviceWaitIdle(s_device);
+    delete s_pVertexBuffer;
+    delete s_pIndexBuffer;
+    delete s_pUniformBuffer;
     cleanup();
     return 0;
 }

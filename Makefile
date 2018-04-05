@@ -6,14 +6,14 @@ FLAGS=-std=c++11 -Wall -pthread -g
 ifeq ($(shell uname -s), Darwin)
 	SDK_PATH=/Users/Tsing/tools/vulkansdk-macos-1.0.69.0/macOS
 else
-	SDK_PATH=/home/tsing/tools/VulkanSDK/1.0.24.0/x86_64
+	SDK_PATH=/home/tsing/tools/VulkanSDK/1.1.70.1/x86_64
 endif
 
 INCLUDES=-I$(SDK_PATH)/include -Iimgui
 LIBS=$(shell pkg-config --static --libs glfw3) -L$(SDK_PATH)/lib  -lvulkan
 SHADER_CC = $(SDK_PATH)/bin/glslangValidator
 
-HEADERS = VertexBuffer.h
+HEADERS = VertexBuffer.h Buffer.h UniformBuffer.h
 SOURCE=helloVulkan.cpp
 
 VERT_SRC = triangle.vert

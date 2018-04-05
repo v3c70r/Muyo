@@ -1,7 +1,11 @@
+#pragma once
 #include <vulkan/vulkan.h>
 #include <cassert>
 
 // A raii buffer creation class
+// This is a bad practice 
+// https://developer.nvidia.com/vulkan-memory-management
+// Allocate once and bond multiple times, using the offset
 
 class Buffer {
 public:
