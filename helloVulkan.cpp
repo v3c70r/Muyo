@@ -22,7 +22,8 @@ const int HEIGHT = 600;
 static VkInstance s_instance;
 
 static std::vector<const char*> s_validationLayers{
-    "VK_LAYER_LUNARG_standard_validation"};
+    "VK_LAYER_LUNARG_standard_validation"
+};
 
 static bool s_isValidationEnabled = true;
 
@@ -1172,7 +1173,9 @@ int main()
         updateUniformBuffer(s_pUniformBuffer);
         drawFrame();
     }
-    vkDeviceWaitIdle(s_device);
+    std::cout<<"Closing window, wait for device to finish..."<<std::endl;
+    assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
+    std::cout<<"Device finished"<<std::endl;
     delete s_pVertexBuffer;
     delete s_pIndexBuffer;
     delete s_pUniformBuffer;

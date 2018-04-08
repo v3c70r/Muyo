@@ -30,7 +30,7 @@ public:
         VkMemoryAllocateInfo allocInfo = {};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = mMemRequirements.size;
-        allocInfo.memoryTypeIndex = mFindMemoryType(
+        allocInfo.memoryTypeIndex = findMemoryType(
             mPhysicalDevice, mMemRequirements.memoryTypeBits, properties);
 
         assert(vkAllocateMemory(mDevice, &allocInfo, nullptr, &mDeviceMemory) ==
@@ -54,10 +54,10 @@ public:
     VkDevice device() const { return mDevice; }
     VkPhysicalDevice physicalDevice() const { return mPhysicalDevice; }
     VkBuffer buffer() const { return mBuffer; }
-protected:
-    uint32_t mFindMemoryType(VkPhysicalDevice physicalDevice,
-                             uint32_t typeFilter,
-                             VkMemoryPropertyFlags properties)
+
+    static uint32_t findMemoryType(VkPhysicalDevice physicalDevice,
+                                   uint32_t typeFilter,
+                                   VkMemoryPropertyFlags properties)
     {
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -69,6 +69,9 @@ protected:
         // No available type
         assert(false);
     }
+
+protected:
+    
 
     VkDevice mDevice;
     VkPhysicalDevice mPhysicalDevice;
