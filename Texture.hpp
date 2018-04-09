@@ -1,6 +1,8 @@
+#pragma once
 #include <vulkan/vulkan.h>
 #include <string>
 #include "Buffer.h"
+#include "Util.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "thirdparty/stb_image.h"
 
@@ -11,7 +13,9 @@ public:
         mSize({0, 0})
     {
     }
-    void LoadImage(const std::string path, const VkDevice& device, const VkPhysicalDevice &physicalDevice)
+    void LoadImage(const std::string path, const VkDevice &device,
+                   const VkPhysicalDevice &physicalDevice,
+                   const VkCommandPool &pool, const VkQueue &queue)
     {
         int width, height, channels;
         stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
@@ -56,6 +60,17 @@ public:
         assert(vkAllocateMemory(device, &allocInfo, nullptr, &mDeviceMemory) ==
                VK_SUCCESS);
         vkBindImageMemory(device, mTextureImage, mDeviceMemory, 0);
+
+        // Prepare the image buffer to recieve the data
+        VkCommandBuffer cmdBuffer = beginSingleTimeCommands(device, pool);
+        endSingleTimeCommands(cmdBuffer, device, pool, queue);
+
+        // Copy staging buffer to image memory
+        cmdBuffer = beginSingleTimeCommands(device, pool);
+        VkBufferCopy copyRegion = {};
+        copyRegion.size = memRequirements.size;
+        vkCmdCopyBuffer(cmdBuffer, stagingBuffer, 
+        endSingleTimeCommands(cmdBuffer, device, pool, queue);
     }
 private:
     VkImage mTextureImage;
