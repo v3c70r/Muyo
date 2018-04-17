@@ -86,8 +86,8 @@ std::vector<Vertex> getVertices()
     //                           {{0.5f, 0.5f, 0.0}, {0.0f, 1.0f, 0.0f}},
     //                           {{-0.5f, 0.5f, 0.0}, {0.0f, 0.0f, 1.0f}}};
     const std::vector<Vertex> res = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-                                     {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}},
-                                     {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}},
+                                     {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}},
+                                     {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}},
                                      {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
     return res;
 }
@@ -165,13 +165,13 @@ void setupDebugCallback()
     if (!s_isValidationEnabled) return;
     VkDebugReportCallbackCreateInfoEXT createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    createInfo.flags =
-        VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT |
-        VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-        VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
-    // createInfo.flags = VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-    //                   VK_DEBUG_REPORT_ERROR_BIT_EXT |
-    //                   VK_DEBUG_REPORT_WARNING_BIT_EXT;
+    //createInfo.flags =
+    //    VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT |
+    //    VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
+    //    VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
+    createInfo.flags = VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
+                      VK_DEBUG_REPORT_ERROR_BIT_EXT |
+                      VK_DEBUG_REPORT_WARNING_BIT_EXT;
     createInfo.pfnCallback = debugCallback;
 
     assert(createDebugReportCallbackEXT(s_instance, &createInfo, nullptr,
@@ -1011,6 +1011,15 @@ void createDescriptorPool()
 
 void createDescriptorSet()
 {
+    // Create descriptor set
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = s_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &s_descriptorSetLayout;
+    assert(vkAllocateDescriptorSets(s_device, &allocInfo, &s_descriptorSet) ==
+           VK_SUCCESS);
+
     // Prepare buffer descriptor
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = s_pUniformBuffer->buffer();
@@ -1022,14 +1031,6 @@ void createDescriptorSet()
     imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     imageInfo.imageView = s_pTexture->getImageView();
     imageInfo.sampler = s_pTexture->getSamper();
-
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = s_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &s_descriptorSetLayout;
-    assert(vkAllocateDescriptorSets(s_device, &allocInfo, &s_descriptorSet) ==
-           VK_SUCCESS);
 
     std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
     descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1198,7 +1199,7 @@ int main()
                                          sizeof(UnifromBufferObject));
 
     s_pTexture = new Texture();
-    s_pTexture->LoadImage("./chk.png", s_device, s_physicalDevice,
+    s_pTexture->LoadImage("chk.png", s_device, s_physicalDevice,
                           s_commandPool, s_graphicsQueue);
     createDescriptorPool();
     createDescriptorSet();

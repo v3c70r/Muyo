@@ -43,6 +43,7 @@ public:
                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        stagingBuffer.setData((void*)pixels);
         stbi_image_free(pixels);
 
         mCreateImage(
@@ -55,6 +56,11 @@ public:
         mTransitionImageLayout(
             device, pool, queue, mTextureImage, VK_FORMAT_R8G8B8A8_UNORM,
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        // Copy source to image
+        mCopyBufferToImage(device, pool, queue, stagingBuffer.buffer(),
+                           mTextureImage, static_cast<uint32_t>(width),
+                           static_cast<uint32_t>(height));
 
         // DST_OPTIMAL -> SHADER_READ_ONLY
         mTransitionImageLayout(device, pool, queue, mTextureImage,
@@ -177,21 +183,22 @@ private:
 
     void mCopyBufferToImage(VkDevice device, VkCommandPool cmdPool,
                             VkQueue queue, VkBuffer buffer, VkImage image,
-                            uint32_t width, uint32_t height){
+                            uint32_t width, uint32_t height)
+    {
         VkBufferImageCopy region = {};
         region.bufferOffset = 0;
         region.bufferRowLength = 0;
         region.bufferImageHeight = 0;
-
-        // Subpart of the image
         region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         region.imageSubresource.mipLevel = 0;
         region.imageSubresource.baseArrayLayer = 0;
         region.imageSubresource.layerCount = 1;
-
         region.imageOffset = {0, 0, 0};
-        region.imageExtent = {width, height, 1};
-
+        region.imageExtent = {
+            width,
+            height,
+            1
+        };
         VkCommandBuffer cmdBuf = beginSingleTimeCommands(device, cmdPool);
         vkCmdCopyBufferToImage(cmdBuf, buffer, image,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
