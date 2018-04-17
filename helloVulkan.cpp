@@ -1068,6 +1068,7 @@ void cleanupSwapChain()
     for (auto& imageView : s_swapChainImageViews)
         vkDestroyImageView(s_device, imageView, nullptr);
     vkDestroySwapchainKHR(s_device, s_swapChain, nullptr);
+    vkDestroyDescriptorSetLayout(s_device, s_descriptorSetLayout, nullptr);
 }
 
 void recreateSwapChain()
@@ -1092,7 +1093,6 @@ void cleanup()
 {
     cleanupSwapChain();
     vkDestroyDescriptorPool(s_device, s_descriptorPool, nullptr);
-    vkDestroyDescriptorSetLayout(s_device, s_descriptorSetLayout, nullptr);
     vkDestroySemaphore(s_device, s_imageAvailableSemaphore, nullptr);
     vkDestroySemaphore(s_device, s_renderFinishedSemaphore, nullptr);
 
