@@ -13,6 +13,7 @@
 #include <set>
 #include <vector>
 
+#include "DepthResource.h"
 #include "Texture.hpp"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
@@ -52,6 +53,7 @@ static VertexBuffer* s_pVertexBuffer = nullptr;
 static IndexBuffer* s_pIndexBuffer = nullptr;
 static UniformBuffer* s_pUniformBuffer = nullptr;
 static Texture* s_pTexture = nullptr;
+static DepthResource* s_pDepthResource = nullptr;
 
 VkRenderPass s_renderPass;
 
@@ -88,13 +90,21 @@ std::vector<Vertex> getVertices()
     const std::vector<Vertex> res = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
                                      {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}},
                                      {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}},
-                                     {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
+                                     {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+                                     // Second quad
+                                     {{-0.5f, -0.5f, 0.2f}, {1.0f, 0.0f, 0.0f}},
+                                     {{0.5f, -0.5f, 0.2f}, {0.0f, 0.0f, 0.0f}},
+                                     {{0.5f, 0.5f, 0.2f}, {0.0f, 1.0f, 1.0f}},
+                                     {{-0.5f, 0.5f, 0.2f}, {1.0f, 1.0f, 1.0f}}};
     return res;
 }
 
 std::vector<uint16_t> getIndices()
 {
-    std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
+    std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4,
+                                     5, 6, 6, 7, 4
+
+    };
     return indices;
 }
 
@@ -165,13 +175,13 @@ void setupDebugCallback()
     if (!s_isValidationEnabled) return;
     VkDebugReportCallbackCreateInfoEXT createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    //createInfo.flags =
-    //    VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT |
-    //    VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
+    // createInfo.flags =
+    //    VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT
+    //    | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
     //    VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
     createInfo.flags = VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-                      VK_DEBUG_REPORT_ERROR_BIT_EXT |
-                      VK_DEBUG_REPORT_WARNING_BIT_EXT;
+                       VK_DEBUG_REPORT_ERROR_BIT_EXT |
+                       VK_DEBUG_REPORT_WARNING_BIT_EXT;
     createInfo.pfnCallback = debugCallback;
 
     assert(createDebugReportCallbackEXT(s_instance, &createInfo, nullptr,
@@ -649,6 +659,8 @@ VkShaderModule m_createShaderModule(const std::vector<char>& code)
 void createRenderPass()
 {
     // Attachments
+    //
+    // Color Attachements
     VkAttachmentDescription colorAttachment = {};
     colorAttachment.format = s_swapChainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -663,11 +675,28 @@ void createRenderPass()
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+    // Depth attachments
+    VkAttachmentDescription depthAttachment = {};
+    depthAttachment.format = VK_FORMAT_D32_SFLOAT;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout =
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     // attachment reference
     VkAttachmentReference colorAttachmentRef = {};
     colorAttachmentRef.attachment =
         0;  // indicates the attachemnt index in the attachments array
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentRef = {};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout =
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     // Subpass
     VkSubpassDescription subpass = {};
@@ -676,6 +705,7 @@ void createRenderPass()
     subpass.pColorAttachments = &colorAttachmentRef;  // the index is the output
                                                       // from the fragment
                                                       // shader
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     // subpass deps
     VkSubpassDependency subpassDep = {};
@@ -688,10 +718,12 @@ void createRenderPass()
                                VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     // Render pass
+    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment,
+                                                          depthAttachment};
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -894,14 +926,15 @@ void createGraphicsPipeline()
 
 void createFramebuffers()
 {
-    s_swapChainFramebuffers.resize(s_swapChainImageViews.size());
     for (size_t i = 0; i < s_swapChainImageViews.size(); i++) {
-        VkImageView attachments[] = {s_swapChainImageViews[i]};
+        std::array<VkImageView, 2> attachmentViews = {
+            s_swapChainImageViews[i], s_pDepthResource->getView()};
         VkFramebufferCreateInfo framebufferInfo = {};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = s_renderPass;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.attachmentCount =
+            static_cast<uint32_t>(attachmentViews.size());
+        framebufferInfo.pAttachments = attachmentViews.data();
         framebufferInfo.width = s_swapChainExtent.width;
         framebufferInfo.height = s_swapChainExtent.height;
         framebufferInfo.layers = 1;
@@ -1164,11 +1197,6 @@ void updateUniformBuffer(UniformBuffer* ub)
     ubo.proj = glm::perspective(
         glm::radians(45.0f),
         s_swapChainExtent.width / (float)s_swapChainExtent.height, 0.1f, 10.0f);
-    ubo.proj[1][1] *= -1;
-
-    // ubo.model = glm::mat4(1.0);
-    ubo.view = glm::mat4(1.0);
-    ubo.proj = glm::mat4(1.0);
 
     ub->setData(ubo);
 };
@@ -1184,23 +1212,32 @@ int main()
     createLogicalDevice();
     createSwapChain();
     createImageViews();
+
     createRenderPass();
     createGraphicsPipeline();
-    createFramebuffers();
     createCommandPool();
+    s_pDepthResource = new DepthResource(
+        s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
+        s_swapChainExtent.width, s_swapChainExtent.height);
+
+    createFramebuffers();
 
     s_pVertexBuffer = new VertexBuffer(s_device, s_physicalDevice,
                                        sizeof(Vertex) * getVertices().size());
+
     s_pVertexBuffer->setData(getVertices(), s_commandPool, s_graphicsQueue);
+
     s_pIndexBuffer = new IndexBuffer(s_device, s_physicalDevice,
                                      sizeof(uint16_t) * getIndices().size());
+
     s_pIndexBuffer->setData(getIndices(), s_commandPool, s_graphicsQueue);
+
     s_pUniformBuffer = new UniformBuffer(s_device, s_physicalDevice,
                                          sizeof(UnifromBufferObject));
 
     s_pTexture = new Texture();
-    s_pTexture->LoadImage("chk.png", s_device, s_physicalDevice,
-                          s_commandPool, s_graphicsQueue);
+    s_pTexture->LoadImage("chk.png", s_device, s_physicalDevice, s_commandPool,
+                          s_graphicsQueue);
     createDescriptorPool();
     createDescriptorSet();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
@@ -1217,6 +1254,7 @@ int main()
     std::cout << "Closing window, wait for device to finish..." << std::endl;
     assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
     std::cout << "Device finished" << std::endl;
+    delete s_pDepthResource;
     delete s_pVertexBuffer;
     delete s_pIndexBuffer;
     delete s_pUniformBuffer;
