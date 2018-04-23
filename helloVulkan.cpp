@@ -887,6 +887,17 @@ void createGraphicsPipeline()
     assert(vkCreatePipelineLayout(s_device, &pipelineLayoutInfo, nullptr,
                                   &s_pipelineLayout) == VK_SUCCESS);
 
+    // 9. Dpeth stencile state create info
+    VkPipelineDepthStencilStateCreateInfo depthStencil = {};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    // depth clamp?
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.front = {};
+    depthStencil.back = {};
+
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.stageCount = 2;
@@ -902,7 +913,7 @@ void createGraphicsPipeline()
 
     pipelineInfo.pMultisampleState = &multisamplingInfo;
 
-    pipelineInfo.pDepthStencilState = nullptr;
+    pipelineInfo.pDepthStencilState = &depthStencil;
 
     pipelineInfo.pColorBlendState = &colorBlending;
 
@@ -926,9 +937,11 @@ void createGraphicsPipeline()
 
 void createFramebuffers()
 {
+    s_swapChainFramebuffers.resize(s_swapChainImageViews.size());
     for (size_t i = 0; i < s_swapChainImageViews.size(); i++) {
         std::array<VkImageView, 2> attachmentViews = {
             s_swapChainImageViews[i], s_pDepthResource->getView()};
+
         VkFramebufferCreateInfo framebufferInfo = {};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = s_renderPass;
@@ -986,9 +999,11 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
         renderPassBeginInfo.renderArea.offset = {0, 0};
         renderPassBeginInfo.renderArea.extent = s_swapChainExtent;
 
-        VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
-        renderPassBeginInfo.clearValueCount = 1;
-        renderPassBeginInfo.pClearValues = &clearColor;
+        std::array<VkClearValue, 2> clearValues = {};
+        clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
+        clearValues[1].depthStencil = {1.0f, 0};
+        renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassBeginInfo.pClearValues = clearValues.data();
         vkCmdBeginRenderPass(s_commandBuffers[i], &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1216,6 +1231,7 @@ int main()
     createRenderPass();
     createGraphicsPipeline();
     createCommandPool();
+
     s_pDepthResource = new DepthResource(
         s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
         s_swapChainExtent.width, s_swapChainExtent.height);
