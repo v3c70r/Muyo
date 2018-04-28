@@ -112,14 +112,14 @@ public:
     }
 
     IndexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
-                 const std::vector<uint16_t>& indices, VkCommandPool commandPool,
+                 const std::vector<uint32_t>& indices, VkCommandPool commandPool,
                  VkQueue queue)
-        : IndexBuffer(device, physicalDevice, sizeof(uint16_t) * indices.size())
+        : IndexBuffer(device, physicalDevice, sizeof(uint32_t) * indices.size())
     {
         setData(indices, commandPool, queue);
     }
  
-    void setData(const std::vector<uint16_t>& indices, VkCommandPool commandPool, VkQueue queue)
+    void setData(const std::vector<uint32_t>& indices, VkCommandPool commandPool, VkQueue queue)
     {
         Buffer stagingBuffer(mBuffer.device(), mBuffer.physicalDevice(),
                              mBuffer.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,

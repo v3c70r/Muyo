@@ -18,6 +18,8 @@
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
 
+#include "thirdparty/tiny_obj_loader.h"
+
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
@@ -81,30 +83,85 @@ static VkSemaphore s_renderFinishedSemaphore;
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
+struct TinyObjInfo {
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+};
+
+void LoadMesh(const std::string path, TinyObjInfo &objInfo)
+{
+    std::string err;
+    bool ret = tinyobj::LoadObj(&(objInfo.attrib), &(objInfo.shapes), &(objInfo.materials), &err, path.c_str());
+    if (!ret)
+    {
+        std::cerr << err << std::endl;
+    }
+    else
+    {
+        std::cout<<"Num verts :"<<objInfo.attrib.vertices.size() / 3<<std::endl;
+        std::cout<<"Num Normals :"<<objInfo.attrib.normals.size() / 3<<std::endl;
+        std::cout<<"Num TexCoords :"<<objInfo.attrib.texcoords.size() / 2<<std::endl;
+
+        // Print out mesh summery
+        for (size_t i = 0; i< objInfo.shapes.size(); i++)
+        {
+            std::cout<<"Shape "<<i<<": "<<std::endl;
+            tinyobj::shape_t& shape = objInfo.shapes[i];
+            std::cout<<"\t"<<shape.mesh.indices.size()<<" indices\n";
+            //std::cout<<"\t"<<shape.mesh.vert
+        }
+    }
+}
+
+static TinyObjInfo s_objInfo;
 // Hardcoded vertices and indices
 std::vector<Vertex> getVertices()
 {
     // std::vector<Vertex> res = {{{0.0f, -0.5f, 0.0}, {1.0f, 0.0f, 0.0f}},
     //                           {{0.5f, 0.5f, 0.0}, {0.0f, 1.0f, 0.0f}},
     //                           {{-0.5f, 0.5f, 0.0}, {0.0f, 0.0f, 1.0f}}};
-    const std::vector<Vertex> res = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}},
-                                     {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f, 0.0f}},
-                                     {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}},
-                                     {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}},
-                                     // Second quad
-                                     {{-0.5f, -0.5f, 0.2f}, {1.0f, 0.0f, 0.0f}},
-                                     {{0.5f, -0.5f, 0.2f}, {0.0f, 0.0f, 0.0f}},
-                                     {{0.5f, 0.5f, 0.2f}, {0.0f, 1.0f, 1.0f}},
-                                     {{-0.5f, 0.5f, 0.2f}, {1.0f, 1.0f, 1.0f}}};
+    // const std::vector<Vertex> res = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f,
+    // 0.0f}},
+    //                                 {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f,
+    //                                 0.0f}},
+    //                                 {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}},
+    //                                 {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f,
+    //                                 1.0f}},
+    //                                 // Second quad
+    //                                 {{-0.5f, -0.5f, 0.2f}, {1.0f, 0.0f,
+    //                                 0.0f}},
+    //                                 {{0.5f, -0.5f, 0.2f}, {0.0f, 0.0f,
+    //                                 0.0f}},
+    //                                 {{0.5f, 0.5f, 0.2f}, {0.0f, 1.0f, 1.0f}},
+    //                                 {{-0.5f, 0.5f, 0.2f}, {1.0f, 1.0f,
+    //                                 1.0f}}};
+    std::vector<Vertex> res;
+    size_t numVert = s_objInfo.attrib.vertices.size() / 3;
+    res.reserve(numVert);
+    for (size_t i = 0; i < numVert; i++) {
+        res.emplace_back(
+            Vertex({{s_objInfo.attrib.vertices[3 * i],
+                     s_objInfo.attrib.vertices[3 * i + 1],
+                     s_objInfo.attrib.vertices[3 * i + 2]},
+                    {s_objInfo.attrib.texcoords[2 * i],
+                     s_objInfo.attrib.texcoords[2 * i + 1], 0.0}}));
+    }
+
     return res;
 }
 
-std::vector<uint16_t> getIndices()
+std::vector<uint32_t> getIndices()
 {
-    std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4,
-                                     5, 6, 6, 7, 4
+    //std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0, 4,
+    //                                 5, 6, 6, 7, 4
 
-    };
+    //};
+    //return indices;
+    std::vector<uint32_t> indices;
+    indices.reserve(s_objInfo.shapes[0].mesh.indices.size());
+    for(const auto& index: s_objInfo.shapes[0].mesh.indices)
+        indices.push_back(index.vertex_index);
     return indices;
 }
 
@@ -1011,7 +1068,7 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
         VkBuffer ib = indexBuffer.buffer();
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(s_commandBuffers[i], 0, 1, &vb, &offset);
-        vkCmdBindIndexBuffer(s_commandBuffers[i], ib, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(s_commandBuffers[i], ib, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindPipeline(s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
                           s_graphicsPipeline);
         vkCmdBindDescriptorSets(
@@ -1218,6 +1275,8 @@ void updateUniformBuffer(UniformBuffer* ub)
 
 int main()
 {
+    // Load mesh into memory
+    LoadMesh("chalet.obj", s_objInfo);
     initWindow();
     createInstance();
     setupDebugCallback();
@@ -1244,7 +1303,7 @@ int main()
     s_pVertexBuffer->setData(getVertices(), s_commandPool, s_graphicsQueue);
 
     s_pIndexBuffer = new IndexBuffer(s_device, s_physicalDevice,
-                                     sizeof(uint16_t) * getIndices().size());
+                                     sizeof(uint32_t) * getIndices().size());
 
     s_pIndexBuffer->setData(getIndices(), s_commandPool, s_graphicsQueue);
 
@@ -1252,7 +1311,7 @@ int main()
                                          sizeof(UnifromBufferObject));
 
     s_pTexture = new Texture();
-    s_pTexture->LoadImage("chk.png", s_device, s_physicalDevice, s_commandPool,
+    s_pTexture->LoadImage("./chalet.jpg", s_device, s_physicalDevice, s_commandPool,
                           s_graphicsQueue);
     createDescriptorPool();
     createDescriptorSet();

@@ -1,0 +1,2 @@
+chalet.obj filter=lfs diff=lfs merge=lfs -text
+chalet.jpg filter=lfs diff=lfs merge=lfs -text

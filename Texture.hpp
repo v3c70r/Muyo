@@ -37,9 +37,8 @@ public:
         int width, height, channels;
         stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
         assert(pixels);
-        assert(channels == 4);
         // Upload pixels to staging buffer
-        Buffer stagingBuffer(device, physicalDevice, width * height * channels,
+        Buffer stagingBuffer(device, physicalDevice, width * height * 4,
                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);

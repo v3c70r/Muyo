@@ -14,7 +14,7 @@ LIBS=$(shell pkg-config --static --libs glfw3) -L$(SDK_PATH)/lib  -lvulkan
 SHADER_CC = $(SDK_PATH)/bin/glslangValidator
 
 HEADERS = VertexBuffer.h Buffer.h UniformBuffer.h Util.h Texture.hpp
-SOURCE=helloVulkan.cpp
+SOURCE=helloVulkan.cpp thirdparty/tiny_obj_loader.cc
 
 VERT_SRC = triangle.vert
 VERT_BIN = vert.spv
