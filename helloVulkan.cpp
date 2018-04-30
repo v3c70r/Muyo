@@ -76,8 +76,8 @@ static VkCommandPool s_commandPool;
 static std::vector<VkCommandBuffer> s_commandBuffers;
 
 // sync
-static VkSemaphore s_imageAvailableSemaphore;
-static VkSemaphore s_renderFinishedSemaphore;
+static std::vector<VkSemaphore> s_imageAvailableSemaphores;
+static std::vector<VkSemaphore> s_renderFinishedSemaphores;
 
 // PHYSICAL Device extensions
 const std::vector<const char*> deviceExtensions = {
@@ -118,36 +118,22 @@ static TinyObjInfo s_objInfo;
 // Hardcoded vertices and indices
 std::vector<Vertex> getVertices()
 {
-    // std::vector<Vertex> res = {{{0.0f, -0.5f, 0.0}, {1.0f, 0.0f, 0.0f}},
-    //                           {{0.5f, 0.5f, 0.0}, {0.0f, 1.0f, 0.0f}},
-    //                           {{-0.5f, 0.5f, 0.0}, {0.0f, 0.0f, 1.0f}}};
-    // const std::vector<Vertex> res = {{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f,
-    // 0.0f}},
-    //                                 {{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f,
-    //                                 0.0f}},
-    //                                 {{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f, 1.0f}},
-    //                                 {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f,
-    //                                 1.0f}},
-    //                                 // Second quad
-    //                                 {{-0.5f, -0.5f, 0.2f}, {1.0f, 0.0f,
-    //                                 0.0f}},
-    //                                 {{0.5f, -0.5f, 0.2f}, {0.0f, 0.0f,
-    //                                 0.0f}},
-    //                                 {{0.5f, 0.5f, 0.2f}, {0.0f, 1.0f, 1.0f}},
-    //                                 {{-0.5f, 0.5f, 0.2f}, {1.0f, 1.0f,
-    //                                 1.0f}}};
     std::vector<Vertex> res;
     size_t numVert = s_objInfo.attrib.vertices.size() / 3;
     res.reserve(numVert);
     for (size_t i = 0; i < numVert; i++) {
-        res.emplace_back(
-            Vertex({{s_objInfo.attrib.vertices[3 * i],
-                     s_objInfo.attrib.vertices[3 * i + 1],
-                     s_objInfo.attrib.vertices[3 * i + 2]},
-                    {s_objInfo.attrib.texcoords[2 * i],
-                     s_objInfo.attrib.texcoords[2 * i + 1], 0.0}}));
+        res.emplace_back(Vertex({{s_objInfo.attrib.vertices[3 * i],
+                                  s_objInfo.attrib.vertices[3 * i + 1],
+                                  s_objInfo.attrib.vertices[3 * i + 2]},
+                                 {0.0, 0.0, 0.0}}));
     }
+    for (const auto& index : s_objInfo.shapes[0].mesh.indices) {
 
+        res[index.vertex_index].textureCoord = glm::vec3(
+            s_objInfo.attrib.texcoords[2 * index.texcoord_index],
+            1.0 - s_objInfo.attrib.texcoords[2 * index.texcoord_index + 1],
+            0.0);
+    }
     return res;
 }
 
@@ -1090,10 +1076,14 @@ void createSemaphores()
 {
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
-                             &s_imageAvailableSemaphore) == VK_SUCCESS);
-    assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
-                             &s_renderFinishedSemaphore) == VK_SUCCESS);
+    s_imageAvailableSemaphores.resize(s_commandBuffers.size());
+    s_renderFinishedSemaphores.resize(s_commandBuffers.size());
+    for (size_t i = 0; i < s_commandBuffers.size(); i++) {
+        assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
+                                 &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
+        assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
+                                 &s_renderFinishedSemaphores[i]) == VK_SUCCESS);
+    }
 }
 
 void createDescriptorPool()
@@ -1162,7 +1152,7 @@ void createDescriptorSet()
 
 void cleanupSwapChain()
 {
-    for (auto framebuffer : s_swapChainFramebuffers)
+    for (auto& framebuffer : s_swapChainFramebuffers)
         vkDestroyFramebuffer(s_device, framebuffer, nullptr);
     vkFreeCommandBuffers(s_device, s_commandPool,
                          static_cast<uint32_t>(s_commandBuffers.size()),
@@ -1190,16 +1180,27 @@ void recreateSwapChain()
     createImageViews();
     createRenderPass();
     createGraphicsPipeline();
+
+    // Need to recreate depth resource before recreating framebuffer
+    delete s_pDepthResource;
+    s_pDepthResource = new DepthResource(
+        s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
+        s_swapChainExtent.width, s_swapChainExtent.height);
+
     createFramebuffers();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
+
 }
 
 void cleanup()
 {
     cleanupSwapChain();
     vkDestroyDescriptorPool(s_device, s_descriptorPool, nullptr);
-    vkDestroySemaphore(s_device, s_imageAvailableSemaphore, nullptr);
-    vkDestroySemaphore(s_device, s_renderFinishedSemaphore, nullptr);
+
+    for (auto& somaphore: s_imageAvailableSemaphores)
+        vkDestroySemaphore(s_device, somaphore, nullptr);
+    for (auto& somaphore: s_renderFinishedSemaphores)
+        vkDestroySemaphore(s_device, somaphore, nullptr);
 
     vkDestroyCommandPool(s_device, s_commandPool, nullptr);
     vkDestroySurfaceKHR(s_instance, s_surface, nullptr);
@@ -1215,7 +1216,7 @@ void drawFrame()
     uint32_t imageIndex;
     vkAcquireNextImageKHR(
         s_device, s_swapChain, std::numeric_limits<uint64_t>::max(),
-        s_imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+        s_imageAvailableSemaphores[0], VK_NULL_HANDLE, &imageIndex);
 
     // submit command buffer
     VkPipelineStageFlags stageFlag =
@@ -1225,14 +1226,14 @@ void drawFrame()
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &s_imageAvailableSemaphore;
+    submitInfo.pWaitSemaphores = &s_imageAvailableSemaphores[0];
     submitInfo.pWaitDstStageMask = &stageFlag;
 
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &s_commandBuffers[imageIndex];
 
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &s_renderFinishedSemaphore;
+    submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
     assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) ==
            VK_SUCCESS);
@@ -1241,7 +1242,7 @@ void drawFrame()
     VkPresentInfoKHR presentInfo = {};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &s_renderFinishedSemaphore;
+    presentInfo.pWaitSemaphores = &s_renderFinishedSemaphores[0];
 
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &s_swapChain;
@@ -1261,7 +1262,7 @@ void updateUniformBuffer(UniformBuffer* ub)
                      currentTime - startTime)
                      .count();
     UnifromBufferObject ubo = {};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.view =
         glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
