@@ -32,6 +32,40 @@ static bool s_isValidationEnabled = true;
 
 static GLFWwindow* s_pWindow = nullptr;
 
+// GLFW key callbacks
+static void key_callback(GLFWwindow* window, int key, int scancode, int action,
+                         int mods)
+{
+    std::cout << "Key pressed\n";
+    // OpenGLRenderer* renderer =
+    //    static_cast<OpenGLRenderer*>(glfwGetWindowUserPointer(window));
+    // FPScamera& camera = renderer->world_.camera();
+    // if (action == GLFW_PRESS) switch (key) {
+    //        case GLFW_KEY_ESCAPE:
+    //            glfwSetWindowShouldClose(window, GL_TRUE);
+    //            break;
+    //        case GLFW_KEY_W:
+    //            camera.cameraMatrix() = glm::translate(
+    //                camera.cameraMatrix(), glm::vec3(0.0, 0.0, -1.0));
+    //            break;
+    //        case GLFW_KEY_S:
+    //            camera.cameraMatrix() = glm::translate(
+    //                camera.cameraMatrix(), glm::vec3(0.0, 0.0, 1.0));
+    //            break;
+    //        case GLFW_KEY_A:
+    //            camera.cameraMatrix() = glm::translate(
+    //                camera.cameraMatrix(), glm::vec3(-1.0, 0.0, 0.0));
+    //            break;
+    //        case GLFW_KEY_D:
+    //            camera.cameraMatrix() = glm::translate(
+    //                camera.cameraMatrix(), glm::vec3(1.0, 0.0, 0.0));
+    //            break;
+    //        case GLFW_KEY_I:
+    //            camera.pitch(0.1);
+    //            break;
+    //    }
+}
+
 static VkDebugReportCallbackEXT s_debugCallback;
 
 static VkPhysicalDevice s_physicalDevice = VK_NULL_HANDLE;
@@ -78,6 +112,7 @@ static std::vector<VkCommandBuffer> s_commandBuffers;
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
 static std::vector<VkSemaphore> s_renderFinishedSemaphores;
+static std::vector<VkFence> s_waitFences;
 
 // PHYSICAL Device extensions
 const std::vector<const char*> deviceExtensions = {
@@ -89,27 +124,28 @@ struct TinyObjInfo {
     std::vector<tinyobj::material_t> materials;
 };
 
-void LoadMesh(const std::string path, TinyObjInfo &objInfo)
+void LoadMesh(const std::string path, TinyObjInfo& objInfo)
 {
     std::string err;
-    bool ret = tinyobj::LoadObj(&(objInfo.attrib), &(objInfo.shapes), &(objInfo.materials), &err, path.c_str());
-    if (!ret)
-    {
+    bool ret = tinyobj::LoadObj(&(objInfo.attrib), &(objInfo.shapes),
+                                &(objInfo.materials), &err, path.c_str());
+    if (!ret) {
         std::cerr << err << std::endl;
     }
-    else
-    {
-        std::cout<<"Num verts :"<<objInfo.attrib.vertices.size() / 3<<std::endl;
-        std::cout<<"Num Normals :"<<objInfo.attrib.normals.size() / 3<<std::endl;
-        std::cout<<"Num TexCoords :"<<objInfo.attrib.texcoords.size() / 2<<std::endl;
+    else {
+        std::cout << "Num verts :" << objInfo.attrib.vertices.size() / 3
+                  << std::endl;
+        std::cout << "Num Normals :" << objInfo.attrib.normals.size() / 3
+                  << std::endl;
+        std::cout << "Num TexCoords :" << objInfo.attrib.texcoords.size() / 2
+                  << std::endl;
 
         // Print out mesh summery
-        for (size_t i = 0; i< objInfo.shapes.size(); i++)
-        {
-            std::cout<<"Shape "<<i<<": "<<std::endl;
+        for (size_t i = 0; i < objInfo.shapes.size(); i++) {
+            std::cout << "Shape " << i << ": " << std::endl;
             tinyobj::shape_t& shape = objInfo.shapes[i];
-            std::cout<<"\t"<<shape.mesh.indices.size()<<" indices\n";
-            //std::cout<<"\t"<<shape.mesh.vert
+            std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
+            // std::cout<<"\t"<<shape.mesh.vert
         }
     }
 }
@@ -128,7 +164,6 @@ std::vector<Vertex> getVertices()
                                  {0.0, 0.0, 0.0}}));
     }
     for (const auto& index : s_objInfo.shapes[0].mesh.indices) {
-
         res[index.vertex_index].textureCoord = glm::vec3(
             s_objInfo.attrib.texcoords[2 * index.texcoord_index],
             1.0 - s_objInfo.attrib.texcoords[2 * index.texcoord_index + 1],
@@ -139,14 +174,14 @@ std::vector<Vertex> getVertices()
 
 std::vector<uint32_t> getIndices()
 {
-    //std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0, 4,
+    // std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0, 4,
     //                                 5, 6, 6, 7, 4
 
     //};
-    //return indices;
+    // return indices;
     std::vector<uint32_t> indices;
     indices.reserve(s_objInfo.shapes[0].mesh.indices.size());
-    for(const auto& index: s_objInfo.shapes[0].mesh.indices)
+    for (const auto& index : s_objInfo.shapes[0].mesh.indices)
         indices.push_back(index.vertex_index);
     return indices;
 }
@@ -932,7 +967,8 @@ void createGraphicsPipeline()
 
     // 9. Dpeth stencile state create info
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
-    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
     depthStencil.depthWriteEnable = VK_TRUE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
@@ -1045,7 +1081,8 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
         std::array<VkClearValue, 2> clearValues = {};
         clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
         clearValues[1].depthStencil = {1.0f, 0};
-        renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassBeginInfo.clearValueCount =
+            static_cast<uint32_t>(clearValues.size());
         renderPassBeginInfo.pClearValues = clearValues.data();
         vkCmdBeginRenderPass(s_commandBuffers[i], &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
@@ -1083,6 +1120,18 @@ void createSemaphores()
                                  &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
         assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
                                  &s_renderFinishedSemaphores[i]) == VK_SUCCESS);
+    }
+}
+
+void createFences()
+{
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    s_waitFences.resize(s_commandBuffers.size());
+    for (auto& fence : s_waitFences) {
+        assert(vkCreateFence(s_device, &fenceInfo, nullptr, &fence) ==
+               VK_SUCCESS);
     }
 }
 
@@ -1189,7 +1238,6 @@ void recreateSwapChain()
 
     createFramebuffers();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
-
 }
 
 void cleanup()
@@ -1197,10 +1245,11 @@ void cleanup()
     cleanupSwapChain();
     vkDestroyDescriptorPool(s_device, s_descriptorPool, nullptr);
 
-    for (auto& somaphore: s_imageAvailableSemaphores)
+    for (auto& somaphore : s_imageAvailableSemaphores)
         vkDestroySemaphore(s_device, somaphore, nullptr);
-    for (auto& somaphore: s_renderFinishedSemaphores)
+    for (auto& somaphore : s_renderFinishedSemaphores)
         vkDestroySemaphore(s_device, somaphore, nullptr);
+    for (auto& fence : s_waitFences) vkDestroyFence(s_device, fence, nullptr);
 
     vkDestroyCommandPool(s_device, s_commandPool, nullptr);
     vkDestroySurfaceKHR(s_instance, s_surface, nullptr);
@@ -1217,6 +1266,10 @@ void drawFrame()
     vkAcquireNextImageKHR(
         s_device, s_swapChain, std::numeric_limits<uint64_t>::max(),
         s_imageAvailableSemaphores[0], VK_NULL_HANDLE, &imageIndex);
+
+    vkWaitForFences(s_device, 1, &s_waitFences[imageIndex], VK_TRUE,
+                    std::numeric_limits<uint64_t>::max());
+    vkResetFences(s_device, 1, &s_waitFences[imageIndex]);
 
     // submit command buffer
     VkPipelineStageFlags stageFlag =
@@ -1235,8 +1288,8 @@ void drawFrame()
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
-    assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) ==
-           VK_SUCCESS);
+    assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
+                         s_waitFences[imageIndex]) == VK_SUCCESS);
 
     // Present swap chain
     VkPresentInfoKHR presentInfo = {};
@@ -1292,49 +1345,56 @@ int main()
     createGraphicsPipeline();
     createCommandPool();
 
-    s_pDepthResource = new DepthResource(
-        s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
-        s_swapChainExtent.width, s_swapChainExtent.height);
+    // limit smart pointers in the scope
+    {
+        s_pDepthResource = new DepthResource(
+            s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
+            s_swapChainExtent.width, s_swapChainExtent.height);
 
-    createFramebuffers();
+        createFramebuffers();
 
-    s_pVertexBuffer = new VertexBuffer(s_device, s_physicalDevice,
-                                       sizeof(Vertex) * getVertices().size());
+        s_pVertexBuffer = new VertexBuffer(
+            s_device, s_physicalDevice, sizeof(Vertex) * getVertices().size());
 
-    s_pVertexBuffer->setData(getVertices(), s_commandPool, s_graphicsQueue);
+        s_pVertexBuffer->setData(getVertices(), s_commandPool, s_graphicsQueue);
 
-    s_pIndexBuffer = new IndexBuffer(s_device, s_physicalDevice,
-                                     sizeof(uint32_t) * getIndices().size());
+        s_pIndexBuffer = new IndexBuffer(
+            s_device, s_physicalDevice, sizeof(uint32_t) * getIndices().size());
 
-    s_pIndexBuffer->setData(getIndices(), s_commandPool, s_graphicsQueue);
+        s_pIndexBuffer->setData(getIndices(), s_commandPool, s_graphicsQueue);
 
-    s_pUniformBuffer = new UniformBuffer(s_device, s_physicalDevice,
-                                         sizeof(UnifromBufferObject));
+        s_pUniformBuffer = new UniformBuffer(s_device, s_physicalDevice,
+                                             sizeof(UnifromBufferObject));
 
-    s_pTexture = new Texture();
-    s_pTexture->LoadImage("./chalet.jpg", s_device, s_physicalDevice, s_commandPool,
-                          s_graphicsQueue);
-    createDescriptorPool();
-    createDescriptorSet();
-    createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
-    createSemaphores();
+        s_pTexture = new Texture();
+        s_pTexture->LoadImage("./chalet.jpg", s_device, s_physicalDevice,
+                              s_commandPool, s_graphicsQueue);
+        createDescriptorPool();
+        createDescriptorSet();
+        createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
+        createSemaphores();
+        createFences();
 
-    // Mainloop
-    while (!glfwWindowShouldClose(s_pWindow)) {
-        glfwPollEvents();
+        // Mainloop
+        while (!glfwWindowShouldClose(s_pWindow)) {
+            glfwPollEvents();
 
-        updateUniformBuffer(s_pUniformBuffer);
+            updateUniformBuffer(s_pUniformBuffer);
+            // wait on device to make sure it has been drawn
+            // assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
+            drawFrame();
+        }
+        std::cout << "Closing window, wait for device to finish..."
+                  << std::endl;
         assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
-        drawFrame();
+        std::cout << "Device finished" << std::endl;
+
+        delete s_pDepthResource;
+        delete s_pVertexBuffer;
+        delete s_pIndexBuffer;
+        delete s_pUniformBuffer;
+        delete s_pTexture;
     }
-    std::cout << "Closing window, wait for device to finish..." << std::endl;
-    assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
-    std::cout << "Device finished" << std::endl;
-    delete s_pDepthResource;
-    delete s_pVertexBuffer;
-    delete s_pIndexBuffer;
-    delete s_pUniformBuffer;
-    delete s_pTexture;
     cleanup();
     return 0;
 }
