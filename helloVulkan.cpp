@@ -17,6 +17,7 @@
 #include "Texture.hpp"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
+#include "camera.hpp"
 
 #include "thirdparty/tiny_obj_loader.h"
 
@@ -33,7 +34,7 @@ static bool s_isValidationEnabled = true;
 static GLFWwindow* s_pWindow = nullptr;
 
 // GLFW key callbacks
-static void key_callback(GLFWwindow* window, int key, int scancode, int action,
+static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
                          int mods)
 {
     std::cout << "Key pressed\n";
@@ -327,6 +328,7 @@ void initWindow()
     // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     s_pWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowSizeCallback(s_pWindow, onWindowResize);
+    glfwSetKeyCallback(s_pWindow, onKeyStroke);
 }
 
 std::vector<const char*> getRequiredExtensions()
@@ -1345,7 +1347,10 @@ int main()
     createGraphicsPipeline();
     createCommandPool();
 
-    // limit smart pointers in the scope
+    // A bunch of news and deletes happend in the following block
+    // They have to be created and destroyed in a certain order
+    // Looking for a way to convert them to smart pointers, otherwise a major refactorying
+    // is required.
     {
         s_pDepthResource = new DepthResource(
             s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
