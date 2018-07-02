@@ -33,6 +33,29 @@ static bool s_isValidationEnabled = true;
 
 static GLFWwindow* s_pWindow = nullptr;
 
+static Arcball s_arcball(glm::perspective(glm::radians(45.0f), 800.0f / 600.0f,
+                                          0.1f, 10.0f),
+                         glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                                     glm::vec3(0.0f, 0.0f, 0.0f),
+                                     glm::vec3(0.0f, 0.0f, 1.0f)));
+static bool dragging = false;
+// GLFW mouse callback
+static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
+{
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (GLFW_PRESS == action)
+            dragging = true;
+        else if (GLFW_RELEASE == action)
+            dragging = false;
+    }
+
+    if (lbutton_down) {
+        // do your drag here
+    }
+}
+static void mouse_cursor_callback( GLFWwindow * window, double xpos, double ypos)  
+{
+}
 // GLFW key callbacks
 static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
                          int mods)

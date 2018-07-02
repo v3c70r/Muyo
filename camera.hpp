@@ -6,40 +6,55 @@
 
 class Camera {
 public:
-    Camera()
-        : mProj(glm::mat4(1.0)),
-          mView(glm::mat4(1.0))
+    Camera(glm::mat4 proj, glm::mat4 view)
+        : mProj(proj),
+          mView(view)
     {
     }
     glm::mat4 getProjMat() const { return mProj; }
     glm::mat4 getViewMat() const { return mView; }
-    virtual void update() = 0;
+    virtual void resize(const glm::vec2 &newSize)
+    {
+        mScreenExtent = newSize;
+    }
 
 protected:
     glm::mat4 mProj;
     glm::mat4 mView;
     glm::mat4 mViewInv;
+    glm::vec2 mScreenExtent;
 };
 
 class Arcball : public Camera {
 public:
-    void startDragging(glm::vec2 screenCoord)
+    Arcball(glm::mat4 proj, glm::mat4 view): Camera(proj, view) {}
+    void startDrag(glm::vec2 screenCoord)
     {
+        mPreRot = rotationFromScreen(screenCoord);
     }
-    void endDragging(glm::vec2 screenCoord)
+    void updateDrag(glm::vec2 screenCoord)
     {
+        glm::quat currentRot = rotationFromScreen(screenCoord);
+        glm::quat diff = currentRot * glm::inverse(mPreRot);
+        glm::mat4 cameraInWorld = glm::inverse(mView);
+        glm::mat4 rotMat = glm::toMat4(diff);
+        mView = glm::inverse(rotMat * cameraInWorld);
     }
-    void update() override { glm::mat4 cameraToWorld = glm::inverse(mView); }
 
 protected:
     //! Convert a screen coordinate to a rotation on the arcball
-    static glm::quat rotationFromScreen(glm::vec2 screenCoord)
+    glm::quat rotationFromScreen(glm::vec2 screenCoord)
     {
-        // Map screen coord to a rotation angle on the sphere surface
-        
+        glm::vec3 pointOnSphere(screenCoord / mScreenExtent - glm::vec2(0.5f), 0.0f);
+        pointOnSphere.z = glm::sqrt( 1.0f - pointOnSphere.x * pointOnSphere.x - pointOnSphere.y * pointOnSphere.y);
+        const glm::vec3 Z_AXIS = glm::vec3(0.0, 0.0, 1.0);
+        glm::vec3 rotationAxis = glm::cross( pointOnSphere, Z_AXIS);
+        float angle = glm::acos(glm::dot(pointOnSphere, Z_AXIS));
+        return glm::angleAxis(angle, glm::normalize(rotationAxis));
     }
     glm::quat mPreRot;
     float zoom;
+    bool isDraging;
 };
 
 //class FPScamera : public Camera {

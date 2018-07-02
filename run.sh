@@ -1,1 +1,1 @@
-LD_LIBRARY_PATH=/Users/Tsing/tools/vulkansdk-macos-1.1.73.0/macOS/x86_64/lib VK_LAYER_PATH=/Users/Tsing/tools/vulkansdk-macos-1.1.73.0/macOS/x86_64/etc/explicit_layer.d ./helloVulkan
+LD_LIBRARY_PATH=/home/tsing/tools/VulkanSDK/1.1.70.1/x86_64/x86_64/lib VK_LAYER_PATH=/home/tsing/tools/VulkanSDK/1.1.70.1/x86_64/x86_64/etc/explicit_layer.d ./helloVulkan
