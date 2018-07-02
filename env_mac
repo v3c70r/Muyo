@@ -1,3 +1,3 @@
-export VK_LAYER_PATH=/Users/Tsing/tools/vulkansdk-macos-1.1.73.0/macOS/etc/vulkan/explicit_layers.d
+export VK_LAYER_PATH=/Users/Tsing/tools/vulkansdk-macos-1.1.73.0/macOS/etc/vulkan/explicit_layer.d
 export LD_LIBRARY_PATH=/Users/Tsing/tools/vulkansdk-macos-1.1.73.0/macOS/lib/
 export VK_ICD_FILENAMES=/Users/Tsing/tools/vulkansdk-macos-1.1.73.0/macOS/etc/vulkan/icd.d/MoltenVK_icd.json
