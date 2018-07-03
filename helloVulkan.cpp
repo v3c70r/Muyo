@@ -38,23 +38,35 @@ static Arcball s_arcball(glm::perspective(glm::radians(45.0f), 800.0f / 600.0f,
                          glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
                                      glm::vec3(0.0f, 0.0f, 0.0f),
                                      glm::vec3(0.0f, 0.0f, 1.0f)));
-static bool dragging = false;
+static bool s_isLbuttonDown = false;
+static bool s_startDragging = false;
 // GLFW mouse callback
 static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
 {
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (GLFW_PRESS == action)
-            dragging = true;
+        {
+            if (!s_isLbuttonDown )
+                s_startDragging = true;
+            s_isLbuttonDown = true;
+        }
         else if (GLFW_RELEASE == action)
-            dragging = false;
+        {
+            s_isLbuttonDown = false;
+        }
     }
 
-    if (lbutton_down) {
-        // do your drag here
-    }
 }
-static void mouse_cursor_callback( GLFWwindow * window, double xpos, double ypos)  
+static void mouseCursorCallback( GLFWwindow * window, double xpos, double ypos)  
 {
+    if (s_startDragging)
+    {
+        s_arcball.startDrag(glm::vec2(xpos, ypos));
+    }
+    else if (s_isLbuttonDown)
+    {
+        s_arcball.updateDrag(glm::vec2(xpos, ypos));
+    }
 }
 // GLFW key callbacks
 static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
@@ -352,6 +364,7 @@ void initWindow()
     s_pWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowSizeCallback(s_pWindow, onWindowResize);
     glfwSetKeyCallback(s_pWindow, onKeyStroke);
+    glfwSetMouseButtonCallback
 }
 
 std::vector<const char*> getRequiredExtensions()

@@ -1,4 +1,5 @@
-*.dSYM
+helloVulkan.dSYM
+helloVulkan.dSYM/*
 *.swp
 helloVulkan
 debug_vk
