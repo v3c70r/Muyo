@@ -62,6 +62,7 @@ static void mouseCursorCallback( GLFWwindow * window, double xpos, double ypos)
     if (s_startDragging)
     {
         s_arcball.startDrag(glm::vec2(xpos, ypos));
+        s_startDragging = false;
     }
     else if (s_isLbuttonDown)
     {
@@ -256,6 +257,7 @@ debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType,
 void recreateSwapChain();  // fwd declaration
 static void onWindowResize(GLFWwindow* pWindow, int width, int height)
 {
+    s_arcball.resize(glm::vec2((float)width, (float)height));
     recreateSwapChain();
 }
 
@@ -364,7 +366,8 @@ void initWindow()
     s_pWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
     glfwSetWindowSizeCallback(s_pWindow, onWindowResize);
     glfwSetKeyCallback(s_pWindow, onKeyStroke);
-    glfwSetMouseButtonCallback
+    glfwSetMouseButtonCallback(s_pWindow, mouseCallback);
+    glfwSetCursorPosCallback(s_pWindow, mouseCursorCallback);
 }
 
 std::vector<const char*> getRequiredExtensions()
@@ -1355,12 +1358,9 @@ void updateUniformBuffer(UniformBuffer* ub)
     UnifromBufferObject ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.view =
-        glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f),
-                    glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(
-        glm::radians(45.0f),
-        s_swapChainExtent.width / (float)s_swapChainExtent.height, 0.1f, 10.0f);
+    ubo.model = glm::mat4(1.0);
+    ubo.view = s_arcball.getViewMat();
+    ubo.proj = s_arcball.getProjMat();
 
     ub->setData(ubo);
 };

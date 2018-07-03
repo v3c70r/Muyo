@@ -4,11 +4,15 @@
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include <iostream>
+#include <glm/gtx/string_cast.hpp>
+
 class Camera {
 public:
     Camera(glm::mat4 proj, glm::mat4 view)
         : mProj(proj),
-          mView(view)
+          mView(view),
+          mScreenExtent(800.0f, 600.0f)
     {
     }
     glm::mat4 getProjMat() const { return mProj; }
@@ -16,6 +20,8 @@ public:
     virtual void resize(const glm::vec2 &newSize)
     {
         mScreenExtent = newSize;
+        glm::perspective(glm::radians(45.0f), newSize.x / newSize.y, 0.1f,
+                         10.0f);
     }
 
 protected:
@@ -31,6 +37,8 @@ public:
     void startDrag(glm::vec2 screenCoord)
     {
         mPreRot = rotationFromScreen(screenCoord);
+        mPrePosOnSphere = pointOnSphere(screenCoord);
+        //std::cout<<"start rotation at: "<<glm::to_string(mPreRot)<<std::endl;
     }
     void updateDrag(glm::vec2 screenCoord)
     {
@@ -38,7 +46,21 @@ public:
         glm::quat diff = currentRot * glm::inverse(mPreRot);
         glm::mat4 cameraInWorld = glm::inverse(mView);
         glm::mat4 rotMat = glm::toMat4(diff);
+        //mView = glm::inverse(rotMat * cameraInWorld);
+        mPreRot = currentRot;
+
+        glm::vec3 curPosOnSphere = pointOnSphere(screenCoord);
+        glm::vec3 rotationAxis = glm::cross(mPrePosOnSphere, curPosOnSphere);
+        float angle = glm::acos(glm::dot(mPrePosOnSphere, curPosOnSphere));
+        //glm::mat4 cameraInWorld = glm::inverse(mView);
+        glm::rotate(cameraInWorld, angle, rotationAxis);
         mView = glm::inverse(rotMat * cameraInWorld);
+
+
+        mPrePosOnSphere = curPosOnSphere;
+
+
+        //std::cout<<"new view is: "<<glm::to_string(mView)<<std::endl;
     }
 
 protected:
@@ -52,7 +74,14 @@ protected:
         float angle = glm::acos(glm::dot(pointOnSphere, Z_AXIS));
         return glm::angleAxis(angle, glm::normalize(rotationAxis));
     }
+    glm::vec3 pointOnSphere(glm::vec2 screenCoord)
+    {
+        glm::vec3 pointOnSphere(screenCoord / mScreenExtent - glm::vec2(0.5f), 0.0f);
+        pointOnSphere.z = -glm::sqrt( 1.0f - pointOnSphere.x * pointOnSphere.x - pointOnSphere.y * pointOnSphere.y);
+        return pointOnSphere;
+    }
     glm::quat mPreRot;
+    glm::vec3 mPrePosOnSphere;
     float zoom;
     bool isDraging;
 };
