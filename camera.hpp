@@ -58,8 +58,6 @@ public:
 
 
         mPrePosOnSphere = curPosOnSphere;
-
-
         //std::cout<<"new view is: "<<glm::to_string(mView)<<std::endl;
     }
 
@@ -69,9 +67,9 @@ protected:
     {
         glm::vec3 pointOnSphere(screenCoord / mScreenExtent - glm::vec2(0.5f), 0.0f);
         pointOnSphere.z = glm::sqrt( 1.0f - pointOnSphere.x * pointOnSphere.x - pointOnSphere.y * pointOnSphere.y);
-        const glm::vec3 Z_AXIS = glm::vec3(0.0, 0.0, 1.0);
-        glm::vec3 rotationAxis = glm::cross( pointOnSphere, Z_AXIS);
-        float angle = glm::acos(glm::dot(pointOnSphere, Z_AXIS));
+        const glm::vec3 X_AXIS = glm::vec3(1.0, 0.0, 0.0);
+        glm::vec3 rotationAxis = glm::cross( pointOnSphere, X_AXIS);
+        float angle = glm::acos(glm::dot(pointOnSphere, X_AXIS));
         return glm::angleAxis(angle, glm::normalize(rotationAxis));
     }
     glm::vec3 pointOnSphere(glm::vec2 screenCoord)
