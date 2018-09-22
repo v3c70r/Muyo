@@ -1359,6 +1359,7 @@ void updateUniformBuffer(UniformBuffer* ub)
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
     ubo.model = glm::mat4(1.0);
+
     ubo.view = s_arcball.getViewMat();
     ubo.proj = s_arcball.getProjMat();
 
