@@ -13,6 +13,7 @@
 #include <set>
 #include <vector>
 
+#include "vkContext.h"
 #include "DepthResource.h"
 #include "Texture.hpp"
 #include "UniformBuffer.h"
@@ -103,6 +104,7 @@ static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
     //    }
 }
 
+static uint32_t s_numBuffers = 2;
 static VkDebugReportCallbackEXT s_debugCallback;
 
 static VkPhysicalDevice s_physicalDevice = VK_NULL_HANDLE;
@@ -144,7 +146,7 @@ static VkPipeline s_graphicsPipeline;
 
 // Command
 static VkCommandPool s_commandPool;
-static std::vector<VkCommandBuffer> s_commandBuffers;
+//static std::vector<VkCommandBuffer> s_commandBuffers;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -675,16 +677,16 @@ void createSwapChain()
     s_swapChainImageFormat = surfaceFormat.format;
     s_swapChainExtent = extent;
 
-    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-    if (swapChainSupport.capabilities.maxImageCount > 0 &&
-        imageCount > swapChainSupport.capabilities.maxImageCount) {
-        imageCount = swapChainSupport.capabilities.maxImageCount;
-    }
+    //uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
+    //if (swapChainSupport.capabilities.maxImageCount > 0 &&
+    //    s_numBuffers > swapChainSupport.capabilities.maxImageCount) {
+    //    s_numBuffers = swapChainSupport.capabilities.maxImageCount;
+    //}
 
     VkSwapchainCreateInfoKHR createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
     createInfo.surface = s_surface;
-    createInfo.minImageCount = imageCount;
+    createInfo.minImageCount = s_numBuffers;
     createInfo.imageFormat = surfaceFormat.format;
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = extent;
@@ -712,9 +714,9 @@ void createSwapChain()
            VK_SUCCESS);
 
     // Get swap chain images;
-    vkGetSwapchainImagesKHR(s_device, s_swapChain, &imageCount, nullptr);
-    s_swapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(s_device, s_swapChain, &imageCount,
+    vkGetSwapchainImagesKHR(s_device, s_swapChain, &s_numBuffers, nullptr);
+    s_swapChainImages.resize(s_numBuffers);
+    vkGetSwapchainImagesKHR(s_device, s_swapChain, &s_numBuffers,
                             s_swapChainImages.data());
 }
 
@@ -1110,41 +1112,41 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
 
         vkBeginCommandBuffer(s_commandBuffers[i], &beginInfo);
 
-        // Begin renderpass
-        VkRenderPassBeginInfo renderPassBeginInfo = {};
-        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.renderPass = s_renderPass;
-        renderPassBeginInfo.framebuffer = s_swapChainFramebuffers[i];
+            // Begin renderpass
+            VkRenderPassBeginInfo renderPassBeginInfo = {};
+            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassBeginInfo.renderPass = s_renderPass;
+            renderPassBeginInfo.framebuffer = s_swapChainFramebuffers[i];
 
-        renderPassBeginInfo.renderArea.offset = {0, 0};
-        renderPassBeginInfo.renderArea.extent = s_swapChainExtent;
+            renderPassBeginInfo.renderArea.offset = {0, 0};
+            renderPassBeginInfo.renderArea.extent = s_swapChainExtent;
 
-        std::array<VkClearValue, 2> clearValues = {};
-        clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
-        clearValues[1].depthStencil = {1.0f, 0};
-        renderPassBeginInfo.clearValueCount =
-            static_cast<uint32_t>(clearValues.size());
-        renderPassBeginInfo.pClearValues = clearValues.data();
-        vkCmdBeginRenderPass(s_commandBuffers[i], &renderPassBeginInfo,
-                             VK_SUBPASS_CONTENTS_INLINE);
+            std::array<VkClearValue, 2> clearValues = {};
+            clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
+            clearValues[1].depthStencil = {1.0f, 0};
+            renderPassBeginInfo.clearValueCount =
+                static_cast<uint32_t>(clearValues.size());
+            renderPassBeginInfo.pClearValues = clearValues.data();
+            vkCmdBeginRenderPass(s_commandBuffers[i], &renderPassBeginInfo,
+                                 VK_SUBPASS_CONTENTS_INLINE);
 
-        VkBuffer vb = vertexBuffer.buffer();
-        VkBuffer ib = indexBuffer.buffer();
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(s_commandBuffers[i], 0, 1, &vb, &offset);
-        vkCmdBindIndexBuffer(s_commandBuffers[i], ib, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          s_graphicsPipeline);
-        vkCmdBindDescriptorSets(
-            s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
-            s_pipelineLayout, 0, 1, &s_descriptorSet, 0, nullptr);
+                VkBuffer vb = vertexBuffer.buffer();
+                VkBuffer ib = indexBuffer.buffer();
+                VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(s_commandBuffers[i], 0, 1, &vb, &offset);
+                vkCmdBindIndexBuffer(s_commandBuffers[i], ib, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindPipeline(s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  s_graphicsPipeline);
+                vkCmdBindDescriptorSets(
+                    s_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    s_pipelineLayout, 0, 1, &s_descriptorSet, 0, nullptr);
 
-        // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
-        vkCmdDrawIndexed(s_commandBuffers[i],
-                         static_cast<uint32_t>(getIndices().size()), 1, 0, 0,
-                         0);
+                // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
+                vkCmdDrawIndexed(s_commandBuffers[i],
+                                 static_cast<uint32_t>(getIndices().size()), 1, 0, 0,
+                                 0);
 
-        vkCmdEndRenderPass(s_commandBuffers[i]);
+            vkCmdEndRenderPass(s_commandBuffers[i]);
 
         assert(vkEndCommandBuffer(s_commandBuffers[i]) == VK_SUCCESS);
     }
@@ -1154,7 +1156,7 @@ void createSemaphores()
 {
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    s_imageAvailableSemaphores.resize(s_commandBuffers.size());
+    s_imageAvailableSemaphores.resize(s_swapChainImages.size());
     s_renderFinishedSemaphores.resize(s_commandBuffers.size());
     for (size_t i = 0; i < s_commandBuffers.size(); i++) {
         assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
@@ -1244,9 +1246,7 @@ void cleanupSwapChain()
 {
     for (auto& framebuffer : s_swapChainFramebuffers)
         vkDestroyFramebuffer(s_device, framebuffer, nullptr);
-    vkFreeCommandBuffers(s_device, s_commandPool,
-                         static_cast<uint32_t>(s_commandBuffers.size()),
-                         s_commandBuffers.data());
+    Context::getInstance().finalize();
     vkDestroyPipeline(s_device, s_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(s_device, s_pipelineLayout, nullptr);
     vkDestroyRenderPass(s_device, s_renderPass, nullptr);
@@ -1324,7 +1324,7 @@ void drawFrame()
     submitInfo.pWaitDstStageMask = &stageFlag;
 
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &s_commandBuffers[imageIndex];
+    submitInfo.pCommandBuffers = &Context::getInstance().getCommandBuffer(imageIndex);
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];

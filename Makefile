@@ -1,6 +1,6 @@
 
 CXX=g++
-FLAGS=-std=c++14 -Wall -pthread -g
+FLAGS=-std=c++14 -Wall -pthread -g -Wno-missing-braces
 
 # Set your own SDK file path
 ifeq ($(shell uname -s), Darwin)
@@ -13,8 +13,8 @@ INCLUDES=-I$(SDK_PATH)/include -Iimgui
 LIBS=$(shell pkg-config --static --libs glfw3) -L$(SDK_PATH)/lib  -lvulkan
 SHADER_CC = $(SDK_PATH)/bin/glslangValidator
 
-HEADERS = VertexBuffer.h Buffer.h UniformBuffer.h Util.h Texture.hpp
-SOURCE=helloVulkan.cpp thirdparty/tiny_obj_loader.cc
+HEADERS = VertexBuffer.h Buffer.h UniformBuffer.h Util.h Texture.hpp camera.hpp context.hpp
+SOURCE=helloVulkan.cpp thirdparty/tiny_obj_loader.cc context.cpp
 
 VERT_SRC = triangle.vert
 VERT_BIN = vert.spv
