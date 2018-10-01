@@ -23,65 +23,92 @@ public:
         glm::perspective(glm::radians(45.0f), newSize.x / newSize.y, 0.1f,
                          10.0f);
     }
+    virtual void update() = 0;
 
 protected:
+    glm::vec3 mPos;
     glm::mat4 mProj;
     glm::mat4 mView;
-    glm::mat4 mViewInv;
     glm::vec2 mScreenExtent;
 };
 
 class Arcball : public Camera {
 public:
-    Arcball(glm::mat4 proj, glm::mat4 view): Camera(proj, view) {}
+    Arcball(glm::mat4 proj, glm::mat4 view) : Camera(proj, view), mDirty(false)
+    {
+        mPos = glm::vec3(2.0);
+        mRot = glm::angleAxis(0.0f, glm::vec3(1.0, 0.0, 0.0));
+        mZoom = 2.0;
+        update();
+    }
     void startDrag(glm::vec2 screenCoord)
     {
-        mPreRot = rotationFromScreen(screenCoord);
-        mPrePosOnSphere = pointOnSphere(screenCoord);
-        //std::cout<<"start rotation at: "<<glm::to_string(mPreRot)<<std::endl;
+        mPrePos = screenCoord;
     }
     void updateDrag(glm::vec2 screenCoord)
     {
-        glm::quat currentRot = rotationFromScreen(screenCoord);
-        glm::quat diff = currentRot * glm::inverse(mPreRot);
-        glm::mat4 cameraInWorld = glm::inverse(mView);
-        glm::mat4 rotMat = glm::toMat4(diff);
-        //mView = glm::inverse(rotMat * cameraInWorld);
-        mPreRot = currentRot;
+        glm::vec2 from(2.0f * mPrePos / mScreenExtent - glm::vec2(1.0));
+        glm::vec2 to(2.0f * screenCoord / mScreenExtent - glm::vec2(1.0));
+        to.y *= -1.0;
+        from.y *= -1.0;
+        rotateArcball(from, to);
+        update();
+        mPrePos = screenCoord;
+    }
 
-        glm::vec3 curPosOnSphere = pointOnSphere(screenCoord);
-        glm::vec3 rotationAxis = glm::cross(mPrePosOnSphere, curPosOnSphere);
-        float angle = glm::acos(glm::dot(mPrePosOnSphere, curPosOnSphere));
-        //glm::mat4 cameraInWorld = glm::inverse(mView);
-        glm::rotate(cameraInWorld, angle, rotationAxis);
-        mView = glm::inverse(rotMat * cameraInWorld);
+    void update() override
+    {
+        glm::mat4 p = glm::translate(glm::mat4(1.0), -mPos);
+        glm::mat4 r = glm::toMat4(mRot);
+        glm::mat4 d = glm::translate(glm::mat4(1.0), glm::vec3(0.0, 0.0, mZoom));
+        mView = (d * (r * p));
+    }
 
+    void rotateArcball(glm::vec2 from, glm::vec2 to)
+    {
+        glm::vec3 a, b;
+        float az = from.x * from.x + from.y * from.y;
+        float bz = to.x * to.x + to.y * to.y;
 
-        mPrePosOnSphere = curPosOnSphere;
-        //std::cout<<"new view is: "<<glm::to_string(mView)<<std::endl;
+        std::cout<<"=="<<std::endl;
+        std::cout<<"a: "<<glm::to_string(from)<<std::endl;
+        std::cout<<"b: "<<glm::to_string(to)<<std::endl;
+
+        // keep the controls stable by rejecting very small movements.
+        if (fabsf(az - bz) < 1e-5f) return;
+
+        if (az < 1.0f) {
+            a = glm::vec3(from.x, from.y, sqrt(1.0f - az));
+        }
+        else {
+            a = glm::vec3(from.x, from.y, 0.0f);
+            a = glm::normalize(a);
+        }
+
+        if (bz < 1.0f) {
+            b = glm::vec3(to.x, to.y, sqrt(1.0f - bz));
+        }
+        else {
+            b = glm::vec3(to.x, to.y, 0.0f);
+            b = glm::normalize(b);
+        }
+
+        float angle = acosf(glm::min(1.0f, glm::dot(a, b)));
+
+        glm::vec3 axis = glm::cross(a, b);
+        axis = glm::normalize(axis);
+
+        mDirty = true;
+
+        glm::quat delta = glm::angleAxis(angle, axis);
+        mRot *= delta;
     }
 
 protected:
-    //! Convert a screen coordinate to a rotation on the arcball
-    glm::quat rotationFromScreen(glm::vec2 screenCoord)
-    {
-        glm::vec3 pointOnSphere(screenCoord / mScreenExtent - glm::vec2(0.5f), 0.0f);
-        pointOnSphere.z = glm::sqrt( 1.0f - pointOnSphere.x * pointOnSphere.x - pointOnSphere.y * pointOnSphere.y);
-        const glm::vec3 Y_AXIS = glm::vec3(0.0, 1.0, 0.0);
-        glm::vec3 rotationAxis = glm::cross( pointOnSphere, Y_AXIS);
-        float angle = glm::acos(glm::dot(pointOnSphere, Y_AXIS));
-        return glm::angleAxis(angle, glm::normalize(rotationAxis));
-    }
-    glm::vec3 pointOnSphere(glm::vec2 screenCoord)
-    {
-        glm::vec3 pointOnSphere(screenCoord / mScreenExtent - glm::vec2(0.5f), 0.0f);
-        pointOnSphere.z = -glm::sqrt( 1.0f - pointOnSphere.x * pointOnSphere.x - pointOnSphere.y * pointOnSphere.y);
-        return pointOnSphere;
-    }
-    glm::quat mPreRot;
-    glm::vec3 mPrePosOnSphere;
-    float zoom;
-    bool isDraging;
+    glm::vec2 mPrePos;
+    glm::quat mRot;
+    bool mDirty;
+    float mZoom;
 };
 
 //class FPScamera : public Camera {

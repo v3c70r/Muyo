@@ -857,8 +857,8 @@ void createRenderPass()
 void createGraphicsPipeline()
 {
     // 1. Shaders
-    VkShaderModule vertShdr = m_createShaderModule(m_readSpv("./vert.spv"));
-    VkShaderModule fragShdr = m_createShaderModule(m_readSpv("./frag.spv"));
+    VkShaderModule vertShdr = m_createShaderModule(m_readSpv("shaders/triangle.vert.spv"));
+    VkShaderModule fragShdr = m_createShaderModule(m_readSpv("shaders/triangle.frag.spv"));
 
     // Create shader stages
 
@@ -1343,7 +1343,7 @@ void updateUniformBuffer(UniformBuffer* ub)
 int main()
 {
     // Load mesh into memory
-    LoadMesh("chalet.obj", s_objInfo);
+    LoadMesh("assets/chalet.obj", s_objInfo);
     initWindow();
     createInstance();
     setupDebugCallback();
@@ -1383,7 +1383,7 @@ int main()
                                              sizeof(UnifromBufferObject));
 
         s_pTexture = new Texture();
-        s_pTexture->LoadImage("./chalet.jpg", s_device, s_physicalDevice,
+        s_pTexture->LoadImage("assets/chalet.jpg", s_device, s_physicalDevice,
                               s_commandPool, s_graphicsQueue);
         createDescriptorPool();
         createDescriptorSet();
