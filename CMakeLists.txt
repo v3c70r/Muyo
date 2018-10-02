@@ -13,6 +13,9 @@ set (VK_INCLUDE_PATH ${VK_SDK_PATH}/include)
 set (VK_LAYER_PATH    ${VK_SDK_PATH}/etc/vulkan/explicit_layer.d)
 set (VK_LIBRARY_PATH  ${VK_SDK_PATH}/lib/)
 set (VK_ICD_FILENAMES ${VK_SDK_PATH}/etc/vulkan/icd.d/MoltenVK_icd.json)
+file(WRITE  ${PROJECT_BINARY_DIR}/env.sh "export VK_LAYER_PATH=${VK_LAYER_PATH}\n")
+file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_LIBRARY_PATH=${VK_LIBRARY_PATH}\n")
+file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_ICD_FILENAMES=${VK_ICD_FILENAMES}\n")
 
 
 set (CMAKE_CXX_FLAGS "-std=c++11 -Wall -pthread -Wno-missing-braces")
@@ -48,6 +51,8 @@ foreach (GLSL ${GLSL_SOURCE_FILES})
         DEPENDS ${GLSL})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()
+
+
 
 add_custom_target(
     Shaders
