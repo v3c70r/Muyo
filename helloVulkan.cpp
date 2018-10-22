@@ -21,10 +21,13 @@
 #include "camera.hpp"
 
 #include "thirdparty/tiny_obj_loader.h"
+#include "thirdparty/imgui/imgui.h"
+#include "thirdparty/imgui/imgui_impl_vulkan.h"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
+static ImGui_ImplVulkanH_WindowData s_UIWindowData;
 static VkInstance s_instance;
 
 static std::vector<const char*> s_validationLayers{
@@ -662,6 +665,8 @@ void createSurface()
     // The platform specific code has been handled by glfw
     assert(glfwCreateWindowSurface(s_instance, s_pWindow, nullptr,
                                    &s_surface) == VK_SUCCESS);
+
+    s_UIWindowData.Surface = s_surface;
 }
 
 void createSwapChain()
@@ -676,6 +681,7 @@ void createSwapChain()
 
     s_swapChainImageFormat = surfaceFormat.format;
     s_swapChainExtent = extent;
+
 
     //uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
     //if (swapChainSupport.capabilities.maxImageCount > 0 &&
@@ -718,6 +724,10 @@ void createSwapChain()
     s_swapChainImages.resize(s_numBuffers);
     vkGetSwapchainImagesKHR(s_device, s_swapChain, &s_numBuffers,
                             s_swapChainImages.data());
+
+    // Setup UI window data
+    s_UIWindowData.SurfaceFormat = surfaceFormat;
+    s_UIWindowData.PresentMode = VK_PRESENT_MODE_FIFO_KHR;
 }
 
 // Create image views for images on the swap chain
@@ -1122,6 +1132,11 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
         Context::getInstance().endPass();
         Context::getInstance().endRecording();
     }
+
+    // Create UI command buffers
+    // TODO: Find out queue family
+    ImGui_ImplVulkanH_CreateWindowDataCommandBuffers(s_physicalDevice, s_device, 0, &s_UIWindowData, nullptr);
+    //ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice, s_device, &s_UIWindowData, nullptr, s_swapChainExtent.width, s_swapChainExtent.height);
 }
 
 void createSemaphores()

@@ -28,10 +28,20 @@ include_directories(${VK_INCLUDE_PATH}
     ${GLFW3_INCLUDE_DIR}
     )
 
+add_library( imgui
+    thirdparty/imgui/imgui.cpp
+    thirdparty/imgui/imgui_demo.cpp
+    thirdparty/imgui/imgui_draw.cpp
+    thirdparty/imgui/imgui_widgets.cpp
+    thirdparty/imgui/imgui_impl_vulkan.cpp
+    )
+    
+
+
 add_executable( helloVulkan
     helloVulkan.cpp thirdparty/tiny_obj_loader.cc context.cpp
     )
-target_link_libraries(helloVulkan glfw vulkan)
+target_link_libraries(helloVulkan glfw vulkan imgui)
 
 # Build shaders
 set (GLSL_VALIDATOR ${VK_SDK_PATH}/bin/glslangValidator)
