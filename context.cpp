@@ -1,7 +1,7 @@
 #include "context.hpp"
 #include <array>
 #include "assert.h"
-void Context::init(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool)
+void RenderContext::init(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool)
 {
     m_pCommandPool = pPool;
     m_pDevice = pDevice;
@@ -21,7 +21,7 @@ void Context::init(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool)
     m_recording.resize(numBuffers, false);
 }
 
-void Context::finalize()
+void RenderContext::finalize()
 {
     vkFreeCommandBuffers(*m_pDevice, *m_pCommandPool,
                          static_cast<uint32_t>(m_commandBuffers.size()),
@@ -31,20 +31,20 @@ void Context::finalize()
     m_pDevice = nullptr;
     m_recording.clear();
 }
-void Context::startRecording()
+void RenderContext::startRecording()
 {
     VkCommandBuffer cmdBuffer = getCommandBuffer();
     vkBeginCommandBuffer(cmdBuffer, &m_cmdBufferBeginInfo);
     m_recording[s_currentContext] = true;
 }
 
-void Context::endRecording()
+void RenderContext::endRecording()
 {
     assert(isRecording());
     vkEndCommandBuffer(getCommandBuffer());
     m_recording[s_currentContext] = false;
 }
-void Context::beginPass(VkRenderPass& renderPass, VkFramebuffer& frameBuffer,
+void RenderContext::beginPass(VkRenderPass& renderPass, VkFramebuffer& frameBuffer,
                         VkExtent2D& extent)
 {
     assert(isRecording());
@@ -67,7 +67,7 @@ void Context::beginPass(VkRenderPass& renderPass, VkFramebuffer& frameBuffer,
     vkCmdBeginRenderPass(getCommandBuffer(), &renderPassBeginInfo,
                          VK_SUBPASS_CONTENTS_INLINE);
 }
-void Context::endPass()
+void RenderContext::endPass()
 {
     assert(isRecording());
     vkCmdEndRenderPass(getCommandBuffer());

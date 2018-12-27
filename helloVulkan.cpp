@@ -13,7 +13,7 @@
 #include <set>
 #include <vector>
 
-#include "context.hpp"
+#include "ContextManager.h"
 #include "DepthResource.h"
 #include "Texture.hpp"
 #include "UniformBuffer.h"
@@ -27,8 +27,11 @@
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
-static ImGui_ImplVulkanH_WindowData s_UIWindowData;
 static VkInstance s_instance;
+
+
+static ContextManager s_contextManager;
+static bool s_resizeWanted = true;
 
 static std::vector<const char*> s_validationLayers{
     "VK_LAYER_LUNARG_standard_validation"};
@@ -665,8 +668,6 @@ void createSurface()
     // The platform specific code has been handled by glfw
     assert(glfwCreateWindowSurface(s_instance, s_pWindow, nullptr,
                                    &s_surface) == VK_SUCCESS);
-
-    s_UIWindowData.Surface = s_surface;
 }
 
 void createSwapChain()
@@ -725,9 +726,6 @@ void createSwapChain()
     vkGetSwapchainImagesKHR(s_device, s_swapChain, &s_numBuffers,
                             s_swapChainImages.data());
 
-    // Setup UI window data
-    s_UIWindowData.SurfaceFormat = surfaceFormat;
-    s_UIWindowData.PresentMode = VK_PRESENT_MODE_FIFO_KHR;
 }
 
 // Create image views for images on the swap chain
@@ -1086,6 +1084,7 @@ void createFramebuffers()
         assert(vkCreateFramebuffer(s_device, &framebufferInfo, nullptr,
                                    &s_swapChainFramebuffers[i]) == VK_SUCCESS);
     }
+
 }
 
 void createCommandPool()
@@ -1103,13 +1102,13 @@ void createCommandPool()
 void createCommandBuffers(const VertexBuffer& vertexBuffer,
                           const IndexBuffer& indexBuffer)
 {
-    Context::getInstance().init(s_numBuffers, &s_device, &s_commandPool);
+    s_contextManager.getContext(CONTEXT_OBJECT).init(s_numBuffers, &s_device, &s_commandPool);
 
     for (s_currentContext = 0; s_currentContext < s_numBuffers;
          s_currentContext++) {
-        VkCommandBuffer& currentCmdBuffer = Context::getInstance().getCommandBuffer();
-        Context::getInstance().startRecording();
-        Context::getInstance().beginPass(
+        VkCommandBuffer& currentCmdBuffer = s_contextManager.getContext(CONTEXT_OBJECT).getCommandBuffer();
+        s_contextManager.getContext(CONTEXT_OBJECT).startRecording();
+        s_contextManager.getContext(CONTEXT_OBJECT).beginPass(
             s_renderPass, s_swapChainFramebuffers[s_currentContext],
             s_swapChainExtent);
 
@@ -1129,14 +1128,9 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
                          static_cast<uint32_t>(getIndices().size()), 1, 0, 0,
                          0);
 
-        Context::getInstance().endPass();
-        Context::getInstance().endRecording();
+        s_contextManager.getContext(CONTEXT_OBJECT).endPass();
+        s_contextManager.getContext(CONTEXT_OBJECT).endRecording();
     }
-
-    // Create UI command buffers
-    // TODO: Find out queue family
-    ImGui_ImplVulkanH_CreateWindowDataCommandBuffers(s_physicalDevice, s_device, 0, &s_UIWindowData, nullptr);
-    //ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice, s_device, &s_UIWindowData, nullptr, s_swapChainExtent.width, s_swapChainExtent.height);
 }
 
 void createSemaphores()
@@ -1167,18 +1161,25 @@ void createFences()
 
 void createDescriptorPool()
 {
-    std::array<VkDescriptorPoolSize, 2> poolSizes = {};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = 1;
-
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = 1;
+    VkDescriptorPoolSize poolSizes[] = {
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
 
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = 1;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.poolSizeCount = (uint32_t)IM_ARRAYSIZE(poolSizes);
+    poolInfo.pPoolSizes = poolSizes;
+    poolInfo.maxSets = 1000 * IM_ARRAYSIZE(poolSizes);
     assert(vkCreateDescriptorPool(s_device, &poolInfo, nullptr,
                                   &s_descriptorPool) == VK_SUCCESS);
 };
@@ -1233,7 +1234,7 @@ void cleanupSwapChain()
 {
     for (auto& framebuffer : s_swapChainFramebuffers)
         vkDestroyFramebuffer(s_device, framebuffer, nullptr);
-    Context::getInstance().finalize();
+    s_contextManager.getContext(CONTEXT_OBJECT).finalize();
     vkDestroyPipeline(s_device, s_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(s_device, s_pipelineLayout, nullptr);
     vkDestroyRenderPass(s_device, s_renderPass, nullptr);
@@ -1268,6 +1269,35 @@ void recreateSwapChain()
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
 }
 
+void initImGui()
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    ImGui_ImplVulkan_InitInfo info;
+    memset(&info, 0, sizeof(ImGui_ImplVulkan_InitInfo));
+    info.Instance = s_instance;
+    info.PhysicalDevice = s_physicalDevice;
+    info.Device = s_device;;
+    info.QueueFamily = 0;
+    info.Queue = s_graphicsQueue;
+    info.PipelineCache = 0;
+    info.DescriptorPool = s_descriptorPool;
+    info.Allocator = nullptr;
+    info.CheckVkResultFn = nullptr;
+
+    ImGui_ImplVulkan_Init(&info, s_renderPass);
+
+    // Upload font
+    VkCommandBuffer cmdBuf = beginSingleTimeCommands(s_device, s_commandPool);
+    ImGui_ImplVulkan_CreateFontsTexture(cmdBuf);
+    endSingleTimeCommands(cmdBuf, s_device, s_commandPool, s_graphicsQueue);
+    VkResult err = vkDeviceWaitIdle(s_device);
+    assert(err == VK_SUCCESS);
+    ImGui_ImplVulkan_InvalidateFontUploadObjects();
+
+}
+
 void cleanup()
 {
     cleanupSwapChain();
@@ -1278,6 +1308,9 @@ void cleanup()
     for (auto& somaphore : s_renderFinishedSemaphores)
         vkDestroySemaphore(s_device, somaphore, nullptr);
     for (auto& fence : s_waitFences) vkDestroyFence(s_device, fence, nullptr);
+
+    ImGui::DestroyContext();
+    ImGui_ImplVulkan_Shutdown();
 
     vkDestroyCommandPool(s_device, s_commandPool, nullptr);
     vkDestroySurfaceKHR(s_instance, s_surface, nullptr);
@@ -1313,10 +1346,12 @@ void present()
     submitInfo.pWaitDstStageMask = &stageFlag;
 
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &Context::getInstance().getCommandBuffer();
+    submitInfo.pCommandBuffers = &s_contextManager.getContext(CONTEXT_OBJECT).getCommandBuffer();
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
+
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_OBJECT).getCommandBuffer());
 
     assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
                          s_waitFences[imageIndex]) == VK_SUCCESS);
@@ -1373,6 +1408,7 @@ int main()
     createGraphicsPipeline();
     createCommandPool();
 
+
     // A bunch of news and deletes happend in the following block
     // They have to be created and destroyed in a certain order
     // Looking for a way to convert them to smart pointers, otherwise a major refactorying
@@ -1405,10 +1441,21 @@ int main()
         createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
         createSemaphores();
         createFences();
+        initImGui();
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow)) {
             glfwPollEvents();
+
+            // TODO: Do we need multiple swapchains to render the GUI
+            if (s_resizeWanted)
+            {
+                //ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice, s_device, s_pWindow, nullptr, s_swapChainExtent.width, s_swapChainExtent.height);
+                s_resizeWanted = false;
+            }
+            ImGui_ImplVulkan_NewFrame();
+            ImGui::NewFrame();
+            ImGui::Text("Hello");
 
             updateUniformBuffer(s_pUniformBuffer);
             // wait on device to make sure it has been drawn

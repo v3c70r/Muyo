@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.0.0)
 
 # Set system env
 if (NOT DEFINED VK_SDK_PATH)
     message(FATAL_ERROR "VK_SDK_PATH is not defined")
 endif()
 
-find_package(glfw3 3.3 REQUIRED)
+find_package(glfw3 3.2 REQUIRED)
 
 message(STATUS "Set VK_SDK_PATH at ${VK_SDK_PATH}")
 set (VK_INCLUDE_PATH ${VK_SDK_PATH}/include)
@@ -20,7 +20,6 @@ file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_ICD_FILENAMES=${VK_ICD_FILEN
 
 set (CMAKE_CXX_FLAGS "-std=c++11 -Wall -pthread -Wno-missing-braces")
 set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "-g")
-set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "-g -O2")
 
 link_directories(${VK_LIBRARY_PATH})
 

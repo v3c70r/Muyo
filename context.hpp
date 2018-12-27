@@ -1,21 +1,17 @@
 #pragma once
+#include "ContextBase.h"
 #include <vulkan/vulkan.h>
 #include <vector>
 
 thread_local static size_t s_currentContext;
-class Context
+class RenderContext: public ContextBase
 {
 public:
-    static Context& getInstance()
-    {
-        static Context instance;
-        return instance;
-    }
-    Context() : m_pCommandPool(nullptr){};
+    RenderContext() : m_pCommandPool(nullptr){};
     void init(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool);
     void finalize();
-    void startRecording();
-    void endRecording();
+    void startRecording() override;
+    void endRecording() override;
 
     // Move this to framebuffer?
     void beginPass(VkRenderPass& renderPass, VkFramebuffer& frameBuffer,
@@ -23,9 +19,7 @@ public:
     void endPass();
 
     void swap();
-    bool isRecording() const { return m_recording[s_currentContext]; }
-    Context(Context const&) = delete;
-    void operator=(Context const&) = delete;
+    bool isRecording() const override { return m_recording[s_currentContext]; }
     VkCommandBuffer& getCommandBuffer()
     {
         return m_commandBuffers[s_currentContext];

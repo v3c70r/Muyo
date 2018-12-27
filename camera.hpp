@@ -66,42 +66,42 @@ public:
 
     void rotateArcball(glm::vec2 from, glm::vec2 to)
     {
-        glm::vec3 a, b;
-        float az = from.x * from.x + from.y * from.y;
-        float bz = to.x * to.x + to.y * to.y;
+        //glm::vec3 a, b;
+        //float az = from.x * from.x + from.y * from.y;
+        //float bz = to.x * to.x + to.y * to.y;
 
-        std::cout<<"=="<<std::endl;
-        std::cout<<"a: "<<glm::to_string(from)<<std::endl;
-        std::cout<<"b: "<<glm::to_string(to)<<std::endl;
+        //std::cout<<"=="<<std::endl;
+        //std::cout<<"a: "<<glm::to_string(from)<<std::endl;
+        //std::cout<<"b: "<<glm::to_string(to)<<std::endl;
 
-        // keep the controls stable by rejecting very small movements.
-        if (fabsf(az - bz) < 1e-5f) return;
+        //// keep the controls stable by rejecting very small movements.
+        //if (fabsf(az - bz) < 1e-5f) return;
 
-        if (az < 1.0f) {
-            a = glm::vec3(from.x, from.y, sqrt(1.0f - az));
-        }
-        else {
-            a = glm::vec3(from.x, from.y, 0.0f);
-            a = glm::normalize(a);
-        }
+        //if (az < 1.0f) {
+        //    a = glm::vec3(from.x, from.y, sqrt(1.0f - az));
+        //}
+        //else {
+        //    a = glm::vec3(from.x, from.y, 0.0f);
+        //    a = glm::normalize(a);
+        //}
 
-        if (bz < 1.0f) {
-            b = glm::vec3(to.x, to.y, sqrt(1.0f - bz));
-        }
-        else {
-            b = glm::vec3(to.x, to.y, 0.0f);
-            b = glm::normalize(b);
-        }
+        //if (bz < 1.0f) {
+        //    b = glm::vec3(to.x, to.y, sqrt(1.0f - bz));
+        //}
+        //else {
+        //    b = glm::vec3(to.x, to.y, 0.0f);
+        //    b = glm::normalize(b);
+        //}
 
-        float angle = acosf(glm::min(1.0f, glm::dot(a, b)));
+        //float angle = acosf(glm::min(1.0f, glm::dot(a, b)));
 
-        glm::vec3 axis = glm::cross(a, b);
-        axis = glm::normalize(axis);
+        //glm::vec3 axis = glm::cross(a, b);
+        //axis = glm::normalize(axis);
 
-        mDirty = true;
+        //mDirty = true;
 
-        glm::quat delta = glm::angleAxis(angle, axis);
-        mRot *= delta;
+        //glm::quat delta = glm::angleAxis(angle, axis);
+        //mRot *= delta;
     }
 
 protected:
