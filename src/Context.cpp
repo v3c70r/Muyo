@@ -1,7 +1,7 @@
-#include "context.hpp"
+#include "Context.h"
 #include <array>
 #include "assert.h"
-void RenderContext::init(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool)
+void RenderContext::initialize(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool)
 {
     m_pCommandPool = pPool;
     m_pDevice = pDevice;

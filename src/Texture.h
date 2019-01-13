@@ -4,7 +4,7 @@
 #include "Buffer.h"
 #include "Util.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include "thirdparty/stb_image.h"
+#include "../thirdparty/stb_image.h"
 
 class Texture
 {

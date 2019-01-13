@@ -18,7 +18,7 @@ file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_LIBRARY_PATH=${VK_LIBRARY_PA
 file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_ICD_FILENAMES=${VK_ICD_FILENAMES}\n")
 
 
-set (CMAKE_CXX_FLAGS "-std=c++11 -Wall -pthread -Wno-missing-braces")
+set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wno-missing-braces")
 set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "-g")
 
 link_directories(${VK_LIBRARY_PATH})
@@ -38,7 +38,7 @@ add_library( imgui
 
 
 add_executable( helloVulkan
-    helloVulkan.cpp thirdparty/tiny_obj_loader.cc context.cpp
+    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/Context.cpp
     )
 target_link_libraries(helloVulkan glfw vulkan imgui)
 

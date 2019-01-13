@@ -8,8 +8,8 @@ class RenderContext: public ContextBase
 {
 public:
     RenderContext() : m_pCommandPool(nullptr){};
-    void init(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool);
-    void finalize();
+    void initialize(size_t numBuffers, VkDevice *pDevice, VkCommandPool* pPool) override;
+    void finalize() override;
     void startRecording() override;
     void endRecording() override;
 
@@ -20,7 +20,7 @@ public:
 
     void swap();
     bool isRecording() const override { return m_recording[s_currentContext]; }
-    VkCommandBuffer& getCommandBuffer()
+    VkCommandBuffer& getCommandBuffer() override
     {
         return m_commandBuffers[s_currentContext];
     }

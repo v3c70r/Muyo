@@ -15,14 +15,15 @@
 
 #include "ContextManager.h"
 #include "DepthResource.h"
-#include "Texture.hpp"
+#include "Texture.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
-#include "camera.hpp"
+#include "Camera.h"
+#include "Context.h"
 
-#include "thirdparty/tiny_obj_loader.h"
-#include "thirdparty/imgui/imgui.h"
-#include "thirdparty/imgui/imgui_impl_vulkan.h"
+#include "../thirdparty/tiny_obj_loader.h"
+#include "../thirdparty/imgui/imgui.h"
+#include "../thirdparty/imgui/imgui_impl_vulkan.h"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -1102,14 +1103,16 @@ void createCommandPool()
 void createCommandBuffers(const VertexBuffer& vertexBuffer,
                           const IndexBuffer& indexBuffer)
 {
-    s_contextManager.getContext(CONTEXT_OBJECT).init(s_numBuffers, &s_device, &s_commandPool);
+    s_contextManager.Initalize();
+    s_contextManager.getContext(CONTEXT_SCENE)->initialize(s_numBuffers, &s_device, &s_commandPool);
 
-    for (s_currentContext = 0; s_currentContext < s_numBuffers;
-         s_currentContext++) {
-        VkCommandBuffer& currentCmdBuffer = s_contextManager.getContext(CONTEXT_OBJECT).getCommandBuffer();
-        s_contextManager.getContext(CONTEXT_OBJECT).startRecording();
-        s_contextManager.getContext(CONTEXT_OBJECT).beginPass(
-            s_renderPass, s_swapChainFramebuffers[s_currentContext],
+    for (int currentContext = 0; currentContext < s_numBuffers;
+         currentContext++) {
+        RenderContext* renderContext = static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_SCENE));
+        VkCommandBuffer& currentCmdBuffer = renderContext->getCommandBuffer();
+        renderContext->startRecording();
+        renderContext->beginPass(
+            s_renderPass, s_swapChainFramebuffers[currentContext],
             s_swapChainExtent);
 
         VkBuffer vb = vertexBuffer.buffer();
@@ -1128,8 +1131,8 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
                          static_cast<uint32_t>(getIndices().size()), 1, 0, 0,
                          0);
 
-        s_contextManager.getContext(CONTEXT_OBJECT).endPass();
-        s_contextManager.getContext(CONTEXT_OBJECT).endRecording();
+        renderContext->endPass();
+        renderContext->endRecording();
     }
 }
 
@@ -1234,7 +1237,7 @@ void cleanupSwapChain()
 {
     for (auto& framebuffer : s_swapChainFramebuffers)
         vkDestroyFramebuffer(s_device, framebuffer, nullptr);
-    s_contextManager.getContext(CONTEXT_OBJECT).finalize();
+    s_contextManager.getContext(CONTEXT_SCENE)->finalize();
     vkDestroyPipeline(s_device, s_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(s_device, s_pipelineLayout, nullptr);
     vkDestroyRenderPass(s_device, s_renderPass, nullptr);
@@ -1328,7 +1331,7 @@ void present()
         s_device, s_swapChain, std::numeric_limits<uint64_t>::max(),
         s_imageAvailableSemaphores[0], VK_NULL_HANDLE, &imageIndex);
 
-    s_currentContext = imageIndex;
+    int currentContext = imageIndex;
 
     vkWaitForFences(s_device, 1, &s_waitFences[imageIndex], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
@@ -1346,12 +1349,12 @@ void present()
     submitInfo.pWaitDstStageMask = &stageFlag;
 
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &s_contextManager.getContext(CONTEXT_OBJECT).getCommandBuffer();
+    submitInfo.pCommandBuffers = &s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer();
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_OBJECT).getCommandBuffer());
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer());
 
     assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
                          s_waitFences[imageIndex]) == VK_SUCCESS);

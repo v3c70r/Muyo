@@ -1,7 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-#include "Texture.hpp"
+#include "Texture.h"
 // Depth image
 class DepthResource {
 public:
