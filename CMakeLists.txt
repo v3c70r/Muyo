@@ -5,29 +5,55 @@ if (NOT DEFINED VK_SDK_PATH)
     message(FATAL_ERROR "VK_SDK_PATH is not defined")
 endif()
 
-find_package(glfw3 3.2 REQUIRED)
+# Look for dependencies
+
+# Look for precompiled glfw library
+find_package(glfw3 3.2)
+
+# Otherwise, build from source
+if (NOT ${glfw3_FOUND})
+    # Build glfw from source
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
+endif()
+
+find_package(glm)
+if (NOT ${glm_FOUND})
+    set(GLM_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/glm)
+endif()
 
 message(STATUS "Set VK_SDK_PATH at ${VK_SDK_PATH}")
 set (VK_INCLUDE_PATH ${VK_SDK_PATH}/include)
 
 set (VK_LAYER_PATH    ${VK_SDK_PATH}/etc/vulkan/explicit_layer.d)
 set (VK_LIBRARY_PATH  ${VK_SDK_PATH}/lib/)
+set (VK_BIN_PATH  ${VK_SDK_PATH}/bin/)
 set (VK_ICD_FILENAMES ${VK_SDK_PATH}/etc/vulkan/icd.d/MoltenVK_icd.json)
 file(WRITE  ${PROJECT_BINARY_DIR}/env.sh "export VK_LAYER_PATH=${VK_LAYER_PATH}\n")
 file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_LIBRARY_PATH=${VK_LIBRARY_PATH}\n")
 file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_ICD_FILENAMES=${VK_ICD_FILENAMES}\n")
 
 
-set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wno-missing-braces")
-set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "-g")
+if (UNIX)
+    set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wo-missing-braces")
+    set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "-g")
+    set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
+elseif(MSVC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W4")
+endif()
 
-link_directories(${VK_LIBRARY_PATH})
+link_directories(${VK_LIBRARY_PATH};${VK_BIN_PATH})
 
-include_directories(${VK_INCLUDE_PATH}
+
+include_directories(
+    ${VK_INCLUDE_PATH}
     ${GLFW3_INCLUDE_DIR}
+    ${GLM_INCLUDE_DIRS}
     )
 
-add_library( imgui
+add_library( imgui SHARED
     thirdparty/imgui/imgui.cpp
     thirdparty/imgui/imgui_demo.cpp
     thirdparty/imgui/imgui_draw.cpp
@@ -35,12 +61,10 @@ add_library( imgui
     thirdparty/imgui/imgui_impl_vulkan.cpp
     )
     
-
-
 add_executable( helloVulkan
     src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/Context.cpp
     )
-target_link_libraries(helloVulkan glfw vulkan imgui)
+target_link_libraries(helloVulkan glfw imgui vulkan-1)
 
 # Build shaders
 set (GLSL_VALIDATOR ${VK_SDK_PATH}/bin/glslangValidator)
