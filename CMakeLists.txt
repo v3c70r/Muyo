@@ -37,7 +37,7 @@ file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_ICD_FILENAMES=${VK_ICD_FILEN
 
 
 if (UNIX)
-    set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wo-missing-braces")
+    set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wno-missing-braces")
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "-g")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
 elseif(MSVC)
@@ -53,7 +53,7 @@ include_directories(
     ${GLM_INCLUDE_DIRS}
     )
 
-add_library( imgui SHARED
+add_library( imgui
     thirdparty/imgui/imgui.cpp
     thirdparty/imgui/imgui_demo.cpp
     thirdparty/imgui/imgui_draw.cpp
@@ -61,10 +61,13 @@ add_library( imgui SHARED
     thirdparty/imgui/imgui_impl_vulkan.cpp
     )
     
+#Enable CPPCHECK
+set(CMAKE_CXX_CPPCHECK "cppcheck")
+
 add_executable( helloVulkan
-    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/Context.cpp
+    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp
     )
-target_link_libraries(helloVulkan glfw imgui vulkan-1)
+target_link_libraries(helloVulkan glfw imgui vulkan)
 
 # Build shaders
 set (GLSL_VALIDATOR ${VK_SDK_PATH}/bin/glslangValidator)
@@ -100,6 +103,7 @@ add_custom_command(
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/assets ${PROJECT_BINARY_DIR}/assets
     )
+
 #add_custom_command(TARGET helloVulkan POST_BUILD
 #    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:helloVulkan>/shaders/"
 #    COMMAND ${CMAKE_COMMAND} -E copy_directory

@@ -19,7 +19,7 @@
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
 #include "Camera.h"
-#include "Context.h"
+#include "RenderContext.h"
 
 #include "../thirdparty/tiny_obj_loader.h"
 #include "../thirdparty/imgui/imgui.h"
