@@ -1,14 +1,17 @@
 cmake_minimum_required(VERSION 3.0.0)
 
 # Set system env
-if (NOT DEFINED VK_SDK_PATH)
-    message(FATAL_ERROR "VK_SDK_PATH is not defined")
-endif()
+#if (NOT DEFINED VK_SDK_PATH)
+#    message(FATAL_ERROR "VK_SDK_PATH is not defined")
+#endif()
 
-# Look for dependencies
+set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+### Handle dependencies
+
+## GLFW
 # Look for precompiled glfw library
-find_package(glfw3 3.2)
+find_package(glfw3 3.2 QUIET)
 
 # Otherwise, build from source
 if (NOT ${glfw3_FOUND})
@@ -19,22 +22,24 @@ if (NOT ${glfw3_FOUND})
     add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
 endif()
 
-find_package(glm)
+## GLM
+find_package(glm QUIET)
 if (NOT ${glm_FOUND})
     set(GLM_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/glm)
 endif()
 
-message(STATUS "Set VK_SDK_PATH at ${VK_SDK_PATH}")
-set (VK_INCLUDE_PATH ${VK_SDK_PATH}/include)
-
-set (VK_LAYER_PATH    ${VK_SDK_PATH}/etc/vulkan/explicit_layer.d)
-set (VK_LIBRARY_PATH  ${VK_SDK_PATH}/lib/)
-set (VK_BIN_PATH  ${VK_SDK_PATH}/bin/)
-set (VK_ICD_FILENAMES ${VK_SDK_PATH}/etc/vulkan/icd.d/MoltenVK_icd.json)
-file(WRITE  ${PROJECT_BINARY_DIR}/env.sh "export VK_LAYER_PATH=${VK_LAYER_PATH}\n")
-file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_LIBRARY_PATH=${VK_LIBRARY_PATH}\n")
-file(APPEND ${PROJECT_BINARY_DIR}/env.sh "export VK_ICD_FILENAMES=${VK_ICD_FILENAMES}\n")
-
+## VULKAN
+find_package(Vulkan REQUIRED)
+find_file(GLSL_VALIDATOR 
+    NAMES 
+    glslangValidator glslangValidator.exe 
+    PATHS 
+    "${Vulkan_INCLUDE_DIR}/../Bin"
+    "${Vulkan_INCLUDE_DIR}/../bin"
+    )
+if(NOT EXISTS ${GLSL_VALIDATOR})
+    message(FATAL_ERROR "Can't find glslangValidator at ${GLSL_VALIDATOR}")
+endif()
 
 if (UNIX)
     set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wno-missing-braces")
@@ -44,11 +49,12 @@ elseif(MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W4")
 endif()
 
-link_directories(${VK_LIBRARY_PATH};${VK_BIN_PATH})
+
+#link_directories(${VK_LIBRARY_PATH};${VK_BIN_PATH})
 
 
 include_directories(
-    ${VK_INCLUDE_PATH}
+    ${Vulkan_INCLUDE_DIR}
     ${GLFW3_INCLUDE_DIR}
     ${GLM_INCLUDE_DIRS}
     )
@@ -67,22 +73,22 @@ set(CMAKE_CXX_CPPCHECK "cppcheck")
 add_executable( helloVulkan
     src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp
     )
-target_link_libraries(helloVulkan glfw imgui vulkan)
+target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES})
 
 # Build shaders
-set (GLSL_VALIDATOR ${VK_SDK_PATH}/bin/glslangValidator)
 file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.frag"
     "${CMAKE_SOURCE_DIR}/shaders/*.vert"
     )
 
+
 message(STATUS "Shaders: ${GLSL_SOURCE_FILES}")
 foreach (GLSL ${GLSL_SOURCE_FILES})
     get_filename_component(FILE_NAME ${GLSL} NAME)
-    set(SPIRV "${PROJECT_BINARY_DIR}/shaders/${FILE_NAME}.spv")
+    set(SPIRV "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${FILE_NAME}.spv")
     add_custom_command(
         OUTPUT ${SPIRV}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${PROJECT_BINARY_DIR}/shaders/"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
         COMMAND ${GLSL_VALIDATOR} -V ${GLSL} -o ${SPIRV}
         DEPENDS ${GLSL})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
@@ -101,13 +107,14 @@ add_dependencies(helloVulkan Shaders)
 add_custom_command(
     TARGET helloVulkan
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/assets ${PROJECT_BINARY_DIR}/assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/assets ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
     )
+message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 #add_custom_command(TARGET helloVulkan POST_BUILD
 #    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:helloVulkan>/shaders/"
 #    COMMAND ${CMAKE_COMMAND} -E copy_directory
-#    "${PROJECT_BINARY_DIR}/shaders"
+#    "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders"
 #    "$<TARGET_FILE_DIR:helloVulkan>/shaders"
 #    )
 #
