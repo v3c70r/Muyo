@@ -1085,7 +1085,6 @@ void createFramebuffers()
         assert(vkCreateFramebuffer(s_device, &framebufferInfo, nullptr,
                                    &s_swapChainFramebuffers[i]) == VK_SUCCESS);
     }
-
 }
 
 void createCommandPool()
@@ -1312,8 +1311,8 @@ void cleanup()
         vkDestroySemaphore(s_device, somaphore, nullptr);
     for (auto& fence : s_waitFences) vkDestroyFence(s_device, fence, nullptr);
 
-    ImGui::DestroyContext();
-    ImGui_ImplVulkan_Shutdown();
+    //ImGui::DestroyContext();
+    //ImGui_ImplVulkan_Shutdown();
 
     vkDestroyCommandPool(s_device, s_commandPool, nullptr);
     vkDestroySurfaceKHR(s_instance, s_surface, nullptr);
@@ -1331,7 +1330,7 @@ void present()
         s_device, s_swapChain, std::numeric_limits<uint64_t>::max(),
         s_imageAvailableSemaphores[0], VK_NULL_HANDLE, &imageIndex);
 
-    int currentContext = imageIndex;
+    s_currentContext = imageIndex;
 
     vkWaitForFences(s_device, 1, &s_waitFences[imageIndex], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
@@ -1354,7 +1353,7 @@ void present()
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer());
+    //ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer());
 
     assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
                          s_waitFences[imageIndex]) == VK_SUCCESS);
@@ -1444,7 +1443,7 @@ int main()
         createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
         createSemaphores();
         createFences();
-        initImGui();
+        //initImGui();
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow)) {
@@ -1456,10 +1455,10 @@ int main()
                 //ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice, s_device, s_pWindow, nullptr, s_swapChainExtent.width, s_swapChainExtent.height);
                 s_resizeWanted = false;
             }
-            ImGui_ImplVulkan_NewFrame();
-            ImGui::NewFrame();
-            ImGui::Text("Hello");
-
+//            ImGui_ImplVulkan_NewFrame();
+//            ImGui::NewFrame();
+//            ImGui::Text("Hello");
+//
             updateUniformBuffer(s_pUniformBuffer);
             // wait on device to make sure it has been drawn
             // assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);

@@ -29,13 +29,23 @@ if (NOT ${glm_FOUND})
 endif()
 
 ## VULKAN
-find_package(Vulkan REQUIRED)
+if(APPLE)
+    set (Vulkan_INCLUDE_DIR $ENV{VULKAN_SDK}/include)
+    set (Vulkan_LIBRARIES $ENV{VULKAN_SDK}/lib/libvulkan.1.dylib)
+    message (STATUS "Found vulkan " ${Vulkan_INCLUDE_DIR})
+else()
+    find_package(Vulkan REQUIRED)
+endif()
+
+
 find_file(GLSL_VALIDATOR 
     NAMES 
     glslangValidator glslangValidator.exe 
     PATHS 
     "${Vulkan_INCLUDE_DIR}/../Bin"
     "${Vulkan_INCLUDE_DIR}/../bin"
+    "$ENV{VULKAN_SDK}/bin"
+    "$ENV{VULKAN_SDK}/Bin"
     )
 if(NOT EXISTS ${GLSL_VALIDATOR})
     message(FATAL_ERROR "Can't find glslangValidator at ${GLSL_VALIDATOR}")
@@ -71,7 +81,7 @@ add_library( imgui
 set(CMAKE_CXX_CPPCHECK "cppcheck")
 
 add_executable( helloVulkan
-    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp
+    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp src/ImmediateContext.cpp
     )
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES})
 
