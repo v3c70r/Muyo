@@ -1105,13 +1105,13 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
     s_contextManager.Initalize();
     s_contextManager.getContext(CONTEXT_SCENE)->initialize(s_numBuffers, &s_device, &s_commandPool);
 
-    for (int currentContext = 0; currentContext < s_numBuffers;
-         currentContext++) {
+    for (s_currentContext = 0; s_currentContext < s_numBuffers;
+         s_currentContext++) {
         RenderContext* renderContext = static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_SCENE));
         VkCommandBuffer& currentCmdBuffer = renderContext->getCommandBuffer();
         renderContext->startRecording();
         renderContext->beginPass(
-            s_renderPass, s_swapChainFramebuffers[currentContext],
+            s_renderPass, s_swapChainFramebuffers[s_currentContext],
             s_swapChainExtent);
 
         VkBuffer vb = vertexBuffer.buffer();
