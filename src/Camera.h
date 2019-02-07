@@ -58,10 +58,10 @@ public:
 
     void update() override
     {
-        glm::mat4 p = glm::translate(glm::mat4(1.0), -mPos);
-        glm::mat4 r = glm::toMat4(mRot);
-        glm::mat4 d = glm::translate(glm::mat4(1.0), glm::vec3(0.0, 0.0, mZoom));
-        mView = (d * (r * p));
+        //glm::mat4 p = glm::translate(glm::mat4(1.0), -mPos);
+        //glm::mat4 r = glm::toMat4(mRot);
+        //glm::mat4 d = glm::translate(glm::mat4(1.0), glm::vec3(0.0, 0.0, mZoom));
+        //mView = (d * (r * p));
     }
 
     void rotateArcball(glm::vec2 from, glm::vec2 to)
@@ -107,6 +107,9 @@ public:
 protected:
     glm::vec2 mPrePos;
     glm::quat mRot;
+
+    glm::vec2 mLastPos;
+    glm::vec2 mCurPos;
     bool mDirty;
     float mZoom;
 };

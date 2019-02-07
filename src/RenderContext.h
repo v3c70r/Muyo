@@ -3,7 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 
-thread_local static size_t s_currentContext;
+extern thread_local size_t s_currentContext;
 class RenderContext: public ContextBase
 {
 public:

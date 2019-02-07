@@ -29,6 +29,7 @@ const int WIDTH = 800;
 const int HEIGHT = 600;
 
 static VkInstance s_instance;
+thread_local size_t s_currentContext;
 
 
 static ContextManager s_contextManager;
