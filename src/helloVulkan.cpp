@@ -55,28 +55,18 @@ static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (GLFW_PRESS == action)
         {
-            if (!s_isLbuttonDown )
-                s_startDragging = true;
-            s_isLbuttonDown = true;
+            s_arcball.startDragging();
         }
         else if (GLFW_RELEASE == action)
         {
-            s_isLbuttonDown = false;
+            s_arcball.stopDragging();
         }
     }
 
 }
 static void mouseCursorCallback( GLFWwindow * window, double xpos, double ypos)  
 {
-    if (s_startDragging)
-    {
-        s_arcball.startDrag(glm::vec2(xpos, ypos));
-        s_startDragging = false;
-    }
-    else if (s_isLbuttonDown)
-    {
-        s_arcball.updateDrag(glm::vec2(xpos, ypos));
-    }
+    s_arcball.updateDrag(glm::vec2(xpos, ypos));
 }
 // GLFW key callbacks
 static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,

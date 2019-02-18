@@ -36,24 +36,37 @@ class Arcball : public Camera {
 public:
     Arcball(glm::mat4 proj, glm::mat4 view) : Camera(proj, view), mDirty(false)
     {
-        mPos = glm::vec3(2.0);
-        mRot = glm::angleAxis(0.0f, glm::vec3(1.0, 0.0, 0.0));
         mZoom = 2.0;
         update();
     }
-    void startDrag(glm::vec2 screenCoord)
+    void startDragging(glm::vec2 screenCoord)
     {
-        mPrePos = screenCoord;
+        mIsDragging = true;
+        mLastPos = mCurPos = screenCoord;
+    }
+    void stopDragging()
+    {
+        mIsDragging = false;
+    }
+
+    bool isDragging() const
+    {
+        return mIsDragging;
     }
     void updateDrag(glm::vec2 screenCoord)
     {
-        glm::vec2 from(2.0f * mPrePos / mScreenExtent - glm::vec2(1.0));
-        glm::vec2 to(2.0f * screenCoord / mScreenExtent - glm::vec2(1.0));
-        to.y *= -1.0;
-        from.y *= -1.0;
-        rotateArcball(from, to);
-        update();
-        mPrePos = screenCoord;
+        if (isDragging())
+        {
+            mCurPos = screenCoord;
+            if (mCurPos != mLastPos)
+            {
+                glm::vec3 va = mGetArcballVector(mLastPos);
+                glm::vec3 vb = mGetArcballVector(mCurPos);
+                float angle = acos(glm::min(1.0f, glm::dot(va, vb)));
+                glm::vec3 axisInCameraCoord = glm::cross(va, vb);
+                glm::mat3 camera2obj = glm::inverse(mView);
+            }
+        }
     }
 
     void update() override
@@ -64,52 +77,26 @@ public:
         //mView = (d * (r * p));
     }
 
-    void rotateArcball(glm::vec2 from, glm::vec2 to)
+    glm::vec3 mGetArcballVector(glm::vec2 position)
     {
-        //glm::vec3 a, b;
-        //float az = from.x * from.x + from.y * from.y;
-        //float bz = to.x * to.x + to.y * to.y;
-
-        //std::cout<<"=="<<std::endl;
-        //std::cout<<"a: "<<glm::to_string(from)<<std::endl;
-        //std::cout<<"b: "<<glm::to_string(to)<<std::endl;
-
-        //// keep the controls stable by rejecting very small movements.
-        //if (fabsf(az - bz) < 1e-5f) return;
-
-        //if (az < 1.0f) {
-        //    a = glm::vec3(from.x, from.y, sqrt(1.0f - az));
-        //}
-        //else {
-        //    a = glm::vec3(from.x, from.y, 0.0f);
-        //    a = glm::normalize(a);
-        //}
-
-        //if (bz < 1.0f) {
-        //    b = glm::vec3(to.x, to.y, sqrt(1.0f - bz));
-        //}
-        //else {
-        //    b = glm::vec3(to.x, to.y, 0.0f);
-        //    b = glm::normalize(b);
-        //}
-
-        //float angle = acosf(glm::min(1.0f, glm::dot(a, b)));
-
-        //glm::vec3 axis = glm::cross(a, b);
-        //axis = glm::normalize(axis);
-
-        //mDirty = true;
-
-        //glm::quat delta = glm::angleAxis(angle, axis);
-        //mRot *= delta;
+        glm::vec3 P = glm::vec3(1.0 * position.x / mScreenExtent.x * 2 - 1.0,
+                                1.0 * position.y / mScreenExtent.y * 2 - 1.0, 0);
+        P.y = -P.y;
+        float OP_squared = P.x * P.x + P.y * P.y;
+        if (OP_squared <= 1 * 1)
+            P.z = sqrt(1 * 1 - OP_squared);  // Pythagoras
+        else
+            P = glm::normalize(P);  // nearest point
+        return P;
     }
 
 protected:
-    glm::vec2 mPrePos;
-    glm::quat mRot;
 
     glm::vec2 mLastPos;
     glm::vec2 mCurPos;
+
+    glm::vec2 mScreenExtent;
+    bool mIsDragging;
     bool mDirty;
     float mZoom;
 };
