@@ -16,7 +16,7 @@ public:
     {
     }
     glm::mat4 getProjMat() const { return mProj; }
-    glm::mat4 getViewMat() const { return mView; }
+    virtual glm::mat4 getViewMat() const { return mView; }
     virtual void resize(const glm::vec2 &newSize)
     {
         mScreenExtent = newSize;
@@ -34,19 +34,28 @@ protected:
 
 class Arcball : public Camera {
 public:
-    Arcball(glm::mat4 proj, glm::mat4 view) : Camera(proj, view), mDirty(false)
+    Arcball(glm::mat4 proj, glm::mat4 view)
+        : Camera(proj, view), 
+        mLastPos(glm::vec2(0.0)),
+        mCurPos(glm::vec2(0.0)),
+        mArcballRotate(glm::mat4(1.0)),
+        mIsDragging(false), 
+        mIsFirstPos(false),
+        mZoom(1.0)
+        
     {
         mZoom = 2.0;
         update();
     }
-    void startDragging(glm::vec2 screenCoord)
+    void startDragging()
     {
         mIsDragging = true;
-        mLastPos = mCurPos = screenCoord;
+        mIsFirstPos = true;
     }
     void stopDragging()
     {
         mIsDragging = false;
+        mIsFirstPos = true;
     }
 
     bool isDragging() const
@@ -55,30 +64,48 @@ public:
     }
     void updateDrag(glm::vec2 screenCoord)
     {
+        if (isDragging() && mIsFirstPos)
+        {
+            // handle first dragging point
+            mLastPos = mCurPos = screenCoord;
+            mIsFirstPos = false;
+        }
         if (isDragging())
         {
             mCurPos = screenCoord;
             if (mCurPos != mLastPos)
             {
+                // https://en.wikibooks.org/wiki/OpenGL_Programming/Modern_OpenGL_Tutorial_Arcball
                 glm::vec3 va = mGetArcballVector(mLastPos);
                 glm::vec3 vb = mGetArcballVector(mCurPos);
                 float angle = acos(glm::min(1.0f, glm::dot(va, vb)));
-                glm::vec3 axisInCameraCoord = glm::cross(va, vb);
-                glm::mat3 camera2obj = glm::inverse(mView);
+                glm::vec4 axisInCameraCoord(glm::cross(va, vb), 0.0);
+                axisInCameraCoord = glm::normalize(axisInCameraCoord);
+                glm::mat4 camera2World = glm::inverse(mView);
+                glm::vec4 axisInWorld = glm::normalize(camera2World * axisInCameraCoord);
+
+                mArcballRotate = glm::rotate(mArcballRotate, glm::degrees(angle), glm::vec3(axisInWorld));
+
+                std::cout<<glm::to_string(axisInWorld)<<std::endl;
+                //std::cout<<glm::to_string(axisInCameraCoord)<<std::endl;
+
+                mLastPos = mCurPos;
             }
         }
     }
 
+    glm::mat4 getViewMat() const override
+    {
+        return mView * mArcballRotate;
+    }
+
     void update() override
     {
-        //glm::mat4 p = glm::translate(glm::mat4(1.0), -mPos);
-        //glm::mat4 r = glm::toMat4(mRot);
-        //glm::mat4 d = glm::translate(glm::mat4(1.0), glm::vec3(0.0, 0.0, mZoom));
-        //mView = (d * (r * p));
     }
 
     glm::vec3 mGetArcballVector(glm::vec2 position)
     {
+        // screen -> NDC
         glm::vec3 P = glm::vec3(1.0 * position.x / mScreenExtent.x * 2 - 1.0,
                                 1.0 * position.y / mScreenExtent.y * 2 - 1.0, 0);
         P.y = -P.y;
@@ -94,10 +121,10 @@ protected:
 
     glm::vec2 mLastPos;
     glm::vec2 mCurPos;
+    glm::mat4 mArcballRotate;
 
-    glm::vec2 mScreenExtent;
     bool mIsDragging;
-    bool mDirty;
+    bool mIsFirstPos;
     float mZoom;
 };
 

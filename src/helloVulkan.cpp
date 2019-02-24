@@ -1,4 +1,5 @@
 #define GLFW_INCLUDE_VULKAN
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 #include <array>
@@ -42,11 +43,11 @@ static bool s_isValidationEnabled = true;
 
 static GLFWwindow* s_pWindow = nullptr;
 
-static Arcball s_arcball(glm::perspective(glm::radians(45.0f), 800.0f / 600.0f,
+static Arcball s_arcball(glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT,
                                           0.1f, 10.0f),
-                         glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),
                                      glm::vec3(0.0f, 0.0f, 0.0f),
-                                     glm::vec3(0.0f, 0.0f, 1.0f)));
+                                     glm::vec3(0.0f, 1.0f, 0.0f)));
 static bool s_isLbuttonDown = false;
 static bool s_startDragging = false;
 // GLFW mouse callback
@@ -1371,10 +1372,11 @@ void updateUniformBuffer(UniformBuffer* ub)
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(
                      currentTime - startTime)
-                     .count();
+                     .count() * 0.01;
     UnifromBufferObject ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
+    //ubo.model = glm::rotate(glm::mat4(1.0), glm::degrees(time), glm::vec3(0.0, 1.0, 0.0));
     ubo.model = glm::mat4(1.0);
 
     ubo.view = s_arcball.getViewMat();
