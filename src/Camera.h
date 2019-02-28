@@ -82,12 +82,13 @@ public:
                 glm::vec4 axisInCameraCoord(glm::cross(va, vb), 0.0);
                 axisInCameraCoord = glm::normalize(axisInCameraCoord);
                 glm::mat4 camera2World = glm::inverse(mView);
+
                 glm::vec4 axisInWorld = glm::normalize(camera2World * axisInCameraCoord);
+                glm::mat4 world2obj = glm::inverse(mArcballRotate);
+                glm::vec4 axisInObj = world2obj * axisInWorld;
 
-                mArcballRotate = glm::rotate(mArcballRotate, glm::degrees(angle), glm::vec3(axisInWorld));
 
-                std::cout<<glm::to_string(axisInWorld)<<std::endl;
-                //std::cout<<glm::to_string(axisInCameraCoord)<<std::endl;
+                mArcballRotate = glm::rotate(mArcballRotate, angle, glm::vec3(axisInObj));
 
                 mLastPos = mCurPos;
             }
@@ -108,7 +109,7 @@ public:
         // screen -> NDC
         glm::vec3 P = glm::vec3(1.0 * position.x / mScreenExtent.x * 2 - 1.0,
                                 1.0 * position.y / mScreenExtent.y * 2 - 1.0, 0);
-        P.y = -P.y;
+        P.y = P.y;
         float OP_squared = P.x * P.x + P.y * P.y;
         if (OP_squared <= 1 * 1)
             P.z = sqrt(1 * 1 - OP_squared);  // Pythagoras

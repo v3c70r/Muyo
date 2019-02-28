@@ -43,11 +43,12 @@ static bool s_isValidationEnabled = true;
 
 static GLFWwindow* s_pWindow = nullptr;
 
-static Arcball s_arcball(glm::perspective(glm::radians(45.0f), (float)WIDTH / (float)HEIGHT,
-                                          0.1f, 10.0f),
-                         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),
-                                     glm::vec3(0.0f, 0.0f, 0.0f),
-                                     glm::vec3(0.0f, 1.0f, 0.0f)));
+static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
+                                          (float)WIDTH / (float)HEIGHT, 0.1f,
+                                          10.0f),
+                         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),   // Eye
+                                     glm::vec3(0.0f, 0.0f, 0.0f),    // Center
+                                     glm::vec3(0.0f, 1.0f, 0.0f)));  // Up
 static bool s_isLbuttonDown = false;
 static bool s_startDragging = false;
 // GLFW mouse callback
@@ -63,7 +64,6 @@ static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
             s_arcball.stopDragging();
         }
     }
-
 }
 static void mouseCursorCallback( GLFWwindow * window, double xpos, double ypos)  
 {
