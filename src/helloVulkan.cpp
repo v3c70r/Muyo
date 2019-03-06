@@ -49,8 +49,6 @@ static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                          glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),   // Eye
                                      glm::vec3(0.0f, 0.0f, 0.0f),    // Center
                                      glm::vec3(0.0f, 1.0f, 0.0f)));  // Up
-static bool s_isLbuttonDown = false;
-static bool s_startDragging = false;
 // GLFW mouse callback
 static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
 {
@@ -1096,7 +1094,9 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
 {
     s_contextManager.Initalize();
     s_contextManager.getContext(CONTEXT_SCENE)->initialize(s_numBuffers, &s_device, &s_commandPool);
+    s_contextManager.getContext(CONTEXT_UI)->initialize(s_numBuffers, &s_device, &s_commandPool);
 
+    // Record command buffer to draw static objects
     for (s_currentContext = 0; s_currentContext < s_numBuffers;
          s_currentContext++) {
         RenderContext* renderContext = static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_SCENE));
@@ -1228,7 +1228,10 @@ void cleanupSwapChain()
 {
     for (auto& framebuffer : s_swapChainFramebuffers)
         vkDestroyFramebuffer(s_device, framebuffer, nullptr);
+
     s_contextManager.getContext(CONTEXT_SCENE)->finalize();
+    s_contextManager.getContext(CONTEXT_UI)->finalize();
+
     vkDestroyPipeline(s_device, s_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(s_device, s_pipelineLayout, nullptr);
     vkDestroyRenderPass(s_device, s_renderPass, nullptr);
@@ -1303,8 +1306,8 @@ void cleanup()
         vkDestroySemaphore(s_device, somaphore, nullptr);
     for (auto& fence : s_waitFences) vkDestroyFence(s_device, fence, nullptr);
 
-    //ImGui::DestroyContext();
-    //ImGui_ImplVulkan_Shutdown();
+    ImGui::DestroyContext();
+    ImGui_ImplVulkan_Shutdown();
 
     vkDestroyCommandPool(s_device, s_commandPool, nullptr);
     vkDestroySurfaceKHR(s_instance, s_surface, nullptr);
@@ -1345,7 +1348,7 @@ void present()
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
-    //ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer());
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_UI)->getCommandBuffer());
 
     assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
                          s_waitFences[imageIndex]) == VK_SUCCESS);
@@ -1436,7 +1439,7 @@ int main()
         createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
         createSemaphores();
         createFences();
-        //initImGui();
+        initImGui();
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow)) {
@@ -1448,7 +1451,7 @@ int main()
                 //ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice, s_device, s_pWindow, nullptr, s_swapChainExtent.width, s_swapChainExtent.height);
                 s_resizeWanted = false;
             }
-//            ImGui_ImplVulkan_NewFrame();
+            ImGui_ImplVulkan_NewFrame();
 //            ImGui::NewFrame();
 //            ImGui::Text("Hello");
 //
