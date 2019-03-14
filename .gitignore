@@ -2,4 +2,8 @@ helloVulkan.dSYM
 helloVulkan.dSYM/*
 *.swp
 helloVulkan
-debug_vk
+*tags
+*.kdev4
+build
+*.user
+.ycm_extra_conf.py
