@@ -52,7 +52,8 @@ static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
 // GLFW mouse callback
 static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
 {
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+    if (button == GLFW_MOUSE_BUTTON_LEFT)
+    {
         if (GLFW_PRESS == action)
         {
             s_arcball.startDragging();
@@ -63,13 +64,13 @@ static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
         }
     }
 }
-static void mouseCursorCallback( GLFWwindow * window, double xpos, double ypos)  
+static void mouseCursorCallback(GLFWwindow* window, double xpos, double ypos)
 {
     s_arcball.updateDrag(glm::vec2(xpos, ypos));
 }
 // GLFW key callbacks
 static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
-                         int mods)
+                        int mods)
 {
     std::cout << "Key pressed\n";
     // OpenGLRenderer* renderer =
@@ -143,7 +144,7 @@ static VkPipeline s_graphicsPipeline;
 
 // Command
 static VkCommandPool s_commandPool;
-//static std::vector<VkCommandBuffer> s_commandBuffers;
+// static std::vector<VkCommandBuffer> s_commandBuffers;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -154,7 +155,8 @@ static std::vector<VkFence> s_waitFences;
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-struct TinyObjInfo {
+struct TinyObjInfo
+{
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -165,10 +167,12 @@ void LoadMesh(const std::string path, TinyObjInfo& objInfo)
     std::string err;
     bool ret = tinyobj::LoadObj(&(objInfo.attrib), &(objInfo.shapes),
                                 &(objInfo.materials), &err, path.c_str());
-    if (!ret) {
+    if (!ret)
+    {
         std::cerr << err << std::endl;
     }
-    else {
+    else
+    {
         std::cout << "Num verts :" << objInfo.attrib.vertices.size() / 3
                   << std::endl;
         std::cout << "Num Normals :" << objInfo.attrib.normals.size() / 3
@@ -177,7 +181,8 @@ void LoadMesh(const std::string path, TinyObjInfo& objInfo)
                   << std::endl;
 
         // Print out mesh summery
-        for (size_t i = 0; i < objInfo.shapes.size(); i++) {
+        for (size_t i = 0; i < objInfo.shapes.size(); i++)
+        {
             std::cout << "Shape " << i << ": " << std::endl;
             tinyobj::shape_t& shape = objInfo.shapes[i];
             std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
@@ -193,13 +198,15 @@ std::vector<Vertex> getVertices()
     std::vector<Vertex> res;
     size_t numVert = s_objInfo.attrib.vertices.size() / 3;
     res.reserve(numVert);
-    for (size_t i = 0; i < numVert; i++) {
+    for (size_t i = 0; i < numVert; i++)
+    {
         res.emplace_back(Vertex({{s_objInfo.attrib.vertices[3 * i],
                                   s_objInfo.attrib.vertices[3 * i + 1],
                                   s_objInfo.attrib.vertices[3 * i + 2]},
                                  {0.0, 0.0, 0.0}}));
     }
-    for (const auto& index : s_objInfo.shapes[0].mesh.indices) {
+    for (const auto& index : s_objInfo.shapes[0].mesh.indices)
+    {
         res[index.vertex_index].textureCoord = glm::vec3(
             s_objInfo.attrib.texcoords[2 * index.texcoord_index],
             1.0 - s_objInfo.attrib.texcoords[2 * index.texcoord_index + 1],
@@ -228,7 +235,8 @@ debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType,
               uint64_t obj, size_t location, int32_t code,
               const char* layerPrefix, const char* msg, void* userData)
 {
-    switch (flags) {
+    switch (flags)
+    {
         case VK_DEBUG_REPORT_INFORMATION_BIT_EXT:
             std::cerr << "[INFO] :";
             break;
@@ -280,7 +288,8 @@ void DestroyDebugReportCallbackEXT(VkInstance instance,
 {
     auto func = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(
         instance, "vkDestroyDebugReportCallbackEXT");
-    if (func != nullptr) {
+    if (func != nullptr)
+    {
         func(instance, callback, pAllocator);
     }
 }
@@ -344,7 +353,8 @@ std::vector<VkLayerProperties> getSupportedLayers()
 bool isLayerSupported(const char* layerName)
 {
     std::vector<VkLayerProperties> supportedLayers = getSupportedLayers();
-    for (const auto& layer : supportedLayers) {
+    for (const auto& layer : supportedLayers)
+    {
         if (strcmp(layer.layerName, layerName) == 0) return true;
     }
     return false;
@@ -418,26 +428,31 @@ void createInstance()
     createInfo.enabledExtensionCount = extensions.size();
     createInfo.ppEnabledExtensionNames = extensions.data();
 
-    if (s_isValidationEnabled) {
+    if (s_isValidationEnabled)
+    {
         createInfo.enabledLayerCount = s_validationLayers.size();
         createInfo.ppEnabledLayerNames = s_validationLayers.data();
     }
-    else {
+    else
+    {
         createInfo.enabledLayerCount = 0;
     }
 
-    if (!areLayersSupported(s_validationLayers)) {
+    if (!areLayersSupported(s_validationLayers))
+    {
         throw std::runtime_error("Layers are not fully supported");
     }
 
     VkResult res = vkCreateInstance(&createInfo, nullptr, &s_instance);
-    if (res != VK_SUCCESS) {
+    if (res != VK_SUCCESS)
+    {
         std::cerr << res << std::endl;
         throw std::runtime_error("failed inst");
     }
 }
 // swap chain details
-struct SwapChainSupportDetails {
+struct SwapChainSupportDetails
+{
     VkSurfaceCapabilitiesKHR capabilities;
     std::vector<VkSurfaceFormatKHR> formats;
     std::vector<VkPresentModeKHR> presentModes;
@@ -463,10 +478,12 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 {
     // Choose swapchain resolution
     if (capabilities.currentExtent.width !=
-        std::numeric_limits<uint32_t>::max()) {
+        std::numeric_limits<uint32_t>::max())
+    {
         return capabilities.currentExtent;
     }
-    else {
+    else
+    {
         VkExtent2D actualExtent = {WIDTH, HEIGHT};
 
         actualExtent.width = std::max(
@@ -507,7 +524,8 @@ SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice phyDevice)
 
 // Hardware devices
 
-struct QueueFamilyIndice {
+struct QueueFamilyIndice
+{
     int graphicsFamily = -1;
     int presentFamily = -1;
     bool isComplete() { return graphicsFamily >= 0 && presentFamily >= 0; }
@@ -524,7 +542,8 @@ QueueFamilyIndice mFindQueueFamily(VkPhysicalDevice device)
                                              queueFamilies.data());
 
     int i = 0;
-    for (const auto& queueFamily : queueFamilies) {
+    for (const auto& queueFamily : queueFamilies)
+    {
         // Check for graphics support
         if (queueFamily.queueCount > 0 &&
             queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
@@ -565,7 +584,8 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
 
     // Check for swap chain adequate
     bool swapChainAdequate = false;
-    if (extensionsSupported) {
+    if (extensionsSupported)
+    {
         SwapChainSupportDetails swapChainSupport =
             querySwapChainSupport(device);
         swapChainAdequate = !swapChainSupport.formats.empty() &&
@@ -586,7 +606,8 @@ void pickPysicalDevice()
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(s_instance, &deviceCount, devices.data());
     for (const auto& device : devices)
-        if (mIsDeviceSuitable(device)) {
+        if (mIsDeviceSuitable(device))
+        {
             s_physicalDevice = device;
             break;
         }
@@ -606,7 +627,8 @@ void createLogicalDevice()
 
     float queuePriority = 1.0f;
     // Create a queue for each of the family
-    for (int queueFamily : uniqueQueueFamilise) {
+    for (int queueFamily : uniqueQueueFamilise)
+    {
         VkDeviceQueueCreateInfo queueCreateInfo = {};
         queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         // Queue are stored in the orders
@@ -631,12 +653,14 @@ void createLogicalDevice()
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
     // Enable validation layer on device
-    if (s_isValidationEnabled) {
+    if (s_isValidationEnabled)
+    {
         createInfo.enabledLayerCount =
             static_cast<uint32_t>(s_validationLayers.size());
         createInfo.ppEnabledLayerNames = s_validationLayers.data();
     }
-    else {
+    else
+    {
         createInfo.enabledLayerCount = 0;
     }
 
@@ -674,9 +698,8 @@ void createSwapChain()
     s_swapChainImageFormat = surfaceFormat.format;
     s_swapChainExtent = extent;
 
-
-    //uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
-    //if (swapChainSupport.capabilities.maxImageCount > 0 &&
+    // uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
+    // if (swapChainSupport.capabilities.maxImageCount > 0 &&
     //    s_numBuffers > swapChainSupport.capabilities.maxImageCount) {
     //    s_numBuffers = swapChainSupport.capabilities.maxImageCount;
     //}
@@ -716,14 +739,14 @@ void createSwapChain()
     s_swapChainImages.resize(s_numBuffers);
     vkGetSwapchainImagesKHR(s_device, s_swapChain, &s_numBuffers,
                             s_swapChainImages.data());
-
 }
 
 // Create image views for images on the swap chain
 void createImageViews()
 {
     s_swapChainImageViews.resize(s_swapChainImages.size());
-    for (size_t i = 0; i < s_swapChainImages.size(); i++) {
+    for (size_t i = 0; i < s_swapChainImages.size(); i++)
+    {
         VkImageViewCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         createInfo.image = s_swapChainImages[i];
@@ -856,8 +879,10 @@ void createRenderPass()
 void createGraphicsPipeline()
 {
     // 1. Shaders
-    VkShaderModule vertShdr = m_createShaderModule(m_readSpv("shaders/triangle.vert.spv"));
-    VkShaderModule fragShdr = m_createShaderModule(m_readSpv("shaders/triangle.frag.spv"));
+    VkShaderModule vertShdr =
+        m_createShaderModule(m_readSpv("shaders/triangle.vert.spv"));
+    VkShaderModule fragShdr =
+        m_createShaderModule(m_readSpv("shaders/triangle.frag.spv"));
 
     // Create shader stages
 
@@ -1059,7 +1084,8 @@ void createGraphicsPipeline()
 void createFramebuffers()
 {
     s_swapChainFramebuffers.resize(s_swapChainImageViews.size());
-    for (size_t i = 0; i < s_swapChainImageViews.size(); i++) {
+    for (size_t i = 0; i < s_swapChainImageViews.size(); i++)
+    {
         std::array<VkImageView, 2> attachmentViews = {
             s_swapChainImageViews[i], s_pDepthResource->getView()};
 
@@ -1093,18 +1119,22 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
                           const IndexBuffer& indexBuffer)
 {
     s_contextManager.Initalize();
-    s_contextManager.getContext(CONTEXT_SCENE)->initialize(s_numBuffers, &s_device, &s_commandPool);
-    s_contextManager.getContext(CONTEXT_UI)->initialize(s_numBuffers, &s_device, &s_commandPool);
+    s_contextManager.getContext(CONTEXT_SCENE)
+        ->initialize(s_numBuffers, &s_device, &s_commandPool);
+    s_contextManager.getContext(CONTEXT_UI)
+        ->initialize(s_numBuffers, &s_device, &s_commandPool);
 
     // Record command buffer to draw static objects
     for (s_currentContext = 0; s_currentContext < s_numBuffers;
-         s_currentContext++) {
-        RenderContext* renderContext = static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_SCENE));
+         s_currentContext++)
+    {
+        RenderContext* renderContext = static_cast<RenderContext*>(
+            s_contextManager.getContext(CONTEXT_SCENE));
         VkCommandBuffer& currentCmdBuffer = renderContext->getCommandBuffer();
         renderContext->startRecording();
-        renderContext->beginPass(
-            s_renderPass, s_swapChainFramebuffers[s_currentContext],
-            s_swapChainExtent);
+        renderContext->beginPass(s_renderPass,
+                                 s_swapChainFramebuffers[s_currentContext],
+                                 s_swapChainExtent);
 
         VkBuffer vb = vertexBuffer.buffer();
         VkBuffer ib = indexBuffer.buffer();
@@ -1114,8 +1144,8 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
         vkCmdBindPipeline(currentCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           s_graphicsPipeline);
         vkCmdBindDescriptorSets(
-            currentCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            s_pipelineLayout, 0, 1, &s_descriptorSet, 0, nullptr);
+            currentCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, s_pipelineLayout,
+            0, 1, &s_descriptorSet, 0, nullptr);
 
         // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
         vkCmdDrawIndexed(currentCmdBuffer,
@@ -1133,7 +1163,8 @@ void createSemaphores()
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     s_imageAvailableSemaphores.resize(s_numBuffers);
     s_renderFinishedSemaphores.resize(s_numBuffers);
-    for (size_t i = 0; i < s_numBuffers; i++) {
+    for (size_t i = 0; i < s_numBuffers; i++)
+    {
         assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
                                  &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
         assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
@@ -1147,7 +1178,8 @@ void createFences()
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     s_waitFences.resize(s_numBuffers);
-    for (auto& fence : s_waitFences) {
+    for (auto& fence : s_waitFences)
+    {
         assert(vkCreateFence(s_device, &fenceInfo, nullptr, &fence) ==
                VK_SUCCESS);
     }
@@ -1275,7 +1307,8 @@ void initImGui()
     memset(&info, 0, sizeof(ImGui_ImplVulkan_InitInfo));
     info.Instance = s_instance;
     info.PhysicalDevice = s_physicalDevice;
-    info.Device = s_device;;
+    info.Device = s_device;
+    ;
     info.QueueFamily = 0;
     info.Queue = s_graphicsQueue;
     info.PipelineCache = 0;
@@ -1292,7 +1325,6 @@ void initImGui()
     VkResult err = vkDeviceWaitIdle(s_device);
     assert(err == VK_SUCCESS);
     ImGui_ImplVulkan_InvalidateFontUploadObjects();
-
 }
 
 void cleanup()
@@ -1343,12 +1375,15 @@ void present()
     submitInfo.pWaitDstStageMask = &stageFlag;
 
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer();
+    submitInfo.pCommandBuffers =
+        &s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer();
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), s_contextManager.getContext(CONTEXT_UI)->getCommandBuffer());
+    ImGui_ImplVulkan_RenderDrawData(
+        ImGui::GetDrawData(),
+        s_contextManager.getContext(CONTEXT_UI)->getCommandBuffer());
 
     assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
                          s_waitFences[imageIndex]) == VK_SUCCESS);
@@ -1375,11 +1410,13 @@ void updateUniformBuffer(UniformBuffer* ub)
     auto currentTime = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(
                      currentTime - startTime)
-                     .count() * 0.01;
+                     .count() *
+                 0.01;
     UnifromBufferObject ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
-    //ubo.model = glm::rotate(glm::mat4(1.0), glm::degrees(time), glm::vec3(0.0, 1.0, 0.0));
+    // ubo.model = glm::rotate(glm::mat4(1.0), glm::degrees(time),
+    // glm::vec3(0.0, 1.0, 0.0));
     ubo.model = glm::mat4(1.0);
 
     ubo.view = s_arcball.getViewMat();
@@ -1406,11 +1443,10 @@ int main()
     createGraphicsPipeline();
     createCommandPool();
 
-
     // A bunch of news and deletes happend in the following block
     // They have to be created and destroyed in a certain order
-    // Looking for a way to convert them to smart pointers, otherwise a major refactorying
-    // is required.
+    // Looking for a way to convert them to smart pointers, otherwise a major
+    // refactorying is required.
     {
         s_pDepthResource = new DepthResource(
             s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
@@ -1442,19 +1478,22 @@ int main()
         initImGui();
 
         // Mainloop
-        while (!glfwWindowShouldClose(s_pWindow)) {
+        while (!glfwWindowShouldClose(s_pWindow))
+        {
             glfwPollEvents();
 
             // TODO: Do we need multiple swapchains to render the GUI
             if (s_resizeWanted)
             {
-                //ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice, s_device, s_pWindow, nullptr, s_swapChainExtent.width, s_swapChainExtent.height);
+                // ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice,
+                // s_device, s_pWindow, nullptr, s_swapChainExtent.width,
+                // s_swapChainExtent.height);
                 s_resizeWanted = false;
             }
             ImGui_ImplVulkan_NewFrame();
-//            ImGui::NewFrame();
-//            ImGui::Text("Hello");
-//
+            //            ImGui::NewFrame();
+            //            ImGui::Text("Hello");
+            //
             updateUniformBuffer(s_pUniformBuffer);
             // wait on device to make sure it has been drawn
             // assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
