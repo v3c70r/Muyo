@@ -69,21 +69,21 @@ include_directories(
     ${GLM_INCLUDE_DIRS}
     )
 
-add_library( imgui
-    thirdparty/imgui/imgui.cpp
-    thirdparty/imgui/imgui_demo.cpp
-    thirdparty/imgui/imgui_draw.cpp
-    thirdparty/imgui/imgui_widgets.cpp
-    thirdparty/imgui/imgui_impl_vulkan.cpp
-    )
+#add_library( imgui
+#    thirdparty/imgui/imgui.cpp
+#    thirdparty/imgui/imgui_demo.cpp
+#    thirdparty/imgui/imgui_draw.cpp
+#    thirdparty/imgui/imgui_widgets.cpp
+#    thirdparty/imgui/imgui_impl_vulkan.cpp
+#    )
     
 #Enable CPPCHECK
-set(CMAKE_CXX_CPPCHECK "cppcheck")
+# set(CMAKE_CXX_CPPCHECK "cppcheck")
 
 add_executable( helloVulkan
-    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp src/ImmediateContext.cpp
+    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp src/ImmediateContext.cpp src/PipelineStateBuilder.cpp
     )
-target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES})
+target_link_libraries(helloVulkan glfw ${Vulkan_LIBRARIES})
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES

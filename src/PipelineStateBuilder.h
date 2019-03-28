@@ -1,5 +1,4 @@
 #pragma once
-#include "PipelineState.h"
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <cassert>
@@ -24,7 +23,7 @@ public:
     }
     PipelineStateBuilder& setViewport(const VkViewport& viewport,
                                       const VkRect2D& scissor);
-    PipelineStateBuilder& setResterizer(const VkPipelineRasterizationStateCreateInfo& rasterizerInfo)
+    PipelineStateBuilder& setRasterizer(const VkPipelineRasterizationStateCreateInfo& rasterizerInfo)
     {
         mRasterizerInfo = rasterizerInfo;
         return *this;
@@ -35,7 +34,7 @@ public:
         mMultisamplingInfo = multisamplingInfo;
         return *this;
     }
-    PipelineStateBuilder& setClorBlending(const VkPipelineColorBlendStateCreateInfo& colorBlendState)
+    PipelineStateBuilder& setColorBlending(const VkPipelineColorBlendStateCreateInfo& colorBlendState)
     {
 
         mColorBlendStateInfo = colorBlendState;
@@ -47,7 +46,7 @@ public:
     }
     PipelineStateBuilder& setPipelineLayout(
         VkDevice device,
-        const std::vector<VkDescriptorSetLayout> descriptorSetLayouts)
+        const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts)
     {
         VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
         pipelineLayoutInfo.sType =
@@ -74,16 +73,16 @@ public:
     VkPipeline build(VkDevice device);
 private:
     std::vector<VkPipelineShaderStageCreateInfo> mShaderStagesInfo;
-    VkPipelineVertexInputStateCreateInfo mVertexInputInfo;
-    VkPipelineInputAssemblyStateCreateInfo mInputAssemblyInfo;
+    VkPipelineVertexInputStateCreateInfo mVertexInputInfo = {};
+    VkPipelineInputAssemblyStateCreateInfo mInputAssemblyInfo = {};
 
-    VkPipelineViewportStateCreateInfo mViewportState;
-    VkPipelineRasterizationStateCreateInfo mRasterizerInfo;
+    VkPipelineViewportStateCreateInfo mViewportState = {};
+    VkPipelineRasterizationStateCreateInfo mRasterizerInfo = {};
 
-    VkPipelineMultisampleStateCreateInfo mMultisamplingInfo;
-    VkPipelineColorBlendStateCreateInfo mColorBlendStateInfo;
+    VkPipelineMultisampleStateCreateInfo mMultisamplingInfo = {};
+    VkPipelineColorBlendStateCreateInfo mColorBlendStateInfo = {};
     VkPipelineLayout mPipelineLayout;
-    VkPipelineDepthStencilStateCreateInfo mDepthStencilInfo;
+    VkPipelineDepthStencilStateCreateInfo mDepthStencilInfo = {};
     VkRenderPass mRenderPass;
 
 };

@@ -21,10 +21,9 @@
 #include "VertexBuffer.h"
 #include "Camera.h"
 #include "RenderContext.h"
+#include "PipelineStateBuilder.h"
 
 #include "../thirdparty/tiny_obj_loader.h"
-#include "../thirdparty/imgui/imgui.h"
-#include "../thirdparty/imgui/imgui_impl_vulkan.h"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -884,38 +883,7 @@ void createGraphicsPipeline()
     VkShaderModule fragShdr =
         m_createShaderModule(m_readSpv("shaders/triangle.frag.spv"));
 
-    // Create shader stages
-
-    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
-    vertShaderStageInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertShdr;
-    vertShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
-    fragShaderStageInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragShdr;
-    fragShaderStageInfo.pName = "main";
-
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
-                                                      fragShaderStageInfo};
-
     // 2. Vertex input
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
-    VkVertexInputBindingDescription bindingDesc =
-        Vertex::getBindingDescription();
-    std::array<VkVertexInputAttributeDescription, 2> attribDescs =
-        Vertex::getAttributeDescriptions();
-    vertexInputInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
-    vertexInputInfo.vertexAttributeDescriptionCount =
-        static_cast<uint32_t>(attribDescs.size());
-    vertexInputInfo.pVertexAttributeDescriptions = attribDescs.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo = {};
     inputAssemblyInfo.sType =
@@ -1044,38 +1012,21 @@ void createGraphicsPipeline()
     depthStencil.front = {};
     depthStencil.back = {};
 
-    VkGraphicsPipelineCreateInfo pipelineInfo = {};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-
-    pipelineInfo.pInputAssemblyState = &inputAssemblyInfo;
-
-    pipelineInfo.pViewportState = &viewportState;
-
-    pipelineInfo.pRasterizationState = &rasterizerInfo;
-
-    pipelineInfo.pMultisampleState = &multisamplingInfo;
-
-    pipelineInfo.pDepthStencilState = &depthStencil;
-
-    pipelineInfo.pColorBlendState = &colorBlending;
-
-    pipelineInfo.pDynamicState = nullptr;
-
-    pipelineInfo.layout = s_pipelineLayout;
-
-    pipelineInfo.renderPass = s_renderPass;
-    pipelineInfo.subpass = 0;
-
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-    pipelineInfo.basePipelineIndex = -1;
-
-    assert(vkCreateGraphicsPipelines(s_device, VK_NULL_HANDLE, 1, &pipelineInfo,
-                                     nullptr,
-                                     &s_graphicsPipeline) == VK_SUCCESS);
+    // build the stuff with builder
+    PipelineStateBuilder builder;
+    
+    s_graphicsPipeline = builder.setShaderModules({vertShdr, fragShdr})
+        .setVertextInfo({Vertex::getBindingDescription()},
+                        Vertex::getAttributeDescriptions())
+        .setAssembly(inputAssemblyInfo)
+        .setViewport(viewport, scissor)
+        .setRasterizer(rasterizerInfo)
+        .setMSAA(multisamplingInfo)
+        .setColorBlending(colorBlending)
+        .setPipelineLayout(s_device, {s_descriptorSetLayout})
+        .setDepthStencil(depthStencil)
+        .setRenderPass(s_renderPass)
+        .build(s_device);
 
     vkDestroyShaderModule(s_device, vertShdr, nullptr);
     vkDestroyShaderModule(s_device, fragShdr, nullptr);
@@ -1187,7 +1138,7 @@ void createFences()
 
 void createDescriptorPool()
 {
-    VkDescriptorPoolSize poolSizes[] = {
+    std::vector<VkDescriptorPoolSize> poolSizes = {
         {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
         {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
@@ -1203,9 +1154,9 @@ void createDescriptorPool()
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.poolSizeCount = (uint32_t)IM_ARRAYSIZE(poolSizes);
-    poolInfo.pPoolSizes = poolSizes;
-    poolInfo.maxSets = 1000 * IM_ARRAYSIZE(poolSizes);
+    poolInfo.poolSizeCount = poolSizes.size();
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = 1000 * poolSizes.size();
     assert(vkCreateDescriptorPool(s_device, &poolInfo, nullptr,
                                   &s_descriptorPool) == VK_SUCCESS);
 };
@@ -1298,35 +1249,6 @@ void recreateSwapChain()
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
 }
 
-void initImGui()
-{
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-
-    ImGui_ImplVulkan_InitInfo info;
-    memset(&info, 0, sizeof(ImGui_ImplVulkan_InitInfo));
-    info.Instance = s_instance;
-    info.PhysicalDevice = s_physicalDevice;
-    info.Device = s_device;
-    ;
-    info.QueueFamily = 0;
-    info.Queue = s_graphicsQueue;
-    info.PipelineCache = 0;
-    info.DescriptorPool = s_descriptorPool;
-    info.Allocator = nullptr;
-    info.CheckVkResultFn = nullptr;
-
-    ImGui_ImplVulkan_Init(&info, s_renderPass);
-
-    // Upload font
-    VkCommandBuffer cmdBuf = beginSingleTimeCommands(s_device, s_commandPool);
-    ImGui_ImplVulkan_CreateFontsTexture(cmdBuf);
-    endSingleTimeCommands(cmdBuf, s_device, s_commandPool, s_graphicsQueue);
-    VkResult err = vkDeviceWaitIdle(s_device);
-    assert(err == VK_SUCCESS);
-    ImGui_ImplVulkan_InvalidateFontUploadObjects();
-}
-
 void cleanup()
 {
     cleanupSwapChain();
@@ -1338,8 +1260,6 @@ void cleanup()
         vkDestroySemaphore(s_device, somaphore, nullptr);
     for (auto& fence : s_waitFences) vkDestroyFence(s_device, fence, nullptr);
 
-    ImGui::DestroyContext();
-    ImGui_ImplVulkan_Shutdown();
 
     vkDestroyCommandPool(s_device, s_commandPool, nullptr);
     vkDestroySurfaceKHR(s_instance, s_surface, nullptr);
@@ -1380,10 +1300,6 @@ void present()
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
-
-    ImGui_ImplVulkan_RenderDrawData(
-        ImGui::GetDrawData(),
-        s_contextManager.getContext(CONTEXT_UI)->getCommandBuffer());
 
     assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
                          s_waitFences[imageIndex]) == VK_SUCCESS);
@@ -1475,7 +1391,6 @@ int main()
         createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
         createSemaphores();
         createFences();
-        initImGui();
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
@@ -1485,14 +1400,8 @@ int main()
             // TODO: Do we need multiple swapchains to render the GUI
             if (s_resizeWanted)
             {
-                // ImGui_ImplVulkanH_CreateWindowDataSwapChainAndFramebuffer(s_physicalDevice,
-                // s_device, s_pWindow, nullptr, s_swapChainExtent.width,
-                // s_swapChainExtent.height);
                 s_resizeWanted = false;
             }
-            ImGui_ImplVulkan_NewFrame();
-            //            ImGui::NewFrame();
-            //            ImGui::Text("Hello");
             //
             updateUniformBuffer(s_pUniformBuffer);
             // wait on device to make sure it has been drawn

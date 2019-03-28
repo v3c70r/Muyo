@@ -18,10 +18,11 @@ struct Vertex {
         return desc;
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2>
+    static std::vector<VkVertexInputAttributeDescription>
     getAttributeDescriptions()
     {
-        std::array<VkVertexInputAttributeDescription, 2> attribDesc = {};
+        std::vector<VkVertexInputAttributeDescription> attribDesc;
+        attribDesc.resize(2);
         attribDesc[0].location = 0;
         attribDesc[0].binding = 0;
         attribDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
