@@ -24,6 +24,7 @@ public:
     {
         return m_commandBuffers[s_currentContext];
     }
+    VkDevice* getDevice() const { return m_pDevice; }
 
 private:
     std::vector<VkCommandBuffer> m_commandBuffers;
