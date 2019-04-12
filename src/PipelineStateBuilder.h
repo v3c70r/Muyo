@@ -40,8 +40,12 @@ public:
         mColorBlendStateInfo = colorBlendState;
         return *this;
     }
-    PipelineStateBuilder& setDynamicStates()
+    PipelineStateBuilder& setDynamicStates(const std::vector<VkDynamicState>& dynamicStates)
     {
+        mDynamicStatesInfo.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        mDynamicStatesInfo.dynamicStateCount = dynamicStates.size();
+        mDynamicStatesInfo.pDynamicStates = dynamicStates.data();
         return *this;
     }
     PipelineStateBuilder& setPipelineLayout(
@@ -84,6 +88,7 @@ private:
     VkPipelineColorBlendStateCreateInfo mColorBlendStateInfo = {};
     VkPipelineLayout mPipelineLayout;
     VkPipelineDepthStencilStateCreateInfo mDepthStencilInfo = {};
-    VkRenderPass mRenderPass;
+    VkPipelineDynamicStateCreateInfo mDynamicStatesInfo = {};
+    VkRenderPass mRenderPass = {};
 
 };

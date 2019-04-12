@@ -64,10 +64,6 @@ bool UIOverlay::mAllcoateDescriptorSets(VkDescriptorPool &descriptorPool)
                                      mDescriptorSets.data()) == VK_SUCCESS);
 }
 
-bool UIOverlay::mCreatePipelineLayout()
-{
-}
-
 bool UIOverlay::mCreatePipeline(VkDevice &device)
 {
 
@@ -127,9 +123,9 @@ bool UIOverlay::mCreatePipeline(VkDevice &device)
 
 
 
-    VkPipelineInputAssemblyStateCreateInfo ia_info = {};
-    ia_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    ia_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo = {};
+    inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
 
     VkPipelineViewportStateCreateInfo viewport_info = {};
@@ -137,71 +133,58 @@ bool UIOverlay::mCreatePipeline(VkDevice &device)
     viewport_info.viewportCount = 1;
     viewport_info.scissorCount = 1;
 
-    builder.setShaderModules({vert_module, frag_module})
-        .setPipelineLayout(mDevice, mDescriptorLayouts, pushConstants)
-        .setVertextInfo(bindingDescs, attributeDescs)
-        .setAssembly(ia_info);
-
-    VkPipelineRasterizationStateCreateInfo raster_info = {};
-    raster_info.sType =
+    // rasterizer
+    VkPipelineRasterizationStateCreateInfo rasterInfo = {};
+    rasterInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    raster_info.polygonMode = VK_POLYGON_MODE_FILL;
-    raster_info.cullMode = VK_CULL_MODE_NONE;
-    raster_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    raster_info.lineWidth = 1.0f;
+    rasterInfo.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterInfo.cullMode = VK_CULL_MODE_NONE;
+    rasterInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterInfo.lineWidth = 1.0f;
 
-    VkPipelineMultisampleStateCreateInfo ms_info = {};
-    ms_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    ms_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineColorBlendAttachmentState color_attachment[1] = {};
-    color_attachment[0].blendEnable = VK_TRUE;
-    color_attachment[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    color_attachment[0].dstColorBlendFactor =
+    // MSAA
+    VkPipelineMultisampleStateCreateInfo MSAAInfo = {};
+    MSAAInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    MSAAInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // blending
+    std::vector<VkPipelineColorBlendAttachmentState> colorAttachments(1);
+    colorAttachments[0].blendEnable = VK_TRUE;
+    colorAttachments[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorAttachments[0].dstColorBlendFactor =
         VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    color_attachment[0].colorBlendOp = VK_BLEND_OP_ADD;
-    color_attachment[0].srcAlphaBlendFactor =
+    colorAttachments[0].colorBlendOp = VK_BLEND_OP_ADD;
+    colorAttachments[0].srcAlphaBlendFactor =
         VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    color_attachment[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    color_attachment[0].alphaBlendOp = VK_BLEND_OP_ADD;
-    color_attachment[0].colorWriteMask =
+    colorAttachments[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorAttachments[0].alphaBlendOp = VK_BLEND_OP_ADD;
+    colorAttachments[0].colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
-    VkPipelineDepthStencilStateCreateInfo depth_info = {};
-    depth_info.sType =
+    VkPipelineDepthStencilStateCreateInfo depthInfo = {};
+    depthInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 
-    VkPipelineColorBlendStateCreateInfo blend_info = {};
-    blend_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    blend_info.attachmentCount = 1;
-    blend_info.pAttachments = color_attachment;
+    VkPipelineColorBlendStateCreateInfo blendInfo = {};
+    blendInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blendInfo.attachmentCount = colorAttachments.size();
+    blendInfo.pAttachments = colorAttachments.data();
 
-    VkDynamicState dynamic_states[2] = {VK_DYNAMIC_STATE_VIEWPORT,
-                                        VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo dynamic_state = {};
-    dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic_state.dynamicStateCount = (uint32_t)IM_ARRAYSIZE(dynamic_states);
-    dynamic_state.pDynamicStates = dynamic_states;
+    std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
+                                                     VK_DYNAMIC_STATE_SCISSOR};
 
-    VkGraphicsPipelineCreateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    info.flags = g_PipelineCreateFlags;
-    info.stageCount = 2;
-    info.pStages = stage;
-    info.pVertexInputState = &vertex_info;
-    info.pInputAssemblyState = &ia_info;
-    info.pViewportState = &viewport_info;
-    info.pRasterizationState = &raster_info;
-    info.pMultisampleState = &ms_info;
-    info.pDepthStencilState = &depth_info;
-    info.pColorBlendState = &blend_info;
-    info.pDynamicState = &dynamic_state;
-    info.layout = g_PipelineLayout;
-    info.renderPass = g_RenderPass;
-    err = vkCreateGraphicsPipelines(device, g_PipelineCache, 1, &info,
-                                    nullptr, &g_Pipeline);
-    check_vk_result(err);
+    mPipeline =
+        builder.setShaderModules({vert_module, frag_module})
+            .setPipelineLayout(mDevice, mDescriptorLayouts, pushConstants)
+            .setVertextInfo(bindingDescs, attributeDescs)
+            .setAssembly(inputAssemblyInfo)
+            .setRasterizer(rasterInfo)
+            .setMSAA(MSAAInfo)
+            .setColorBlending(blendInfo)
+            .setDynamicStates(dynamicStates)
+            .build(mDevice);
 
     vkDestroyShaderModule(device, vert_module, nullptr);
     vkDestroyShaderModule(device, frag_module, nullptr);

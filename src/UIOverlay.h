@@ -13,7 +13,6 @@ private:
     bool mCreateFontSampler();
     bool mCreateDescriptorSetLayout();
     bool mAllcoateDescriptorSets(VkDescriptorPool &descriptorPool);
-    bool mCreatePipelineLayout();
     bool mCreatePipeline(VkDevice& device);
 
     VkSampler mFontSampler = VK_NULL_HANDLE;
@@ -21,6 +20,7 @@ private:
     std::vector<VkDescriptorSet> mDescriptorSets;
     VkPipelineLayout mPipelineLayout = VK_NULL_HANDLE;
     VkDevice mDevice = VK_NULL_HANDLE;
+    VkPipeline mPipeline = VK_NULL_HANDLE;
     //VkDescriptorSetLayout descr
 
 ///// Shader source
