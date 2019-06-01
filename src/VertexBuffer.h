@@ -6,61 +6,34 @@
 #include <vector>
 #include "Buffer.h"
 
-struct Vertex {
-    glm::vec3 pos;
-    glm::vec3 textureCoord;
-    static VkVertexInputBindingDescription getBindingDescription()
-    {
-        VkVertexInputBindingDescription desc = {};
-        desc.binding = 0;
-        desc.stride = sizeof(Vertex);
-        desc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-        return desc;
-    }
-
-    static std::vector<VkVertexInputAttributeDescription>
-    getAttributeDescriptions()
-    {
-        std::vector<VkVertexInputAttributeDescription> attribDesc;
-        attribDesc.resize(2);
-        attribDesc[0].location = 0;
-        attribDesc[0].binding = 0;
-        attribDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attribDesc[0].offset = offsetof(Vertex, pos);
-
-        attribDesc[1].location = 1;
-        attribDesc[1].binding = 0;
-        attribDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attribDesc[1].offset = offsetof(Vertex, textureCoord);
-        return attribDesc;
-    }
-};
-
 class VertexBuffer {
 public:
     VertexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
-                 size_t size)
+                 size_t size = 0)
         : mBuffer(device, physicalDevice, size,
                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     {
     }
-    VertexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
-                 const std::vector<Vertex>& vertices, VkCommandPool commandPool,
-                 VkQueue queue)
-        : VertexBuffer(device, physicalDevice, sizeof(Vertex) * vertices.size())
-    {
-        setData(vertices, commandPool, queue);
-    }
-    void setData(const std::vector<Vertex>& vertices, VkCommandPool commandPool,
+    void setData(void* vertices, size_t size, VkCommandPool commandPool,
                  VkQueue queue)
     {
+        // Recreate buffer if size has been changed
+        if (mBuffer.size() != size)
+        {
+            mBuffer = Buffer(mBuffer.device(), mBuffer.physicalDevice(), size,
+                             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        }
+
+
         Buffer stagingBuffer(mBuffer.device(), mBuffer.physicalDevice(),
-                             mBuffer.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                             size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        stagingBuffer.setData((void*)vertices.data());
+        stagingBuffer.setData(vertices);
 
         // Allocate command buffer
         VkCommandBufferAllocateInfo allocInfo = {};
@@ -112,21 +85,22 @@ public:
     {
     }
 
-    IndexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
-                 const std::vector<uint32_t>& indices, VkCommandPool commandPool,
-                 VkQueue queue)
-        : IndexBuffer(device, physicalDevice, sizeof(uint32_t) * indices.size())
+    void setData(void* indices, size_t size, VkCommandPool commandPool, VkQueue queue)
     {
-        setData(indices, commandPool, queue);
-    }
- 
-    void setData(const std::vector<uint32_t>& indices, VkCommandPool commandPool, VkQueue queue)
-    {
+
+        if (mBuffer.size() != size)
+        {
+            mBuffer = Buffer(mBuffer.device(), mBuffer.physicalDevice(), size,
+                             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        }
+
         Buffer stagingBuffer(mBuffer.device(), mBuffer.physicalDevice(),
                              mBuffer.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        stagingBuffer.setData((void*)indices.data()); 
+        stagingBuffer.setData(indices); 
 
         // Allocate command buffer
         VkCommandBufferAllocateInfo allocInfo = {};

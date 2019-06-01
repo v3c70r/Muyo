@@ -4,14 +4,6 @@
 ImmediateContext::ImmediateContext(VkDevice &device, VkCommandPool& commandPool, VkQueue& queue) : m_device(device), m_pool(commandPool), m_queue(queue)
 {
     initialize(1, &device, &commandPool);
-    VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandPool = commandPool;
-    allocInfo.commandBufferCount = 1;
-    m_commandBuffer = std::make_unique<VkCommandBuffer>();
-
-    vkAllocateCommandBuffers(device, &allocInfo, m_commandBuffer.get());
 }
 
 void ImmediateContext::initialize(size_t numBuffers, VkDevice* pDevice,
@@ -28,10 +20,16 @@ void ImmediateContext::initialize(size_t numBuffers, VkDevice* pDevice,
     vkAllocateCommandBuffers(*pDevice, &allocInfo, m_commandBuffer.get());
 }
 
+ImmediateContext::~ImmediateContext() {
+    finalize();
+}
+
 void ImmediateContext::finalize()
 {
     vkFreeCommandBuffers(m_device, m_pool, 1, m_commandBuffer.get());
+    m_commandBuffer = nullptr;
 }
+
 
 void ImmediateContext::startRecording()
 {

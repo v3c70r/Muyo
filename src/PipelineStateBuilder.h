@@ -48,23 +48,30 @@ public:
         mDynamicStatesInfo.pDynamicStates = dynamicStates.data();
         return *this;
     }
-    PipelineStateBuilder& setPipelineLayout(
-        VkDevice device,
-        const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
-        const std::vector<VkPushConstantRange>& pushConstants = std::vector<VkPushConstantRange>())
-    {
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-        pipelineLayoutInfo.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
-        pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-        pipelineLayoutInfo.pushConstantRangeCount = pushConstants.size();
-        pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
-        assert(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
-                                      &mPipelineLayout) == VK_SUCCESS);
 
+    PipelineStateBuilder& setPipelineLayout(VkPipelineLayout &pipelineLayout)
+    {
+        mPipelineLayout = pipelineLayout;
         return *this;
     }
+
+    //PipelineStateBuilder& setPipelineLayout(
+    //    VkDevice device,
+    //    const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
+    //    const std::vector<VkPushConstantRange>& pushConstants = std::vector<VkPushConstantRange>())
+    //{
+    //    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    //    pipelineLayoutInfo.sType =
+    //        VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    //    pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+    //    pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
+    //    pipelineLayoutInfo.pushConstantRangeCount = pushConstants.size();
+    //    pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
+    //    assert(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
+    //                                  &mPipelineLayout) == VK_SUCCESS);
+
+    //    return *this;
+    //}
     PipelineStateBuilder& setDepthStencil(const VkPipelineDepthStencilStateCreateInfo& depthStencil)
     {
         mDepthStencilInfo = depthStencil;

@@ -28,21 +28,17 @@ public:
             vkFreeMemory(mDevice, mDeviceMemory, nullptr);
         }
     }
-    void LoadImage(const std::string path, const VkDevice &device,
-                   const VkPhysicalDevice &physicalDevice,
-                   const VkCommandPool &pool, const VkQueue &queue)
-    {
-        mDevice = device;
 
-        int width, height, channels;
-        stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-        assert(pixels);
+    void LoadPixels(void *pixels, int width, int height, const VkDevice &device,
+                    const VkPhysicalDevice &physicalDevice,
+                    const VkCommandPool &pool, const VkQueue &queue)
+    {
         // Upload pixels to staging buffer
         Buffer stagingBuffer(device, physicalDevice, width * height * 4,
                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        stagingBuffer.setData((void*)pixels);
+        stagingBuffer.setData((void *)pixels);
         stbi_image_free(pixels);
 
         createImage(
@@ -69,6 +65,20 @@ public:
 
         mInitImageView();
         mInitSampler();
+    }
+
+    void LoadImage(const std::string path, const VkDevice &device,
+                   const VkPhysicalDevice &physicalDevice,
+                   const VkCommandPool &pool, const VkQueue &queue)
+    {
+        mDevice = device;
+
+        int width, height, channels;
+        stbi_uc *pixels =
+            stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+        assert(pixels);
+        LoadPixels((void *)pixels, width, height, device, physicalDevice, pool,
+                   queue);
     }
 
     VkImageView getImageView() const { return mImageView; }

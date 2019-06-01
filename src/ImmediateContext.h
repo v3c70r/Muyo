@@ -3,11 +3,12 @@
 #include "memory"
 // Forward declarations
 
+
 class ImmediateContext : public ContextBase
 {
 public:
     ImmediateContext(VkDevice &device, VkCommandPool& commandPool, VkQueue& queue);
-    ~ImmediateContext(){};
+    ~ImmediateContext();
     void startRecording() override;
     void endRecording() override;
     bool isRecording() const override;
@@ -20,4 +21,23 @@ private:
     const VkDevice& m_device;
     const VkCommandPool& m_pool;
     const VkQueue& m_queue;
+};
+
+
+class ImmediateContextFactory
+{
+public:
+    ImmediateContextFactory(VkDevice& device, VkCommandPool& pool,
+                           VkQueue& queue)
+        : m_device(device), m_pool(pool), m_queue(queue)
+    {
+    }
+    ImmediateContext getImmediateContext()
+    {
+        //return ImmediateContext(m_device, m_pool, m_queue);
+    }
+private:
+    VkDevice m_device;
+    VkCommandPool m_pool;
+    VkQueue m_queue;
 };

@@ -22,6 +22,7 @@
 #include "Camera.h"
 #include "RenderContext.h"
 #include "PipelineStateBuilder.h"
+#include "MeshVertex.h"
 
 #include "../thirdparty/tiny_obj_loader.h"
 
@@ -1023,7 +1024,7 @@ void createGraphicsPipeline()
         .setRasterizer(rasterizerInfo)
         .setMSAA(multisamplingInfo)
         .setColorBlending(colorBlending)
-        .setPipelineLayout(s_device, {s_descriptorSetLayout})
+        .setPipelineLayout(s_pipelineLayout)
         .setDepthStencil(depthStencil)
         .setRenderPass(s_renderPass)
         .build(s_device);
@@ -1373,12 +1374,16 @@ int main()
         s_pVertexBuffer = new VertexBuffer(
             s_device, s_physicalDevice, sizeof(Vertex) * getVertices().size());
 
-        s_pVertexBuffer->setData(getVertices(), s_commandPool, s_graphicsQueue);
+        s_pVertexBuffer->setData(reinterpret_cast<void*>(getVertices().data()),
+                                 sizeof(Vertex) * getVertices().size(),
+                                 s_commandPool, s_graphicsQueue);
 
         s_pIndexBuffer = new IndexBuffer(
             s_device, s_physicalDevice, sizeof(uint32_t) * getIndices().size());
 
-        s_pIndexBuffer->setData(getIndices(), s_commandPool, s_graphicsQueue);
+        s_pIndexBuffer->setData(reinterpret_cast<void*>(getIndices().data()),
+                                sizeof(uint32_t) * getIndices().size(),
+                                s_commandPool, s_graphicsQueue);
 
         s_pUniformBuffer = new UniformBuffer(s_device, s_physicalDevice,
                                              sizeof(UnifromBufferObject));

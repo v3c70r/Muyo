@@ -2,7 +2,8 @@
 #include "RenderContext.h"
 #include "PipelineStateBuilder.h"
 
-bool UIOverlay::initialize(RenderContext& context)
+bool UIOverlay::initialize(RenderContext& context, uint32_t numBuffers,
+                           VkPhysicalDevice physicalDevice)
 {
     if (mFontSampler == VK_NULL_HANDLE)
     {
@@ -14,8 +15,33 @@ bool UIOverlay::initialize(RenderContext& context)
         mCreateDescriptorSetLayout();
     if (mPipelineLayout == VK_NULL_HANDLE)
     mCreatePipeline(*(context.getDevice()));
+
+    // create vertex and index buffers, one for each context
+    mpVertexBuffers.resize(numBuffers);
+    for (auto& pVertexBuffer: mpVertexBuffers)
+    {
+        pVertexBuffer = std::make_unique<VertexBuffer>(mDevice, physicalDevice);
+    }
+    mpIndexBuffers.resize(numBuffers);
+    for (auto& pIndexbuffer: mpIndexBuffers)
+    {
+        pIndexbuffer = std::make_unique<IndexBuffer>(mDevice, physicalDevice);
+    }
+
+    // create font texture
+    ImGuiIO& io = ImGui::GetIO();
+    unsigned char* pixels;
+    int width, height;
+    io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    size_t textureSize = width*height*4*sizeof(char);
+
+    mpFontTexture = std::make_unique<Texture>();
+    mpFontTexture->LoadPixels(pixels, width, height, mDevice, physicalDevice);
+
+
     return true;
 }
+
 
 bool UIOverlay::mCreateFontSampler()
 {
@@ -175,9 +201,19 @@ bool UIOverlay::mCreatePipeline(VkDevice &device)
     std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                      VK_DYNAMIC_STATE_SCISSOR};
 
+    // Create pipeline layout
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = mDescriptorLayouts.data();
+    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    pipelineLayoutInfo.pPushConstantRanges = 0;
+    assert(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
+                                  &mPipelineLayout) == VK_SUCCESS);
+
     mPipeline =
         builder.setShaderModules({vert_module, frag_module})
-            .setPipelineLayout(mDevice, mDescriptorLayouts, pushConstants)
+            .setPipelineLayout(mPipelineLayout)
             .setVertextInfo(bindingDescs, attributeDescs)
             .setAssembly(inputAssemblyInfo)
             .setRasterizer(rasterInfo)
@@ -190,4 +226,148 @@ bool UIOverlay::mCreatePipeline(VkDevice &device)
     vkDestroyShaderModule(device, frag_module, nullptr);
 
     return true;
+}
+
+bool UIOverlay::finalize()
+{
+    vkDestroySampler(mDevice, mFontSampler, nullptr);
+    for (auto& descriptorSetLayout : mDescriptorLayouts)
+        vkDestroyDescriptorSetLayout(mDevice, descriptorSetLayout,
+                                     nullptr);  // mDescriptorSetLayout
+    vkDestroyPipelineLayout(mDevice, mPipelineLayout, nullptr);
+
+    // destroy index and vertex buffers
+    for (auto& pVertexbuffer : mpVertexBuffers)
+    {
+        pVertexbuffer = nullptr;
+    }
+    for (auto& pIndexbuffer : mpIndexBuffers)
+    {
+        pIndexbuffer = nullptr;
+    }
+    mpFontTexture = nullptr;
+    
+    return true;
+}
+
+void UIOverlay::renderDrawData(ImDrawData* drawData,
+                               RenderContext renderContext,
+                               VkCommandPool commandPool, VkQueue graphicsQueue)
+{
+
+    // Upload Vertex and index Data:
+    {
+        // Vertex and index buffer
+        size_t vertexSize = drawData->TotalVtxCount * sizeof(ImDrawVert);
+        size_t indexSize = drawData->TotalIdxCount * sizeof(ImDrawIdx);
+        std::vector<char> vertexData;
+        std::vector<char> indexData;
+        vertexData.resize(vertexSize);
+        indexData.resize(indexSize);
+        for (int i = 0; i < drawData->CmdListsCount; i++)
+        {
+            const ImDrawList* cmdList = drawData->CmdLists[i];
+            char* vtxDst = vertexData.data();
+            char* idxDst = indexData.data();
+            memcpy(vtxDst, cmdList->VtxBuffer.Data, cmdList->VtxBuffer.size() * sizeof(ImDrawVert));
+            memcpy(idxDst, cmdList->IdxBuffer.Data, cmdList->IdxBuffer.size() * sizeof(ImDrawIdx));
+        }
+        mpVertexBuffers[s_currentContext]->setData(vertexData.data(), vertexData.size(), commandPool, graphicsQueue);
+        mpIndexBuffers[s_currentContext]->setData(indexData.data(), indexData.size(), commandPool, graphicsQueue);
+    }
+
+    //renderContext.startRecording();
+    // bind descriptor set
+    {
+        vkCmdBindPipeline(renderContext.getCommandBuffer(),
+                          VK_PIPELINE_BIND_POINT_GRAPHICS, mPipeline);
+        VkDescriptorSet descSet[1] = {mDescriptorSets[0]};
+        vkCmdBindDescriptorSets(renderContext.getCommandBuffer(),
+                                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                mPipelineLayout, 0, 1, descSet, 0, NULL);
+    }
+
+    // Bind Vertex And Index Buffer:
+    {
+        VkBuffer vertex_buffers[1] = {
+            mpVertexBuffers[s_currentContext]->buffer()};
+        VkDeviceSize vertexOffset[1] = {0};
+        vkCmdBindVertexBuffers(renderContext.getCommandBuffer(), 0, 1,
+                               vertex_buffers, vertexOffset);
+        vkCmdBindIndexBuffer(renderContext.getCommandBuffer(),
+                             mpIndexBuffers[s_currentContext]->buffer(), 0,
+                             VK_INDEX_TYPE_UINT16);
+    }
+
+    // Setup viewport:
+    {
+        VkViewport viewport;
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.width = drawData->DisplaySize.x;
+        viewport.height = drawData->DisplaySize.y;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(renderContext.getCommandBuffer(), 0, 1, &viewport);
+    }
+
+    {
+        float scale[2];
+        scale[0] = 2.0f / drawData->DisplaySize.x;
+        scale[1] = 2.0f / drawData->DisplaySize.y;
+        float translate[2];
+        translate[0] = -1.0f - drawData->DisplayPos.x * scale[0];
+        translate[1] = -1.0f - drawData->DisplayPos.y * scale[1];
+        vkCmdPushConstants(renderContext.getCommandBuffer(), mPipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 0,
+                           sizeof(float) * 2, scale);
+        vkCmdPushConstants(renderContext.getCommandBuffer(), mPipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT, sizeof(float) * 2,
+                           sizeof(float) * 2, translate);
+    }
+
+    // Render the command lists:
+    int vtxOffset = 0;
+    int idxOffset = 0;
+    ImVec2 displayPos = drawData->DisplayPos;
+    for (int n = 0; n < drawData->CmdListsCount; n++)
+    {
+        const ImDrawList* cmdList = drawData->CmdLists[n];
+        for (int cmd_i = 0; cmd_i < cmdList->CmdBuffer.Size; cmd_i++)
+        {
+            const ImDrawCmd* pcmd = &cmdList->CmdBuffer[cmd_i];
+            if (pcmd->UserCallback)
+            {
+                pcmd->UserCallback(cmdList, pcmd);
+            }
+            else
+            {
+                // Apply scissor/clipping rectangle
+                // FIXME: We could clamp width/height based on clamped min/max
+                // values.
+                VkRect2D scissor;
+                scissor.offset.x =
+                    (int32_t)(pcmd->ClipRect.x - displayPos.x) > 0
+                        ? (int32_t)(pcmd->ClipRect.x - displayPos.x)
+                        : 0;
+                scissor.offset.y =
+                    (int32_t)(pcmd->ClipRect.y - displayPos.y) > 0
+                        ? (int32_t)(pcmd->ClipRect.y - displayPos.y)
+                        : 0;
+                scissor.extent.width =
+                    (uint32_t)(pcmd->ClipRect.z - pcmd->ClipRect.x);
+                scissor.extent.height =
+                    (uint32_t)(pcmd->ClipRect.w - pcmd->ClipRect.y +
+                               1);  // FIXME: Why +1 here?
+                vkCmdSetScissor(renderContext.getCommandBuffer(), 0, 1,
+                                &scissor);
+
+                // Draw
+                vkCmdDrawIndexed(renderContext.getCommandBuffer(),
+                                 pcmd->ElemCount, 1, idxOffset, vtxOffset, 0);
+            }
+            idxOffset += pcmd->ElemCount;
+        }
+        vtxOffset += cmdList->VtxBuffer.Size;
+    }
 }

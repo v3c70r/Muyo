@@ -3,6 +3,7 @@
 #include <cassert>
 
 // A raii buffer creation class
+// TODO: fix the bad practice
 // This is a bad practice 
 // https://developer.nvidia.com/vulkan-memory-management
 // Allocate once and bond multiple times, using the offset
@@ -30,6 +31,7 @@ public:
         VkMemoryAllocateInfo allocInfo = {};
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = mMemRequirements.size;
+
         allocInfo.memoryTypeIndex = findMemoryType(
             mPhysicalDevice, mMemRequirements.memoryTypeBits, properties);
 
@@ -56,8 +58,8 @@ public:
     VkBuffer buffer() const { return mBuffer; }
 
     static uint32_t findMemoryType(VkPhysicalDevice physicalDevice,
-                                   uint32_t typeFilter,
-                                   VkMemoryPropertyFlags properties)
+                                   uint32_t typeFilter,                 // bitfield of supported types
+                                   VkMemoryPropertyFlags properties)    // wanted bitfield 
     {
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
