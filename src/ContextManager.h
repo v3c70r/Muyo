@@ -1,7 +1,6 @@
 #pragma once
 #include "ContextBase.h"
 #include "RenderContext.h"
-#include "ImmediateContext.h"
 
 #include <memory>
 #include <array>
@@ -21,8 +20,6 @@ public:
     {
         m_contexts[CONTEXT_SCENE] = std::make_unique<RenderContext>();
         m_contexts[CONTEXT_UI] = std::make_unique<RenderContext>();
-        // TODO: Implement shared immediate context
-        //m_contexts[CONTEXT_IMMEDIATE] = std::make_unique<ImmediateContext>();
     }
     ContextBase* getContext(CONTEXT context) {
         return m_contexts[context].get();
