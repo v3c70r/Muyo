@@ -23,6 +23,7 @@
 #include "RenderContext.h"
 #include "PipelineStateBuilder.h"
 #include "MeshVertex.h"
+#include "UIOverlay.h"
 
 #include "../thirdparty/tiny_obj_loader.h"
 
@@ -127,6 +128,7 @@ static IndexBuffer* s_pIndexBuffer = nullptr;
 static UniformBuffer* s_pUniformBuffer = nullptr;
 static Texture* s_pTexture = nullptr;
 static DepthResource* s_pDepthResource = nullptr;
+static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
 
 VkRenderPass s_renderPass;
 
@@ -1365,6 +1367,11 @@ int main()
     // Looking for a way to convert them to smart pointers, otherwise a major
     // refactorying is required.
     {
+        s_UIOverlay = std::make_unique<UIOverlay>(s_device);
+        s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
+                                    *(s_contextManager.getContext(CONTEXT_UI))),
+                                s_numBuffers, s_physicalDevice);
+        s_UIOverlay->initializeFontTexture(s_physicalDevice, s_commandPool, s_graphicsQueue);
         s_pDepthResource = new DepthResource(
             s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
             s_swapChainExtent.width, s_swapChainExtent.height);
@@ -1418,6 +1425,7 @@ int main()
         assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
+        s_UIOverlay = nullptr;
         delete s_pDepthResource;
         delete s_pVertexBuffer;
         delete s_pIndexBuffer;

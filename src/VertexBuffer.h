@@ -1,3 +1,4 @@
+#pragma once
 #include <vulkan/vulkan.h>
 #include <array>
 #include <cassert>
@@ -77,7 +78,7 @@ class IndexBuffer
 {
 public:
     IndexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
-                size_t size)
+                size_t size = 0)
         : mBuffer(device, physicalDevice, size,
                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
