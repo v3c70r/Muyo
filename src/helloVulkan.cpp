@@ -24,13 +24,13 @@
 #include "PipelineStateBuilder.h"
 #include "MeshVertex.h"
 #include "UIOverlay.h"
+#include "VkRenderDevice.h"
 
 #include "../thirdparty/tiny_obj_loader.h"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
-static VkInstance s_instance;
 thread_local size_t s_currentContext;
 
 
@@ -105,13 +105,6 @@ static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
 
 static uint32_t s_numBuffers = 2;
 static VkDebugReportCallbackEXT s_debugCallback;
-
-static VkPhysicalDevice s_physicalDevice = VK_NULL_HANDLE;
-
-static VkDevice s_device;
-
-static VkQueue s_graphicsQueue;
-static VkQueue s_presentQueue;
 
 static VkSurfaceKHR s_surface;
 
@@ -310,7 +303,7 @@ void setupDebugCallback()
                        VK_DEBUG_REPORT_WARNING_BIT_EXT;
     createInfo.pfnCallback = debugCallback;
 
-    assert(createDebugReportCallbackEXT(s_instance, &createInfo, nullptr,
+    assert(createDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), &createInfo, nullptr,
                                         &s_debugCallback) == VK_SUCCESS);
 }
 
@@ -445,12 +438,17 @@ void createInstance()
         throw std::runtime_error("Layers are not fully supported");
     }
 
-    VkResult res = vkCreateInstance(&createInfo, nullptr, &s_instance);
-    if (res != VK_SUCCESS)
     {
-        std::cerr << res << std::endl;
-        throw std::runtime_error("failed inst");
+        VkInstance instance = VK_NULL_HANDLE;
+        VkResult res = vkCreateInstance(&createInfo, nullptr, &instance);
+        GetRenderDevice()->SetInstance(instance);
+        if (res != VK_SUCCESS)
+        {
+            std::cerr << res << std::endl;
+            throw std::runtime_error("failed inst");
+        }
     }
+
 }
 // swap chain details
 struct SwapChainSupportDetails
@@ -603,17 +601,17 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
 void pickPysicalDevice()
 {
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(s_instance, &deviceCount, nullptr);
+    vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
     assert(deviceCount != 0);
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(s_instance, &deviceCount, devices.data());
+    vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
     for (const auto& device : devices)
         if (mIsDeviceSuitable(device))
         {
-            s_physicalDevice = device;
+            GetRenderDevice()->SetPhysicalDevice(device);
             break;
         }
-    assert(s_physicalDevice != VK_NULL_HANDLE);
+    assert(GetRenderDevice()->GetPhysicalDevice() != VK_NULL_HANDLE);
 }
 
 // Logical device
@@ -621,7 +619,7 @@ void pickPysicalDevice()
 void createLogicalDevice()
 {
     // INFO: A queue is bound to logical device
-    QueueFamilyIndice indices = mFindQueueFamily(s_physicalDevice);
+    QueueFamilyIndice indices = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     std::set<int> uniqueQueueFamilise = {indices.graphicsFamily,
@@ -666,15 +664,28 @@ void createLogicalDevice()
         createInfo.enabledLayerCount = 0;
     }
 
-    assert(vkCreateDevice(s_physicalDevice, &createInfo, nullptr, &s_device) ==
-           VK_SUCCESS);
+    {
+        VkDevice device = VK_NULL_HANDLE;
+        assert(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(),
+                              &createInfo, nullptr, &device) == VK_SUCCESS);
+        GetRenderDevice()->SetDevice(device);
+    }
 
-    vkGetDeviceQueue(s_device, indices.graphicsFamily, 0, &s_graphicsQueue);
-    vkGetDeviceQueue(s_device, indices.presentFamily, 0, &s_presentQueue);
+    {
+        VkQueue graphicsQueue = VK_NULL_HANDLE;
+        VkQueue presentQueue = VK_NULL_HANDLE;
+        vkGetDeviceQueue(GetRenderDevice()->GetDevice(), indices.graphicsFamily,
+                         0, &graphicsQueue);
+        vkGetDeviceQueue(GetRenderDevice()->GetDevice(), indices.presentFamily,
+                         0, &presentQueue);
+
+        GetRenderDevice()->SetGraphicsQueue(graphicsQueue);
+        GetRenderDevice()->SetPresentQueue(presentQueue);
+    }
 
     assert(
-        s_graphicsQueue ==
-        s_presentQueue);  // Graphics and present queues should be the same one
+        GetRenderDevice()->GetGraphicsQueue() ==
+        GetRenderDevice()->GetPresentQueue());  // Graphics and present queues should be the same one
 
     // Create a presentation queue
 }
@@ -683,14 +694,14 @@ void createSurface()
 {
     // Create a platform specific window surface to present rendered image
     // The platform specific code has been handled by glfw
-    assert(glfwCreateWindowSurface(s_instance, s_pWindow, nullptr,
+    assert(glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, nullptr,
                                    &s_surface) == VK_SUCCESS);
 }
 
 void createSwapChain()
 {
     SwapChainSupportDetails swapChainSupport =
-        querySwapChainSupport(s_physicalDevice);
+        querySwapChainSupport(GetRenderDevice()->GetPhysicalDevice());
     VkSurfaceFormatKHR surfaceFormat =
         chooseSwapSurfaceFormat(swapChainSupport.formats);
     VkPresentModeKHR presentMode =
@@ -716,7 +727,7 @@ void createSwapChain()
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-    QueueFamilyIndice indices = mFindQueueFamily(s_physicalDevice);
+    QueueFamilyIndice indices = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
 
     // Assume present and graphics queues are in the same family
     // see
@@ -733,13 +744,13 @@ void createSwapChain()
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    assert(vkCreateSwapchainKHR(s_device, &createInfo, nullptr, &s_swapChain) ==
+    assert(vkCreateSwapchainKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &s_swapChain) ==
            VK_SUCCESS);
 
     // Get swap chain images;
-    vkGetSwapchainImagesKHR(s_device, s_swapChain, &s_numBuffers, nullptr);
+    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers, nullptr);
     s_swapChainImages.resize(s_numBuffers);
-    vkGetSwapchainImagesKHR(s_device, s_swapChain, &s_numBuffers,
+    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers,
                             s_swapChainImages.data());
 }
 
@@ -769,7 +780,7 @@ void createImageViews()
         createInfo.subresourceRange.baseArrayLayer = 0;
         createInfo.subresourceRange.layerCount = 1;
 
-        assert(vkCreateImageView(s_device, &createInfo, nullptr,
+        assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo, nullptr,
                                  &s_swapChainImageViews[i]) == VK_SUCCESS);
     }
 }
@@ -796,7 +807,7 @@ VkShaderModule m_createShaderModule(const std::vector<char>& code)
     createInfo.codeSize = code.size();
     createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
     VkShaderModule shdrModule;
-    assert(vkCreateShaderModule(s_device, &createInfo, nullptr, &shdrModule) ==
+    assert(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &shdrModule) ==
            VK_SUCCESS);
     return shdrModule;
 }
@@ -874,7 +885,7 @@ void createRenderPass()
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
 
-    assert(vkCreateRenderPass(s_device, &renderPassInfo, nullptr,
+    assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr,
                               &s_renderPass) == VK_SUCCESS);
 }
 
@@ -989,7 +1000,7 @@ void createGraphicsPipeline()
     descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
     descriptorSetLayoutInfo.pBindings = bindings.data();
 
-    assert(vkCreateDescriptorSetLayout(s_device, &descriptorSetLayoutInfo,
+    assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &descriptorSetLayoutInfo,
                                        nullptr,
                                        &s_descriptorSetLayout) == VK_SUCCESS);
 
@@ -1000,7 +1011,7 @@ void createGraphicsPipeline()
     pipelineLayoutInfo.pSetLayouts = &s_descriptorSetLayout;
     // pipelineLayoutInfo.pushConstantRangeCount = 0;
     // pipelineLayoutInfo.pPushConstantRanges = 0;
-    assert(vkCreatePipelineLayout(s_device, &pipelineLayoutInfo, nullptr,
+    assert(vkCreatePipelineLayout(GetRenderDevice()->GetDevice(), &pipelineLayoutInfo, nullptr,
                                   &s_pipelineLayout) == VK_SUCCESS);
 
     // 9. Dpeth stencile state create info
@@ -1029,10 +1040,10 @@ void createGraphicsPipeline()
         .setPipelineLayout(s_pipelineLayout)
         .setDepthStencil(depthStencil)
         .setRenderPass(s_renderPass)
-        .build(s_device);
+        .build(GetRenderDevice()->GetDevice());
 
-    vkDestroyShaderModule(s_device, vertShdr, nullptr);
-    vkDestroyShaderModule(s_device, fragShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 }
 
 void createFramebuffers()
@@ -1052,20 +1063,20 @@ void createFramebuffers()
         framebufferInfo.width = s_swapChainExtent.width;
         framebufferInfo.height = s_swapChainExtent.height;
         framebufferInfo.layers = 1;
-        assert(vkCreateFramebuffer(s_device, &framebufferInfo, nullptr,
+        assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo, nullptr,
                                    &s_swapChainFramebuffers[i]) == VK_SUCCESS);
     }
 }
 
 void createCommandPool()
 {
-    QueueFamilyIndice queueFamilyIndice = mFindQueueFamily(s_physicalDevice);
+    QueueFamilyIndice queueFamilyIndice = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
 
     VkCommandPoolCreateInfo commandPoolInfo = {};
     commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     commandPoolInfo.queueFamilyIndex = queueFamilyIndice.graphicsFamily;
     commandPoolInfo.flags = 0;
-    assert(vkCreateCommandPool(s_device, &commandPoolInfo, nullptr,
+    assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(), &commandPoolInfo, nullptr,
                                &s_commandPool) == VK_SUCCESS);
 }
 
@@ -1074,9 +1085,9 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
 {
     s_contextManager.Initalize();
     s_contextManager.getContext(CONTEXT_SCENE)
-        ->initialize(s_numBuffers, &s_device, &s_commandPool);
+        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(), &s_commandPool);
     s_contextManager.getContext(CONTEXT_UI)
-        ->initialize(s_numBuffers, &s_device, &s_commandPool);
+        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(), &s_commandPool);
 
     // Record command buffer to draw static objects
     for (s_currentContext = 0; s_currentContext < s_numBuffers;
@@ -1119,9 +1130,9 @@ void createSemaphores()
     s_renderFinishedSemaphores.resize(s_numBuffers);
     for (size_t i = 0; i < s_numBuffers; i++)
     {
-        assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
+        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
                                  &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
-        assert(vkCreateSemaphore(s_device, &semaphoreInfo, nullptr,
+        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
                                  &s_renderFinishedSemaphores[i]) == VK_SUCCESS);
     }
 }
@@ -1134,7 +1145,7 @@ void createFences()
     s_waitFences.resize(s_numBuffers);
     for (auto& fence : s_waitFences)
     {
-        assert(vkCreateFence(s_device, &fenceInfo, nullptr, &fence) ==
+        assert(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence) ==
                VK_SUCCESS);
     }
 }
@@ -1160,7 +1171,7 @@ void createDescriptorPool()
     poolInfo.poolSizeCount = poolSizes.size();
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = 1000 * poolSizes.size();
-    assert(vkCreateDescriptorPool(s_device, &poolInfo, nullptr,
+    assert(vkCreateDescriptorPool(GetRenderDevice()->GetDevice(), &poolInfo, nullptr,
                                   &s_descriptorPool) == VK_SUCCESS);
 };
 
@@ -1172,7 +1183,7 @@ void createDescriptorSet()
     allocInfo.descriptorPool = s_descriptorPool;
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &s_descriptorSetLayout;
-    assert(vkAllocateDescriptorSets(s_device, &allocInfo, &s_descriptorSet) ==
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &s_descriptorSet) ==
            VK_SUCCESS);
 
     // Prepare buffer descriptor
@@ -1205,7 +1216,7 @@ void createDescriptorSet()
     descriptorWrites[1].descriptorCount = 1;
     descriptorWrites[1].pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(s_device,
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
                            static_cast<uint32_t>(descriptorWrites.size()),
                            descriptorWrites.data(), 0, nullptr);
 }
@@ -1213,18 +1224,18 @@ void createDescriptorSet()
 void cleanupSwapChain()
 {
     for (auto& framebuffer : s_swapChainFramebuffers)
-        vkDestroyFramebuffer(s_device, framebuffer, nullptr);
+        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), framebuffer, nullptr);
 
     s_contextManager.getContext(CONTEXT_SCENE)->finalize();
     s_contextManager.getContext(CONTEXT_UI)->finalize();
 
-    vkDestroyPipeline(s_device, s_graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(s_device, s_pipelineLayout, nullptr);
-    vkDestroyRenderPass(s_device, s_renderPass, nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), s_graphicsPipeline, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), s_pipelineLayout, nullptr);
+    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), s_renderPass, nullptr);
     for (auto& imageView : s_swapChainImageViews)
-        vkDestroyImageView(s_device, imageView, nullptr);
-    vkDestroySwapchainKHR(s_device, s_swapChain, nullptr);
-    vkDestroyDescriptorSetLayout(s_device, s_descriptorSetLayout, nullptr);
+        vkDestroyImageView(GetRenderDevice()->GetDevice(), imageView, nullptr);
+    vkDestroySwapchainKHR(GetRenderDevice()->GetDevice(), s_swapChain, nullptr);
+    vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), s_descriptorSetLayout, nullptr);
 }
 
 void recreateSwapChain()
@@ -1233,7 +1244,7 @@ void recreateSwapChain()
     glfwGetWindowSize(s_pWindow, &width, &height);
     if (width == 0 || height == 0) return;
 
-    vkDeviceWaitIdle(s_device);
+    vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
 
     cleanupSwapChain();
 
@@ -1245,7 +1256,7 @@ void recreateSwapChain()
     // Need to recreate depth resource before recreating framebuffer
     delete s_pDepthResource;
     s_pDepthResource = new DepthResource(
-        s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
+        GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
         s_swapChainExtent.width, s_swapChainExtent.height);
 
     createFramebuffers();
@@ -1255,20 +1266,20 @@ void recreateSwapChain()
 void cleanup()
 {
     cleanupSwapChain();
-    vkDestroyDescriptorPool(s_device, s_descriptorPool, nullptr);
+    vkDestroyDescriptorPool(GetRenderDevice()->GetDevice(), s_descriptorPool, nullptr);
 
     for (auto& somaphore : s_imageAvailableSemaphores)
-        vkDestroySemaphore(s_device, somaphore, nullptr);
+        vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
     for (auto& somaphore : s_renderFinishedSemaphores)
-        vkDestroySemaphore(s_device, somaphore, nullptr);
-    for (auto& fence : s_waitFences) vkDestroyFence(s_device, fence, nullptr);
+        vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
+    for (auto& fence : s_waitFences) vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
 
 
-    vkDestroyCommandPool(s_device, s_commandPool, nullptr);
-    vkDestroySurfaceKHR(s_instance, s_surface, nullptr);
-    vkDestroyDevice(s_device, nullptr);
-    DestroyDebugReportCallbackEXT(s_instance, s_debugCallback, nullptr);
-    vkDestroyInstance(s_instance, nullptr);
+    vkDestroyCommandPool(GetRenderDevice()->GetDevice(), s_commandPool, nullptr);
+    vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), s_surface, nullptr);
+    vkDestroyDevice(GetRenderDevice()->GetDevice(), nullptr);
+    DestroyDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), s_debugCallback, nullptr);
+    vkDestroyInstance(GetRenderDevice()->GetInstance(), nullptr);
     glfwDestroyWindow(s_pWindow);
     glfwTerminate();
 }
@@ -1277,14 +1288,14 @@ void present()
 {
     uint32_t imageIndex;
     vkAcquireNextImageKHR(
-        s_device, s_swapChain, std::numeric_limits<uint64_t>::max(),
+        GetRenderDevice()->GetDevice(), s_swapChain, std::numeric_limits<uint64_t>::max(),
         s_imageAvailableSemaphores[0], VK_NULL_HANDLE, &imageIndex);
 
     s_currentContext = imageIndex;
 
-    vkWaitForFences(s_device, 1, &s_waitFences[imageIndex], VK_TRUE,
+    vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
-    vkResetFences(s_device, 1, &s_waitFences[imageIndex]);
+    vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex]);
 
     // submit command buffer
     VkPipelineStageFlags stageFlag =
@@ -1304,7 +1315,7 @@ void present()
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
-    assert(vkQueueSubmit(s_graphicsQueue, 1, &submitInfo,
+    assert(vkQueueSubmit(GetRenderDevice()->GetGraphicsQueue(), 1, &submitInfo,
                          s_waitFences[imageIndex]) == VK_SUCCESS);
 
     // Present swap chain
@@ -1319,7 +1330,7 @@ void present()
 
     presentInfo.pResults = nullptr;
 
-    vkQueuePresentKHR(s_presentQueue, &presentInfo);
+    vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
 }
 
 void updateUniformBuffer(UniformBuffer* ub)
@@ -1367,42 +1378,45 @@ int main()
     // Looking for a way to convert them to smart pointers, otherwise a major
     // refactorying is required.
     {
-        s_UIOverlay = std::make_unique<UIOverlay>(s_device);
-        s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
-                                    *(s_contextManager.getContext(CONTEXT_UI))),
-                                s_numBuffers, s_physicalDevice);
-        s_UIOverlay->initializeFontTexture(s_physicalDevice, s_commandPool, s_graphicsQueue);
-        s_pDepthResource = new DepthResource(
-            s_device, s_physicalDevice, s_commandPool, s_graphicsQueue,
+       s_pDepthResource = new DepthResource(
+            GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
             s_swapChainExtent.width, s_swapChainExtent.height);
 
         createFramebuffers();
 
         s_pVertexBuffer = new VertexBuffer(
-            s_device, s_physicalDevice, sizeof(Vertex) * getVertices().size());
+            GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), sizeof(Vertex) * getVertices().size());
 
         s_pVertexBuffer->setData(reinterpret_cast<void*>(getVertices().data()),
                                  sizeof(Vertex) * getVertices().size(),
-                                 s_commandPool, s_graphicsQueue);
+                                 s_commandPool, GetRenderDevice()->GetGraphicsQueue());
 
         s_pIndexBuffer = new IndexBuffer(
-            s_device, s_physicalDevice, sizeof(uint32_t) * getIndices().size());
+            GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), sizeof(uint32_t) * getIndices().size());
 
         s_pIndexBuffer->setData(reinterpret_cast<void*>(getIndices().data()),
                                 sizeof(uint32_t) * getIndices().size(),
-                                s_commandPool, s_graphicsQueue);
+                                s_commandPool, GetRenderDevice()->GetGraphicsQueue());
 
-        s_pUniformBuffer = new UniformBuffer(s_device, s_physicalDevice,
+        s_pUniformBuffer = new UniformBuffer(GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),
                                              sizeof(UnifromBufferObject));
 
         s_pTexture = new Texture();
-        s_pTexture->LoadImage("assets/chalet.jpg", s_device, s_physicalDevice,
-                              s_commandPool, s_graphicsQueue);
+        s_pTexture->LoadImage("assets/chalet.jpg", GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),
+                              s_commandPool, GetRenderDevice()->GetGraphicsQueue());
         createDescriptorPool();
         createDescriptorSet();
         createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
         createSemaphores();
         createFences();
+        s_UIOverlay =
+            std::make_unique<UIOverlay>(GetRenderDevice()->GetDevice());
+        s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
+                                    *(s_contextManager.getContext(CONTEXT_UI))),
+                                s_numBuffers,
+                                GetRenderDevice()->GetPhysicalDevice());
+        // s_UIOverlay->initializeFontTexture(GetRenderDevice()->GetPhysicalDevice(),
+        // s_commandPool, GetRenderDevice()->GetGraphicsQueue());
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
@@ -1417,12 +1431,12 @@ int main()
             //
             updateUniformBuffer(s_pUniformBuffer);
             // wait on device to make sure it has been drawn
-            // assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
+            // assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
             present();
         }
         std::cout << "Closing window, wait for device to finish..."
                   << std::endl;
-        assert(vkDeviceWaitIdle(s_device) == VK_SUCCESS);
+        assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
         s_UIOverlay = nullptr;

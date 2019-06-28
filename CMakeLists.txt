@@ -52,8 +52,8 @@ if(NOT EXISTS ${GLSL_VALIDATOR})
 endif()
 
 if (UNIX)
-    set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wno-missing-braces")
-    set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "-g")
+    set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wno-missing-braces -g")
+    set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
 elseif(MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W4")
@@ -81,7 +81,7 @@ add_library(imgui
 # set(CMAKE_CXX_CPPCHECK "cppcheck")
 
 add_executable( helloVulkan
-    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp src/PipelineStateBuilder.cpp src/UIOverlay.cpp src/Texture.cpp
+    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp src/PipelineStateBuilder.cpp src/UIOverlay.cpp src/Texture.cpp src/VkRenderDevice.cpp src/Util.cpp
     )
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES})
 

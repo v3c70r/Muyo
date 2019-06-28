@@ -1,0 +1,40 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": "vulkanTutorial",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/Users/qgu/project/vulkanTutorial/build/helloVulkan",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build",
+            "environment": [
+                {
+                    "name": "VK_LAYER_PATH",
+                    "value": "/Users/qgu/tools/vulkansdk-macos-1.1.101.0/macOS/etc/vulkan/explicit_layer.d"
+                },
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "/Users/qgu/tools/vulkansdk-macos-1.1.101.0/macOS/lib"
+                },
+                {
+                    "name": "VK_ICD_FILENAMES",
+                    "value": "/Users/qgu/tools/vulkansdk-macos-1.1.101.0/macOS/etc/vulkan/icd.d/MoltenVK_icd.json"
+                }
+
+            ],
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "logging": {
+                "moduleLoad": true,
+                "programOutput": true,
+                "trace": false,
+                "traceResponse": false
+            },
+        }
+    ]
+}
