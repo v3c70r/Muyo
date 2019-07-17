@@ -2,6 +2,7 @@
 #include "PipelineStateBuilder.h"
 #include "RenderContext.h"
 
+extern VkRenderPass s_renderPass;
 
 bool UIOverlay::initialize(RenderContext& context, uint32_t numBuffers,
                            VkPhysicalDevice physicalDevice)
@@ -313,25 +314,50 @@ bool UIOverlay::mCreatePipeline(VkDevice &device)
     std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
                                                      VK_DYNAMIC_STATE_SCISSOR};
 
+    // viewport
+
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = 1600;
+    viewport.height = 1200;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    VkRect2D scissor = {};
+    scissor.offset = {0, 0};
+    scissor.extent = VkExtent2D({1600, 1200});
+
+    VkPipelineViewportStateCreateInfo viewportState = {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
     // Create pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = mDescriptorLayouts.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges = 0;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = pushConstants.data();
     assert(vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
                                   &mPipelineLayout) == VK_SUCCESS);
+
 
     mPipeline =
         builder.setShaderModules({vert_module, frag_module})
             .setPipelineLayout(mPipelineLayout)
             .setVertextInfo(bindingDescs, attributeDescs)
             .setAssembly(inputAssemblyInfo)
+            .setViewport(viewport, scissor)
             .setRasterizer(rasterInfo)
             .setMSAA(MSAAInfo)
             .setColorBlending(blendInfo)
+            .setRenderPass(s_renderPass)
             .setDynamicStates(dynamicStates)
+            .setDepthStencil(depthInfo)
             .build(mDevice);
 
     vkDestroyShaderModule(device, vert_module, nullptr);

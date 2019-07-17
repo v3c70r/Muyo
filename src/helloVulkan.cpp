@@ -13,6 +13,7 @@
 #include <limits>
 #include <set>
 #include <vector>
+#include <cassert> // assert
 
 #include "ContextManager.h"
 #include "DepthResource.h"
@@ -252,6 +253,10 @@ debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType,
             break;
     }
     std::cerr << msg << std::endl;
+    if (flags == VK_DEBUG_REPORT_ERROR_BIT_EXT)
+    {
+        assert(false);
+    }
 
     return VK_FALSE;
 }
@@ -1411,6 +1416,7 @@ int main()
         createFences();
         s_UIOverlay =
             std::make_unique<UIOverlay>(GetRenderDevice()->GetDevice());
+
         s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
                                     *(s_contextManager.getContext(CONTEXT_UI))),
                                 s_numBuffers,
