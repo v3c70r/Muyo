@@ -21,7 +21,7 @@ public:
                  VkQueue queue)
     {
         // Recreate buffer if size has been changed
-        if (mBuffer.size() != size)
+        if (mBuffer.size() != alignUp(size, mBuffer.alignment()))
         {
             mBuffer = Buffer(mBuffer.device(), mBuffer.physicalDevice(), size,
                              VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -89,7 +89,7 @@ public:
     void setData(void* indices, size_t size, VkCommandPool commandPool, VkQueue queue)
     {
 
-        if (mBuffer.size() != size)
+        if (mBuffer.size() != alignUp(size, mBuffer.alignment()))
         {
             mBuffer = Buffer(mBuffer.device(), mBuffer.physicalDevice(), size,
                              VK_BUFFER_USAGE_TRANSFER_DST_BIT |

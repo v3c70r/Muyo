@@ -1421,23 +1421,28 @@ int main()
                                     *(s_contextManager.getContext(CONTEXT_UI))),
                                 s_numBuffers,
                                 GetRenderDevice()->GetPhysicalDevice());
-        // s_UIOverlay->initializeFontTexture(GetRenderDevice()->GetPhysicalDevice(),
-        // s_commandPool, GetRenderDevice()->GetGraphicsQueue());
+        s_UIOverlay->initializeFontTexture(
+            GetRenderDevice()->GetPhysicalDevice(), s_commandPool,
+            GetRenderDevice()->GetGraphicsQueue());
+
+        ImGui::GetIO().DisplaySize = ImVec2(s_swapChainExtent.width, s_swapChainExtent.height);
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
         {
             glfwPollEvents();
 
-            // TODO: Do we need multiple swapchains to render the GUI
             if (s_resizeWanted)
             {
                 s_resizeWanted = false;
             }
-            //
+            ImGui::NewFrame();
+            ImGui::Text("test");
             updateUniformBuffer(s_pUniformBuffer);
             // wait on device to make sure it has been drawn
             // assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
+            ImGui::Render();
+            s_UIOverlay->renderDrawData(ImGui::GetDrawData(), *(static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_UI))), s_commandPool, GetRenderDevice()->GetGraphicsQueue());
             present();
         }
         std::cout << "Closing window, wait for device to finish..."
@@ -1445,6 +1450,7 @@ int main()
         assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
+        s_UIOverlay->finalize();
         s_UIOverlay = nullptr;
         delete s_pDepthResource;
         delete s_pVertexBuffer;

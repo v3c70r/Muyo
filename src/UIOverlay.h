@@ -5,6 +5,7 @@
 #include "Texture.h"
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <memory>
 // ImGui integration
 class RenderContext;
 class UIOverlay

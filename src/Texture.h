@@ -1,8 +1,9 @@
 #pragma once
-#include <vulkan/vulkan.h>
-#include <string>
 #include "Buffer.h"
 #include "Util.h"
+#include <vulkan/vulkan.h>
+#include <string>
+#include <stdexcept>
 
 class Texture
 {

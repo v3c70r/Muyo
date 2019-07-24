@@ -16,7 +16,7 @@ bool UIOverlay::initialize(RenderContext& context, uint32_t numBuffers,
     if (mDescriptorLayouts.size() == 0)
         mCreateDescriptorSetLayout();
     if (mPipelineLayout == VK_NULL_HANDLE)
-    mCreatePipeline(*(context.getDevice()));
+        mCreatePipeline(*(context.getDevice()));
 
     // create vertex and index buffers, one for each context
     mpVertexBuffers.resize(numBuffers);
@@ -29,6 +29,7 @@ bool UIOverlay::initialize(RenderContext& context, uint32_t numBuffers,
     {
         pIndexbuffer = std::make_unique<IndexBuffer>(mDevice, physicalDevice);
     }
+    ImGui::CreateContext();
 
     return true;
 }
@@ -368,6 +369,8 @@ bool UIOverlay::mCreatePipeline(VkDevice &device)
 
 bool UIOverlay::finalize()
 {
+    ImGui::DestroyContext();
+    vkDestroyPipeline(mDevice, mPipeline, nullptr);
     vkDestroySampler(mDevice, mFontSampler, nullptr);
     for (auto& descriptorSetLayout : mDescriptorLayouts)
         vkDestroyDescriptorSetLayout(mDevice, descriptorSetLayout,

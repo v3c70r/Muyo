@@ -27,6 +27,7 @@ void Texture::LoadPixels(void *pixels, int width, int height,
                          const VkPhysicalDevice &physicalDevice,
                          const VkCommandPool &pool, const VkQueue &queue)
 {
+    mDevice = device;
     // Upload pixels to staging buffer
     Buffer stagingBuffer(device, physicalDevice, width * height * 4,
                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
