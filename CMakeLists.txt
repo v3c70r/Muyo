@@ -21,6 +21,8 @@ if (NOT ${glfw3_FOUND})
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
 endif()
+# build vulkanMemoryAllocator from source
+
 
 ## GLM
 find_package(glm QUIET)
@@ -37,6 +39,17 @@ else()
     find_package(Vulkan REQUIRED)
 endif()
 
+## Vulkan Memory Allocator
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
+add_library(vma ${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator/vk_mem_alloc.cpp)
+
+## stb images
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/stb)
+add_library(stb ${CMAKE_SOURCE_DIR}/thirdparty/stb/stb.cpp)
+
+## tiny obj
+add_library(tinyobj ${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader/tiny_obj_loader.cc)
+
 
 find_file(GLSL_VALIDATOR 
     NAMES 
@@ -52,7 +65,7 @@ if(NOT EXISTS ${GLSL_VALIDATOR})
 endif()
 
 if (UNIX)
-    set (CMAKE_CXX_FLAGS "-std=c++14 -Wall -pthread -Wno-missing-braces -g")
+    set (CMAKE_CXX_FLAGS "-std=c++17 -Wall -pthread -Wno-missing-braces -g")
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
 elseif(MSVC)
@@ -81,9 +94,10 @@ add_library(imgui
 # set(CMAKE_CXX_CPPCHECK "cppcheck")
 
 add_executable( helloVulkan
-    src/helloVulkan.cpp thirdparty/tiny_obj_loader.cc src/RenderContext.cpp src/PipelineStateBuilder.cpp src/UIOverlay.cpp src/Texture.cpp src/VkRenderDevice.cpp src/Util.cpp
+    src/helloVulkan.cpp src/RenderContext.cpp src/PipelineStateBuilder.cpp src/UIOverlay.cpp src/Texture.cpp src/VkRenderDevice.cpp src/Util.cpp
     )
-target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES})
+
+target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES

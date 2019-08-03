@@ -26,8 +26,7 @@
 #include "MeshVertex.h"
 #include "UIOverlay.h"
 #include "VkRenderDevice.h"
-
-#include "../thirdparty/tiny_obj_loader.h"
+#include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;

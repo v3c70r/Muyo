@@ -1,6 +1,6 @@
 #include "Texture.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include "../thirdparty/stb_image.h"
+#include "../thirdparty/stb/stb_image.h"
 
 Texture::Texture()
     : mDevice(VK_NULL_HANDLE),
