@@ -23,7 +23,6 @@ if (NOT ${glfw3_FOUND})
 endif()
 # build vulkanMemoryAllocator from source
 
-
 ## GLM
 find_package(glm QUIET)
 if (NOT ${glm_FOUND})
@@ -95,6 +94,7 @@ add_library(imgui
 
 add_executable( helloVulkan
     src/helloVulkan.cpp src/RenderContext.cpp src/PipelineStateBuilder.cpp src/UIOverlay.cpp src/Texture.cpp src/VkRenderDevice.cpp src/Util.cpp
+    src/VkAllocator.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)

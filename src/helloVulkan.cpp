@@ -1438,10 +1438,11 @@ int main()
             ImGui::NewFrame();
             ImGui::Text("test");
             updateUniformBuffer(s_pUniformBuffer);
+            ImGui::EndFrame();
             // wait on device to make sure it has been drawn
             // assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
-            ImGui::Render();
-            s_UIOverlay->renderDrawData(ImGui::GetDrawData(), *(static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_UI))), s_commandPool, GetRenderDevice()->GetGraphicsQueue());
+            //ImGui::Render();
+            //s_UIOverlay->renderDrawData(ImGui::GetDrawData(), *(static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_UI))), s_commandPool, GetRenderDevice()->GetGraphicsQueue());
             present();
         }
         std::cout << "Closing window, wait for device to finish..."

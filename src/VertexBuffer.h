@@ -5,7 +5,17 @@
 #include <glm/glm.hpp>
 #include <iostream>
 #include <vector>
+#include <vk_mem_alloc.h>
+
 #include "Buffer.h"
+
+/*
+VmaAllocatorCreateInfo allocatorInfo = {};
+allocatorInfo.physicalDevice = physicalDevice;
+allocatorInfo.device = device;
+VmaAllocator allocator;
+vmaCreateAllocator(&allocatorInfo, &allocator);
+*/
 
 class VertexBuffer {
 public:
