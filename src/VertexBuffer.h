@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <vk_mem_alloc.h>
+#include <memory>
 
 #include "Buffer.h"
 

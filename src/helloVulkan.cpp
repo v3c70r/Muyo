@@ -26,6 +26,7 @@
 #include "MeshVertex.h"
 #include "UIOverlay.h"
 #include "VkRenderDevice.h"
+#include "VkMemoryAllocator.h"
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
 
 const int WIDTH = 800;
@@ -1370,12 +1371,15 @@ int main()
                       // it needs s_surface
     pickPysicalDevice();
     createLogicalDevice();
+    GetMemoryAllocator()->Initalize(GetRenderDevice());
     createSwapChain();
     createImageViews();
 
     createRenderPass();
     createGraphicsPipeline();
     createCommandPool();
+
+    // Create memory allocator
 
     // A bunch of news and deletes happend in the following block
     // They have to be created and destroyed in a certain order
