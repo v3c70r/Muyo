@@ -1392,15 +1392,13 @@ int main()
 
         createFramebuffers();
 
-        s_pVertexBuffer = new VertexBuffer(
-            GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), sizeof(Vertex) * getVertices().size());
+        s_pVertexBuffer = new VertexBuffer();
 
         s_pVertexBuffer->setData(reinterpret_cast<void*>(getVertices().data()),
                                  sizeof(Vertex) * getVertices().size(),
                                  s_commandPool, GetRenderDevice()->GetGraphicsQueue());
 
-        s_pIndexBuffer = new IndexBuffer(
-            GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), sizeof(uint32_t) * getIndices().size());
+        s_pIndexBuffer = new IndexBuffer();
 
         s_pIndexBuffer->setData(reinterpret_cast<void*>(getIndices().data()),
                                 sizeof(uint32_t) * getIndices().size(),

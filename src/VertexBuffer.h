@@ -1,55 +1,56 @@
 #pragma once
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 #include <array>
 #include <cassert>
 #include <glm/glm.hpp>
 #include <iostream>
-#include <vector>
-#include <vk_mem_alloc.h>
 #include <memory>
+#include <vector>
 
 #include "Buffer.h"
+#include "VkMemoryAllocator.h"
+#include "VkRenderDevice.h"
 
-/*
-VmaAllocatorCreateInfo allocatorInfo = {};
-allocatorInfo.physicalDevice = physicalDevice;
-allocatorInfo.device = device;
-VmaAllocator allocator;
-vmaCreateAllocator(&allocatorInfo, &allocator);
-*/
-
-class VertexBuffer {
+class VertexBuffer
+{
 public:
-    VertexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
-                 size_t size = 0)
+    VertexBuffer(size_t size = 0)
     {
-        m_pBuffer = std::make_unique<Buffer>(device, physicalDevice, size,
-                                     VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (size != 0)
+        {
+            GetMemoryAllocator()->AllocateBuffer(
+                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+        }
+    }
+    ~VertexBuffer()
+    {
+        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
+        {
+            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
+        }
     }
     void setData(void* vertices, size_t size, VkCommandPool commandPool,
                  VkQueue queue)
     {
-        // Recreate buffer if size has been changed
-        if (m_pBuffer->size() != alignUp(size, m_pBuffer->alignment()))
+        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
         {
-            // Recreate buffer
-            VkDevice device = m_pBuffer->device();
-            VkPhysicalDevice physicalDevice = m_pBuffer->physicalDevice();
-
-            m_pBuffer = std::make_unique<Buffer>(device, physicalDevice, size,
-                             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                 VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
         }
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
+                                             m_buffer, m_allocation);
 
+        // Create staging buffer
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+        GetMemoryAllocator()->AllocateBuffer(
+            size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
+            stagingBuffer, stagingAllocation);
 
-        Buffer stagingBuffer(m_pBuffer->device(), m_pBuffer->physicalDevice(),
-                             size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        stagingBuffer.setData(vertices);
+        void* pMappedMemory = nullptr;
+        GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
+        memcpy(pMappedMemory, vertices, size);
+        GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
 
         // Allocate command buffer
         VkCommandBufferAllocateInfo allocInfo = {};
@@ -59,7 +60,8 @@ public:
         allocInfo.commandBufferCount = 1;
 
         VkCommandBuffer commandBuffer;
-        vkAllocateCommandBuffers(m_pBuffer->device(), &allocInfo, &commandBuffer);
+        vkAllocateCommandBuffers(GetRenderDevice()->GetDevice(), &allocInfo,
+                                 &commandBuffer);
 
         // record command buffer
         VkCommandBufferBeginInfo beginInfo = {};
@@ -67,9 +69,8 @@ public:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
         VkBufferCopy copyRegion = {};
-        copyRegion.size = m_pBuffer->size();
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer(), m_pBuffer->buffer(),
-                        1, &copyRegion);
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1, &copyRegion);
         vkEndCommandBuffer(commandBuffer);
 
         // execute it right away
@@ -80,46 +81,47 @@ public:
         vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(queue);  // wait for it to finish
 
-        vkFreeCommandBuffers(m_pBuffer->device(), commandPool, 1, &commandBuffer);
-
-        // stagingBuffer will be automatically destroyed when out of this scope
+        vkFreeCommandBuffers(GetRenderDevice()->GetDevice(), commandPool, 1,
+                             &commandBuffer);
+        GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);
     }
-    VkBuffer buffer() const { return m_pBuffer->buffer(); }
+    VkBuffer buffer() const { return m_buffer; }
+
 private:
-    std::unique_ptr<Buffer> m_pBuffer;
+    VkBuffer m_buffer = VK_NULL_HANDLE;
+    VmaAllocation m_allocation = VK_NULL_HANDLE;
+
+    const VkBufferUsageFlags BUFFER_USAGE =
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_GPU_ONLY;
 };
 
 class IndexBuffer
 {
 public:
-    IndexBuffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,
-                size_t size = 0)
-    {
-        m_pBuffer = std::make_unique<Buffer>(
-            device, physicalDevice, size,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    }
+    IndexBuffer(size_t size = 0) {}
 
-    void setData(void* indices, size_t size, VkCommandPool commandPool, VkQueue queue)
+    void setData(void* indices, size_t size, VkCommandPool commandPool,
+                 VkQueue queue)
     {
-
-        if (m_pBuffer->size() != alignUp(size, m_pBuffer->alignment()))
+        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
         {
-            // Recreate buffer
-            VkDevice device = m_pBuffer->device();
-            VkPhysicalDevice physicalDevice = m_pBuffer->physicalDevice();
-            m_pBuffer = std::make_unique<Buffer>(device, physicalDevice, size,
-                             VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                                 VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
         }
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
+                                             m_buffer, m_allocation);
 
-        Buffer stagingBuffer(m_pBuffer->device(), m_pBuffer->physicalDevice(),
-                             m_pBuffer->size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        stagingBuffer.setData(indices); 
+        // Create staging buffer
+        VkBuffer stagingBuffer = VK_NULL_HANDLE;
+        VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+        GetMemoryAllocator()->AllocateBuffer(
+            size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
+            stagingBuffer, stagingAllocation);
+
+        void* pMappedMemory = nullptr;
+        GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
+        memcpy(pMappedMemory, indices, size);
+        GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
 
         // Allocate command buffer
         VkCommandBufferAllocateInfo allocInfo = {};
@@ -129,7 +131,8 @@ public:
         allocInfo.commandBufferCount = 1;
 
         VkCommandBuffer commandBuffer;
-        vkAllocateCommandBuffers(m_pBuffer->device(), &allocInfo, &commandBuffer);
+        vkAllocateCommandBuffers(GetRenderDevice()->GetDevice(), &allocInfo,
+                                 &commandBuffer);
 
         // record command buffer
         VkCommandBufferBeginInfo beginInfo = {};
@@ -137,9 +140,8 @@ public:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         vkBeginCommandBuffer(commandBuffer, &beginInfo);
         VkBufferCopy copyRegion = {};
-        copyRegion.size = m_pBuffer->size();
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer.buffer(), m_pBuffer->buffer(),
-                        1, &copyRegion);
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1, &copyRegion);
         vkEndCommandBuffer(commandBuffer);
 
         // execute it right away
@@ -150,13 +152,17 @@ public:
         vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(queue);  // wait for it to finish
 
-        vkFreeCommandBuffers(m_pBuffer->device(), commandPool, 1, &commandBuffer);
-
-        // stagingBuffer will be automatically destroyed when out of this scope
- 
+        vkFreeCommandBuffers(GetRenderDevice()->GetDevice(), commandPool, 1,
+                             &commandBuffer);
+        GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);
     }
-    VkBuffer buffer() const { return m_pBuffer->buffer(); }
+    VkBuffer buffer() const { return m_buffer; }
 
 private:
-    std::unique_ptr<Buffer> m_pBuffer;
+    VkBuffer m_buffer = VK_NULL_HANDLE;
+    VmaAllocation m_allocation = VK_NULL_HANDLE;
+
+    const VkBufferUsageFlags BUFFER_USAGE =
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_GPU_ONLY;
 };

@@ -22,12 +22,12 @@ bool UIOverlay::initialize(RenderContext& context, uint32_t numBuffers,
     mpVertexBuffers.resize(numBuffers);
     for (auto& pVertexBuffer: mpVertexBuffers)
     {
-        pVertexBuffer = std::make_unique<VertexBuffer>(mDevice, physicalDevice);
+        pVertexBuffer = std::make_unique<VertexBuffer>();
     }
     mpIndexBuffers.resize(numBuffers);
     for (auto& pIndexbuffer: mpIndexBuffers)
     {
-        pIndexbuffer = std::make_unique<IndexBuffer>(mDevice, physicalDevice);
+        pIndexbuffer = std::make_unique<IndexBuffer>();
     }
     ImGui::CreateContext();
 
