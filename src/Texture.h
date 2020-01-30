@@ -1,27 +1,28 @@
 #pragma once
+#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.h>
+#include <stdexcept>
+#include <string>
 #include "Buffer.h"
 #include "Util.h"
-#include <vulkan/vulkan.h>
-#include <string>
-#include <stdexcept>
+#include "VkRenderDevice.h"
+#include "VkMemoryAllocator.h"
 
 class Texture
 {
 public:
     Texture();
     ~Texture();
-    
-    void LoadPixels(void *pixels, int width, int height, const VkDevice &device,
-                    const VkPhysicalDevice &physicalDevice,
+
+    void LoadPixels(void *pixels, int width, int height,
                     const VkCommandPool &pool, const VkQueue &queue);
-    
 
     void LoadImage(const std::string path, const VkDevice &device,
                    const VkPhysicalDevice &physicalDevice,
                    const VkCommandPool &pool, const VkQueue &queue);
 
-    VkImageView getImageView() const { return mImageView; }
-    VkSampler getSamper() const { return mTextureSampler; }
+    VkImageView getImageView() const { return m_imageView; }
+    VkSampler getSamper() const { return m_textureSampler; }
 
     static VkDescriptorSetLayoutBinding getSamplerLayoutBinding()
     {
@@ -34,11 +35,10 @@ public:
 
         return samplerLayoutBinding;
     }
-    static void createImage(VkDevice device, VkPhysicalDevice physicalDevice,
-                      uint32_t width, uint32_t height, VkFormat format,
-                      VkImageTiling tiling, VkImageUsageFlags usage,
-                      VkMemoryPropertyFlags properties, VkImage &image,
-                      VkDeviceMemory &imageMemory)
+
+    void createImage(uint32_t width, uint32_t height, VkFormat format,
+                     VkImageTiling tiling, VkImageUsageFlags usage,
+                     VmaMemoryUsage memoryUsage)
     {
         // Create a vkimage
         VkImageCreateInfo imageInfo = {};
@@ -56,28 +56,15 @@ public:
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.flags = 0;
-        assert(vkCreateImage(device, &imageInfo, nullptr, &image) ==
-               VK_SUCCESS);
 
-        // Allocate device memory for the image
-        VkMemoryRequirements memRequirements;
-        vkGetImageMemoryRequirements(device, image, &memRequirements);
-
-        VkMemoryAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memRequirements.size;
-        allocInfo.memoryTypeIndex = Buffer::findMemoryType(
-            physicalDevice, memRequirements.memoryTypeBits, properties);
-
-        assert(vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) ==
-               VK_SUCCESS);
-        vkBindImageMemory(device, image, imageMemory, 0);
+        GetMemoryAllocator()->AllocateImage(
+            &imageInfo, memoryUsage, m_image, m_allocation);
     }
 
     static void sTransitionImageLayout(VkDevice device, VkCommandPool cmdPool,
-                                VkQueue queue, VkImage image, VkFormat format,
-                                VkImageLayout oldLayout,
-                                VkImageLayout newLayout)
+                                       VkQueue queue, VkImage image,
+                                       VkFormat format, VkImageLayout oldLayout,
+                                       VkImageLayout newLayout)
     {
         VkPipelineStageFlags sourceStage;
         VkPipelineStageFlags destinationStage;
@@ -89,10 +76,12 @@ public:
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = image;
-        if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+        {
             barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
         }
-        else {
+        else
+        {
             barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         }
         barrier.subresourceRange.baseMipLevel = 0;
@@ -102,7 +91,8 @@ public:
 
         // UNDEFINED -> DST
         if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-            newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+            newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+        {
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
@@ -111,7 +101,8 @@ public:
         }
         // DST -> SHADER READ ONLY
         else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-                 newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+                 newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        {
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
@@ -119,9 +110,9 @@ public:
             destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         }
         // UNDEFINED -> DEPTH_ATTACHMENT
-        else if( oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+        else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+                 newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
         {
-
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask =
                 VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
@@ -130,23 +121,19 @@ public:
             sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
         }
-        else {
+        else
+        {
             throw std::invalid_argument("unsupported layout transition!");
         }
 
         VkCommandBuffer cmdBuf = beginSingleTimeCommands(device, cmdPool);
 
-        vkCmdPipelineBarrier(cmdBuf, 
-                sourceStage, /*srcStage*/ destinationStage,/*dstStage*/
-                0,
-                0, nullptr,
-                0, nullptr,
-                1, &barrier
-                );
+        vkCmdPipelineBarrier(cmdBuf, sourceStage,
+                             /*srcStage*/ destinationStage, /*dstStage*/
+                             0, 0, nullptr, 0, nullptr, 1, &barrier);
 
         endSingleTimeCommands(cmdBuf, device, cmdPool, queue);
     }
-
 
 private:
     void mCopyBufferToImage(VkDevice device, VkCommandPool cmdPool,
@@ -162,11 +149,7 @@ private:
         region.imageSubresource.baseArrayLayer = 0;
         region.imageSubresource.layerCount = 1;
         region.imageOffset = {0, 0, 0};
-        region.imageExtent = {
-            width,
-            height,
-            1
-        };
+        region.imageExtent = {width, height, 1};
         VkCommandBuffer cmdBuf = beginSingleTimeCommands(device, cmdPool);
         vkCmdCopyBufferToImage(cmdBuf, buffer, image,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
@@ -177,7 +160,7 @@ private:
     {
         VkImageViewCreateInfo viewInfo = {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = mTextureImage;
+        viewInfo.image = m_image;
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
         viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -185,8 +168,8 @@ private:
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
-        assert(vkCreateImageView(mDevice, &viewInfo, nullptr, &mImageView) == VK_SUCCESS);
-
+        assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &viewInfo,
+                                 nullptr, &m_imageView) == VK_SUCCESS);
     }
 
     void mInitSampler()
@@ -219,13 +202,12 @@ private:
         samplerInfo.minLod = 0.0f;
         samplerInfo.maxLod = 0.0f;
 
-        assert(vkCreateSampler(mDevice, &samplerInfo, nullptr,
-                               &mTextureSampler) == VK_SUCCESS);
+        assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
+                               nullptr, &m_textureSampler) == VK_SUCCESS);
     }
 
-    VkDevice mDevice;
-    VkImage mTextureImage;
-    VkDeviceMemory mDeviceMemory;
-    VkImageView mImageView;
-    VkSampler mTextureSampler;
+    VkImage m_image;
+    VmaAllocation m_allocation = VK_NULL_HANDLE;
+    VkImageView m_imageView;
+    VkSampler m_textureSampler;
 };

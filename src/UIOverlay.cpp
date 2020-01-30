@@ -44,8 +44,7 @@ bool UIOverlay::initialize(RenderContext& context, uint32_t numBuffers,
     //size_t textureSize = width*height*4*sizeof(char);
 
     mpFontTexture = std::make_unique<Texture>();
-    mpFontTexture->LoadPixels(pixels, width, height, mDevice, physicalDevice,
-            commandPool, graphicsQueue);
+    mpFontTexture->LoadPixels(pixels, width, height, commandPool, graphicsQueue);
 
     return true;
 }

@@ -47,9 +47,24 @@ void VkMemoryAllocator::MapBuffer(VmaAllocation& allocation, void** ppData)
     vmaMapMemory(*m_pAllocator, allocation, ppData);
 }
 
-    void VkMemoryAllocator::UnmapBuffer(VmaAllocation &allocation)
+void VkMemoryAllocator::UnmapBuffer(VmaAllocation& allocation)
 {
     vmaUnmapMemory(*m_pAllocator, allocation);
+}
+
+void VkMemoryAllocator::AllocateImage(const VkImageCreateInfo* pImageInfo,
+                                      VmaMemoryUsage nMemoryUsageFlags,
+                                      VkImage& image, VmaAllocation& allocation)
+{
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = nMemoryUsageFlags;
+
+    vmaCreateImage(*m_pAllocator, pImageInfo, &allocInfo, &image, &allocation,
+                   nullptr);
+}
+void VkMemoryAllocator::FreeImage(VkImage& image, VmaAllocation &allocation)
+{
+    vmaDestroyImage(*m_pAllocator, image, allocation);
 }
 
 static VkMemoryAllocator allocator;

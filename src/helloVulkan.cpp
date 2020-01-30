@@ -1260,9 +1260,9 @@ void recreateSwapChain()
 
     // Need to recreate depth resource before recreating framebuffer
     delete s_pDepthResource;
-    s_pDepthResource = new DepthResource(
-        GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
-        s_swapChainExtent.width, s_swapChainExtent.height);
+    s_pDepthResource =
+        new DepthResource(s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
+                          s_swapChainExtent.width, s_swapChainExtent.height);
 
     createFramebuffers();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
@@ -1386,8 +1386,8 @@ int main()
     // Looking for a way to convert them to smart pointers, otherwise a major
     // refactorying is required.
     {
-       s_pDepthResource = new DepthResource(
-            GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(), s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
+        s_pDepthResource = new DepthResource(
+            s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
             s_swapChainExtent.width, s_swapChainExtent.height);
 
         createFramebuffers();

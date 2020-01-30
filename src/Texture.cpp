@@ -3,57 +3,56 @@
 #include "../thirdparty/stb/stb_image.h"
 
 Texture::Texture()
-    : mDevice(VK_NULL_HANDLE),
-      mTextureImage(VK_NULL_HANDLE),
-      mDeviceMemory(VK_NULL_HANDLE),
-      mImageView(VK_NULL_HANDLE),
-      mTextureSampler(VK_NULL_HANDLE)
+    : m_image(VK_NULL_HANDLE),
+      m_imageView(VK_NULL_HANDLE),
+      m_textureSampler(VK_NULL_HANDLE)
 {
 }
 
 Texture::~Texture()
 {
-    if (mDevice != VK_NULL_HANDLE)
+    if (GetRenderDevice()->GetDevice() != VK_NULL_HANDLE)
     {
-        vkDestroySampler(mDevice, mTextureSampler, nullptr);
-        vkDestroyImageView(mDevice, mImageView, nullptr);
-        vkDestroyImage(mDevice, mTextureImage, nullptr);
-        vkFreeMemory(mDevice, mDeviceMemory, nullptr);
+        vkDestroySampler(GetRenderDevice()->GetDevice(), m_textureSampler, nullptr);
+        vkDestroyImageView(GetRenderDevice()->GetDevice(), m_imageView, nullptr);
+        GetMemoryAllocator()->FreeImage(m_image, m_allocation);
     }
 }
 
 void Texture::LoadPixels(void *pixels, int width, int height,
-                         const VkDevice &device,
-                         const VkPhysicalDevice &physicalDevice,
                          const VkCommandPool &pool, const VkQueue &queue)
 {
-    mDevice = device;
     // Upload pixels to staging buffer
-    Buffer stagingBuffer(device, physicalDevice, width * height * 4,
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                             VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    stagingBuffer.setData((void *)pixels);
+    const size_t BUFFER_SIZE = width * height * 4;
+    VmaAllocation stagingAllocation;
+    VkBuffer stagingBuffer;
+    GetMemoryAllocator()->AllocateBuffer(
+        BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingAllocation);
+
+    void *pMappedMemory = nullptr;
+    GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
+    memcpy(pMappedMemory, pixels, BUFFER_SIZE);
+    GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
     stbi_image_free(pixels);
 
-    createImage(device, physicalDevice, width, height, VK_FORMAT_R8G8B8A8_UNORM,
+    createImage(width, height, VK_FORMAT_R8G8B8A8_UNORM,
                 VK_IMAGE_TILING_OPTIMAL,
                 VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, mTextureImage,
-                mDeviceMemory);
+                VMA_MEMORY_USAGE_GPU_ONLY);
 
     // UNDEFINED -> DST_OPTIMAL
-    sTransitionImageLayout(device, pool, queue, mTextureImage,
+    sTransitionImageLayout(GetRenderDevice()->GetDevice(), pool, queue, m_image,
                            VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
     // Copy source to image
-    mCopyBufferToImage(device, pool, queue, stagingBuffer.buffer(),
-                       mTextureImage, static_cast<uint32_t>(width),
+    mCopyBufferToImage(GetRenderDevice()->GetDevice(), pool, queue, stagingBuffer,
+                       m_image, static_cast<uint32_t>(width),
                        static_cast<uint32_t>(height));
 
     // DST_OPTIMAL -> SHADER_READ_ONLY
-    sTransitionImageLayout(device, pool, queue, mTextureImage,
+    sTransitionImageLayout(GetRenderDevice()->GetDevice(), pool, queue, m_image,
                            VK_FORMAT_R8G8B8A8_UNORM,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -66,12 +65,10 @@ void Texture::LoadImage(const std::string path, const VkDevice &device,
                         const VkPhysicalDevice &physicalDevice,
                         const VkCommandPool &pool, const VkQueue &queue)
 {
-    mDevice = device;
 
     int width, height, channels;
     stbi_uc *pixels =
         stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
     assert(pixels);
-    LoadPixels((void *)pixels, width, height, device, physicalDevice, pool,
-               queue);
+    LoadPixels((void *)pixels, width, height, pool, queue);
 }
