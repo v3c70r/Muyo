@@ -13,7 +13,7 @@ public:
     void startRecording() override;
     void endRecording() override;
 
-    // Move this to framebuffer?
+    // Move this to framebuffer? Nononono this is dumb for obvious reason
     void beginPass(VkRenderPass& renderPass, VkFramebuffer& frameBuffer,
                    VkExtent2D& extent);
     void endPass();

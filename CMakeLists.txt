@@ -93,8 +93,14 @@ add_library(imgui
 # set(CMAKE_CXX_CPPCHECK "cppcheck")
 
 add_executable( helloVulkan
-    src/helloVulkan.cpp src/RenderContext.cpp src/PipelineStateBuilder.cpp src/UIOverlay.cpp src/Texture.cpp src/VkRenderDevice.cpp src/Util.cpp
+    src/helloVulkan.cpp
+    src/RenderContext.cpp
+    src/PipelineStateBuilder.cpp
+    #src/UIOverlay.cpp 
+    src/Texture.cpp
+    src/VkRenderDevice.cpp src/Util.cpp
     src/VkMemoryAllocator.cpp
+    src/RenderPass.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)

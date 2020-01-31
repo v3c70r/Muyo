@@ -24,11 +24,13 @@
 #include "RenderContext.h"
 #include "PipelineStateBuilder.h"
 #include "MeshVertex.h"
-#include "UIOverlay.h"
+//#include "UIOverlay.h"
 #include "VkRenderDevice.h"
 #include "VkMemoryAllocator.h"
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
+#include "RenderPass.h"
 
+std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
@@ -115,16 +117,16 @@ static VkExtent2D s_swapChainExtent;
 
 static std::vector<VkImage> s_swapChainImages;
 static std::vector<VkImageView> s_swapChainImageViews;
-static std::vector<VkFramebuffer> s_swapChainFramebuffers;
+//static std::vector<VkFramebuffer> s_swapChainFramebuffers;
 
 static VertexBuffer* s_pVertexBuffer = nullptr;
 static IndexBuffer* s_pIndexBuffer = nullptr;
 static UniformBuffer* s_pUniformBuffer = nullptr;
 static Texture* s_pTexture = nullptr;
 static DepthResource* s_pDepthResource = nullptr;
-static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
+//static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
 
-VkRenderPass s_renderPass;
+//VkRenderPass s_renderPass;
 
 // DescriptorLayout, which is part of the pipeline layout
 static VkDescriptorSetLayout s_descriptorSetLayout;
@@ -817,82 +819,6 @@ VkShaderModule m_createShaderModule(const std::vector<char>& code)
     return shdrModule;
 }
 
-void createRenderPass()
-{
-    // Attachments
-    //
-    // Color Attachements
-    VkAttachmentDescription colorAttachment = {};
-    colorAttachment.format = s_swapChainImageFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;  // Clear on load
-    colorAttachment.storeOp =
-        VK_ATTACHMENT_STORE_OP_STORE;  // Store in the memory to read back later
-
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    // Depth attachments
-    VkAttachmentDescription depthAttachment = {};
-    depthAttachment.format = VK_FORMAT_D32_SFLOAT;
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout =
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // attachment reference
-    VkAttachmentReference colorAttachmentRef = {};
-    colorAttachmentRef.attachment =
-        0;  // indicates the attachemnt index in the attachments array
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef = {};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout =
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // Subpass
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;  // the index is the output
-                                                      // from the fragment
-                                                      // shader
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-    // subpass deps
-    VkSubpassDependency subpassDep = {};
-    subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpassDep.dstSubpass = 0;
-    subpassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDep.srcAccessMask = 0;
-    subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    // Render pass
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment,
-                                                          depthAttachment};
-    VkRenderPassCreateInfo renderPassInfo = {};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments = attachments.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &subpassDep;
-
-    assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr,
-                              &s_renderPass) == VK_SUCCESS);
-}
 
 void createGraphicsPipeline()
 {
@@ -1044,33 +970,11 @@ void createGraphicsPipeline()
         .setColorBlending(colorBlending)
         .setPipelineLayout(s_pipelineLayout)
         .setDepthStencil(depthStencil)
-        .setRenderPass(s_renderPass)
+        .setRenderPass(pFinalPass->GetRenderPass())
         .build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
-}
-
-void createFramebuffers()
-{
-    s_swapChainFramebuffers.resize(s_swapChainImageViews.size());
-    for (size_t i = 0; i < s_swapChainImageViews.size(); i++)
-    {
-        std::array<VkImageView, 2> attachmentViews = {
-            s_swapChainImageViews[i], s_pDepthResource->getView()};
-
-        VkFramebufferCreateInfo framebufferInfo = {};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = s_renderPass;
-        framebufferInfo.attachmentCount =
-            static_cast<uint32_t>(attachmentViews.size());
-        framebufferInfo.pAttachments = attachmentViews.data();
-        framebufferInfo.width = s_swapChainExtent.width;
-        framebufferInfo.height = s_swapChainExtent.height;
-        framebufferInfo.layers = 1;
-        assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo, nullptr,
-                                   &s_swapChainFramebuffers[i]) == VK_SUCCESS);
-    }
 }
 
 void createCommandPool()
@@ -1102,8 +1006,8 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
             s_contextManager.getContext(CONTEXT_SCENE));
         VkCommandBuffer& currentCmdBuffer = renderContext->getCommandBuffer();
         renderContext->startRecording();
-        renderContext->beginPass(s_renderPass,
-                                 s_swapChainFramebuffers[s_currentContext],
+        renderContext->beginPass(pFinalPass->GetRenderPass(),
+                                 pFinalPass->GetFramebuffer(s_currentContext),
                                  s_swapChainExtent);
 
         VkBuffer vb = vertexBuffer.buffer();
@@ -1228,17 +1132,16 @@ void createDescriptorSet()
 
 void cleanupSwapChain()
 {
-    for (auto& framebuffer : s_swapChainFramebuffers)
-        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), framebuffer, nullptr);
 
     s_contextManager.getContext(CONTEXT_SCENE)->finalize();
     s_contextManager.getContext(CONTEXT_UI)->finalize();
 
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), s_graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), s_pipelineLayout, nullptr);
-    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), s_renderPass, nullptr);
     for (auto& imageView : s_swapChainImageViews)
+    {
         vkDestroyImageView(GetRenderDevice()->GetDevice(), imageView, nullptr);
+    }
     vkDestroySwapchainKHR(GetRenderDevice()->GetDevice(), s_swapChain, nullptr);
     vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), s_descriptorSetLayout, nullptr);
 }
@@ -1255,8 +1158,6 @@ void recreateSwapChain()
 
     createSwapChain();
     createImageViews();
-    createRenderPass();
-    createGraphicsPipeline();
 
     // Need to recreate depth resource before recreating framebuffer
     delete s_pDepthResource;
@@ -1264,13 +1165,18 @@ void recreateSwapChain()
         new DepthResource(s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
                           s_swapChainExtent.width, s_swapChainExtent.height);
 
-    createFramebuffers();
+
+    pFinalPass->SetSwapchainImageViews(s_swapChainImageViews, s_pDepthResource->getView(),s_swapChainExtent.width, s_swapChainExtent.height);
+
+    createGraphicsPipeline();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
 }
 
 void cleanup()
 {
     cleanupSwapChain();
+    pFinalPass = nullptr;
+    s_pDepthResource = nullptr;
     vkDestroyDescriptorPool(GetRenderDevice()->GetDevice(), s_descriptorPool, nullptr);
 
     for (auto& somaphore : s_imageAvailableSemaphores)
@@ -1375,9 +1281,15 @@ int main()
     createSwapChain();
     createImageViews();
 
-    createRenderPass();
-    createGraphicsPipeline();
     createCommandPool();
+
+    s_pDepthResource = new DepthResource(
+        s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
+        s_swapChainExtent.width, s_swapChainExtent.height);
+
+    pFinalPass = std::make_unique<RenderPassFinal>(s_swapChainImageFormat);
+    pFinalPass->SetSwapchainImageViews(s_swapChainImageViews, s_pDepthResource->getView(),s_swapChainExtent.width, s_swapChainExtent.height);
+    createGraphicsPipeline();
 
     // Create memory allocator
 
@@ -1386,11 +1298,6 @@ int main()
     // Looking for a way to convert them to smart pointers, otherwise a major
     // refactorying is required.
     {
-        s_pDepthResource = new DepthResource(
-            s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
-            s_swapChainExtent.width, s_swapChainExtent.height);
-
-        createFramebuffers();
 
         s_pVertexBuffer = new VertexBuffer();
 
@@ -1415,18 +1322,18 @@ int main()
         createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
         createSemaphores();
         createFences();
-        s_UIOverlay =
-            std::make_unique<UIOverlay>(GetRenderDevice()->GetDevice());
+        //s_UIOverlay =
+        //    std::make_unique<UIOverlay>(GetRenderDevice()->GetDevice());
 
-        s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
-                                    *(s_contextManager.getContext(CONTEXT_UI))),
-                                s_numBuffers,
-                                GetRenderDevice()->GetPhysicalDevice());
-        s_UIOverlay->initializeFontTexture(
-            GetRenderDevice()->GetPhysicalDevice(), s_commandPool,
-            GetRenderDevice()->GetGraphicsQueue());
+        //s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
+        //                            *(s_contextManager.getContext(CONTEXT_UI))),
+        //                        s_numBuffers,
+        //                        GetRenderDevice()->GetPhysicalDevice());
+        //s_UIOverlay->initializeFontTexture(
+        //    GetRenderDevice()->GetPhysicalDevice(), s_commandPool,
+        //    GetRenderDevice()->GetGraphicsQueue());
 
-        ImGui::GetIO().DisplaySize = ImVec2(s_swapChainExtent.width, s_swapChainExtent.height);
+        //ImGui::GetIO().DisplaySize = ImVec2(s_swapChainExtent.width, s_swapChainExtent.height);
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
@@ -1437,10 +1344,10 @@ int main()
             {
                 s_resizeWanted = false;
             }
-            ImGui::NewFrame();
-            ImGui::Text("test");
+            //ImGui::NewFrame();
+            //ImGui::Text("test");
             updateUniformBuffer(s_pUniformBuffer);
-            ImGui::EndFrame();
+            //ImGui::EndFrame();
             // wait on device to make sure it has been drawn
             // assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
             //ImGui::Render();
@@ -1452,8 +1359,8 @@ int main()
         assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
-        s_UIOverlay->finalize();
-        s_UIOverlay = nullptr;
+        //s_UIOverlay->finalize();
+        //s_UIOverlay = nullptr;
         delete s_pDepthResource;
         delete s_pVertexBuffer;
         delete s_pIndexBuffer;
