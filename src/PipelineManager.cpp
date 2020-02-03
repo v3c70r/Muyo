@@ -1,20 +1,83 @@
 #include "PipelineManager.h"
 #include <cassert>
 #include <fstream>
+#include "MeshVertex.h"
+#include "PipelineStateBuilder.h"
+#include "RenderPass.h"
+
+PipelineManager::PipelineManager()
+{
+    // Create blend modes
+    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+    colorBlendAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+    colorBlendAttachment.dstColorBlendFactor =
+        VK_BLEND_FACTOR_ZERO;                                        // Optional
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+    colorBlendAttachment.dstAlphaBlendFactor =
+        VK_BLEND_FACTOR_ZERO;                             // Optional
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;  // Optional
+
+    aBlendModes[0] = colorBlendAttachment;
+}
 
 PipelineManager::~PipelineManager()
 {
     // TODO: Clean up
 }
-void PipelineManager::CreateStaticObjectPipeline()
+void PipelineManager::CreateStaticObjectPipeline(
+    uint32_t width, uint32_t height, VkDescriptorSetLayout descriptoSetLayout,
+    RenderPass& pass)
 {
-        std::string name = "Static Object";
-        // 1. Shaders
-        VkShaderModule vertShdr =
-            CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
-        VkShaderModule fragShdr =
-            CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
+    mViewport.x = 0.0f;
+    mViewport.y = 0.0f;
+    mViewport.width = (float)width;
+    mViewport.height = (float)height;
+    mViewport.minDepth = 0.0f;
+    mViewport.maxDepth = 1.0f;
 
+    mScissorRect.offset = {0, 0};
+    mScissorRect.extent = {width, height};
+
+    mDescriptorSetLayout = descriptoSetLayout;
+
+    std::string name = "Static Object";
+    VkShaderModule vertShdr =
+        CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
+
+    InitilaizePipelineLayout();
+    // build the stuff with builder
+    PipelineStateBuilder builder;
+
+    maPipelines[0] = builder.setShaderModules({vertShdr, fragShdr})
+                         .setVertextInfo({Vertex::getBindingDescription()},
+                                         Vertex::getAttributeDescriptions())
+                         .setAssembly(GetIAInfo())
+                         .setViewport(mViewport, mScissorRect)
+                         .setRasterizer(GetRasterInfo())
+                         .setMSAA(GetMultisampleState())
+                         .setColorBlending(GetBlendState())
+                         .setPipelineLayout(maPipelineLayouts[0])
+                         .setDepthStencil(GetDepthStencilCreateinfo())
+                         .setRenderPass(pass.GetPass())
+                         .build(GetRenderDevice()->GetDevice());
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+}
+void PipelineManager::DestroyStaticObjectPipeline()
+{
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[0], nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), maPipelineLayouts[0],
+                            nullptr);
+    maPipelines[0] = VK_NULL_HANDLE;
+    maPipelineLayouts[0] = VK_NULL_HANDLE;
 }
 
 // Private helpers
@@ -58,28 +121,18 @@ VkPipelineInputAssemblyStateCreateInfo PipelineManager::GetIAInfo(
 VkPipelineViewportStateCreateInfo PipelineManager::GetViewportState(
     uint32_t width, uint32_t height)
 {
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = (float)width;
-    viewport.height = (float)height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    VkRect2D scissor = {};
-    scissor.offset = {0, 0};
-    scissor.extent = {width, height};
-
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
+    viewportState.pViewports = &mViewport;
     viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
-    return viewportState ;
+    viewportState.pScissors = &mScissorRect;
+    return viewportState;
 }
 
-VkPipelineRasterizationStateCreateInfo PipelineManager::GetRasterInfo(bool bWireframe) {
+VkPipelineRasterizationStateCreateInfo PipelineManager::GetRasterInfo(
+    bool bWireframe)
+{
     VkPipelineRasterizationStateCreateInfo rasterizerInfo = {};
     rasterizerInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -100,7 +153,8 @@ VkPipelineRasterizationStateCreateInfo PipelineManager::GetRasterInfo(bool bWire
     return rasterizerInfo;
 }
 
-VkPipelineMultisampleStateCreateInfo PipelineManager::GetMultisampleState() {
+VkPipelineMultisampleStateCreateInfo PipelineManager::GetMultisampleState()
+{
     VkPipelineMultisampleStateCreateInfo multisamplingInfo = {};
     multisamplingInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -113,31 +167,48 @@ VkPipelineMultisampleStateCreateInfo PipelineManager::GetMultisampleState() {
     return multisamplingInfo;
 }
 
-VkPipelineColorBlendStateCreateInfo PipelineManager::GetBlendState() {
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-    colorBlendAttachment.dstColorBlendFactor =
-        VK_BLEND_FACTOR_ZERO;                                        // Optional
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-    colorBlendAttachment.dstAlphaBlendFactor =
-        VK_BLEND_FACTOR_ZERO;                             // Optional
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;  // Optional
-
+VkPipelineColorBlendStateCreateInfo PipelineManager::GetBlendState()
+{
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
     colorBlending.sType =
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;  // Optional
     colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.pAttachments = &aBlendModes[eBLENDMODE_DEFAULT];
     colorBlending.blendConstants[0] = 0.0f;  // Optional
     colorBlending.blendConstants[1] = 0.0f;  // Optional
     colorBlending.blendConstants[2] = 0.0f;  // Optional
     colorBlending.blendConstants[3] = 0.0f;  // Optional
     return colorBlending;
+}
+
+void PipelineManager::InitilaizePipelineLayout()
+{
+    assert(mDescriptorSetLayout != VK_NULL_HANDLE);
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &mDescriptorSetLayout;
+    // pipelineLayoutInfo.pushConstantRangeCount = 0;
+    // pipelineLayoutInfo.pPushConstantRanges = 0;
+    assert(vkCreatePipelineLayout(GetRenderDevice()->GetDevice(),
+                                  &pipelineLayoutInfo, nullptr,
+                                  &maPipelineLayouts[0]) == VK_SUCCESS);
+}
+
+VkPipelineDepthStencilStateCreateInfo
+PipelineManager::GetDepthStencilCreateinfo()
+{
+    VkPipelineDepthStencilStateCreateInfo depthStencil = {};
+    depthStencil.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    // depth clamp?
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.front = {};
+    depthStencil.back = {};
+    return depthStencil;
 }

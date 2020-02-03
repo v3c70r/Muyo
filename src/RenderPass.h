@@ -9,12 +9,14 @@ class RenderPass
 {
 public:
     virtual ~RenderPass() {}
+    VkRenderPass GetPass() { return m_renderPass; }
+
 protected:
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
 };
 
 // The pass render to swap chain
-class RenderPassFinal : RenderPass
+class RenderPassFinal : public RenderPass
 {
 public:
     RenderPassFinal(VkFormat swapChainFormat);
@@ -34,7 +36,7 @@ private:
     std::vector<VkFramebuffer> m_vFramebuffers;
 };
 
-class RenderPassUI : RenderPass
+class RenderPassUI : public RenderPass
 {
 public:
     RenderPassUI();
