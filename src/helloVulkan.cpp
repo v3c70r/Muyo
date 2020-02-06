@@ -858,41 +858,25 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
 {
     s_contextManager.Initalize();
     s_contextManager.getContext(CONTEXT_SCENE)
-        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(), &s_commandPool);
+        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(),
+                     &s_commandPool);
     s_contextManager.getContext(CONTEXT_UI)
-        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(), &s_commandPool);
+        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(),
+                     &s_commandPool);
 
-    // Record command buffer to draw static objects
+    std::vector<VkCommandBuffer> commandBuffers;
+
     for (s_currentContext = 0; s_currentContext < s_numBuffers;
          s_currentContext++)
     {
         RenderContext* renderContext = static_cast<RenderContext*>(
             s_contextManager.getContext(CONTEXT_SCENE));
-        VkCommandBuffer& currentCmdBuffer = renderContext->getCommandBuffer();
-        renderContext->startRecording();
-        renderContext->beginPass(pFinalPass->GetRenderPass(),
-                                 pFinalPass->GetFramebuffer(s_currentContext),
-                                 s_swapChainExtent);
-
-        VkBuffer vb = vertexBuffer.buffer();
-        VkBuffer ib = indexBuffer.buffer();
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(currentCmdBuffer, 0, 1, &vb, &offset);
-        vkCmdBindIndexBuffer(currentCmdBuffer, ib, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(currentCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          gPipelineManager.GetStaticObjectPipeline());
-        vkCmdBindDescriptorSets(
-            currentCmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, gPipelineManager.GetStaticObjectPipelineLayout(),
-            0, 1, &s_descriptorSet, 0, nullptr);
-
-        // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
-        vkCmdDrawIndexed(currentCmdBuffer,
-                         static_cast<uint32_t>(getIndices().size()), 1, 0, 0,
-                         0);
-
-        renderContext->endPass();
-        renderContext->endRecording();
+        commandBuffers.push_back(renderContext->getCommandBuffer());
     }
+    pFinalPass->RecordOnce(
+        vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
+        commandBuffers, gPipelineManager.GetStaticObjectPipeline(),
+        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 }
 
 void createSemaphores()

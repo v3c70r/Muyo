@@ -145,21 +145,18 @@ RenderPassUI::RenderPassUI()
 
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
                               nullptr, &m_renderPass) == VK_SUCCESS);
-
- 
 }
 
 void RenderPassFinal::SetSwapchainImageViews(
-    std::vector<VkImageView> &vImageViews, 
-    VkImageView depthImageView,
+    std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
     uint32_t nWidth, uint32_t nHeight)
 {
     ClearFramebuffers();
     m_vFramebuffers.resize(vImageViews.size());
     for (size_t i = 0; i < vImageViews.size(); i++)
     {
-        std::array<VkImageView, 2> attachmentViews = {
-            vImageViews[i], depthImageView};
+        std::array<VkImageView, 2> attachmentViews = {vImageViews[i],
+                                                      depthImageView};
 
         VkFramebufferCreateInfo framebufferInfo = {};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -174,7 +171,61 @@ void RenderPassFinal::SetSwapchainImageViews(
                                    &framebufferInfo, nullptr,
                                    &m_vFramebuffers[i]) == VK_SUCCESS);
     }
-    
+    mRenderArea = {nWidth, nHeight};
+}
+
+void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
+                             uint32_t numIndices,
+                             std::vector<VkCommandBuffer>& commandBuffers,
+                             VkPipeline pipeline,
+                             VkPipelineLayout pipelineLayout,
+                             VkDescriptorSet descriptorSet)
+{
+    VkCommandBufferBeginInfo beginInfo = {};
+
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    assert(commandBuffers.size() == m_vFramebuffers.size() &&
+           "One cmd buffer should output to one fb");
+
+    for (size_t i = 0; i < m_vFramebuffers.size(); i++)
+    {
+        VkCommandBuffer& curCmdBuf = commandBuffers[i];
+        vkBeginCommandBuffer(curCmdBuf, &beginInfo);
+
+        VkRenderPassBeginInfo renderPassBeginInfo = {};
+        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassBeginInfo.renderPass = m_renderPass;
+        renderPassBeginInfo.framebuffer = m_vFramebuffers[i];
+
+        renderPassBeginInfo.renderArea.offset = {0, 0};
+        renderPassBeginInfo.renderArea.extent = mRenderArea;
+        std::array<VkClearValue, 2> clearValues = {};
+        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+        clearValues[1].depthStencil = {1.0f, 0};
+        renderPassBeginInfo.clearValueCount =
+            static_cast<uint32_t>(clearValues.size());
+        renderPassBeginInfo.pClearValues = clearValues.data();
+
+        vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
+                             VK_SUBPASS_CONTENTS_INLINE);
+
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout, 0, 1, &descriptorSet, 0,
+                                nullptr);
+
+        // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
+        vkCmdDrawIndexed(curCmdBuf, numIndices, 1, 0, 0, 0);
+
+        vkCmdEndRenderPass(curCmdBuf);
+        vkEndCommandBuffer(curCmdBuf);
+    }
 }
 
 void RenderPassFinal::ClearFramebuffers()
@@ -200,11 +251,13 @@ RenderPassUI::~RenderPassUI()
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
 
-void RenderPassUI::SetRenderTargetImageView(VkImageView targetView, uint32_t nWidth, uint32_t nHeight)
+void RenderPassUI::SetRenderTargetImageView(VkImageView targetView,
+                                            uint32_t nWidth, uint32_t nHeight)
 {
     if (m_framebuffer != VK_NULL_HANDLE)
     {
-        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_framebuffer, nullptr);
+        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_framebuffer,
+                             nullptr);
     }
     // Create Frame buffer
     VkFramebufferCreateInfo framebufferInfo = {};

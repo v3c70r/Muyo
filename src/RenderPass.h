@@ -22,6 +22,11 @@ public:
     RenderPassFinal(VkFormat swapChainFormat);
     ~RenderPassFinal();
     void SetSwapchainImageViews(std::vector<VkImageView>& vImageViews, VkImageView depthImageView,uint32_t nWidth, uint32_t nHeight);
+    void RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
+                uint32_t numIndices,
+                std::vector<VkCommandBuffer>& commandBuffers,
+                VkPipeline pipeline, VkPipelineLayout pipelineLayout,
+                VkDescriptorSet descriptorSet);
 
     // Getters
     VkRenderPass& GetRenderPass() { return m_renderPass; }
@@ -34,6 +39,7 @@ public:
 private:
     void ClearFramebuffers();
     std::vector<VkFramebuffer> m_vFramebuffers;
+    VkExtent2D mRenderArea = {0, 0};
 };
 
 class RenderPassUI : public RenderPass

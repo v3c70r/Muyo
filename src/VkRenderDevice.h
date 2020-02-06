@@ -30,6 +30,11 @@ public:
         mInstance = instance;
     }
 
+    VkCommandBuffer CreateCommandBuffer()
+    {
+        return VkCommandBuffer();
+    }
+
 private:
     VkDevice mDevice = VK_NULL_HANDLE;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
