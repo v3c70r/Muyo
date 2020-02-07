@@ -184,6 +184,7 @@ void LoadMesh(const std::string path, TinyObjInfo& objInfo)
             std::cout << "Shape " << i << ": " << std::endl;
             tinyobj::shape_t& shape = objInfo.shapes[i];
             std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
+            std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
             // std::cout<<"\t"<<shape.mesh.vert
         }
     }
@@ -194,36 +195,35 @@ static TinyObjInfo s_objInfo;
 std::vector<Vertex> getVertices()
 {
     std::vector<Vertex> res;
-    size_t numVert = s_objInfo.attrib.vertices.size() / 3;
+
+    assert(s_objInfo.shapes.size() == 1 && "Supports only one obj");
+
+    const auto &vIndices = s_objInfo.shapes[0].mesh.indices;
+
+    size_t numVert = vIndices.size();
     res.reserve(numVert);
-    for (size_t i = 0; i < numVert; i++)
+
+    for (const auto& meshIdx : vIndices)
     {
-        res.emplace_back(Vertex({{s_objInfo.attrib.vertices[3 * i],
-                                  s_objInfo.attrib.vertices[3 * i + 1],
-                                  s_objInfo.attrib.vertices[3 * i + 2]},
-                                 {0.0, 0.0, 0.0}}));
-    }
-    for (const auto& index : s_objInfo.shapes[0].mesh.indices)
-    {
-        res[index.vertex_index].textureCoord = glm::vec3(
-            s_objInfo.attrib.texcoords[2 * index.texcoord_index],
-            1.0 - s_objInfo.attrib.texcoords[2 * index.texcoord_index + 1],
-            0.0);
+        res.emplace_back(Vertex(
+            {{s_objInfo.attrib.vertices[3 * meshIdx.vertex_index],
+              s_objInfo.attrib.vertices[3 * meshIdx.vertex_index + 1],
+              s_objInfo.attrib.vertices[3 * meshIdx.vertex_index + 2]},
+             {s_objInfo.attrib.texcoords[2 * meshIdx.texcoord_index],
+              s_objInfo.attrib.texcoords[2 * meshIdx.texcoord_index + 1], 0}}));
     }
     return res;
 }
 
 std::vector<uint32_t> getIndices()
 {
-    // std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0, 4,
-    //                                 5, 6, 6, 7, 4
-
-    //};
-    // return indices;
     std::vector<uint32_t> indices;
     indices.reserve(s_objInfo.shapes[0].mesh.indices.size());
-    for (const auto& index : s_objInfo.shapes[0].mesh.indices)
-        indices.push_back(index.vertex_index);
+
+    for (size_t i = 0; i< s_objInfo.shapes[0].mesh.indices.size(); i++)
+    {
+        indices.push_back(i);
+    }
     return indices;
 }
 
@@ -1117,7 +1117,6 @@ void updateUniformBuffer(UniformBuffer* ub)
 int main()
 {
     // Load mesh into memory
-    LoadMesh("assets/chalet.obj", s_objInfo);
     initWindow();
     createInstance();
     setupDebugCallback();
@@ -1149,6 +1148,7 @@ int main()
 
         s_pVertexBuffer = new VertexBuffer();
 
+        LoadMesh("assets/cube.obj", s_objInfo);
         s_pVertexBuffer->setData(reinterpret_cast<void*>(getVertices().data()),
                                  sizeof(Vertex) * getVertices().size(),
                                  s_commandPool, GetRenderDevice()->GetGraphicsQueue());
@@ -1163,7 +1163,7 @@ int main()
                                              sizeof(UnifromBufferObject));
 
         s_pTexture = new Texture();
-        s_pTexture->LoadImage("assets/chalet.jpg", GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),
+        s_pTexture->LoadImage("assets/default.png", GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),
                               s_commandPool, GetRenderDevice()->GetGraphicsQueue());
         createDescriptorPool();
         createDescriptorSet();
