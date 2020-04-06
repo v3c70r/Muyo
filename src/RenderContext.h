@@ -13,11 +13,6 @@ public:
     void startRecording() override;
     void endRecording() override;
 
-    // Move this to framebuffer? Nononono this is dumb for obvious reason
-    void beginPass(VkRenderPass& renderPass, VkFramebuffer& frameBuffer,
-                   VkExtent2D& extent);
-    void endPass();
-
     void swap();
     bool isRecording() const override { return m_recording[s_currentContext]; }
     VkCommandBuffer& getCommandBuffer() override

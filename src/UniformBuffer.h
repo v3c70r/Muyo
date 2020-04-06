@@ -1,7 +1,8 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
-#include "Buffer.h"
+#include "VkMemoryAllocator.h"
+#include "VkRenderDevice.h"
 
 struct UnifromBufferObject {
     glm::mat4 model;
@@ -23,20 +24,27 @@ struct UnifromBufferObject {
 class UniformBuffer
 {
 public:
-    UniformBuffer(const VkDevice& device,
-                  const VkPhysicalDevice& physicalDevice, size_t size)
-        : mBuffer(device, physicalDevice, size,
-                  VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+    UniformBuffer(size_t size = 0)
     {
+        if (size != 0)
+        {
+            GetMemoryAllocator()->AllocateBuffer(
+                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+        }
     }
-    void setData(const UnifromBufferObject& buffer)
+    void setData(const UnifromBufferObject& buffer, VkCommandPool commandPool, VkQueue queue)
     {
-        mBuffer.setData((void*)&buffer);
+        void* pMappedMemory = nullptr;
+        GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedMemory);
+        memcpy(pMappedMemory, (void*)&buffer, sizeof(UnifromBufferObject));
+        GetMemoryAllocator()->UnmapBuffer(m_allocation);
     }
 
-    VkBuffer buffer() const { return mBuffer.buffer(); }
+    VkBuffer buffer() const { return m_buffer; }
 private:
-    Buffer mBuffer;
+    VkBuffer m_buffer = VK_NULL_HANDLE;
+
+    VmaAllocation m_allocation = VK_NULL_HANDLE;
+    const VkBufferUsageFlags BUFFER_USAGE = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_GPU_ONLY;
 };

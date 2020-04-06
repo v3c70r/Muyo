@@ -179,7 +179,7 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
                              std::vector<VkCommandBuffer>& commandBuffers,
                              VkPipeline pipeline,
                              VkPipelineLayout pipelineLayout,
-                             VkDescriptorSet descriptorSet)
+                             std::vector<VkDescriptorSet> vDescriptorSets)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -217,7 +217,7 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
         vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 0, 1, &descriptorSet, 0,
+                                pipelineLayout, 0, 1, &vDescriptorSets[i], 0,
                                 nullptr);
 
         // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);

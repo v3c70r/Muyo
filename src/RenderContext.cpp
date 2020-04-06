@@ -44,31 +44,3 @@ void RenderContext::endRecording()
     vkEndCommandBuffer(getCommandBuffer());
     m_recording[s_currentContext] = false;
 }
-void RenderContext::beginPass(VkRenderPass& renderPass, VkFramebuffer& frameBuffer,
-                        VkExtent2D& extent)
-{
-    assert(isRecording());
-
-    // TODO: Move pass begin info class member
-    VkRenderPassBeginInfo renderPassBeginInfo = {};
-    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassBeginInfo.renderPass = renderPass;
-    renderPassBeginInfo.framebuffer = frameBuffer;
-
-    renderPassBeginInfo.renderArea.offset = {0, 0};
-    renderPassBeginInfo.renderArea.extent = extent;
-
-    std::array<VkClearValue, 2> clearValues = {};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
-    renderPassBeginInfo.clearValueCount =
-        static_cast<uint32_t>(clearValues.size());
-    renderPassBeginInfo.pClearValues = clearValues.data();
-    vkCmdBeginRenderPass(getCommandBuffer(), &renderPassBeginInfo,
-                         VK_SUBPASS_CONTENTS_INLINE);
-}
-void RenderContext::endPass()
-{
-    assert(isRecording());
-    vkCmdEndRenderPass(getCommandBuffer());
-}

@@ -109,7 +109,7 @@ static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
     //    }
 }
 
-static uint32_t s_numBuffers = 2;
+static uint32_t s_numBuffers = 4;
 static VkDebugReportCallbackEXT s_debugCallback;
 
 static VkSurfaceKHR s_surface;
@@ -138,7 +138,7 @@ static VkDescriptorSetLayout s_descriptorSetLayout;
 // Descriptor pool
 static VkDescriptorPool s_descriptorPool;
 
-static VkDescriptorSet s_descriptorSet;
+static std::vector<VkDescriptorSet> s_vDescriptorSets;
 
 // Command
 static VkCommandPool s_commandPool;
@@ -419,6 +419,10 @@ void createInstance()
     createInfo.pApplicationInfo = &appInfo;
 
     std::vector<const char*> extensions = getRequiredExtensions();
+    // Hack
+    //std::vector<const char *> extensions = {"VK_KHR_surface",
+    //                                        "VK_KHR_wayland_surface",
+    //                                        "VK_EXT_debug_report"};
     std::cout << "Required extensions" << std::endl;
     for (const auto& ext : extensions) std::cout << ext << std::endl;
 
@@ -701,8 +705,12 @@ void createSurface()
 {
     // Create a platform specific window surface to present rendered image
     // The platform specific code has been handled by glfw
-    assert(glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, nullptr,
-                                   &s_surface) == VK_SUCCESS);
+VkResult res = glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, nullptr,
+                                &s_surface);
+    if (res != VK_SUCCESS)
+    {
+        std::cout<<"Error code "<<res<<std::endl;
+    }
 }
 
 void createSwapChain()
@@ -718,6 +726,9 @@ void createSwapChain()
     s_swapChainImageFormat = surfaceFormat.format;
     s_swapChainExtent = extent;
 
+    assert(swapChainSupport.capabilities.maxImageCount == 0 ||
+           (swapChainSupport.capabilities.maxImageCount > s_numBuffers &&
+               s_numBuffers > swapChainSupport.capabilities.minImageCount));
     // uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
     // if (swapChainSupport.capabilities.maxImageCount > 0 &&
     //    s_numBuffers > swapChainSupport.capabilities.maxImageCount) {
@@ -876,7 +887,7 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
     pFinalPass->RecordOnce(
         vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
         commandBuffers, gPipelineManager.GetStaticObjectPipeline(),
-        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
+        gPipelineManager.GetStaticObjectPipelineLayout(), s_vDescriptorSets);
 }
 
 void createSemaphores()
@@ -935,47 +946,55 @@ void createDescriptorPool()
 void createDescriptorSet()
 {
     // Create descriptor set
+    std::vector<VkDescriptorSetLayout> layouts(s_numBuffers, s_descriptorSetLayout);
+    s_vDescriptorSets.clear();
+    s_vDescriptorSets.resize(s_numBuffers);
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = s_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &s_descriptorSetLayout;
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &s_descriptorSet) ==
-           VK_SUCCESS);
+    allocInfo.descriptorSetCount = s_vDescriptorSets.size();
+    allocInfo.pSetLayouts = layouts.data();
+
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    s_vDescriptorSets.data()) == VK_SUCCESS);
 
     // Prepare buffer descriptor
-    VkDescriptorBufferInfo bufferInfo = {};
-    bufferInfo.buffer = s_pUniformBuffer->buffer();
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(UniformBuffer);
+    for (size_t i = 0; i < s_vDescriptorSets.size(); i++)
+    {
+        VkDescriptorBufferInfo bufferInfo = {};
+        bufferInfo.buffer = s_pUniformBuffer->buffer();
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UnifromBufferObject);
 
-    // prepare image descriptor
-    VkDescriptorImageInfo imageInfo = {};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = s_pTexture->getImageView();
-    imageInfo.sampler = s_pTexture->getSamper();
+        // prepare image descriptor
+        VkDescriptorImageInfo imageInfo = {};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = s_pTexture->getImageView();
+        imageInfo.sampler = s_pTexture->getSamper();
 
-    std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
-    descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[0].dstSet = s_descriptorSet;
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pBufferInfo = &bufferInfo;
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
 
-    descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrites[1].dstSet = s_descriptorSet;
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType =
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pImageInfo = &imageInfo;
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = s_vDescriptorSets[i];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &bufferInfo;
 
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
-                           static_cast<uint32_t>(descriptorWrites.size()),
-                           descriptorWrites.data(), 0, nullptr);
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = s_vDescriptorSets[i];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
+                               static_cast<uint32_t>(descriptorWrites.size()),
+                               descriptorWrites.data(), 0, nullptr);
+    }
 }
 
 void cleanupSwapChain()
@@ -1111,7 +1130,7 @@ void updateUniformBuffer(UniformBuffer* ub)
     ubo.view = s_arcball.getViewMat();
     ubo.proj = s_arcball.getProjMat();
 
-    ub->setData(ubo);
+    ub->setData(ubo, s_commandPool, GetRenderDevice()->GetGraphicsQueue());
 };
 
 int main()
@@ -1159,8 +1178,7 @@ int main()
                                 sizeof(uint32_t) * getIndices().size(),
                                 s_commandPool, GetRenderDevice()->GetGraphicsQueue());
 
-        s_pUniformBuffer = new UniformBuffer(GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),
-                                             sizeof(UnifromBufferObject));
+        s_pUniformBuffer = new UniformBuffer(sizeof(UnifromBufferObject));
 
         s_pTexture = new Texture();
         s_pTexture->LoadImage("assets/default.png", GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),

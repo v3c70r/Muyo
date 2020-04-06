@@ -8,7 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "Buffer.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 

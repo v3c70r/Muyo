@@ -26,7 +26,7 @@ public:
                 uint32_t numIndices,
                 std::vector<VkCommandBuffer>& commandBuffers,
                 VkPipeline pipeline, VkPipelineLayout pipelineLayout,
-                VkDescriptorSet descriptorSet);
+                std::vector<VkDescriptorSet> vDescriptorSets);
 
     // Getters
     VkRenderPass& GetRenderPass() { return m_renderPass; }

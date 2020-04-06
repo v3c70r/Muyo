@@ -17,12 +17,12 @@
                 "environment": [
                     {
                         "name": "VK_LAYER_PATH",
-                        "value": "/home/qgu/tools/vulkan/1.1.97.0/x86_64/etc/explicit_layer.d"
+                        "value": "/home/qgu/tools/vulkan/1.2.131.2/x86_64/etc/vulkan/explicit_layer.d"
 
                     },
                     {
                         "name": "LD_LIBRARY_PATH",
-                        "value": "/home/qgu/tools/vulkan/1.1.97.0/x86_64/lib"
+                        "value": "/home/qgu/tools/vulkan/1.2.131.2/x86_64/lib"
                     },
                 ],
                 "MIMode": "gdb"
@@ -32,7 +32,7 @@
                 "environment": [
                     {
                         "name": "VK_LAYER_PATH",
-                        "value": "/Users/qgu/tools/vulkansdk-macos-1.1.101.0/macOS/etc/vulkan/explicit_layer.d"
+                        "value": "/home/qgu/tools/vulkan/1.2.131.2/x86_64/etc/vulkan/explicit_layer.d"
                     },
                     {
                         "name": "LD_LIBRARY_PATH",
