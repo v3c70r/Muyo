@@ -12,13 +12,8 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     vmaCreateAllocator(&allocatorInfo, m_pAllocator.get());
 }
 
-VkMemoryAllocator::~VkMemoryAllocator()
-{
-    if (m_pAllocator)
-    {
-        vmaDestroyAllocator(*m_pAllocator);
-    }
-}
+void VkMemoryAllocator::Unintialize() { vmaDestroyAllocator(*m_pAllocator); }
+
 
 void VkMemoryAllocator::AllocateBuffer(size_t nSize,
                                        VkBufferUsageFlags nBufferUsageFlags,

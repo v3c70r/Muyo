@@ -8,8 +8,8 @@ class VkMemoryAllocator
 {
 public:
     void Initalize(VkRenderDevice *pDevice);
+    void Unintialize();
     VkMemoryAllocator();
-    ~VkMemoryAllocator();
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags,
                         VmaMemoryUsage nMemoryUsageFlags, VkBuffer &buffer,
                         VmaAllocation &allocation);

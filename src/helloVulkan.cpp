@@ -1055,6 +1055,7 @@ void cleanup()
 
     vkDestroyCommandPool(GetRenderDevice()->GetDevice(), s_commandPool, nullptr);
     vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), s_surface, nullptr);
+    GetMemoryAllocator()->Unintialize();
     vkDestroyDevice(GetRenderDevice()->GetDevice(), nullptr);
     DestroyDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), s_debugCallback, nullptr);
     vkDestroyInstance(GetRenderDevice()->GetInstance(), nullptr);
