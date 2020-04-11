@@ -29,7 +29,7 @@ public:
         if (size != 0)
         {
             GetMemoryAllocator()->AllocateBuffer(
-                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "Uniform Buffer");
         }
     }
     void setData(const UnifromBufferObject& buffer, VkCommandPool commandPool, VkQueue queue)
@@ -38,6 +38,10 @@ public:
         GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedMemory);
         memcpy(pMappedMemory, (void*)&buffer, sizeof(UnifromBufferObject));
         GetMemoryAllocator()->UnmapBuffer(m_allocation);
+    }
+    ~UniformBuffer()
+    {
+        GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
     }
 
     VkBuffer buffer() const { return m_buffer; }

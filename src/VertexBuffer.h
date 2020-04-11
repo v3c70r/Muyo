@@ -19,7 +19,7 @@ public:
         if (size != 0)
         {
             GetMemoryAllocator()->AllocateBuffer(
-                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "VertexBuffer");
         }
     }
     ~VertexBuffer()
@@ -37,7 +37,7 @@ public:
             GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
         }
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation);
+                                             m_buffer, m_allocation, "VertexBuffer");
 
         // Create staging buffer
         VkBuffer stagingBuffer = VK_NULL_HANDLE;
@@ -99,6 +99,13 @@ class IndexBuffer
 {
 public:
     IndexBuffer(size_t size = 0) {}
+    ~IndexBuffer()
+    {
+        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
+        {
+            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
+        }
+    }
 
     void setData(void* indices, size_t size, VkCommandPool commandPool,
                  VkQueue queue)
@@ -108,7 +115,7 @@ public:
             GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
         }
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation);
+                                             m_buffer, m_allocation, "IndexBuffer");
 
         // Create staging buffer
         VkBuffer stagingBuffer = VK_NULL_HANDLE;

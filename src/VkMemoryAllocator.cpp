@@ -32,6 +32,26 @@ void VkMemoryAllocator::AllocateBuffer(size_t nSize,
                     &allocation, nullptr);
 }
 
+void VkMemoryAllocator::AllocateBuffer(size_t nSize,
+                                       VkBufferUsageFlags nBufferUsageFlags,
+                                       VmaMemoryUsage nMemoryUsageFlags,
+                                       VkBuffer& buffer,
+                                       VmaAllocation& allocation,
+                                       std::string bufferName)
+{
+    VkBufferCreateInfo bufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufferInfo.size = nSize;
+    bufferInfo.usage = nBufferUsageFlags;
+
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = nMemoryUsageFlags;
+    allocInfo.flags = VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
+    allocInfo.pUserData = bufferName.data();
+
+    vmaCreateBuffer(*m_pAllocator, &bufferInfo, &allocInfo, &buffer,
+                    &allocation, nullptr);
+}
+
 void VkMemoryAllocator::FreeBuffer(VkBuffer& buffer, VmaAllocation& allocation)
 {
     vmaDestroyBuffer(*m_pAllocator, buffer, allocation);

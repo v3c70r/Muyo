@@ -13,6 +13,10 @@ public:
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags,
                         VmaMemoryUsage nMemoryUsageFlags, VkBuffer &buffer,
                         VmaAllocation &allocation);
+    void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags,
+                        VmaMemoryUsage nMemoryUsageFlags, VkBuffer &buffer,
+                        VmaAllocation &allocation,
+                        std::string bufferName);
     void FreeBuffer(VkBuffer &buffer, VmaAllocation &allocation);
     void MapBuffer(VmaAllocation &allocation, void **ppData);
     void UnmapBuffer(VmaAllocation &allocation);

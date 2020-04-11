@@ -28,7 +28,7 @@ void Texture::LoadPixels(void *pixels, int width, int height,
     VkBuffer stagingBuffer;
     GetMemoryAllocator()->AllocateBuffer(
         BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-        VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingAllocation);
+        VMA_MEMORY_USAGE_CPU_ONLY, stagingBuffer, stagingAllocation, "Texture");
 
     void *pMappedMemory = nullptr;
     GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
@@ -56,7 +56,7 @@ void Texture::LoadPixels(void *pixels, int width, int height,
                            VK_FORMAT_R8G8B8A8_UNORM,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
+    GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);
     mInitImageView();
     mInitSampler();
 }
