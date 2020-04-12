@@ -30,6 +30,7 @@
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
 #include "RenderPass.h"
 #include "PipelineManager.h"
+#include "GLFWSwapchain.h"
 
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
 const int WIDTH = 800;
@@ -112,14 +113,16 @@ static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
 static uint32_t s_numBuffers = 4;
 static VkDebugReportCallbackEXT s_debugCallback;
 
-static VkSurfaceKHR s_surface;
+GLFWSwapchain* s_pSwapchain = nullptr;
 
-static VkSwapchainKHR s_swapChain = VK_NULL_HANDLE;
-static VkFormat s_swapChainImageFormat;
-static VkExtent2D s_swapChainExtent;
-
-static std::vector<VkImage> s_swapChainImages;
-static std::vector<VkImageView> s_swapChainImageViews;
+//static VkSurfaceKHR s_surface;
+//
+//static VkSwapchainKHR s_swapChain = VK_NULL_HANDLE;
+//static VkFormat s_swapChainImageFormat;
+//static VkExtent2D s_pSwapchain->getSwapchainExtent();
+//
+//static std::vector<VkImage> s_swapChainImages;
+//static std::vector<VkImageView> s_pSwapchain->getImageViews();
 //static std::vector<VkFramebuffer> s_swapChainFramebuffers;
 
 static VertexBuffer* s_pVertexBuffer = nullptr;
@@ -511,24 +514,24 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
 SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice phyDevice)
 {
     SwapChainSupportDetails details;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phyDevice, s_surface,
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phyDevice, s_pSwapchain->getSurface(),
                                               &details.capabilities);
 
     uint32_t formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(phyDevice, s_surface, &formatCount,
+    vkGetPhysicalDeviceSurfaceFormatsKHR(phyDevice, s_pSwapchain->getSurface(), &formatCount,
                                          nullptr);
     assert(formatCount > 0);
     details.formats.resize(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(phyDevice, s_surface, &formatCount,
+    vkGetPhysicalDeviceSurfaceFormatsKHR(phyDevice, s_pSwapchain->getSurface(), &formatCount,
                                          details.formats.data());
 
     uint32_t presentCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(phyDevice, s_surface,
+    vkGetPhysicalDeviceSurfacePresentModesKHR(phyDevice, s_pSwapchain->getSurface(),
                                               &presentCount, nullptr);
     assert(presentCount > 0);
     details.presentModes.resize(presentCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(
-        phyDevice, s_surface, &presentCount, details.presentModes.data());
+        phyDevice, s_pSwapchain->getSurface(), &presentCount, details.presentModes.data());
 
     return details;
 }
@@ -563,7 +566,7 @@ QueueFamilyIndice mFindQueueFamily(VkPhysicalDevice device)
         // Check for presentation support ( they can be in the same queeu
         // family)
         VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, s_surface,
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, s_pSwapchain->getSurface(),
                                              &presentSupport);
 
         if (queueFamily.queueCount > 0 && presentSupport)
@@ -690,8 +693,8 @@ void createLogicalDevice()
         vkGetDeviceQueue(GetRenderDevice()->GetDevice(), indices.presentFamily,
                          0, &presentQueue);
 
-        GetRenderDevice()->SetGraphicsQueue(graphicsQueue);
-        GetRenderDevice()->SetPresentQueue(presentQueue);
+        GetRenderDevice()->SetGraphicsQueue(graphicsQueue, indices.graphicsFamily);
+        GetRenderDevice()->SetPresentQueue(presentQueue, indices.presentFamily);
     }
 
     assert(
@@ -701,107 +704,64 @@ void createLogicalDevice()
     // Create a presentation queue
 }
 
-void createSurface()
-{
-    // Create a platform specific window surface to present rendered image
-    // The platform specific code has been handled by glfw
-VkResult res = glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, nullptr,
-                                &s_surface);
-    if (res != VK_SUCCESS)
-    {
-        std::cout<<"Error code "<<res<<std::endl;
-    }
-}
-
-void createSwapChain()
-{
-    SwapChainSupportDetails swapChainSupport =
-        querySwapChainSupport(GetRenderDevice()->GetPhysicalDevice());
-    VkSurfaceFormatKHR surfaceFormat =
-        chooseSwapSurfaceFormat(swapChainSupport.formats);
-    VkPresentModeKHR presentMode =
-        chooseSwapPresentMode(swapChainSupport.presentModes);
-    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-
-    s_swapChainImageFormat = surfaceFormat.format;
-    s_swapChainExtent = extent;
-
-    assert(swapChainSupport.capabilities.maxImageCount == 0 ||
-           (swapChainSupport.capabilities.maxImageCount > s_numBuffers &&
-               s_numBuffers > swapChainSupport.capabilities.minImageCount));
-    // uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
-    // if (swapChainSupport.capabilities.maxImageCount > 0 &&
-    //    s_numBuffers > swapChainSupport.capabilities.maxImageCount) {
-    //    s_numBuffers = swapChainSupport.capabilities.maxImageCount;
-    //}
-
-    VkSwapchainCreateInfoKHR createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    createInfo.surface = s_surface;
-    createInfo.minImageCount = s_numBuffers;
-    createInfo.imageFormat = surfaceFormat.format;
-    createInfo.imageColorSpace = surfaceFormat.colorSpace;
-    createInfo.imageExtent = extent;
-    createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-    QueueFamilyIndice indices = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
-
-    // Assume present and graphics queues are in the same family
-    // see
-    // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
-    assert(indices.graphicsFamily == indices.presentFamily);
-    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-    // Blending with other windows
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-
-    createInfo.presentMode = presentMode;
-    // Don't care about the window above us
-    createInfo.clipped = VK_TRUE;
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
-
-    assert(vkCreateSwapchainKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &s_swapChain) ==
-           VK_SUCCESS);
-
-    // Get swap chain images;
-    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers, nullptr);
-    s_swapChainImages.resize(s_numBuffers);
-    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers,
-                            s_swapChainImages.data());
-}
-
-// Create image views for images on the swap chain
-void createImageViews()
-{
-    s_swapChainImageViews.resize(s_swapChainImages.size());
-    for (size_t i = 0; i < s_swapChainImages.size(); i++)
-    {
-        VkImageViewCreateInfo createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = s_swapChainImages[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = s_swapChainImageFormat;
-
-        // Swizzles
-
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-        // subresource
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-
-        assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo, nullptr,
-                                 &s_swapChainImageViews[i]) == VK_SUCCESS);
-    }
-}
+//void createSwapChain()
+//{
+//    SwapChainSupportDetails swapChainSupport =
+//        querySwapChainSupport(GetRenderDevice()->GetPhysicalDevice());
+//    VkSurfaceFormatKHR surfaceFormat =
+//        chooseSwapSurfaceFormat(swapChainSupport.formats);
+//    VkPresentModeKHR presentMode =
+//        chooseSwapPresentMode(swapChainSupport.presentModes);
+//    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+//
+//    s_swapChainImageFormat = surfaceFormat.format;
+//    s_pSwapchain->getSwapchainExtent() = extent;
+//
+//    assert(swapChainSupport.capabilities.maxImageCount == 0 ||
+//           (swapChainSupport.capabilities.maxImageCount > s_numBuffers &&
+//               s_numBuffers > swapChainSupport.capabilities.minImageCount));
+//    // uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
+//    // if (swapChainSupport.capabilities.maxImageCount > 0 &&
+//    //    s_numBuffers > swapChainSupport.capabilities.maxImageCount) {
+//    //    s_numBuffers = swapChainSupport.capabilities.maxImageCount;
+//    //}
+//
+//    VkSwapchainCreateInfoKHR createInfo = {};
+//    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+//    createInfo.surface = s_surface;
+//    createInfo.minImageCount = s_numBuffers;
+//    createInfo.imageFormat = surfaceFormat.format;
+//    createInfo.imageColorSpace = surfaceFormat.colorSpace;
+//    createInfo.imageExtent = extent;
+//    createInfo.imageArrayLayers = 1;
+//    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+//
+//    QueueFamilyIndice indices = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
+//
+//    // Assume present and graphics queues are in the same family
+//    // see
+//    // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
+//    assert(indices.graphicsFamily == indices.presentFamily);
+//    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+//
+//    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+//    // Blending with other windows
+//    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+//
+//    createInfo.presentMode = presentMode;
+//    // Don't care about the window above us
+//    createInfo.clipped = VK_TRUE;
+//    createInfo.oldSwapchain = VK_NULL_HANDLE;
+//
+//    assert(vkCreateSwapchainKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &s_swapChain) ==
+//           VK_SUCCESS);
+//
+//    // Get swap chain images;
+//    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers, nullptr);
+//    s_swapChainImages.resize(s_numBuffers);
+//    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers,
+//                            s_swapChainImages.data());
+//}
 
 // Create Pipeline
 
@@ -848,7 +808,7 @@ void createGraphicsPipeline()
                                        &s_descriptorSetLayout) == VK_SUCCESS);
 
     gPipelineManager.CreateStaticObjectPipeline(
-        s_swapChainExtent.width, s_swapChainExtent.height,
+        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
         s_descriptorSetLayout, *pFinalPass);
 }
 
@@ -1004,12 +964,9 @@ void cleanupSwapChain()
     s_contextManager.getContext(CONTEXT_UI)->finalize();
 
     gPipelineManager.DestroyStaticObjectPipeline();
+    
+    s_pSwapchain->destroySwapchain();
 
-    for (auto& imageView : s_swapChainImageViews)
-    {
-        vkDestroyImageView(GetRenderDevice()->GetDevice(), imageView, nullptr);
-    }
-    vkDestroySwapchainKHR(GetRenderDevice()->GetDevice(), s_swapChain, nullptr);
     vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), s_descriptorSetLayout, nullptr);
 }
 
@@ -1023,17 +980,19 @@ void recreateSwapChain()
 
     cleanupSwapChain();
 
-    createSwapChain();
-    createImageViews();
+    s_pSwapchain->createSwapchain(
+        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+        VK_PRESENT_MODE_FIFO_KHR, s_numBuffers);
+
 
     // Need to recreate depth resource before recreating framebuffer
     delete s_pDepthResource;
     s_pDepthResource =
         new DepthResource(s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
-                          s_swapChainExtent.width, s_swapChainExtent.height);
+                          s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
 
-    pFinalPass->SetSwapchainImageViews(s_swapChainImageViews, s_pDepthResource->getView(),s_swapChainExtent.width, s_swapChainExtent.height);
+    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), s_pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     createGraphicsPipeline();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
@@ -1054,8 +1013,10 @@ void cleanup()
 
 
     vkDestroyCommandPool(GetRenderDevice()->GetDevice(), s_commandPool, nullptr);
-    vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), s_surface, nullptr);
     GetMemoryAllocator()->Unintialize();
+    s_pSwapchain->destroySurface();
+    s_pSwapchain = nullptr;
+    delete s_pSwapchain;
     vkDestroyDevice(GetRenderDevice()->GetDevice(), nullptr);
     DestroyDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), s_debugCallback, nullptr);
     vkDestroyInstance(GetRenderDevice()->GetInstance(), nullptr);
@@ -1065,10 +1026,7 @@ void cleanup()
 
 void present()
 {
-    uint32_t imageIndex;
-    vkAcquireNextImageKHR(
-        GetRenderDevice()->GetDevice(), s_swapChain, std::numeric_limits<uint64_t>::max(),
-        s_imageAvailableSemaphores[0], VK_NULL_HANDLE, &imageIndex);
+    uint32_t imageIndex = s_pSwapchain->getNextImage(s_imageAvailableSemaphores[0]);
 
     s_currentContext = imageIndex;
 
@@ -1104,7 +1062,7 @@ void present()
     presentInfo.pWaitSemaphores = &s_renderFinishedSemaphores[0];
 
     presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &s_swapChain;
+    presentInfo.pSwapchains = &(s_pSwapchain->getSwapChain());
     presentInfo.pImageIndices = &imageIndex;
 
     presentInfo.pResults = nullptr;
@@ -1140,22 +1098,24 @@ int main()
     initWindow();
     createInstance();
     setupDebugCallback();
-    createSurface();  // This needed to be called before mFindQueueFamily() as
-                      // it needs s_surface
+    s_pSwapchain = new GLFWSwapchain(s_pWindow);
+    s_pSwapchain->createSurface();
     pickPysicalDevice();
     createLogicalDevice();
     GetMemoryAllocator()->Initalize(GetRenderDevice());
-    createSwapChain();
-    createImageViews();
+
+    s_pSwapchain->createSwapchain(
+        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+        VK_PRESENT_MODE_FIFO_KHR, s_numBuffers);
 
     createCommandPool();
 
     s_pDepthResource = new DepthResource(
         s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
-        s_swapChainExtent.width, s_swapChainExtent.height);
+        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
-    pFinalPass = std::make_unique<RenderPassFinal>(s_swapChainImageFormat);
-    pFinalPass->SetSwapchainImageViews(s_swapChainImageViews, s_pDepthResource->getView(),s_swapChainExtent.width, s_swapChainExtent.height);
+    pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
+    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), s_pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
     createGraphicsPipeline();
 
     // Create memory allocator
@@ -1200,7 +1160,7 @@ int main()
         //    GetRenderDevice()->GetPhysicalDevice(), s_commandPool,
         //    GetRenderDevice()->GetGraphicsQueue());
 
-        //ImGui::GetIO().DisplaySize = ImVec2(s_swapChainExtent.width, s_swapChainExtent.height);
+        //ImGui::GetIO().DisplaySize = ImVec2(s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))

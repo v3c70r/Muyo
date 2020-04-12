@@ -9,21 +9,27 @@ public:
     VkQueue& GetGraphicsQueue() { return mGraphicsQueue; }
     VkQueue& GetPresentQueue() { return mPresentQueue; }
     VkInstance& GetInstance() { return mInstance; }
+    int GetGraphicsQueueFamilyIndex() const { return mGraphicsQueueFamilyIndex; }
+    int GetPresentQueueFamilyIndex() const { return mPresentQueueFamilyIndex; }
 
     void SetDevice(VkDevice device) { mDevice = device; }
     void SetPhysicalDevice(VkPhysicalDevice physicalDevice)
     {
         mPhysicalDevice = physicalDevice;
     }
-    void SetGraphicsQueue(VkQueue graphicsQueue)
+    void SetGraphicsQueue(VkQueue graphicsQueue, int queueFamilyIndex)
     {
         mGraphicsQueue = graphicsQueue;
+        mGraphicsQueueFamilyIndex = queueFamilyIndex;
     }
 
-    void SetPresentQueue(VkQueue presentQueue)
+    void SetPresentQueue(VkQueue presentQueue, int queueFamilyIndex)
     {
         mPresentQueue = presentQueue;
+        mPresentQueueFamilyIndex = queueFamilyIndex;
     }
+
+    // TODO: Add compute queue if needed
 
     void SetInstance(VkInstance instance)
     {
@@ -41,6 +47,9 @@ private:
     VkQueue mGraphicsQueue = VK_NULL_HANDLE;
     VkQueue mPresentQueue = VK_NULL_HANDLE;
     VkInstance mInstance = VK_NULL_HANDLE;
+    int mGraphicsQueueFamilyIndex = -1;
+    int mPresentQueueFamilyIndex= -1;
+    int mComputeQueueFamilyIndex = -1;
 };
 
 VkRenderDevice* GetRenderDevice();

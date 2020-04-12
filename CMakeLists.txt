@@ -103,6 +103,8 @@ add_executable( helloVulkan
     src/VkMemoryAllocator.cpp
     src/RenderPass.cpp
     src/PipelineManager.cpp
+    src/Swapchain.cpp
+    src/GLFWSwapchain.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)
