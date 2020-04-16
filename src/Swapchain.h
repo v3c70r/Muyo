@@ -8,6 +8,7 @@
 class Swapchain
 {
 public:
+    virtual ~Swapchain() {}
     void createSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
                          const VkPresentModeKHR& presentMode,
                          uint32_t numBuffers = 2);

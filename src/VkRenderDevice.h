@@ -1,9 +1,17 @@
 #pragma once
 #include <vulkan/vulkan.h>
+#include <vector>
 
 class VkRenderDevice
 {
 public:
+    void Initialize(const std::vector<const char*>& layers,
+                    const std::vector<const char*>& extensions);
+    void Unintialize();
+
+    void createLogicalDevice(const std::vector<const char*>& layers,
+                             const std::vector<const char*>& extensions,
+                             VkSurfaceKHR surface);
     VkDevice& GetDevice() { return mDevice; }
     VkPhysicalDevice& GetPhysicalDevice() { return mPhysicalDevice; }
     VkQueue& GetGraphicsQueue() { return mGraphicsQueue; }
@@ -42,6 +50,9 @@ public:
     }
 
 private:
+    // helper functions to create render device
+    void createPhysicalDevice();
+
     VkDevice mDevice = VK_NULL_HANDLE;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkQueue mGraphicsQueue = VK_NULL_HANDLE;
@@ -50,6 +61,9 @@ private:
     int mGraphicsQueueFamilyIndex = -1;
     int mPresentQueueFamilyIndex= -1;
     int mComputeQueueFamilyIndex = -1;
+    bool mbIsValidationEnabled = false;
+    std::vector<const char*> mLayers;
+    std::vector<const char*> mExtensions;
 };
 
 VkRenderDevice* GetRenderDevice();

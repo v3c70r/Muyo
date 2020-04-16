@@ -115,15 +115,6 @@ static VkDebugReportCallbackEXT s_debugCallback;
 
 GLFWSwapchain* s_pSwapchain = nullptr;
 
-//static VkSurfaceKHR s_surface;
-//
-//static VkSwapchainKHR s_swapChain = VK_NULL_HANDLE;
-//static VkFormat s_swapChainImageFormat;
-//static VkExtent2D s_pSwapchain->getSwapchainExtent();
-//
-//static std::vector<VkImage> s_swapChainImages;
-//static std::vector<VkImageView> s_pSwapchain->getImageViews();
-//static std::vector<VkFramebuffer> s_swapChainFramebuffers;
 
 static VertexBuffer* s_pVertexBuffer = nullptr;
 static IndexBuffer* s_pIndexBuffer = nullptr;
@@ -408,24 +399,8 @@ void createInstance()
 {
     if (s_isValidationEnabled && !areLayersSupported(s_validationLayers))
         throw std::runtime_error("Validation layer is not supported");
-    // Populate application info structure
-    VkApplicationInfo appInfo = {};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Hello Triangle";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
-
-    VkInstanceCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
 
     std::vector<const char*> extensions = getRequiredExtensions();
-    // Hack
-    //std::vector<const char *> extensions = {"VK_KHR_surface",
-    //                                        "VK_KHR_wayland_surface",
-    //                                        "VK_EXT_debug_report"};
     std::cout << "Required extensions" << std::endl;
     for (const auto& ext : extensions) std::cout << ext << std::endl;
 
@@ -434,35 +409,20 @@ void createInstance()
     for (const auto& ext : supportedExts)
         std::cout << ext.extensionName << std::endl;
 
-    createInfo.enabledExtensionCount = extensions.size();
-    createInfo.ppEnabledExtensionNames = extensions.data();
-
     if (s_isValidationEnabled)
     {
-        createInfo.enabledLayerCount = s_validationLayers.size();
-        createInfo.ppEnabledLayerNames = s_validationLayers.data();
+        GetRenderDevice()->Initialize(s_validationLayers, extensions);
     }
     else
     {
-        createInfo.enabledLayerCount = 0;
+        std::vector<const char*> dummy;
+        GetRenderDevice()->Initialize(dummy, extensions);
     }
 
     if (!areLayersSupported(s_validationLayers))
     {
         throw std::runtime_error("Layers are not fully supported");
     }
-
-    {
-        VkInstance instance = VK_NULL_HANDLE;
-        VkResult res = vkCreateInstance(&createInfo, nullptr, &instance);
-        GetRenderDevice()->SetInstance(instance);
-        if (res != VK_SUCCESS)
-        {
-            std::cerr << res << std::endl;
-            throw std::runtime_error("failed inst");
-        }
-    }
-
 }
 // swap chain details
 struct SwapChainSupportDetails
@@ -471,45 +431,6 @@ struct SwapChainSupportDetails
     std::vector<VkSurfaceFormatKHR> formats;
     std::vector<VkPresentModeKHR> presentModes;
 };
-
-// Chose one of the formats and presentModes
-VkSurfaceFormatKHR chooseSwapSurfaceFormat(
-    const std::vector<VkSurfaceFormatKHR> formats)
-{
-    // #todo: Manually choose the format we want
-    return {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-}
-
-VkPresentModeKHR chooseSwapPresentMode(
-    const std::vector<VkPresentModeKHR> presentModes)
-{
-    // #todo: Manually choose the presentMode we want
-    return VK_PRESENT_MODE_FIFO_KHR;
-    // return VK_PRESENT_MODE_MAILBOX_KHR;
-}
-
-VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
-{
-    // Choose swapchain resolution
-    if (capabilities.currentExtent.width !=
-        std::numeric_limits<uint32_t>::max())
-    {
-        return capabilities.currentExtent;
-    }
-    else
-    {
-        VkExtent2D actualExtent = {WIDTH, HEIGHT};
-
-        actualExtent.width = std::max(
-            capabilities.minImageExtent.width,
-            std::min(capabilities.maxImageExtent.width, actualExtent.width));
-        actualExtent.height = std::max(
-            capabilities.minImageExtent.height,
-            std::min(capabilities.maxImageExtent.height, actualExtent.height));
-
-        return actualExtent;
-    }
-}
 
 SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice phyDevice)
 {
@@ -614,18 +535,18 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
 
 void pickPysicalDevice()
 {
-    uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
-    assert(deviceCount != 0);
-    std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
-    for (const auto& device : devices)
-        if (mIsDeviceSuitable(device))
-        {
-            GetRenderDevice()->SetPhysicalDevice(device);
-            break;
-        }
-    assert(GetRenderDevice()->GetPhysicalDevice() != VK_NULL_HANDLE);
+    //uint32_t deviceCount = 0;
+    //vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
+    //assert(deviceCount != 0);
+    //std::vector<VkPhysicalDevice> devices(deviceCount);
+    //vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
+    //for (const auto& device : devices)
+    //    if (mIsDeviceSuitable(device))
+    //    {
+    //        GetRenderDevice()->SetPhysicalDevice(device);
+    //        break;
+    //    }
+    //assert(GetRenderDevice()->GetPhysicalDevice() != VK_NULL_HANDLE);
 }
 
 // Logical device
@@ -704,67 +625,6 @@ void createLogicalDevice()
     // Create a presentation queue
 }
 
-//void createSwapChain()
-//{
-//    SwapChainSupportDetails swapChainSupport =
-//        querySwapChainSupport(GetRenderDevice()->GetPhysicalDevice());
-//    VkSurfaceFormatKHR surfaceFormat =
-//        chooseSwapSurfaceFormat(swapChainSupport.formats);
-//    VkPresentModeKHR presentMode =
-//        chooseSwapPresentMode(swapChainSupport.presentModes);
-//    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-//
-//    s_swapChainImageFormat = surfaceFormat.format;
-//    s_pSwapchain->getSwapchainExtent() = extent;
-//
-//    assert(swapChainSupport.capabilities.maxImageCount == 0 ||
-//           (swapChainSupport.capabilities.maxImageCount > s_numBuffers &&
-//               s_numBuffers > swapChainSupport.capabilities.minImageCount));
-//    // uint32_t s_numBuffers = swapChainSupport.capabilities.minImageCount + 1;
-//    // if (swapChainSupport.capabilities.maxImageCount > 0 &&
-//    //    s_numBuffers > swapChainSupport.capabilities.maxImageCount) {
-//    //    s_numBuffers = swapChainSupport.capabilities.maxImageCount;
-//    //}
-//
-//    VkSwapchainCreateInfoKHR createInfo = {};
-//    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-//    createInfo.surface = s_surface;
-//    createInfo.minImageCount = s_numBuffers;
-//    createInfo.imageFormat = surfaceFormat.format;
-//    createInfo.imageColorSpace = surfaceFormat.colorSpace;
-//    createInfo.imageExtent = extent;
-//    createInfo.imageArrayLayers = 1;
-//    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-//
-//    QueueFamilyIndice indices = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
-//
-//    // Assume present and graphics queues are in the same family
-//    // see
-//    // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain
-//    assert(indices.graphicsFamily == indices.presentFamily);
-//    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-//
-//    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-//    // Blending with other windows
-//    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-//
-//    createInfo.presentMode = presentMode;
-//    // Don't care about the window above us
-//    createInfo.clipped = VK_TRUE;
-//    createInfo.oldSwapchain = VK_NULL_HANDLE;
-//
-//    assert(vkCreateSwapchainKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &s_swapChain) ==
-//           VK_SUCCESS);
-//
-//    // Get swap chain images;
-//    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers, nullptr);
-//    s_swapChainImages.resize(s_numBuffers);
-//    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), s_swapChain, &s_numBuffers,
-//                            s_swapChainImages.data());
-//}
-
-// Create Pipeline
-
 std::vector<char> m_readSpv(const std::string& fileName)
 {
     std::ifstream file(fileName, std::ios::ate | std::ios::binary);
@@ -784,7 +644,7 @@ VkShaderModule m_createShaderModule(const std::vector<char>& code)
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
     createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-    VkShaderModule shdrModule;
+    VkShaderModule shdrModule = VK_NULL_HANDLE;
     assert(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &shdrModule) ==
            VK_SUCCESS);
     return shdrModule;
@@ -1019,7 +879,7 @@ void cleanup()
     delete s_pSwapchain;
     vkDestroyDevice(GetRenderDevice()->GetDevice(), nullptr);
     DestroyDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), s_debugCallback, nullptr);
-    vkDestroyInstance(GetRenderDevice()->GetInstance(), nullptr);
+    GetRenderDevice()->Unintialize();
     glfwDestroyWindow(s_pWindow);
     glfwTerminate();
 }
@@ -1100,10 +960,22 @@ int main()
     setupDebugCallback();
     s_pSwapchain = new GLFWSwapchain(s_pWindow);
     s_pSwapchain->createSurface();
-    pickPysicalDevice();
-    createLogicalDevice();
-    GetMemoryAllocator()->Initalize(GetRenderDevice());
 
+    std::vector<const char*> vLogicalDeviceExtensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    if (s_isValidationEnabled)
+    {
+        GetRenderDevice()->createLogicalDevice(s_validationLayers,
+                                               vLogicalDeviceExtensions,
+                                               s_pSwapchain->getSurface());
+    }
+    else
+    {
+        std::vector<const char*> dummy;
+        GetRenderDevice()->Initialize(dummy, vLogicalDeviceExtensions);
+    }
+
+    GetMemoryAllocator()->Initalize(GetRenderDevice());
     s_pSwapchain->createSwapchain(
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
         VK_PRESENT_MODE_FIFO_KHR, s_numBuffers);
