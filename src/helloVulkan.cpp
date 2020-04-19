@@ -30,9 +30,13 @@
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
 #include "RenderPass.h"
 #include "PipelineManager.h"
+#include "RenderPassGBuffer.h"
 #include "GLFWSwapchain.h"
 
+// TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
+std::unique_ptr<RenderPassGBuffer> pGBufferPass = nullptr;
+
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
@@ -533,97 +537,6 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
-void pickPysicalDevice()
-{
-    //uint32_t deviceCount = 0;
-    //vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
-    //assert(deviceCount != 0);
-    //std::vector<VkPhysicalDevice> devices(deviceCount);
-    //vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
-    //for (const auto& device : devices)
-    //    if (mIsDeviceSuitable(device))
-    //    {
-    //        GetRenderDevice()->SetPhysicalDevice(device);
-    //        break;
-    //    }
-    //assert(GetRenderDevice()->GetPhysicalDevice() != VK_NULL_HANDLE);
-}
-
-// Logical device
-
-void createLogicalDevice()
-{
-    // INFO: A queue is bound to logical device
-    QueueFamilyIndice indices = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
-
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<int> uniqueQueueFamilise = {indices.graphicsFamily,
-                                         indices.presentFamily};
-
-    float queuePriority = 1.0f;
-    // Create a queue for each of the family
-    for (int queueFamily : uniqueQueueFamilise)
-    {
-        VkDeviceQueueCreateInfo queueCreateInfo = {};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        // Queue are stored in the orders
-        queueCreateInfo.queueFamilyIndex = queueFamily;
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
-        queueCreateInfos.push_back(queueCreateInfo);
-    }
-
-    VkPhysicalDeviceFeatures deviceFeatures = {};
-
-    VkDeviceCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-
-    createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.queueCreateInfoCount =
-        static_cast<uint32_t>(queueCreateInfos.size());
-
-    createInfo.pEnabledFeatures = &deviceFeatures;
-
-    createInfo.enabledExtensionCount = deviceExtensions.size();
-    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-
-    // Enable validation layer on device
-    if (s_isValidationEnabled)
-    {
-        createInfo.enabledLayerCount =
-            static_cast<uint32_t>(s_validationLayers.size());
-        createInfo.ppEnabledLayerNames = s_validationLayers.data();
-    }
-    else
-    {
-        createInfo.enabledLayerCount = 0;
-    }
-
-    {
-        VkDevice device = VK_NULL_HANDLE;
-        assert(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(),
-                              &createInfo, nullptr, &device) == VK_SUCCESS);
-        GetRenderDevice()->SetDevice(device);
-    }
-
-    {
-        VkQueue graphicsQueue = VK_NULL_HANDLE;
-        VkQueue presentQueue = VK_NULL_HANDLE;
-        vkGetDeviceQueue(GetRenderDevice()->GetDevice(), indices.graphicsFamily,
-                         0, &graphicsQueue);
-        vkGetDeviceQueue(GetRenderDevice()->GetDevice(), indices.presentFamily,
-                         0, &presentQueue);
-
-        GetRenderDevice()->SetGraphicsQueue(graphicsQueue, indices.graphicsFamily);
-        GetRenderDevice()->SetPresentQueue(presentQueue, indices.presentFamily);
-    }
-
-    assert(
-        GetRenderDevice()->GetGraphicsQueue() ==
-        GetRenderDevice()->GetPresentQueue());  // Graphics and present queues should be the same one
-
-    // Create a presentation queue
-}
 
 std::vector<char> m_readSpv(const std::string& fileName)
 {
@@ -862,6 +775,7 @@ void cleanup()
 {
     cleanupSwapChain();
     pFinalPass = nullptr;
+    pGBufferPass = nullptr;
     s_pDepthResource = nullptr;
     vkDestroyDescriptorPool(GetRenderDevice()->GetDevice(), s_descriptorPool, nullptr);
 
@@ -877,7 +791,7 @@ void cleanup()
     s_pSwapchain->destroySurface();
     s_pSwapchain = nullptr;
     delete s_pSwapchain;
-    vkDestroyDevice(GetRenderDevice()->GetDevice(), nullptr);
+    GetRenderDevice()->destroyLogicalDevice();
     DestroyDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), s_debugCallback, nullptr);
     GetRenderDevice()->Unintialize();
     glfwDestroyWindow(s_pWindow);
@@ -972,7 +886,9 @@ int main()
     else
     {
         std::vector<const char*> dummy;
-        GetRenderDevice()->Initialize(dummy, vLogicalDeviceExtensions);
+        GetRenderDevice()->createLogicalDevice(dummy,
+                                               vLogicalDeviceExtensions,
+                                               s_pSwapchain->getSurface());
     }
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
@@ -988,6 +904,9 @@ int main()
 
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
     pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), s_pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+
+    pGBufferPass = std::make_unique<RenderPassGBuffer>();
+
     createGraphicsPipeline();
 
     // Create memory allocator

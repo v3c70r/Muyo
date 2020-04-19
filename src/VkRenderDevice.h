@@ -12,6 +12,8 @@ public:
     void createLogicalDevice(const std::vector<const char*>& layers,
                              const std::vector<const char*>& extensions,
                              VkSurfaceKHR surface);
+
+    void destroyLogicalDevice();
     VkDevice& GetDevice() { return mDevice; }
     VkPhysicalDevice& GetPhysicalDevice() { return mPhysicalDevice; }
     VkQueue& GetGraphicsQueue() { return mGraphicsQueue; }
@@ -64,6 +66,7 @@ private:
     bool mbIsValidationEnabled = false;
     std::vector<const char*> mLayers;
     std::vector<const char*> mExtensions;
+
 };
 
 VkRenderDevice* GetRenderDevice();

@@ -131,6 +131,12 @@ void VkRenderDevice::createLogicalDevice(
     }
 }
 
+void VkRenderDevice::destroyLogicalDevice()
+{
+    vkDestroyDevice(mDevice, nullptr);
+    mDevice = VK_NULL_HANDLE;
+}
+
 void VkRenderDevice::Unintialize()
 {
     vkDestroyInstance(mInstance, nullptr);
