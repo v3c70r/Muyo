@@ -114,7 +114,13 @@ static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
     //    }
 }
 
-static uint32_t s_numBuffers = 4;
+
+#ifdef __APPLE__
+static const uint32_t NUM_BUFFERS = 2;
+#else
+static const uint32_t NUM_BUFFERS = 4;
+#endif
+
 static VkDebugReportCallbackEXT s_debugCallback;
 
 GLFWSwapchain* s_pSwapchain = nullptr;
@@ -602,15 +608,15 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
 {
     s_contextManager.Initalize();
     s_contextManager.getContext(CONTEXT_SCENE)
-        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(),
+        ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
                      &s_commandPool);
     s_contextManager.getContext(CONTEXT_UI)
-        ->initialize(s_numBuffers, &GetRenderDevice()->GetDevice(),
+        ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
                      &s_commandPool);
 
     std::vector<VkCommandBuffer> commandBuffers;
 
-    for (s_currentContext = 0; s_currentContext < s_numBuffers;
+    for (s_currentContext = 0; s_currentContext < NUM_BUFFERS;
          s_currentContext++)
     {
         RenderContext* renderContext = static_cast<RenderContext*>(
@@ -627,9 +633,9 @@ void createSemaphores()
 {
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    s_imageAvailableSemaphores.resize(s_numBuffers);
-    s_renderFinishedSemaphores.resize(s_numBuffers);
-    for (size_t i = 0; i < s_numBuffers; i++)
+    s_imageAvailableSemaphores.resize(NUM_BUFFERS);
+    s_renderFinishedSemaphores.resize(NUM_BUFFERS);
+    for (size_t i = 0; i < NUM_BUFFERS; i++)
     {
         assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
                                  &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
@@ -643,7 +649,7 @@ void createFences()
     VkFenceCreateInfo fenceInfo = {};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    s_waitFences.resize(s_numBuffers);
+    s_waitFences.resize(NUM_BUFFERS);
     for (auto& fence : s_waitFences)
     {
         assert(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence) ==
@@ -679,9 +685,9 @@ void createDescriptorPool()
 void createDescriptorSet()
 {
     // Create descriptor set
-    std::vector<VkDescriptorSetLayout> layouts(s_numBuffers, s_descriptorSetLayout);
+    std::vector<VkDescriptorSetLayout> layouts(NUM_BUFFERS, s_descriptorSetLayout);
     s_vDescriptorSets.clear();
-    s_vDescriptorSets.resize(s_numBuffers);
+    s_vDescriptorSets.resize(NUM_BUFFERS);
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = s_descriptorPool;
@@ -755,7 +761,7 @@ void recreateSwapChain()
 
     s_pSwapchain->createSwapchain(
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-        VK_PRESENT_MODE_FIFO_KHR, s_numBuffers);
+        VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
 
 
     // Need to recreate depth resource before recreating framebuffer
@@ -894,7 +900,7 @@ int main()
     GetMemoryAllocator()->Initalize(GetRenderDevice());
     s_pSwapchain->createSwapchain(
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-        VK_PRESENT_MODE_FIFO_KHR, s_numBuffers);
+        VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
 
     createCommandPool();
 
@@ -945,7 +951,7 @@ int main()
 
         //s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
         //                            *(s_contextManager.getContext(CONTEXT_UI))),
-        //                        s_numBuffers,
+        //                        NUM_BUFFERS,
         //                        GetRenderDevice()->GetPhysicalDevice());
         //s_UIOverlay->initializeFontTexture(
         //    GetRenderDevice()->GetPhysicalDevice(), s_commandPool,

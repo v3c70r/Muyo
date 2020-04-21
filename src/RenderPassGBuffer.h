@@ -35,16 +35,16 @@ public:
             desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
             aAttachmentDesc[GBUFFER_POSITION] = desc;
-            aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R32G32B32_SFLOAT;
+            aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
             aAttachmentDesc[GBUFFER_ALBEDO] = desc;
-            aAttachmentDesc[GBUFFER_ALBEDO].format = VK_FORMAT_R32G32B32_SFLOAT;
+            aAttachmentDesc[GBUFFER_ALBEDO].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
             aAttachmentDesc[GBUFFER_UV] = desc;
-            aAttachmentDesc[GBUFFER_UV].format = VK_FORMAT_R32G32B32_SFLOAT;
+            aAttachmentDesc[GBUFFER_UV].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
             aAttachmentDesc[GBUFFER_NORMAL] = desc;
-            aAttachmentDesc[GBUFFER_NORMAL].format = VK_FORMAT_R32G32B32_SFLOAT;
+            aAttachmentDesc[GBUFFER_NORMAL].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
             aAttachmentDesc[GBUFFER_DEPTH] = desc;
             aAttachmentDesc[GBUFFER_DEPTH].format = VK_FORMAT_D32_SFLOAT;

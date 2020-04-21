@@ -17,9 +17,12 @@ void Swapchain::createSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
 
     m_swapchainFormat = surfaceFormat;
 
-    assert(swapchainSupport.capabilities.maxImageCount == 0 ||
-           (swapchainSupport.capabilities.maxImageCount > numBuffers &&
-               numBuffers > swapchainSupport.capabilities.minImageCount));
+    assert(swapchainSupport.capabilities.maxImageCount > 0 &&
+           "Swapchain is not supported");
+    assert(swapchainSupport.capabilities.maxImageCount >= numBuffers &&
+           "Too much buffers for swapchain");
+    assert(numBuffers >= swapchainSupport.capabilities.minImageCount &&
+           "Not enough image for swapchain");
 
     VkSwapchainCreateInfoKHR createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;

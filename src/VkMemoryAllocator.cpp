@@ -1,6 +1,7 @@
 #include "VkMemoryAllocator.h"
-#include <cassert>
 #include "VkRenderDevice.h"
+#include <cassert>
+#include <string>
 VkMemoryAllocator::VkMemoryAllocator() {}
 void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 {

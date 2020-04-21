@@ -50,5 +50,5 @@ private:
 
     VmaAllocation m_allocation = VK_NULL_HANDLE;
     const VkBufferUsageFlags BUFFER_USAGE = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_GPU_ONLY;
+    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_CPU_TO_GPU;
 };
