@@ -102,6 +102,7 @@ add_executable( helloVulkan
     src/VkRenderDevice.cpp src/Util.cpp
     src/VkMemoryAllocator.cpp
     src/RenderPass.cpp
+    src/RenderPassGBuffer.cpp
     src/PipelineManager.cpp
     src/Swapchain.cpp
     src/GLFWSwapchain.cpp
