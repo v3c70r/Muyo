@@ -29,6 +29,10 @@ public:
 
     void CreateStaticObjectPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, RenderPass& pass);
     void DestroyStaticObjectPipeline();
+
+    void CreateGBufferPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, RenderPass& pass);
+    void DestroyGBufferPipeline();
+
     VkPipeline GetStaticObjectPipeline() {return maPipelines[0];}
     VkPipelineLayout GetStaticObjectPipelineLayout() { return maPipelineLayouts[0];}
 
@@ -50,6 +54,6 @@ public:
 
     void InitilaizePipelineLayout();
 
-    std ::array<VkPipeline, 1> maPipelines = {VK_NULL_HANDLE};
+    std ::array<VkPipeline, 2> maPipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     std ::array<VkPipelineLayout, 1> maPipelineLayouts = {VK_NULL_HANDLE};
 };

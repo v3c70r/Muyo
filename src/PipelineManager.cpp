@@ -30,7 +30,7 @@ PipelineManager::~PipelineManager()
     // TODO: Clean up
 }
 void PipelineManager::CreateStaticObjectPipeline(
-    uint32_t width, uint32_t height, VkDescriptorSetLayout descriptoSetLayout,
+    uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
     RenderPass& pass)
 {
     mViewport.x = 0.0f;
@@ -43,7 +43,7 @@ void PipelineManager::CreateStaticObjectPipeline(
     mScissorRect.offset = {0, 0};
     mScissorRect.extent = {width, height};
 
-    mDescriptorSetLayout = descriptoSetLayout;
+    mDescriptorSetLayout = descriptorSetLayout;
 
     std::string name = "Static Object";
     VkShaderModule vertShdr =
@@ -76,6 +76,54 @@ void PipelineManager::DestroyStaticObjectPipeline()
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[0], nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), maPipelineLayouts[0],
                             nullptr);
+    maPipelines[0] = VK_NULL_HANDLE;
+    maPipelineLayouts[0] = VK_NULL_HANDLE;
+}
+
+void PipelineManager::CreateGBufferPipeline(
+    uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
+    RenderPass& pass)
+{
+    mViewport.x = 0.0f;
+    mViewport.y = 0.0f;
+    mViewport.width = (float)width;
+    mViewport.height = (float)height;
+    mViewport.minDepth = 0.0f;
+    mViewport.maxDepth = 1.0f;
+    mScissorRect.offset = {0, 0};
+    mScissorRect.extent = {width, height};
+
+    mDescriptorSetLayout = descriptorSetLayout;
+
+    std::string name = "GBuffer";
+    VkShaderModule vertShdr =
+        CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/gbuffer.frag.spv"));
+    InitilaizePipelineLayout();
+    PipelineStateBuilder builder;
+
+    maPipelines[1] = builder.setShaderModules({vertShdr, fragShdr})
+                         .setVertextInfo({Vertex::getBindingDescription()},
+                                         Vertex::getAttributeDescriptions())
+                         .setAssembly(GetIAInfo())
+                         .setViewport(mViewport, mScissorRect)
+                         .setRasterizer(GetRasterInfo())
+                         .setMSAA(GetMultisampleState())
+                         .setColorBlending(GetBlendState())
+                         .setPipelineLayout(maPipelineLayouts[0])
+                         .setDepthStencil(GetDepthStencilCreateinfo())
+                         .setRenderPass(pass.GetPass())
+                         .build(GetRenderDevice()->GetDevice());
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+}
+
+void PipelineManager::DestroyGBufferPipeline() {
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[1], nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
+                            maPipelineLayouts[0], nullptr);
     maPipelines[0] = VK_NULL_HANDLE;
     maPipelineLayouts[0] = VK_NULL_HANDLE;
 }

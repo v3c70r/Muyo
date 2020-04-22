@@ -116,7 +116,6 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.vert"
     )
 
-
 message(STATUS "Shaders: ${GLSL_SOURCE_FILES}")
 foreach (GLSL ${GLSL_SOURCE_FILES})
     get_filename_component(FILE_NAME ${GLSL} NAME)
