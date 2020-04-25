@@ -7,22 +7,29 @@
 
 PipelineManager::PipelineManager()
 {
-    // Create blend modes
-    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.colorWriteMask =
+    InitializeDefaultBlendStats();
+}
+
+void PipelineManager::InitializeDefaultBlendStats()
+{
+    VkPipelineColorBlendAttachmentState defaultBlendState = {};
+    defaultBlendState.colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-    colorBlendAttachment.dstColorBlendFactor =
+    defaultBlendState.blendEnable = VK_FALSE;
+    defaultBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+    defaultBlendState.dstColorBlendFactor =
         VK_BLEND_FACTOR_ZERO;                                        // Optional
-    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
-    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-    colorBlendAttachment.dstAlphaBlendFactor =
+    defaultBlendState.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
+    defaultBlendState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+    defaultBlendState.dstAlphaBlendFactor =
         VK_BLEND_FACTOR_ZERO;                             // Optional
-    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;  // Optional
+    defaultBlendState.alphaBlendOp = VK_BLEND_OP_ADD;  // Optional
 
-    aBlendModes[0] = colorBlendAttachment;
+    for(auto& state : m_aBlendModes)
+    {
+        state = defaultBlendState;
+    }
 }
 
 PipelineManager::~PipelineManager()
@@ -62,7 +69,7 @@ void PipelineManager::CreateStaticObjectPipeline(
                          .setViewport(mViewport, mScissorRect)
                          .setRasterizer(GetRasterInfo())
                          .setMSAA(GetMultisampleState())
-                         .setColorBlending(GetBlendState())
+                         .setColorBlending(GetBlendState(1))
                          .setPipelineLayout(maPipelineLayouts[0])
                          .setDepthStencil(GetDepthStencilCreateinfo())
                          .setRenderPass(pass.GetPass())
@@ -110,7 +117,7 @@ void PipelineManager::CreateGBufferPipeline(
                          .setViewport(mViewport, mScissorRect)
                          .setRasterizer(GetRasterInfo())
                          .setMSAA(GetMultisampleState())
-                         .setColorBlending(GetBlendState())
+                         .setColorBlending(GetBlendState(4))
                          .setPipelineLayout(maPipelineLayouts[0])
                          .setDepthStencil(GetDepthStencilCreateinfo())
                          .setRenderPass(pass.GetPass())
@@ -215,15 +222,16 @@ VkPipelineMultisampleStateCreateInfo PipelineManager::GetMultisampleState()
     return multisamplingInfo;
 }
 
-VkPipelineColorBlendStateCreateInfo PipelineManager::GetBlendState()
+VkPipelineColorBlendStateCreateInfo PipelineManager::GetBlendState(size_t numAttachments)
 {
+    assert(numAttachments <= MAX_NUM_ATTACHMENTS);
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
     colorBlending.sType =
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;  // Optional
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &aBlendModes[eBLENDMODE_DEFAULT];
+    colorBlending.attachmentCount = numAttachments;
+    colorBlending.pAttachments = m_aBlendModes.data();
     colorBlending.blendConstants[0] = 0.0f;  // Optional
     colorBlending.blendConstants[1] = 0.0f;  // Optional
     colorBlending.blendConstants[2] = 0.0f;  // Optional

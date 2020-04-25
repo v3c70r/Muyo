@@ -14,15 +14,12 @@ class RenderPass;
 class PipelineManager
 {
 public:
-    enum BlendMode
-    {
-        eBLENDMODE_DEFAULT = 0,
-        eBLENDMODE_COUNT
-    };
-    std::array<VkPipelineColorBlendAttachmentState, eBLENDMODE_COUNT> aBlendModes;
+    static constexpr size_t MAX_NUM_ATTACHMENTS = 4;
+    std::array<VkPipelineColorBlendAttachmentState, MAX_NUM_ATTACHMENTS> m_aBlendModes;
     VkViewport mViewport = {};
     VkRect2D mScissorRect = {};
     VkDescriptorSetLayout mDescriptorSetLayout = VK_NULL_HANDLE;
+    void InitializeDefaultBlendStats();
 
     PipelineManager();
     ~PipelineManager();
@@ -49,7 +46,7 @@ public:
     VkPipelineViewportStateCreateInfo GetViewportState(uint32_t width, uint32_t height);
     VkPipelineRasterizationStateCreateInfo GetRasterInfo(bool bWireframe = false);
     VkPipelineMultisampleStateCreateInfo GetMultisampleState();
-    VkPipelineColorBlendStateCreateInfo GetBlendState();
+    VkPipelineColorBlendStateCreateInfo GetBlendState(size_t numAttachments);
     VkPipelineDepthStencilStateCreateInfo GetDepthStencilCreateinfo();
 
     void InitilaizePipelineLayout();

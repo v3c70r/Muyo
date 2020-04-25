@@ -4,7 +4,7 @@
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 
-struct UnifromBufferObject {
+struct PerViewData {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
@@ -21,22 +21,24 @@ struct UnifromBufferObject {
     }
 };
 
+template<class T>
 class UniformBuffer
 {
 public:
-    UniformBuffer(size_t size = 0)
+    UniformBuffer()
     {
+        constexpr size_t size = sizeof(T);
         if (size != 0)
         {
             GetMemoryAllocator()->AllocateBuffer(
                 size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "Uniform Buffer");
         }
     }
-    void setData(const UnifromBufferObject& buffer, VkCommandPool commandPool, VkQueue queue)
+    void setData(const T& buffer, VkCommandPool commandPool, VkQueue queue)
     {
         void* pMappedMemory = nullptr;
         GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedMemory);
-        memcpy(pMappedMemory, (void*)&buffer, sizeof(UnifromBufferObject));
+        memcpy(pMappedMemory, (void*)&buffer, sizeof(T));
         GetMemoryAllocator()->UnmapBuffer(m_allocation);
     }
     ~UniformBuffer()

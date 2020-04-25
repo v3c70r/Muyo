@@ -128,7 +128,7 @@ GLFWSwapchain* s_pSwapchain = nullptr;
 
 static VertexBuffer* s_pVertexBuffer = nullptr;
 static IndexBuffer* s_pIndexBuffer = nullptr;
-static UniformBuffer* s_pUniformBuffer = nullptr;
+static UniformBuffer<PerViewData>* s_pUniformBuffer = nullptr;
 static Texture* s_pTexture = nullptr;
 static DepthResource* s_pDepthResource = nullptr;
 //static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
@@ -576,9 +576,11 @@ void createGraphicsPipeline()
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
     descriptorSetLayoutInfo.sType =
         VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
     std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-        UnifromBufferObject::getDescriptorSetLayoutBinding(),
+        PerViewData::getDescriptorSetLayoutBinding(),
         Texture::getSamplerLayoutBinding()};
+
     descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
     descriptorSetLayoutInfo.pBindings = bindings.data();
 
@@ -589,6 +591,10 @@ void createGraphicsPipeline()
     gPipelineManager.CreateStaticObjectPipeline(
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
         s_descriptorSetLayout, *pFinalPass);
+
+    gPipelineManager.CreateGBufferPipeline(
+        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
+        s_descriptorSetLayout, *pGBufferPass);
 }
 
 void createCommandPool()
@@ -703,7 +709,7 @@ void createDescriptorSet()
         VkDescriptorBufferInfo bufferInfo = {};
         bufferInfo.buffer = s_pUniformBuffer->buffer();
         bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(UnifromBufferObject);
+        bufferInfo.range = sizeof(PerViewData);
 
         // prepare image descriptor
         VkDescriptorImageInfo imageInfo = {};
@@ -743,6 +749,7 @@ void cleanupSwapChain()
     s_contextManager.getContext(CONTEXT_UI)->finalize();
 
     gPipelineManager.DestroyStaticObjectPipeline();
+    gPipelineManager.DestroyGBufferPipeline();
     
     s_pSwapchain->destroySwapchain();
 
@@ -850,7 +857,7 @@ void present()
     vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
 }
 
-void updateUniformBuffer(UniformBuffer* ub)
+void updateUniformBuffer(UniformBuffer<PerViewData>* ub)
 {
     static auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -859,7 +866,7 @@ void updateUniformBuffer(UniformBuffer* ub)
                      currentTime - startTime)
                      .count() *
                  0.01;
-    UnifromBufferObject ubo = {};
+    PerViewData ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
     // ubo.model = glm::rotate(glm::mat4(1.0), glm::degrees(time),
@@ -936,7 +943,7 @@ int main()
                                 sizeof(uint32_t) * getIndices().size(),
                                 s_commandPool, GetRenderDevice()->GetGraphicsQueue());
 
-        s_pUniformBuffer = new UniformBuffer(sizeof(UnifromBufferObject));
+        s_pUniformBuffer = new UniformBuffer<PerViewData>();
 
         s_pTexture = new Texture();
         s_pTexture->LoadImage("assets/default.png", GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),
