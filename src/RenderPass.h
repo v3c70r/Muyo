@@ -41,7 +41,7 @@ public:
     }
 
 private:
-    void ClearFramebuffers();
+    void destroyFramebuffers();
     std::vector<VkFramebuffer> m_vFramebuffers;
     VkExtent2D mRenderArea = {0, 0};
     std::vector<VkCommandBuffer> m_vCommandBuffers; // save the command buffer to be submitted

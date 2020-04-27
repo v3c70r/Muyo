@@ -80,7 +80,7 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat)
 
 RenderPassFinal::~RenderPassFinal()
 {
-    ClearFramebuffers();
+    destroyFramebuffers();
     for (auto& cmdBuf : m_vCommandBuffers)
     {
         GetRenderDevice()->freePrimaryCommandbuffer(cmdBuf);
@@ -155,7 +155,7 @@ void RenderPassFinal::SetSwapchainImageViews(
     std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
     uint32_t nWidth, uint32_t nHeight)
 {
-    ClearFramebuffers();
+    destroyFramebuffers();
     m_vFramebuffers.resize(vImageViews.size());
     for (size_t i = 0; i < vImageViews.size(); i++)
     {
@@ -229,7 +229,7 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
     }
 }
 
-void RenderPassFinal::ClearFramebuffers()
+void RenderPassFinal::destroyFramebuffers()
 {
     for (auto& framebuffer : m_vFramebuffers)
     {

@@ -1,9 +1,10 @@
 #pragma once
 #include <vulkan/vulkan.h>
-
+#include "RenderResource.h"
 #include "Texture.h"
 // Depth image
-class DepthResource {
+class DepthResource : public ImageResource
+{
 public:
     DepthResource(uint32_t width, uint32_t height)
     {
@@ -59,20 +60,9 @@ public:
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 
-    ~DepthResource()
+    ~DepthResource() override
     {
         vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
         GetMemoryAllocator()->FreeImage(m_image, m_allocation);
-
     }
-    
-    VkImageView getView() const
-    {
-        return m_view;
-    }
-
-private:
-    VkImage m_image = VK_NULL_HANDLE;
-    VmaAllocation m_allocation = VK_NULL_HANDLE;
-    VkImageView m_view = VK_NULL_HANDLE;
 };

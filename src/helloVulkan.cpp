@@ -14,8 +14,7 @@
 #include <set>
 #include <vector>
 #include <cassert> // assert
-
-#include "DepthResource.h"
+#include "RenderResourceManager.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
@@ -127,7 +126,6 @@ static VertexBuffer* s_pVertexBuffer = nullptr;
 static IndexBuffer* s_pIndexBuffer = nullptr;
 static UniformBuffer<PerViewData>* s_pUniformBuffer = nullptr;
 static Texture* s_pTexture = nullptr;
-static DepthResource* s_pDepthResource = nullptr;
 //static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
 
 // DescriptorLayout, which is part of the pipeline layout
@@ -726,14 +724,18 @@ void recreateSwapChain()
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
         VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
 
+    GetRenderDevice()->getRenderResourceManager()->removeResource(
+        "depthTarget");
+    DepthResource* pDepthResource =
+        GetRenderDevice()->getRenderResourceManager()->getDepthResource(
+            "depthTarget",
+            VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
+                       s_pSwapchain->getSwapchainExtent().height}));
 
-    // Need to recreate depth resource before recreating framebuffer
-    delete s_pDepthResource;
-    s_pDepthResource =
-        new DepthResource(s_pSwapchain->getSwapchainExtent().width,
-                          s_pSwapchain->getSwapchainExtent().height);
-
-    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), s_pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    pFinalPass->SetSwapchainImageViews(
+        s_pSwapchain->getImageViews(), pDepthResource->getView(),
+        s_pSwapchain->getSwapchainExtent().width,
+        s_pSwapchain->getSwapchainExtent().height);
 
     createGraphicsPipeline();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
@@ -744,7 +746,6 @@ void cleanup()
     cleanupSwapChain();
     pFinalPass = nullptr;
     pGBufferPass = nullptr;
-    s_pDepthResource = nullptr;
     vkDestroyDescriptorPool(GetRenderDevice()->GetDevice(), s_descriptorPool, nullptr);
 
     for (auto& somaphore : s_imageAvailableSemaphores)
@@ -866,12 +867,14 @@ int main()
 
     GetRenderDevice()->createCommandPools();
 
-    s_pDepthResource =
-        new DepthResource(s_pSwapchain->getSwapchainExtent().width,
-                          s_pSwapchain->getSwapchainExtent().height);
+    DepthResource* pDepthResource =
+        GetRenderDevice()->getRenderResourceManager()->getDepthResource(
+            "depthTarget",
+            VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
+                        s_pSwapchain->getSwapchainExtent().height}));
 
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
-    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), s_pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
 
@@ -944,7 +947,6 @@ int main()
 
         //s_UIOverlay->finalize();
         //s_UIOverlay = nullptr;
-        delete s_pDepthResource;
         delete s_pVertexBuffer;
         delete s_pIndexBuffer;
         delete s_pUniformBuffer;

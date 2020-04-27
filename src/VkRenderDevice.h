@@ -2,7 +2,9 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <array>
+#include <memory>
 
+class RenderResourceManager;
 class VkRenderDevice
 {
 public:
@@ -88,6 +90,10 @@ public:
     {
     }
 
+    RenderResourceManager* getRenderResourceManager()
+    {
+        return mpResourceManager;
+    }
 
 private:
     // helper functions to create render device
@@ -114,6 +120,8 @@ private:
     bool mbIsValidationEnabled = false;
     std::vector<const char*> mLayers;
     std::vector<const char*> mExtensions;
+
+    RenderResourceManager* mpResourceManager = nullptr;
 };
 
 VkRenderDevice* GetRenderDevice();

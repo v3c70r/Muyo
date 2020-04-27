@@ -57,6 +57,7 @@ public:
                 VkPipeline pipeline, VkPipelineLayout pipelineLayout,
                 VkDescriptorSet descriptorSet);
     void createFramebuffer();
+    void destroyFramebuffer();
     void setGBufferImageViews(VkImageView positionView, VkImageView albedoView,
                               VkImageView uvView, VkImageView normalView,
                               VkImageView depthView, uint32_t nWidth,

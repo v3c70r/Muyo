@@ -43,7 +43,6 @@ RenderPassGBuffer::RenderPassGBuffer()
 
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
                               nullptr, &m_renderPass) == VK_SUCCESS);
-
 }
 
 
@@ -85,6 +84,12 @@ void RenderPassGBuffer::setGBufferImageViews(VkImageView positionView,
                                nullptr, &m_framebuffer) == VK_SUCCESS);
 }
 
+void RenderPassGBuffer::destroyFramebuffer()
+{
+    vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_framebuffer,
+                         nullptr);
+}
+
 void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
                                             VkBuffer indexBuffer,
                                             uint32_t numIndices,
@@ -109,9 +114,14 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
 
     renderPassBeginInfo.renderArea.offset = {0, 0};
     renderPassBeginInfo.renderArea.extent = mRenderArea;
-    std::array<VkClearValue, 2> clearValues = {};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
+
+    std::array<VkClearValue, GBufferAttachments::ATTACHMENTS_COUNT> clearValues = {};
+    clearValues[GBufferAttachments::GBUFFER_POSITION].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[GBufferAttachments::GBUFFER_ALBEDO].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[GBufferAttachments::GBUFFER_NORMAL].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[GBufferAttachments::GBUFFER_UV].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[GBufferAttachments::GBUFFER_DEPTH].depthStencil = {1.0f, 0};
+
     renderPassBeginInfo.clearValueCount =
         static_cast<uint32_t>(clearValues.size());
     renderPassBeginInfo.pClearValues = clearValues.data();
