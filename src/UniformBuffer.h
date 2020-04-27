@@ -34,7 +34,7 @@ public:
                 size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "Uniform Buffer");
         }
     }
-    void setData(const T& buffer, VkCommandPool commandPool, VkQueue queue)
+    void setData(const T& buffer)
     {
         void* pMappedMemory = nullptr;
         GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedMemory);

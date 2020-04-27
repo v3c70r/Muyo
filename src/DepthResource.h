@@ -5,8 +5,7 @@
 // Depth image
 class DepthResource {
 public:
-    DepthResource( VkCommandPool pool, VkQueue queue, uint32_t width,
-                  uint32_t height)
+    DepthResource(uint32_t width, uint32_t height)
     {
         VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
         // Create a vkimage
@@ -56,8 +55,7 @@ public:
 
         //// transition depth layout
         Texture::sTransitionImageLayout(
-            GetRenderDevice()->GetDevice(), pool, queue, m_image, depthFormat,
-            VK_IMAGE_LAYOUT_UNDEFINED,
+            m_image, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
 

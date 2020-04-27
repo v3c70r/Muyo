@@ -46,7 +46,16 @@ RenderPassGBuffer::RenderPassGBuffer()
 
 }
 
+
 RenderPassGBuffer::~RenderPassGBuffer()
 {
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
+}
+
+void RenderPassGBuffer::RecordCommandBuffer(VkPipeline pipeline, VkPipelineLayout pipelineLayout)
+{
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+    beginInfo.pInheritanceInfo = nullptr;
 }

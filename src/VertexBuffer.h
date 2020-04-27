@@ -29,8 +29,7 @@ public:
             GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
         }
     }
-    void setData(void* vertices, size_t size, VkCommandPool commandPool,
-                 VkQueue queue)
+    void setData(void* vertices, size_t size)
     {
         if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
         {
@@ -51,37 +50,14 @@ public:
         memcpy(pMappedMemory, vertices, size);
         GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
 
-        // Allocate command buffer
-        VkCommandBufferAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = commandPool;
-        allocInfo.commandBufferCount = 1;
-
-        VkCommandBuffer commandBuffer;
-        vkAllocateCommandBuffers(GetRenderDevice()->GetDevice(), &allocInfo,
-                                 &commandBuffer);
-
-        // record command buffer
-        VkCommandBufferBeginInfo beginInfo = {};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(commandBuffer, &beginInfo);
-        VkBufferCopy copyRegion = {};
-        copyRegion.size = size;
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1, &copyRegion);
-        vkEndCommandBuffer(commandBuffer);
-
-        // execute it right away
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
-        vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(queue);  // wait for it to finish
-
-        vkFreeCommandBuffers(GetRenderDevice()->GetDevice(), commandPool, 1,
-                             &commandBuffer);
+        // Submit the copy immedietly
+        GetRenderDevice()->executeImmediateCommand(
+            [&](VkCommandBuffer commandBuffer) {
+                VkBufferCopy copyRegion = {};
+                copyRegion.size = size;
+                vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1,
+                                &copyRegion);
+            });
         GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);
     }
     VkBuffer buffer() const { return m_buffer; }
@@ -107,8 +83,7 @@ public:
         }
     }
 
-    void setData(void* indices, size_t size, VkCommandPool commandPool,
-                 VkQueue queue)
+    void setData(void* indices, size_t size)
     {
         if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
         {
@@ -129,37 +104,13 @@ public:
         memcpy(pMappedMemory, indices, size);
         GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
 
-        // Allocate command buffer
-        VkCommandBufferAllocateInfo allocInfo = {};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = commandPool;
-        allocInfo.commandBufferCount = 1;
-
-        VkCommandBuffer commandBuffer;
-        vkAllocateCommandBuffers(GetRenderDevice()->GetDevice(), &allocInfo,
-                                 &commandBuffer);
-
-        // record command buffer
-        VkCommandBufferBeginInfo beginInfo = {};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(commandBuffer, &beginInfo);
-        VkBufferCopy copyRegion = {};
-        copyRegion.size = size;
-        vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1, &copyRegion);
-        vkEndCommandBuffer(commandBuffer);
-
-        // execute it right away
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
-        vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(queue);  // wait for it to finish
-
-        vkFreeCommandBuffers(GetRenderDevice()->GetDevice(), commandPool, 1,
-                             &commandBuffer);
+        GetRenderDevice()->executeImmediateCommand(
+            [&](VkCommandBuffer commandBuffer) {
+                VkBufferCopy copyRegion = {};
+                copyRegion.size = size;
+                vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1,
+                                &copyRegion);
+            });
         GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);
     }
     VkBuffer buffer() const { return m_buffer; }

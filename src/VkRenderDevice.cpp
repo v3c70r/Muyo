@@ -137,8 +137,78 @@ void VkRenderDevice::destroyLogicalDevice()
     mDevice = VK_NULL_HANDLE;
 }
 
+void VkRenderDevice::createCommandPools()
+{
+    VkCommandPoolCreateInfo commandPoolInfo = {};
+    for (uint32_t i = 0; i < NUM_CMD_POOLS; i++)
+    {
+        commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        commandPoolInfo.queueFamilyIndex = 0;
+        commandPoolInfo.flags = 0;
+        assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(),
+                                   &commandPoolInfo, nullptr,
+                                   &maCommandPools[i]) == VK_SUCCESS);
+    }
+}
+
+void VkRenderDevice::destroyCommandPools()
+{
+    for (auto& cmdPool : maCommandPools)
+    {
+        vkDestroyCommandPool(GetRenderDevice()->GetDevice(), cmdPool, nullptr);
+    }
+}
+
 void VkRenderDevice::Unintialize()
 {
     vkDestroyInstance(mInstance, nullptr);
+}
+
+VkCommandBuffer VkRenderDevice::allocatePrimaryCommandbuffer()
+{
+        VkCommandBuffer commandBuffer;
+        VkCommandBufferAllocateInfo cmdAllocInfo = {};
+        cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdAllocInfo.commandPool = maCommandPools[MAIN_CMD_POOL];
+        cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdAllocInfo.commandBufferCount = 1;
+        assert(vkAllocateCommandBuffers(mDevice, &cmdAllocInfo,
+                                        &commandBuffer) == VK_SUCCESS);
+        return commandBuffer;
+}
+
+void VkRenderDevice::freePrimaryCommandbuffer(VkCommandBuffer& commandBuffer)
+{
+    vkFreeCommandBuffers(mDevice, maCommandPools[MAIN_CMD_POOL], 1,
+                         &commandBuffer);
+}
+
+VkCommandBuffer VkRenderDevice::allocateSecondaryCommandBuffer()
+{
+    return VkCommandBuffer();
+}
+void VkRenderDevice::freeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer)
+{
+    vkFreeCommandBuffers(mDevice, maCommandPools[MAIN_CMD_POOL], 1,
+                         &commandBuffer);
+}
+
+VkCommandBuffer VkRenderDevice::allocateImmediateCommandBuffer()
+{
+    VkCommandBuffer commandBuffer;
+    VkCommandBufferAllocateInfo cmdAllocInfo = {};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = maCommandPools[IMMEDIATE_CMD_POOL];
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+    assert(vkAllocateCommandBuffers(mDevice, &cmdAllocInfo, &commandBuffer) ==
+           VK_SUCCESS);
+    return commandBuffer;
+}
+
+void VkRenderDevice::freeImmediateCommandBuffer(VkCommandBuffer& commandBuffer)
+{
+    vkFreeCommandBuffers(mDevice, maCommandPools[IMMEDIATE_CMD_POOL], 1,
+                         &commandBuffer);
 }
 

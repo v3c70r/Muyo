@@ -31,9 +31,7 @@ public:
             desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-            desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
+            desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; 
             aAttachmentDesc[GBUFFER_POSITION] = desc;
             aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
@@ -54,7 +52,7 @@ public:
     };
     RenderPassGBuffer();
     ~RenderPassGBuffer();
-    //void SetGBufferViews(const  &views);
+    void RecordCommandBuffer(VkPipeline pipeline, VkPipelineLayout pipelineLayout);
 private:
     GBufferAttachments m_attachments;
 };

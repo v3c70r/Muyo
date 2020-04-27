@@ -14,12 +14,9 @@ public:
     Texture();
     ~Texture();
 
-    void LoadPixels(void *pixels, int width, int height,
-                    const VkCommandPool &pool, const VkQueue &queue);
+    void LoadPixels(void *pixels, int width, int height);
 
-    void LoadImage(const std::string path, const VkDevice &device,
-                   const VkPhysicalDevice &physicalDevice,
-                   const VkCommandPool &pool, const VkQueue &queue);
+    void LoadImage(const std::string path);
 
     VkImageView getImageView() const { return m_imageView; }
     VkSampler getSamper() const { return m_textureSampler; }
@@ -61,9 +58,8 @@ public:
             &imageInfo, memoryUsage, m_image, m_allocation);
     }
 
-    static void sTransitionImageLayout(VkDevice device, VkCommandPool cmdPool,
-                                       VkQueue queue, VkImage image,
-                                       VkFormat format, VkImageLayout oldLayout,
+    static void sTransitionImageLayout(VkImage image, VkFormat format,
+                                       VkImageLayout oldLayout,
                                        VkImageLayout newLayout)
     {
         VkPipelineStageFlags sourceStage;
@@ -126,19 +122,17 @@ public:
             throw std::invalid_argument("unsupported layout transition!");
         }
 
-        VkCommandBuffer cmdBuf = beginSingleTimeCommands(device, cmdPool);
-
-        vkCmdPipelineBarrier(cmdBuf, sourceStage,
-                             /*srcStage*/ destinationStage, /*dstStage*/
-                             0, 0, nullptr, 0, nullptr, 1, &barrier);
-
-        endSingleTimeCommands(cmdBuf, device, cmdPool, queue);
+        GetRenderDevice()->executeImmediateCommand(
+            [&](VkCommandBuffer commandBuffer) {
+                vkCmdPipelineBarrier(commandBuffer, sourceStage,
+                                     /*srcStage*/ destinationStage, /*dstStage*/
+                                     0, 0, nullptr, 0, nullptr, 1, &barrier);
+            });
     }
 
 private:
-    void mCopyBufferToImage(VkDevice device, VkCommandPool cmdPool,
-                            VkQueue queue, VkBuffer buffer, VkImage image,
-                            uint32_t width, uint32_t height)
+    void mCopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
+                            uint32_t height)
     {
         VkBufferImageCopy region = {};
         region.bufferOffset = 0;
@@ -150,11 +144,13 @@ private:
         region.imageSubresource.layerCount = 1;
         region.imageOffset = {0, 0, 0};
         region.imageExtent = {width, height, 1};
-        VkCommandBuffer cmdBuf = beginSingleTimeCommands(device, cmdPool);
-        vkCmdCopyBufferToImage(cmdBuf, buffer, image,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                               &region);
-        endSingleTimeCommands(cmdBuf, device, cmdPool, queue);
+
+        GetRenderDevice()->executeImmediateCommand(
+            [&](VkCommandBuffer commandBuffer) {
+                vkCmdCopyBufferToImage(commandBuffer, buffer, image,
+                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                                       &region);
+            });
     }
     void mInitImageView()
     {

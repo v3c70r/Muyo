@@ -15,13 +15,11 @@
 #include <vector>
 #include <cassert> // assert
 
-#include "ContextManager.h"
 #include "DepthResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
 #include "Camera.h"
-#include "RenderContext.h"
 #include "PipelineStateBuilder.h"
 #include "MeshVertex.h"
 //#include "UIOverlay.h"
@@ -43,7 +41,6 @@ const int HEIGHT = 600;
 thread_local size_t s_currentContext;
 
 
-static ContextManager s_contextManager;
 static bool s_resizeWanted = true;
 
 static std::vector<const char*> s_validationLayers{
@@ -118,7 +115,7 @@ static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
 #ifdef __APPLE__
 static const uint32_t NUM_BUFFERS = 2;
 #else
-static const uint32_t NUM_BUFFERS = 4;
+static const uint32_t NUM_BUFFERS = 3;
 #endif
 
 static VkDebugReportCallbackEXT s_debugCallback;
@@ -133,8 +130,6 @@ static Texture* s_pTexture = nullptr;
 static DepthResource* s_pDepthResource = nullptr;
 //static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
 
-//VkRenderPass s_renderPass;
-
 // DescriptorLayout, which is part of the pipeline layout
 static VkDescriptorSetLayout s_descriptorSetLayout;
 // Pipeline
@@ -143,10 +138,6 @@ static VkDescriptorSetLayout s_descriptorSetLayout;
 static VkDescriptorPool s_descriptorPool;
 
 static std::vector<VkDescriptorSet> s_vDescriptorSets;
-
-// Command
-static VkCommandPool s_commandPool;
-// static std::vector<VkCommandBuffer> s_commandBuffers;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -597,41 +588,20 @@ void createGraphicsPipeline()
         s_descriptorSetLayout, *pGBufferPass);
 }
 
-void createCommandPool()
-{
-    QueueFamilyIndice queueFamilyIndice = mFindQueueFamily(GetRenderDevice()->GetPhysicalDevice());
-
-    VkCommandPoolCreateInfo commandPoolInfo = {};
-    commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    commandPoolInfo.queueFamilyIndex = queueFamilyIndice.graphicsFamily;
-    commandPoolInfo.flags = 0;
-    assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(), &commandPoolInfo, nullptr,
-                               &s_commandPool) == VK_SUCCESS);
-}
-
 void createCommandBuffers(const VertexBuffer& vertexBuffer,
                           const IndexBuffer& indexBuffer)
 {
-    s_contextManager.Initalize();
-    s_contextManager.getContext(CONTEXT_SCENE)
-        ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
-                     &s_commandPool);
-    s_contextManager.getContext(CONTEXT_UI)
-        ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
-                     &s_commandPool);
+    //s_contextManager.Initalize();
+    //s_contextManager.getContext(CONTEXT_SCENE)
+    //    ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
+    //                 &s_commandPool);
+    //s_contextManager.getContext(CONTEXT_UI)
+    //    ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
+    //                 &s_commandPool);
 
-    std::vector<VkCommandBuffer> commandBuffers;
-
-    for (s_currentContext = 0; s_currentContext < NUM_BUFFERS;
-         s_currentContext++)
-    {
-        RenderContext* renderContext = static_cast<RenderContext*>(
-            s_contextManager.getContext(CONTEXT_SCENE));
-        commandBuffers.push_back(renderContext->getCommandBuffer());
-    }
     pFinalPass->RecordOnce(
         vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
-        commandBuffers, gPipelineManager.GetStaticObjectPipeline(),
+        gPipelineManager.GetStaticObjectPipeline(),
         gPipelineManager.GetStaticObjectPipelineLayout(), s_vDescriptorSets);
 }
 
@@ -745,8 +715,6 @@ void createDescriptorSet()
 void cleanupSwapChain()
 {
 
-    s_contextManager.getContext(CONTEXT_SCENE)->finalize();
-    s_contextManager.getContext(CONTEXT_UI)->finalize();
 
     gPipelineManager.DestroyStaticObjectPipeline();
     gPipelineManager.DestroyGBufferPipeline();
@@ -774,9 +742,8 @@ void recreateSwapChain()
     // Need to recreate depth resource before recreating framebuffer
     delete s_pDepthResource;
     s_pDepthResource =
-        new DepthResource(s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
-                          s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
-
+        new DepthResource(s_pSwapchain->getSwapchainExtent().width,
+                          s_pSwapchain->getSwapchainExtent().height);
 
     pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), s_pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
@@ -799,7 +766,7 @@ void cleanup()
     for (auto& fence : s_waitFences) vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
 
 
-    vkDestroyCommandPool(GetRenderDevice()->GetDevice(), s_commandPool, nullptr);
+    GetRenderDevice()->destroyCommandPools();
     GetMemoryAllocator()->Unintialize();
     s_pSwapchain->destroySurface();
     s_pSwapchain = nullptr;
@@ -834,7 +801,7 @@ void present()
 
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers =
-        &s_contextManager.getContext(CONTEXT_SCENE)->getCommandBuffer();
+        &(pFinalPass->GetCommandBuffer(imageIndex));
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
@@ -876,7 +843,7 @@ void updateUniformBuffer(UniformBuffer<PerViewData>* ub)
     ubo.view = s_arcball.getViewMat();
     ubo.proj = s_arcball.getProjMat();
 
-    ub->setData(ubo, s_commandPool, GetRenderDevice()->GetGraphicsQueue());
+    ub->setData(ubo);
 };
 
 int main()
@@ -909,11 +876,11 @@ int main()
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
         VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
 
-    createCommandPool();
+    GetRenderDevice()->createCommandPools();
 
-    s_pDepthResource = new DepthResource(
-        s_commandPool, GetRenderDevice()->GetGraphicsQueue(),
-        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    s_pDepthResource =
+        new DepthResource(s_pSwapchain->getSwapchainExtent().width,
+                          s_pSwapchain->getSwapchainExtent().height);
 
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
     pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), s_pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
@@ -934,20 +901,17 @@ int main()
 
         LoadMesh("assets/cube.obj", s_objInfo);
         s_pVertexBuffer->setData(reinterpret_cast<void*>(getVertices().data()),
-                                 sizeof(Vertex) * getVertices().size(),
-                                 s_commandPool, GetRenderDevice()->GetGraphicsQueue());
+                                 sizeof(Vertex) * getVertices().size());
 
         s_pIndexBuffer = new IndexBuffer();
 
         s_pIndexBuffer->setData(reinterpret_cast<void*>(getIndices().data()),
-                                sizeof(uint32_t) * getIndices().size(),
-                                s_commandPool, GetRenderDevice()->GetGraphicsQueue());
+                                sizeof(uint32_t) * getIndices().size());
 
         s_pUniformBuffer = new UniformBuffer<PerViewData>();
 
         s_pTexture = new Texture();
-        s_pTexture->LoadImage("assets/default.png", GetRenderDevice()->GetDevice(), GetRenderDevice()->GetPhysicalDevice(),
-                              s_commandPool, GetRenderDevice()->GetGraphicsQueue());
+        s_pTexture->LoadImage("assets/default.png");
         createDescriptorPool();
         createDescriptorSet();
         createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);

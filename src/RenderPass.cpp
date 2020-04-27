@@ -176,7 +176,7 @@ void RenderPassFinal::SetSwapchainImageViews(
 
 void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
                              uint32_t numIndices,
-                             std::vector<VkCommandBuffer>& commandBuffers,
+                             //std::vector<VkCommandBuffer>& commandBuffers,
                              VkPipeline pipeline,
                              VkPipelineLayout pipelineLayout,
                              std::vector<VkDescriptorSet> vDescriptorSets)
@@ -187,12 +187,9 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    assert(commandBuffers.size() == m_vFramebuffers.size() &&
-           "One cmd buffer should output to one fb");
-
     for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
-        VkCommandBuffer& curCmdBuf = commandBuffers[i];
+        VkCommandBuffer curCmdBuf = GetRenderDevice()->allocatePrimaryCommandbuffer();
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
@@ -225,11 +222,16 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
 
         vkCmdEndRenderPass(curCmdBuf);
         vkEndCommandBuffer(curCmdBuf);
+        m_vCommandBuffers.push_back(curCmdBuf);
     }
 }
 
 void RenderPassFinal::ClearFramebuffers()
 {
+    for(auto& cmdBuf : m_vCommandBuffers)
+    {
+        GetRenderDevice()->freePrimaryCommandbuffer(cmdBuf);
+    }
     for (auto& framebuffer : m_vFramebuffers)
     {
         if (framebuffer != VK_NULL_HANDLE)
