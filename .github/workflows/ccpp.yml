@@ -14,7 +14,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Install Dependencies
-      run: sudo apt install libvulkan-dev
+      run: sudo apt install libvulkan-dev glslang-tools
     - name: configure
       run: cmake .
     - name: make
