@@ -81,6 +81,10 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat)
 RenderPassFinal::~RenderPassFinal()
 {
     ClearFramebuffers();
+    for (auto& cmdBuf : m_vCommandBuffers)
+    {
+        GetRenderDevice()->freePrimaryCommandbuffer(cmdBuf);
+    }
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
 
@@ -176,10 +180,9 @@ void RenderPassFinal::SetSwapchainImageViews(
 
 void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
                              uint32_t numIndices,
-                             //std::vector<VkCommandBuffer>& commandBuffers,
                              VkPipeline pipeline,
                              VkPipelineLayout pipelineLayout,
-                             std::vector<VkDescriptorSet> vDescriptorSets)
+                             VkDescriptorSet descriptorSet)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -214,7 +217,7 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
         vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
         vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 0, 1, &vDescriptorSets[i], 0,
+                                pipelineLayout, 0, 1, &descriptorSet, 0,
                                 nullptr);
 
         // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
@@ -228,10 +231,6 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
 
 void RenderPassFinal::ClearFramebuffers()
 {
-    for(auto& cmdBuf : m_vCommandBuffers)
-    {
-        GetRenderDevice()->freePrimaryCommandbuffer(cmdBuf);
-    }
     for (auto& framebuffer : m_vFramebuffers)
     {
         if (framebuffer != VK_NULL_HANDLE)

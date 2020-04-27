@@ -52,7 +52,20 @@ public:
     };
     RenderPassGBuffer();
     ~RenderPassGBuffer();
-    void RecordCommandBuffer(VkPipeline pipeline, VkPipelineLayout pipelineLayout);
+    void recordCommandBuffer(VkBuffer vertexBuffer, VkBuffer indexBuffer,
+                uint32_t numIndices,
+                VkPipeline pipeline, VkPipelineLayout pipelineLayout,
+                VkDescriptorSet descriptorSet);
+    void createFramebuffer();
+    void setGBufferImageViews(VkImageView positionView, VkImageView albedoView,
+                              VkImageView uvView, VkImageView normalView,
+                              VkImageView depthView, uint32_t nWidth,
+                              uint32_t nHeight);
+
 private:
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
     GBufferAttachments m_attachments;
+    VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
+    VkExtent2D mRenderArea = {0, 0};
+
 };

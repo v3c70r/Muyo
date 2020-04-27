@@ -24,9 +24,8 @@ public:
     void SetSwapchainImageViews(std::vector<VkImageView>& vImageViews, VkImageView depthImageView,uint32_t nWidth, uint32_t nHeight);
     void RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
                 uint32_t numIndices,
-                //std::vector<VkCommandBuffer>& commandBuffers,
                 VkPipeline pipeline, VkPipelineLayout pipelineLayout,
-                std::vector<VkDescriptorSet> vDescriptorSets);
+                VkDescriptorSet descriptorSet);
 
     // Getters
     VkRenderPass& GetRenderPass() { return m_renderPass; }

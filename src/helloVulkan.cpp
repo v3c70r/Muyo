@@ -137,7 +137,7 @@ static VkDescriptorSetLayout s_descriptorSetLayout;
 // Descriptor pool
 static VkDescriptorPool s_descriptorPool;
 
-static std::vector<VkDescriptorSet> s_vDescriptorSets;
+static VkDescriptorSet s_descriptorSet = VK_NULL_HANDLE;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -591,18 +591,10 @@ void createGraphicsPipeline()
 void createCommandBuffers(const VertexBuffer& vertexBuffer,
                           const IndexBuffer& indexBuffer)
 {
-    //s_contextManager.Initalize();
-    //s_contextManager.getContext(CONTEXT_SCENE)
-    //    ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
-    //                 &s_commandPool);
-    //s_contextManager.getContext(CONTEXT_UI)
-    //    ->initialize(NUM_BUFFERS, &GetRenderDevice()->GetDevice(),
-    //                 &s_commandPool);
-
     pFinalPass->RecordOnce(
         vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
         gPipelineManager.GetStaticObjectPipeline(),
-        gPipelineManager.GetStaticObjectPipelineLayout(), s_vDescriptorSets);
+        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 }
 
 void createSemaphores()
@@ -661,20 +653,16 @@ void createDescriptorPool()
 void createDescriptorSet()
 {
     // Create descriptor set
-    std::vector<VkDescriptorSetLayout> layouts(NUM_BUFFERS, s_descriptorSetLayout);
-    s_vDescriptorSets.clear();
-    s_vDescriptorSets.resize(NUM_BUFFERS);
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = s_descriptorPool;
-    allocInfo.descriptorSetCount = s_vDescriptorSets.size();
-    allocInfo.pSetLayouts = layouts.data();
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &s_descriptorSetLayout;
 
     assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    s_vDescriptorSets.data()) == VK_SUCCESS);
+                                    &s_descriptorSet) == VK_SUCCESS);
 
     // Prepare buffer descriptor
-    for (size_t i = 0; i < s_vDescriptorSets.size(); i++)
     {
         VkDescriptorBufferInfo bufferInfo = {};
         bufferInfo.buffer = s_pUniformBuffer->buffer();
@@ -690,7 +678,7 @@ void createDescriptorSet()
         std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = s_vDescriptorSets[i];
+        descriptorWrites[0].dstSet = s_descriptorSet;
         descriptorWrites[0].dstBinding = 0;
         descriptorWrites[0].dstArrayElement = 0;
         descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -698,7 +686,7 @@ void createDescriptorSet()
         descriptorWrites[0].pBufferInfo = &bufferInfo;
 
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = s_vDescriptorSets[i];
+        descriptorWrites[1].dstSet = s_descriptorSet;
         descriptorWrites[1].dstBinding = 1;
         descriptorWrites[1].dstArrayElement = 0;
         descriptorWrites[1].descriptorType =
