@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
+project(TinyRenderer)
 
 # Set system env
 #if (NOT DEFINED VK_SDK_PATH)
@@ -105,6 +106,7 @@ add_executable( helloVulkan
     src/PipelineManager.cpp
     src/Swapchain.cpp
     src/GLFWSwapchain.cpp
+    src/RenderTargetResource.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)

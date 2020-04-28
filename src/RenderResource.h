@@ -17,6 +17,4 @@ protected:
     VkImageView m_view = VK_NULL_HANDLE;
 };
 
-class RenderTarget: public ImageResource
-{
-};
+
