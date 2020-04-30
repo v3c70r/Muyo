@@ -1,7 +1,5 @@
 #pragma once
-
 #include "RenderPass.h"
-
 #include <array>
 
 class RenderPassGBuffer : public RenderPass
@@ -19,6 +17,21 @@ public:
             COLOR_ATTACHMENTS_COUNT = GBUFFER_DEPTH,
             ATTACHMENTS_COUNT
         };
+        const std::array<std::string, ATTACHMENTS_COUNT> aNames = {
+            "GBUFFER_POSITION",
+            "GBUFFER_ALBEDO",
+            "GBUFFER_NORMAL",
+            "GBUFFER_UV",
+            "GBUFFER_DEPTH",
+        };
+
+        const std::array<VkFormat, ATTACHMENTS_COUNT> aFormats = {
+            VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_FORMAT_D32_SFLOAT
+        };
         std::array<VkImageView, ATTACHMENTS_COUNT> aViews;
 
         std::array<VkAttachmentDescription, ATTACHMENTS_COUNT> aAttachmentDesc;
@@ -31,7 +44,8 @@ public:
             desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
             desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-            desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; 
+            desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             aAttachmentDesc[GBUFFER_POSITION] = desc;
             aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
@@ -62,11 +76,16 @@ public:
                               VkImageView uvView, VkImageView normalView,
                               VkImageView depthView, uint32_t nWidth,
                               uint32_t nHeight);
+    void createGBufferViews(VkExtent2D size);
+    void removeGBufferViews();
+    VkCommandBuffer GetCommandBuffer()
+    {
+        return m_commandBuffer;
+    }
 
 private:
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
     GBufferAttachments m_attachments;
     VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
     VkExtent2D mRenderArea = {0, 0};
-
 };

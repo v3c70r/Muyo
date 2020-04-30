@@ -32,8 +32,6 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& layers,
 
     assert(vkCreateInstance(&createInfo, nullptr, &mInstance) == VK_SUCCESS);
     createPhysicalDevice();
-
-    mpResourceManager = new RenderResourceManager;
 }
 
 void VkRenderDevice::createPhysicalDevice()
@@ -136,9 +134,6 @@ void VkRenderDevice::createLogicalDevice(
 
 void VkRenderDevice::destroyLogicalDevice()
 {
-    // TODO: Fix raw pointer issue
-    delete mpResourceManager;
-    mpResourceManager = nullptr;
     vkDestroyDevice(mDevice, nullptr);
     mDevice = VK_NULL_HANDLE;
 }

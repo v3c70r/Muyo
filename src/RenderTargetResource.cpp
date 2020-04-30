@@ -36,7 +36,7 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
 
     GetMemoryAllocator()->AllocateImage(&imageInfo, VMA_MEMORY_USAGE_GPU_ONLY,
                                         m_image, m_allocation);
-    assert(m_image != VK_NULL_HANDLE && "Failed to allocate image for DS");
+    assert(m_image != VK_NULL_HANDLE && "Failed to allocate image");
 
     // Create Image View
     VkImageViewCreateInfo createInfo = {};

@@ -593,6 +593,11 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
         vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
         gPipelineManager.GetStaticObjectPipeline(),
         gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
+
+    pGBufferPass->recordCommandBuffer(
+        vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
+        gPipelineManager.GetStaticObjectPipeline(),
+        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 }
 
 void createSemaphores()
@@ -724,18 +729,19 @@ void recreateSwapChain()
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
         VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
 
-    GetRenderDevice()->getRenderResourceManager()->removeResource(
-        "depthTarget");
-    DepthResource* pDepthResource =
-        GetRenderDevice()->getRenderResourceManager()->getDepthResource(
-            "depthTarget",
-            VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
-                       s_pSwapchain->getSwapchainExtent().height}));
+    GetRenderResourceManager()->removeResource("depthTarget");
+
+    RenderTarget* pDepthResource = GetRenderResourceManager()->getDepthTarget(
+        "depthTarget", VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
+                                   s_pSwapchain->getSwapchainExtent().height}));
 
     pFinalPass->SetSwapchainImageViews(
         s_pSwapchain->getImageViews(), pDepthResource->getView(),
         s_pSwapchain->getSwapchainExtent().width,
         s_pSwapchain->getSwapchainExtent().height);
+
+    pGBufferPass->removeGBufferViews();
+    pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
 
     createGraphicsPipeline();
     createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
@@ -756,6 +762,7 @@ void cleanup()
 
 
     GetRenderDevice()->destroyCommandPools();
+    GetRenderResourceManager()->Unintialize();
     GetMemoryAllocator()->Unintialize();
     s_pSwapchain->destroySurface();
     s_pSwapchain = nullptr;
@@ -782,15 +789,20 @@ void present()
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // only color attachment
                                                         // waits for the
                                                         // semaphore
+
+    std::array<VkCommandBuffer, 2> cmdBuffers = 
+    {
+        pFinalPass->GetCommandBuffer(imageIndex),
+        pGBufferPass->GetCommandBuffer()
+    };
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = &s_imageAvailableSemaphores[0];
     submitInfo.pWaitDstStageMask = &stageFlag;
 
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers =
-        &(pFinalPass->GetCommandBuffer(imageIndex));
+    submitInfo.commandBufferCount = cmdBuffers.size();
+    submitInfo.pCommandBuffers = cmdBuffers.data();
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
@@ -867,8 +879,8 @@ int main()
 
     GetRenderDevice()->createCommandPools();
 
-    DepthResource* pDepthResource =
-        GetRenderDevice()->getRenderResourceManager()->getDepthResource(
+    RenderTarget* pDepthResource =
+        GetRenderResourceManager()->getDepthTarget(
             "depthTarget",
             VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
                         s_pSwapchain->getSwapchainExtent().height}));
@@ -877,6 +889,7 @@ int main()
     pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
+    pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
 
     createGraphicsPipeline();
 

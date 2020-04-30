@@ -1,5 +1,6 @@
 #include "RenderPassGBuffer.h"
 #include "VkRenderDevice.h"
+#include "RenderResourceManager.h"
 
 RenderPassGBuffer::RenderPassGBuffer()
 {
@@ -48,6 +49,7 @@ RenderPassGBuffer::RenderPassGBuffer()
 
 RenderPassGBuffer::~RenderPassGBuffer()
 {
+    destroyFramebuffer();
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
 
@@ -142,4 +144,37 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
 
     vkCmdEndRenderPass(m_commandBuffer);
     vkEndCommandBuffer(m_commandBuffer);
+}
+
+void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
+{
+    std::array<VkImageView, GBufferAttachments::ATTACHMENTS_COUNT> views;
+    // Color attachments
+    for (int i = 0; i < GBufferAttachments::COLOR_ATTACHMENTS_COUNT; i++)
+    {
+        views[i] = GetRenderResourceManager()
+                       ->getColorTarget(m_attachments.aNames[i], size,
+                                        m_attachments.aFormats[i])
+                       ->getView();
+    }
+    // Depth attachments
+    for (int i = GBufferAttachments::COLOR_ATTACHMENTS_COUNT;
+         i < GBufferAttachments::ATTACHMENTS_COUNT; i++)
+    {
+        views[i] = GetRenderResourceManager()
+                       ->getDepthTarget(m_attachments.aNames[i], size,
+                                        m_attachments.aFormats[i])
+                       ->getView();
+    }
+
+    setGBufferImageViews(views[0], views[1], views[2], views[3], views[4],
+                         size.width, size.height);
+}
+void RenderPassGBuffer::removeGBufferViews()
+{
+    for (int i = 0; i < GBufferAttachments::ATTACHMENTS_COUNT; i++)
+    {
+        GetRenderResourceManager()->removeResource(m_attachments.aNames[i]);
+    }
+    destroyFramebuffer();
 }
