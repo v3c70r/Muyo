@@ -1,27 +1,29 @@
 #include "RenderTargetResource.h"
-#include "VkRenderDevice.h"
-#include "VkMemoryAllocator.h"
 
 #include <cassert>
+
+#include "Texture.h"
+#include "VkMemoryAllocator.h"
+#include "VkRenderDevice.h"
 
 RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
                            uint32_t width, uint32_t height)
 {
     VkImageAspectFlags aspectMask = 0;
-    //VkImageLayout imageLayout;
-    
+    VkImageLayout imageLayout;
+
     if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
     {
         aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        //imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
     if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
     {
         aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-        //imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     }
 
-	assert(aspectMask > 0);
+    assert(aspectMask > 0);
     VkImageCreateInfo imageInfo = {};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -30,9 +32,12 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
     imageInfo.extent.depth = 1;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
+    imageInfo.format = format;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     GetMemoryAllocator()->AllocateImage(&imageInfo, VMA_MEMORY_USAGE_GPU_ONLY,
                                         m_image, m_allocation);
@@ -59,6 +64,8 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
     createInfo.subresourceRange.layerCount = 1;
     assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo,
                              nullptr, &m_view) == VK_SUCCESS);
+    Texture::sTransitionImageLayout(m_image, format, VK_IMAGE_LAYOUT_UNDEFINED,
+                                    imageLayout);
 }
 RenderTarget::~RenderTarget()
 {
