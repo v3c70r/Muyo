@@ -584,9 +584,9 @@ void createGraphicsPipeline()
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
         s_descriptorSetLayout, *pFinalPass);
 
-    //gPipelineManager.CreateGBufferPipeline(
-    //    s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-    //    s_descriptorSetLayout, *pGBufferPass);
+    gPipelineManager.CreateGBufferPipeline(
+        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
+        s_descriptorSetLayout, *pGBufferPass);
 }
 
 void createCommandBuffers(const VertexBuffer& vertexBuffer,

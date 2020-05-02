@@ -1,0 +1,40 @@
+{
+    "configurations": {
+        "helloVulakn: Launch": {
+            "adapter": "vscode-cpptools",
+            "configuration": {
+                "name": "vulkanTutorial",
+                "type": "cppdbg",
+                "request": "launch",
+                "program": "${workspaceRoot}/build/helloVulkan",
+                "cwd": "${workspaceFolder}/build",
+                "externalConsole": false,
+                "environment": [
+                    {
+                        "name": "VK_LAYER_PATH",
+                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/etc/vulkan/explicit_layer.d"
+                    },
+                    {
+                        "name": "LD_LIBRARY_PATH",
+                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/lib"
+                    },
+                    {
+                        "name": "VK_ICD_FILENAMES",
+                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/etc/vulkan/icd.d/MoltenVK_icd.json"
+                    }
+                ],
+                "MIMode": "lldb"
+            }
+        },
+        "helloVulkan: Attach": {
+            "adapter": "vscode-cpptools",
+            "configuration": {
+                "name": "helloVulkan: Attach",
+                "type": "cppdbg",
+                "request": "attach",
+                "program": "${workspaceRoot}/build/helloVulkan",
+                "MIMode": "lldb"
+            }
+        }
+    }
+}

@@ -4,6 +4,7 @@
 #include <cassert>
 #include <array>
 #include <vector>
+#include <string>
 
 class RenderPass
 {
