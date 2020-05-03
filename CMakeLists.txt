@@ -108,6 +108,7 @@ add_executable( helloVulkan
     src/GLFWSwapchain.cpp
     src/RenderTargetResource.cpp
     src/RenderResourceManager.cpp
+    src/Validation.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)
@@ -125,7 +126,7 @@ foreach (GLSL ${GLSL_SOURCE_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${GLSL_VALIDATOR} -V ${GLSL} -o ${SPIRV}
+        COMMAND ${GLSL_VALIDATOR} -V -H ${GLSL} -o ${SPIRV}
         DEPENDS ${GLSL})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()

@@ -25,7 +25,8 @@ vec4 drawAxis(vec2 center, float width)
 }
 
 void main() {
-    outPosition = inViewPos;
+    vec4 debugColor = vec4(1.0, 0.0, 0.0, 1.0);
+    outPosition = debugColor;
     outAlbedo = texture(texSampler, inTexCoord);
     outNormal = vec4(0.0, 0.0, 1.0, 0.0);
     outUV = vec4(inTexCoord, 0.0, 0.0);

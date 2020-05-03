@@ -131,7 +131,7 @@ void PipelineManager::DestroyGBufferPipeline() {
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[1], nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
                             maPipelineLayouts[0], nullptr);
-    maPipelines[0] = VK_NULL_HANDLE;
+    maPipelines[1] = VK_NULL_HANDLE;
     maPipelineLayouts[0] = VK_NULL_HANDLE;
 }
 

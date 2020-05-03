@@ -33,6 +33,8 @@ public:
     VkPipeline GetStaticObjectPipeline() {return maPipelines[0];}
     VkPipelineLayout GetStaticObjectPipelineLayout() { return maPipelineLayouts[0];}
 
+    VkPipeline GetGBufferPipeline() {return maPipelines[1];}
+
 
 public:
     std::unordered_map<std::string, VkPipeline> m_vPipelines;

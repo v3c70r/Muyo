@@ -29,6 +29,7 @@
 #include "PipelineManager.h"
 #include "RenderPassGBuffer.h"
 #include "GLFWSwapchain.h"
+#include "Validation.h"
 
 // TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
@@ -42,8 +43,7 @@ thread_local size_t s_currentContext;
 
 static bool s_resizeWanted = true;
 
-static std::vector<const char*> s_validationLayers{
-    "VK_LAYER_LUNARG_standard_validation"};
+
 
 static bool s_isValidationEnabled = true;
 
@@ -117,7 +117,8 @@ static const uint32_t NUM_BUFFERS = 2;
 static const uint32_t NUM_BUFFERS = 3;
 #endif
 
-static VkDebugReportCallbackEXT s_debugCallback;
+static DebugUtilsMessenger s_debugMessenger;
+
 
 GLFWSwapchain* s_pSwapchain = nullptr;
 
@@ -220,94 +221,11 @@ std::vector<uint32_t> getIndices()
     return indices;
 }
 
-// Callback function
-static VKAPI_ATTR VkBool32 VKAPI_CALL
-debugCallback(VkDebugReportFlagsEXT flags, VkDebugReportObjectTypeEXT objType,
-              uint64_t obj, size_t location, int32_t code,
-              const char* layerPrefix, const char* msg, void* userData)
-{
-    switch (flags)
-    {
-        case VK_DEBUG_REPORT_INFORMATION_BIT_EXT:
-            std::cerr << "[INFO] :";
-            break;
-        case VK_DEBUG_REPORT_WARNING_BIT_EXT:
-            std::cerr << "*[WARNING] :";
-            break;
-        case VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT:
-            std::cerr << "[PERF] :";
-            break;
-        case VK_DEBUG_REPORT_ERROR_BIT_EXT:
-            std::cerr << "**[ERROR] :";
-            break;
-        case VK_DEBUG_REPORT_DEBUG_BIT_EXT:
-            std::cerr << "[DEBUG] :";
-            break;
-        default:
-            std::cerr << "[UNKNOWN]";
-            break;
-    }
-    std::cerr << msg << std::endl;
-    if (flags == VK_DEBUG_REPORT_ERROR_BIT_EXT)
-    {
-        assert(false);
-    }
-
-    return VK_FALSE;
-}
-
 void recreateSwapChain();  // fwd declaration
 static void onWindowResize(GLFWwindow* pWindow, int width, int height)
 {
     s_arcball.resize(glm::vec2((float)width, (float)height));
     recreateSwapChain();
-}
-
-// Call add callback by query the extension
-VkResult createDebugReportCallbackEXT(
-    VkInstance instance, const VkDebugReportCallbackCreateInfoEXT* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDebugReportCallbackEXT* pCallback)
-{
-    auto func = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(
-        instance, "vkCreateDebugReportCallbackEXT");
-    if (func != nullptr)
-        return func(instance, pCreateInfo, pAllocator, pCallback);
-    else
-        return VK_ERROR_EXTENSION_NOT_PRESENT;
-}
-
-void DestroyDebugReportCallbackEXT(VkInstance instance,
-                                   VkDebugReportCallbackEXT callback,
-                                   const VkAllocationCallbacks* pAllocator)
-{
-    auto func = (PFN_vkDestroyDebugReportCallbackEXT)vkGetInstanceProcAddr(
-        instance, "vkDestroyDebugReportCallbackEXT");
-    if (func != nullptr)
-    {
-        func(instance, callback, pAllocator);
-    }
-}
-
-void setupDebugCallback()
-{
-    if (!s_isValidationEnabled) return;
-    VkDebugReportCallbackCreateInfoEXT createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
-    // createInfo.flags =
-    //    VK_DEBUG_REPORT_INFORMATION_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT
-    //    | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-    //    VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_DEBUG_BIT_EXT;
-    createInfo.flags = VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT |
-                       VK_DEBUG_REPORT_ERROR_BIT_EXT |
-                       VK_DEBUG_REPORT_WARNING_BIT_EXT |
-                       VK_DEBUG_REPORT_INFORMATION_BIT_EXT |
-                       VK_DEBUG_REPORT_DEBUG_BIT_EXT
-                       ;
-    createInfo.pfnCallback = debugCallback;
-
-    assert(createDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), &createInfo, nullptr,
-                                        &s_debugCallback) == VK_SUCCESS);
 }
 
 // Query extensions
@@ -345,6 +263,14 @@ std::vector<VkLayerProperties> getSupportedLayers()
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     supportedLayers.resize(layerCount);
     vkEnumerateInstanceLayerProperties(&layerCount, supportedLayers.data());
+    std::cout<<"Supported Layers ==== \n";
+
+    for (auto& supportedLayer : supportedLayers)
+    {
+        std::cout<<supportedLayer.description<<std::endl;
+    }
+    std::cout<<"Supported Layers ^^^ \n";
+
     return supportedLayers;
 }
 
@@ -361,7 +287,13 @@ bool isLayerSupported(const char* layerName)
 bool areLayersSupported(const std::vector<const char*> layerNames)
 {
     for (const auto& layerName : layerNames)
-        if (!isLayerSupported(layerName)) return false;
+    {
+        if (!isLayerSupported(layerName)) 
+        {
+            std::cout<<layerName<<std::endl;
+            return false;
+        }
+    }
     return true;
 }
 
@@ -392,14 +324,14 @@ std::vector<const char*> getRequiredExtensions()
 
     // Add validation layer extensions to required list
     if (s_isValidationEnabled)
-        extensions.push_back(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
+        extensions.push_back(getValidationExtensionName());
 
     return extensions;
 }
 
 void createInstance()
 {
-    if (s_isValidationEnabled && !areLayersSupported(s_validationLayers))
+    if (s_isValidationEnabled && !areLayersSupported(getValidationLayerNames()))
         throw std::runtime_error("Validation layer is not supported");
 
     std::vector<const char*> extensions = getRequiredExtensions();
@@ -413,7 +345,7 @@ void createInstance()
 
     if (s_isValidationEnabled)
     {
-        GetRenderDevice()->Initialize(s_validationLayers, extensions);
+        GetRenderDevice()->Initialize(getValidationLayerNames(), extensions);
     }
     else
     {
@@ -421,7 +353,7 @@ void createInstance()
         GetRenderDevice()->Initialize(dummy, extensions);
     }
 
-    if (!areLayersSupported(s_validationLayers))
+    if (!areLayersSupported(getValidationLayerNames()))
     {
         throw std::runtime_error("Layers are not fully supported");
     }
@@ -599,7 +531,7 @@ void createCommandBuffers(const VertexBuffer& vertexBuffer,
 
     pGBufferPass->recordCommandBuffer(
         vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
-        gPipelineManager.GetStaticObjectPipeline(),
+        gPipelineManager.GetGBufferPipeline(),
         gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 }
 
@@ -771,7 +703,10 @@ void cleanup()
     s_pSwapchain = nullptr;
     delete s_pSwapchain;
     GetRenderDevice()->destroyLogicalDevice();
-    DestroyDebugReportCallbackEXT(GetRenderDevice()->GetInstance(), s_debugCallback, nullptr);
+    if (s_isValidationEnabled)
+    {
+        s_debugMessenger.uninitialize();
+    }
     GetRenderDevice()->Unintialize();
     glfwDestroyWindow(s_pWindow);
     glfwTerminate();
@@ -795,8 +730,8 @@ void present()
 
     std::array<VkCommandBuffer, 2> cmdBuffers = 
     {
-        pFinalPass->GetCommandBuffer(imageIndex),
-        pGBufferPass->GetCommandBuffer()
+        pGBufferPass->GetCommandBuffer(),
+        pFinalPass->GetCommandBuffer(imageIndex)
     };
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -855,7 +790,6 @@ int main()
     // Load mesh into memory
     initWindow();
     createInstance();
-    setupDebugCallback();
     s_pSwapchain = new GLFWSwapchain(s_pWindow);
     s_pSwapchain->createSurface();
 
@@ -863,7 +797,8 @@ int main()
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     if (s_isValidationEnabled)
     {
-        GetRenderDevice()->createLogicalDevice(s_validationLayers,
+        s_debugMessenger.initialize();
+        GetRenderDevice()->createLogicalDevice(getValidationLayerNames(),
                                                vLogicalDeviceExtensions,
                                                s_pSwapchain->getSurface());
     }
