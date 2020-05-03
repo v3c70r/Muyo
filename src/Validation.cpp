@@ -1,7 +1,35 @@
 #include "Validation.h"
-#include "VkRenderDevice.h"
-#include <iostream>
+
 #include <cassert>
+#include <iostream>
+#include <ostream>
+
+#include "VkRenderDevice.h"
+namespace Color
+{
+enum Code
+{
+    FG_RED = 31,
+    FG_GREEN = 32,
+    FG_BLUE = 34,
+    FG_DEFAULT = 39,
+    BG_RED = 41,
+    BG_GREEN = 42,
+    BG_BLUE = 44,
+    BG_DEFAULT = 49
+};
+class Modifier
+{
+    Code code;
+
+public:
+    Modifier(Code pCode) : code(pCode) {}
+    friend std::ostream& operator<<(std::ostream& os, const Modifier& mod)
+    {
+        return os << "\033[" << mod.code << "m";
+    }
+};
+}  // namespace Color
 
 static std::vector<const char*> s_validationLayers{
     "VK_LAYER_LUNARG_standard_validation",
@@ -31,10 +59,23 @@ static VKAPI_PTR VkBool32 debugCallback(
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
+    Color::Modifier red(Color::BG_RED);
+    Color::Modifier normal(Color::BG_DEFAULT);
+    Color::Modifier blue(Color::BG_BLUE);
+
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
-        std::cerr << pCallbackData->pMessage << std::endl;
+        std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << normal
+                  << std::endl;
+        assert(0 && "Vulkan Error");
     }
+    else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
+    {
+        std::cerr << blue << "[WARNING]:" << pCallbackData->pMessage << normal
+                  << std::endl;
+    }
+
+
     return VK_FALSE;
 }
 
