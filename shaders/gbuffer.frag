@@ -4,10 +4,10 @@
 layout(location = 0) in vec2 inTexCoord;
 layout(location = 1) in vec4 inViewPos;
 
-layout(location = 1) out vec4 outPosition;
-layout(location = 2) out vec4 outAlbedo;
-layout(location = 3) out vec4 outNormal;
-layout(location = 4) out vec4 outUV;
+layout(location = 0) out vec4 outPosition;
+layout(location = 1) out vec4 outAlbedo;
+layout(location = 2) out vec4 outNormal;
+layout(location = 3) out vec4 outUV;
 
 layout(binding = 1) uniform sampler2D texSampler;
 

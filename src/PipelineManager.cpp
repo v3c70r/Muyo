@@ -4,6 +4,7 @@
 #include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
 #include "RenderPass.h"
+#include "Debug.h"
 
 PipelineManager::PipelineManager()
 {
@@ -77,6 +78,9 @@ void PipelineManager::CreateStaticObjectPipeline(
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+
+    // Set debug name for the pipeline
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(maPipelines[0]), VK_OBJECT_TYPE_PIPELINE, name.data());
 }
 void PipelineManager::DestroyStaticObjectPipeline()
 {
@@ -125,6 +129,9 @@ void PipelineManager::CreateGBufferPipeline(
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+
+    // Set debug name for the pipeline
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(maPipelines[1]), VK_OBJECT_TYPE_PIPELINE, name.data());
 }
 
 void PipelineManager::DestroyGBufferPipeline() {

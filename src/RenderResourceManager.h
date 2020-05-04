@@ -33,7 +33,7 @@ public:
     }
 
     RenderTarget* getColorTarget(const std::string name, VkExtent2D extent,
-                                 VkFormat format = VK_FORMAT_D32_SFLOAT)
+                                 VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT)
     {
         return getRenderTarget(name, true, extent, format);
     }

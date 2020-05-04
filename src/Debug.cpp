@@ -1,4 +1,4 @@
-#include "Validation.h"
+#include "Debug.h"
 
 #include <cassert>
 #include <iostream>
@@ -65,6 +65,16 @@ static VKAPI_PTR VkBool32 debugCallback(
 
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
+        for (uint32_t i = 0; i<pCallbackData->queueLabelCount; i++)
+        {
+            std::cerr<<"Queue: "<<pCallbackData->pQueueLabels[i].pLabelName<<std::endl;
+        }
+
+        for (uint32_t i = 0; i<pCallbackData->cmdBufLabelCount; i++)
+        {
+            std::cerr<<"CmdBuffer: "<<pCallbackData->pCmdBufLabels[i].pLabelName<<std::endl;
+        }
+
         std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << normal
                   << std::endl;
         assert(0 && "Vulkan Error");
@@ -132,4 +142,25 @@ void DebugUtilsMessenger::uninitialize()
 {
 
     destroyDebugUtilsMessenger(GetRenderDevice()->GetInstance(), m_debugUtilsMessenger, nullptr);
+}
+
+// Debug Utils markers
+// // Call add callback by query the extension
+VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
+                                 const char* sName)
+{
+    // Set debug name for the pipeline
+    VkDebugUtilsObjectNameInfoEXT info;
+    info.pNext = nullptr;
+    info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+    info.pObjectName = sName;
+    info.objectType = objectType;
+    info.objectHandle = objectHandle;
+
+    auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(
+        GetRenderDevice()->GetInstance(), "vkSetDebugUtilsObjectNameEXT");
+    if (func != nullptr)
+        return func(GetRenderDevice()->GetDevice(), &info);
+    else
+        return VK_ERROR_EXTENSION_NOT_PRESENT;
 }

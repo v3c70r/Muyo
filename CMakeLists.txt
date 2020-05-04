@@ -108,7 +108,7 @@ add_executable( helloVulkan
     src/GLFWSwapchain.cpp
     src/RenderTargetResource.cpp
     src/RenderResourceManager.cpp
-    src/Validation.cpp
+    src/Debug.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)

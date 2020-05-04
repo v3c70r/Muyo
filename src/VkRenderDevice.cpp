@@ -1,5 +1,6 @@
 #include "VkRenderDevice.h"
 #include "RenderResourceManager.h"
+#include "Debug.h"
 #include <cassert>
 
 static VkRenderDevice renderDevice;
@@ -129,6 +130,8 @@ void VkRenderDevice::createLogicalDevice(
 
         SetGraphicsQueue(graphicsQueue, queueFamilyIndex);
         SetPresentQueue(presentQueue, queueFamilyIndex);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics Queue");
     }
 }
 

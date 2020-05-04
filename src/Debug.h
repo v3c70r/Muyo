@@ -14,3 +14,6 @@ private:
 const std::vector<const char*>& getValidationLayerNames();
 
 const char* getValidationExtensionName();
+
+VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
+                                 const char* sName);

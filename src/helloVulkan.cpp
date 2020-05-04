@@ -29,7 +29,7 @@
 #include "PipelineManager.h"
 #include "RenderPassGBuffer.h"
 #include "GLFWSwapchain.h"
-#include "Validation.h"
+#include "Debug.h"
 
 // TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;

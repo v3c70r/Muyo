@@ -45,7 +45,7 @@ public:
             desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
             desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
             desc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            desc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             aAttachmentDesc[GBUFFER_POSITION] = desc;
             aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
@@ -62,6 +62,7 @@ public:
             aAttachmentDesc[GBUFFER_DEPTH].format = VK_FORMAT_D32_SFLOAT;
             aAttachmentDesc[GBUFFER_DEPTH].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
             aAttachmentDesc[GBUFFER_DEPTH].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            aAttachmentDesc[GBUFFER_DEPTH].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         }
     };
     RenderPassGBuffer();
@@ -73,7 +74,7 @@ public:
     void createFramebuffer();
     void destroyFramebuffer();
     void setGBufferImageViews(VkImageView positionView, VkImageView albedoView,
-                              VkImageView uvView, VkImageView normalView,
+                              VkImageView normalView, VkImageView uvView,
                               VkImageView depthView, uint32_t nWidth,
                               uint32_t nHeight);
     void createGBufferViews(VkExtent2D size);

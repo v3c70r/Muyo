@@ -64,6 +64,7 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
     createInfo.subresourceRange.layerCount = 1;
     assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo,
                              nullptr, &m_view) == VK_SUCCESS);
+
     Texture::sTransitionImageLayout(m_image, format, VK_IMAGE_LAYOUT_UNDEFINED,
                                     imageLayout);
 }

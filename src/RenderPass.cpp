@@ -1,5 +1,6 @@
 #include "RenderPass.h"
 #include "VkRenderDevice.h"
+#include "Debug.h"
 RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat)
 {
     // Attachments
@@ -226,6 +227,9 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
         vkCmdEndRenderPass(curCmdBuf);
         vkEndCommandBuffer(curCmdBuf);
         m_vCommandBuffers.push_back(curCmdBuf);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(curCmdBuf),
+                                VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] Final");
     }
 }
 
