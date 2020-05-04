@@ -32,6 +32,9 @@ if (NOT ${glm_FOUND})
 endif()
 
 ## VULKAN
+if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
+    list(APPEND CMAKE_PREFIX_PATH $ENV{VULKAN_SDK})
+endif()
 if(APPLE)
     set (Vulkan_INCLUDE_DIR $ENV{VULKAN_SDK}/include)
     set (Vulkan_LIBRARIES $ENV{VULKAN_SDK}/lib/libvulkan.1.dylib)
