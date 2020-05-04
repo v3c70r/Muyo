@@ -17,7 +17,6 @@
                 "environment": [],
                 "MIMode": "gdb"
             },
-
             "osx": {
                 "environment": [
                     {
@@ -34,6 +33,11 @@
                     }
                 ],
                 "MIMode": "lldb",
+            },
+            "windows":{
+                "program": "${workspaceRoot}/build/Debug/helloVulkan.exe",
+                "MIMode": "gdb",
+                "miDebuggerPath": "C:/Users/qgu/scoop/apps/gdb/7.9.1/bin/gdb.exe"
             },
             "logging": {
                 "moduleLoad": true,
