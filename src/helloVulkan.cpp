@@ -2,6 +2,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_beta.h>
 #include <array>
 #include <cassert>
 #include <chrono>
