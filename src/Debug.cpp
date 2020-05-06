@@ -55,7 +55,7 @@ const char* getValidationExtensionName()
     return VALIDATE_EXTENSION;
 }
 
-static VKAPI_PTR VkBool32 debugCallback(
+static VkBool32 debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
