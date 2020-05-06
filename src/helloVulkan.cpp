@@ -148,7 +148,9 @@ static std::vector<VkFence> s_waitFences;
 
 // PHYSICAL Device extensions
 const std::vector<const char*> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    "VK_KHR_ray_tracing"
+    };
 
 struct TinyObjInfo
 {
@@ -813,8 +815,10 @@ int main()
     s_pSwapchain = new GLFWSwapchain(s_pWindow);
     s_pSwapchain->createSurface();
 
-    std::vector<const char*> vLogicalDeviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    std::vector<const char *> vLogicalDeviceExtensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        "VK_KHR_ray_tracing"
+        };
     if (s_isValidationEnabled)
     {
         s_debugMessenger.initialize();
