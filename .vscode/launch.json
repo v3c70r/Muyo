@@ -14,7 +14,16 @@
             "cwd": "${workspaceFolder}/build",
             "externalConsole": false,
             "linux": {
-                "environment": [],
+                "environment": [
+                    {
+                        "name": "VK_LAYER_PATH",
+                        "value": "/home/qgu/tools/vulkan/1.2.135.0/x86_64/etc/vulkan/explicit_layer.d"
+                    },
+                    {
+                        "name": "LD_LIBRARY_PATH",
+                        "value": "/home/qgu/tools/vulkan/1.2.135.0/x86_64/lib"
+                    },
+                ],
                 "MIMode": "gdb"
             },
             "osx": {

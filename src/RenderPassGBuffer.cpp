@@ -13,7 +13,9 @@ RenderPassGBuffer::RenderPassGBuffer()
         aColorReferences[i] = {i, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     }
 
-    VkAttachmentReference depthReference = {GBufferAttachments::GBUFFER_DEPTH, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthReference = {
+        GBufferAttachments::GBUFFER_DEPTH,
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
 
     // Subpass
     VkSubpassDescription subpass = {};
@@ -144,6 +146,45 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
     vkCmdDrawIndexed(m_commandBuffer, numIndices, 1, 0, 0, 0);
 
     vkCmdEndRenderPass(m_commandBuffer);
+
+    // Adding barrier to transit gbuffer targets to SRV
+    //for (const auto& name  : m_attachments.aNames)
+    //{
+    //    VkImage image = GetRenderResourceManager()->getColorTarget(name, VkExtent2D())->getImage();
+    //    VkImageMemoryBarrier barrier = {};
+    //    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+
+    //    barrier.oldLayout =
+    //        name == "GBUFFER_DEPTH"
+    //            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    //            : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    //    barrier.newLayout =
+    //        name == "GBUFFER_DEPTH"
+    //            ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    //            : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    //    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    //    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    //    barrier.image = image;
+    //    barrier.subresourceRange.baseMipLevel = 0;
+    //    barrier.subresourceRange.levelCount = 1;
+    //    barrier.subresourceRange.baseArrayLayer = 0;
+    //    barrier.subresourceRange.layerCount = 1;
+
+    //    barrier.subresourceRange.aspectMask = name == "GBUFFER_DEPTH"
+    //                                              ? VK_IMAGE_ASPECT_DEPTH_BIT
+    //                                              : VK_IMAGE_ASPECT_COLOR_BIT;
+
+    //    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    //    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    //    vkCmdPipelineBarrier(
+    //        m_commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    //        /*srcStage*/ VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, /*dstStage*/
+    //        0, 0, nullptr, 0, nullptr, 1, &barrier);
+    //}
+
     vkEndCommandBuffer(m_commandBuffer);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),

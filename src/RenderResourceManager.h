@@ -1,9 +1,11 @@
 #pragma once
+#include "RenderTargetResource.h"
+#include "Debug.h"
+
 #include <memory>
 #include <string>
 #include <unordered_map>
 
-#include "RenderTargetResource.h"
 
 class RenderResourceManager
 {
@@ -22,6 +24,12 @@ public:
                 bColorTarget ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
                              : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                 extent.width, extent.height);
+
+            setDebugUtilsObjectName(
+                reinterpret_cast<uint64_t>(
+                    static_cast<ImageResource*>(m_mResources[name].get())
+                        ->getImage()),
+                VK_OBJECT_TYPE_IMAGE, name.c_str());
         }
         return static_cast<RenderTarget*>(m_mResources[name].get());
     }

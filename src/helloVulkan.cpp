@@ -122,9 +122,11 @@ static DebugUtilsMessenger s_debugMessenger;
 
 GLFWSwapchain* s_pSwapchain = nullptr;
 
+static VertexBuffer* s_pQuadVB = nullptr;
+static IndexBuffer* s_pQuadIB = nullptr;
 
-static VertexBuffer* s_pVertexBuffer = nullptr;
-static IndexBuffer* s_pIndexBuffer = nullptr;
+static VertexBuffer* s_pCubeVB = nullptr;
+static IndexBuffer* s_pCubeIB = nullptr;
 static UniformBuffer<PerViewData>* s_pUniformBuffer = nullptr;
 static Texture* s_pTexture = nullptr;
 //static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
@@ -186,7 +188,7 @@ void LoadMesh(const std::string path, TinyObjInfo& objInfo)
 
 static TinyObjInfo s_objInfo;
 // Hardcoded vertices and indices
-std::vector<Vertex> getVertices()
+std::vector<Vertex> getCubeVertices()
 {
     std::vector<Vertex> res;
 
@@ -209,7 +211,7 @@ std::vector<Vertex> getVertices()
     return res;
 }
 
-std::vector<uint32_t> getIndices()
+std::vector<uint32_t> getCubeIndices()
 {
     std::vector<uint32_t> indices;
     indices.reserve(s_objInfo.shapes[0].mesh.indices.size());
@@ -218,6 +220,22 @@ std::vector<uint32_t> getIndices()
     {
         indices.push_back(i);
     }
+    return indices;
+}
+
+std::vector<Vertex> getQuadVertices()
+{
+    const std::vector<Vertex> vertices = {
+        {{-1.0f, -1.0f, 0.0}, {0.0f, 0.0f, 0.0f}},
+        {{1.0f, -1.0f, 0.0}, {1.0f, 0.0f, 0.0f}},
+        {{1.0f, 1.0f, 0.0}, {1.0f, 1.0f, 1.0f}},
+        {{-1.0f, 1.0f, 0.0}, {0.0f, 1.0f, 1.0f}}};
+    return vertices;
+}
+
+std::vector<uint32_t> getQuadIndices()
+{
+    const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
     return indices;
 }
 
@@ -521,18 +539,19 @@ void createGraphicsPipeline()
         s_descriptorSetLayout, *pGBufferPass);
 }
 
-void createCommandBuffers(const VertexBuffer& vertexBuffer,
-                          const IndexBuffer& indexBuffer)
+void createCommandBuffers()
 {
+
+    pGBufferPass->recordCommandBuffer(
+        s_pCubeVB->buffer(), s_pCubeIB->buffer(), getCubeIndices().size(),
+        gPipelineManager.GetGBufferPipeline(),
+        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
+
     pFinalPass->RecordOnce(
-        vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
+        s_pQuadVB->buffer(), s_pQuadIB->buffer(), getQuadIndices().size(),
         gPipelineManager.GetStaticObjectPipeline(),
         gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 
-    pGBufferPass->recordCommandBuffer(
-        vertexBuffer.buffer(), indexBuffer.buffer(), getIndices().size(),
-        gPipelineManager.GetGBufferPipeline(),
-        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 }
 
 void createSemaphores()
@@ -679,7 +698,7 @@ void recreateSwapChain()
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
 
     createGraphicsPipeline();
-    createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
+    createCommandBuffers();
 }
 
 void cleanup()
@@ -839,16 +858,26 @@ int main()
     // refactorying is required.
     {
 
-        s_pVertexBuffer = new VertexBuffer();
+        // Create the cube
+        s_pCubeVB = new VertexBuffer();
 
         LoadMesh("assets/cube.obj", s_objInfo);
-        s_pVertexBuffer->setData(reinterpret_cast<void*>(getVertices().data()),
-                                 sizeof(Vertex) * getVertices().size());
+        s_pCubeVB->setData(reinterpret_cast<void*>(getCubeVertices().data()),
+                                 sizeof(Vertex) * getCubeVertices().size());
 
-        s_pIndexBuffer = new IndexBuffer();
+        s_pCubeIB = new IndexBuffer();
 
-        s_pIndexBuffer->setData(reinterpret_cast<void*>(getIndices().data()),
-                                sizeof(uint32_t) * getIndices().size());
+        s_pCubeIB->setData(reinterpret_cast<void*>(getCubeIndices().data()),
+                                sizeof(uint32_t) * getCubeIndices().size());
+
+        // Create the quad
+        s_pQuadVB = new VertexBuffer();
+        s_pQuadVB->setData(getQuadVertices().data(),
+                           sizeof(Vertex) * getQuadVertices().size());
+
+        s_pQuadIB = new IndexBuffer();
+        s_pQuadIB->setData(getQuadIndices().data(),
+                           sizeof(uint32_t) * getQuadIndices().size());
 
         s_pUniformBuffer = new UniformBuffer<PerViewData>();
 
@@ -856,7 +885,7 @@ int main()
         s_pTexture->LoadImage("assets/default.png");
         createDescriptorPool();
         createDescriptorSet();
-        createCommandBuffers(*s_pVertexBuffer, *s_pIndexBuffer);
+        createCommandBuffers();
         createSemaphores();
         createFences();
         //s_UIOverlay =
@@ -898,8 +927,10 @@ int main()
 
         //s_UIOverlay->finalize();
         //s_UIOverlay = nullptr;
-        delete s_pVertexBuffer;
-        delete s_pIndexBuffer;
+        delete s_pCubeVB;
+        delete s_pCubeIB;
+        delete s_pQuadVB;
+        delete s_pQuadIB;
         delete s_pUniformBuffer;
         delete s_pTexture;
     }
