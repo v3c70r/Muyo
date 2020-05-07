@@ -2,7 +2,6 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
-#include <vulkan/vulkan_beta.h>
 #include <array>
 #include <cassert>
 #include <chrono>
@@ -138,8 +137,6 @@ static VkDescriptorSetLayout s_descriptorSetLayout;
 
 // Descriptor pool
 static VkDescriptorPool s_descriptorPool;
-
-static VkDescriptorSet s_descriptorSet = VK_NULL_HANDLE;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -542,19 +539,23 @@ void createGraphicsPipeline()
         s_descriptorSetLayout, *pGBufferPass);
 }
 
+VkDescriptorSet createDescriptorSet(VkImageView view);
 void createCommandBuffers()
 {
-
     pGBufferPass->recordCommandBuffer(
         s_pCubeVB->buffer(), s_pCubeIB->buffer(), static_cast<uint32_t>(getCubeIndices().size()),
         gPipelineManager.GetGBufferPipeline(),
-        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
+        gPipelineManager.GetStaticObjectPipelineLayout(), createDescriptorSet(s_pTexture->getImageView()));
 
     pFinalPass->RecordOnce(
-        s_pQuadVB->buffer(), s_pQuadIB->buffer(), static_cast<uint32_t>(getQuadIndices().size()),
+        s_pQuadVB->buffer(), s_pQuadIB->buffer(),
+        static_cast<uint32_t>(getQuadIndices().size()),
         gPipelineManager.GetStaticObjectPipeline(),
-        gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
-
+        gPipelineManager.GetStaticObjectPipelineLayout(),
+        createDescriptorSet(
+            GetRenderResourceManager()
+                ->getColorTarget("GBUFFER_ALBEDO", VkExtent2D({0, 0}))
+                ->getView()));
 }
 
 void createSemaphores()
@@ -610,9 +611,10 @@ void createDescriptorPool()
                                   &s_descriptorPool) == VK_SUCCESS);
 };
 
-void createDescriptorSet()
+VkDescriptorSet createDescriptorSet(VkImageView view)
 {
-    // Create descriptor set
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
     VkDescriptorSetAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = s_descriptorPool;
@@ -620,7 +622,7 @@ void createDescriptorSet()
     allocInfo.pSetLayouts = &s_descriptorSetLayout;
 
     assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &s_descriptorSet) == VK_SUCCESS);
+                                    &descriptorSet) == VK_SUCCESS);
 
     // Prepare buffer descriptor
     {
@@ -632,13 +634,13 @@ void createDescriptorSet()
         // prepare image descriptor
         VkDescriptorImageInfo imageInfo = {};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = s_pTexture->getImageView();
+        imageInfo.imageView = view;
         imageInfo.sampler = s_pTexture->getSamper();
 
         std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = s_descriptorSet;
+        descriptorWrites[0].dstSet = descriptorSet;
         descriptorWrites[0].dstBinding = 0;
         descriptorWrites[0].dstArrayElement = 0;
         descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -646,7 +648,7 @@ void createDescriptorSet()
         descriptorWrites[0].pBufferInfo = &bufferInfo;
 
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = s_descriptorSet;
+        descriptorWrites[1].dstSet = descriptorSet;
         descriptorWrites[1].dstBinding = 1;
         descriptorWrites[1].dstArrayElement = 0;
         descriptorWrites[1].descriptorType =
@@ -658,6 +660,7 @@ void createDescriptorSet()
                                static_cast<uint32_t>(descriptorWrites.size()),
                                descriptorWrites.data(), 0, nullptr);
     }
+    return descriptorSet;
 }
 
 void cleanupSwapChain()
@@ -889,7 +892,6 @@ int main()
         s_pTexture = new Texture();
         s_pTexture->LoadImage("assets/default.png");
         createDescriptorPool();
-        createDescriptorSet();
         createCommandBuffers();
         createSemaphores();
         createFences();

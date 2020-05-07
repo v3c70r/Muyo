@@ -1,7 +1,38 @@
 #include "RenderPassGBuffer.h"
-#include "VkRenderDevice.h"
-#include "RenderResourceManager.h"
+
 #include "Debug.h"
+#include "RenderResourceManager.h"
+#include "VkRenderDevice.h"
+
+RenderPassGBuffer::GBufferAttachments::GBufferAttachments()
+{
+    // Construct color attachment descriptions
+    VkAttachmentDescription desc = {};
+    desc.samples = VK_SAMPLE_COUNT_1_BIT;
+    desc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+    desc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    aAttachmentDesc[GBUFFER_POSITION] = desc;
+    aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+
+    aAttachmentDesc[GBUFFER_ALBEDO] = desc;
+    aAttachmentDesc[GBUFFER_ALBEDO].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+
+    aAttachmentDesc[GBUFFER_UV] = desc;
+    aAttachmentDesc[GBUFFER_UV].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+
+    aAttachmentDesc[GBUFFER_NORMAL] = desc;
+    aAttachmentDesc[GBUFFER_NORMAL].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+
+    // Depth target
+    aAttachmentDesc[GBUFFER_DEPTH] = desc;
+    aAttachmentDesc[GBUFFER_DEPTH].format = VK_FORMAT_D32_SFLOAT;
+    aAttachmentDesc[GBUFFER_DEPTH].finalLayout =
+        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+}
 
 RenderPassGBuffer::RenderPassGBuffer()
 {
@@ -38,7 +69,8 @@ RenderPassGBuffer::RenderPassGBuffer()
 
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(m_attachments.aAttachmentDesc.size());
+    renderPassInfo.attachmentCount =
+        static_cast<uint32_t>(m_attachments.aAttachmentDesc.size());
     renderPassInfo.pAttachments = m_attachments.aAttachmentDesc.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
@@ -48,7 +80,6 @@ RenderPassGBuffer::RenderPassGBuffer()
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
                               nullptr, &m_renderPass) == VK_SUCCESS);
 }
-
 
 RenderPassGBuffer::~RenderPassGBuffer()
 {
@@ -81,6 +112,7 @@ void RenderPassGBuffer::setGBufferImageViews(VkImageView positionView,
     framebufferInfo.layers = 1;
     assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo,
                                nullptr, &m_framebuffer) == VK_SUCCESS);
+    mRenderArea = {nWidth, nHeight};
 }
 
 void RenderPassGBuffer::destroyFramebuffer()
@@ -96,6 +128,8 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
                                             VkPipelineLayout pipelineLayout,
                                             VkDescriptorSet descriptorSet)
 {
+
+
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -145,13 +179,24 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
     // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
     vkCmdDrawIndexed(m_commandBuffer, numIndices, 1, 0, 0, 0);
 
+
     vkCmdEndRenderPass(m_commandBuffer);
 
+    // Add barriers
+    VkMemoryBarrier memoryBarrier = {};
+    memoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    vkCmdPipelineBarrier(
+        m_commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_DEPENDENCY_DEVICE_GROUP_BIT,
+        1, &memoryBarrier, 0, nullptr, 0, nullptr);
+
     // Adding barrier to transit gbuffer targets to SRV
-    //for (const auto& name  : m_attachments.aNames)
+    // for (const auto& name  : m_attachments.aNames)
     //{
-    //    VkImage image = GetRenderResourceManager()->getColorTarget(name, VkExtent2D())->getImage();
-    //    VkImageMemoryBarrier barrier = {};
+    //    VkImage image = GetRenderResourceManager()->getColorTarget(name,
+    //    VkExtent2D())->getImage(); VkImageMemoryBarrier barrier = {};
     //    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 
     //    barrier.oldLayout =
