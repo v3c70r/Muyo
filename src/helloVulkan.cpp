@@ -869,7 +869,7 @@ int main()
         // Create the cube
         s_pCubeVB = new VertexBuffer();
 
-        LoadMesh("assets/cube.obj", s_objInfo);
+        LoadMesh("assets/bruce/bruce.obj", s_objInfo);
         s_pCubeVB->setData(reinterpret_cast<void*>(getCubeVertices().data()),
                                  sizeof(Vertex) * getCubeVertices().size());
 
