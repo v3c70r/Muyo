@@ -41,7 +41,7 @@ void Texture::LoadPixels(void *pixels, int width, int height)
                 VMA_MEMORY_USAGE_GPU_ONLY);
 
     // UNDEFINED -> DST_OPTIMAL
-    sTransitionImageLayout(m_image, VK_FORMAT_R8G8B8A8_UNORM,
+    sTransitionImageLayout(m_image,
                            VK_IMAGE_LAYOUT_UNDEFINED,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
@@ -51,7 +51,6 @@ void Texture::LoadPixels(void *pixels, int width, int height)
 
     // DST_OPTIMAL -> SHADER_READ_ONLY
     sTransitionImageLayout(m_image,
-                           VK_FORMAT_R8G8B8A8_UNORM,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);

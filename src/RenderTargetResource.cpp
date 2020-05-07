@@ -10,7 +10,7 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
                            uint32_t width, uint32_t height)
 {
     VkImageAspectFlags aspectMask = 0;
-    VkImageLayout imageLayout;
+    VkImageLayout imageLayout=VK_IMAGE_LAYOUT_UNDEFINED;
 
     if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
     {
@@ -65,7 +65,7 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
     assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo,
                              nullptr, &m_view) == VK_SUCCESS);
 
-    Texture::sTransitionImageLayout(m_image, format, VK_IMAGE_LAYOUT_UNDEFINED,
+    Texture::sTransitionImageLayout(m_image, VK_IMAGE_LAYOUT_UNDEFINED,
                                     imageLayout);
 }
 RenderTarget::~RenderTarget()

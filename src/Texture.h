@@ -58,7 +58,7 @@ public:
             &imageInfo, memoryUsage, m_image, m_allocation);
     }
 
-    static void sTransitionImageLayout(VkImage image, VkFormat format,
+    static void sTransitionImageLayout(VkImage image,
                                        VkImageLayout oldLayout,
                                        VkImageLayout newLayout)
     {

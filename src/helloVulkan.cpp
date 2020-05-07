@@ -149,7 +149,7 @@ static std::vector<VkFence> s_waitFences;
 // PHYSICAL Device extensions
 const std::vector<const char*> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    "VK_KHR_ray_tracing"
+    //"VK_KHR_ray_tracing"
     };
 
 struct TinyObjInfo
@@ -546,12 +546,12 @@ void createCommandBuffers()
 {
 
     pGBufferPass->recordCommandBuffer(
-        s_pCubeVB->buffer(), s_pCubeIB->buffer(), getCubeIndices().size(),
+        s_pCubeVB->buffer(), s_pCubeIB->buffer(), static_cast<uint32_t>(getCubeIndices().size()),
         gPipelineManager.GetGBufferPipeline(),
         gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 
     pFinalPass->RecordOnce(
-        s_pQuadVB->buffer(), s_pQuadIB->buffer(), getQuadIndices().size(),
+        s_pQuadVB->buffer(), s_pQuadIB->buffer(), static_cast<uint32_t>(getQuadIndices().size()),
         gPipelineManager.GetStaticObjectPipeline(),
         gPipelineManager.GetStaticObjectPipelineLayout(), s_descriptorSet);
 
@@ -603,9 +603,9 @@ void createDescriptorPool()
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.poolSizeCount = poolSizes.size();
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = 1000 * poolSizes.size();
+    poolInfo.maxSets = 1000 * static_cast<uint32_t>(poolSizes.size());
     assert(vkCreateDescriptorPool(GetRenderDevice()->GetDevice(), &poolInfo, nullptr,
                                   &s_descriptorPool) == VK_SUCCESS);
 };
@@ -761,7 +761,7 @@ void present()
     submitInfo.pWaitSemaphores = &s_imageAvailableSemaphores[0];
     submitInfo.pWaitDstStageMask = &stageFlag;
 
-    submitInfo.commandBufferCount = cmdBuffers.size();
+    submitInfo.commandBufferCount = static_cast<uint32_t>(cmdBuffers.size());
     submitInfo.pCommandBuffers = cmdBuffers.data();
 
     submitInfo.signalSemaphoreCount = 1;
@@ -790,12 +790,12 @@ void updateUniformBuffer(UniformBuffer<PerViewData>* ub)
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
-    float time = std::chrono::duration<float, std::chrono::seconds::period>(
+    double time = std::chrono::duration<float, std::chrono::seconds::period>(
                      currentTime - startTime)
                      .count() *
                  0.01;
     PerViewData ubo = {};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(10.0f),
+    ubo.model = glm::rotate(glm::mat4(1.0f), (float)time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
     // ubo.model = glm::rotate(glm::mat4(1.0), glm::degrees(time),
     // glm::vec3(0.0, 1.0, 0.0));
@@ -817,7 +817,7 @@ int main()
 
     std::vector<const char *> vLogicalDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        "VK_KHR_ray_tracing"
+        //"VK_KHR_ray_tracing"
         };
     if (s_isValidationEnabled)
     {

@@ -9,10 +9,6 @@
 // https://developer.nvidia.com/vulkan-memory-management
 // Allocate once and bond multiple times, using the offset
 
-static size_t alignUp(size_t size, size_t alignment) {
-    return (size + alignment - 1) / alignment * alignment;
-}
-
 class Buffer {
 public:
     Buffer(const VkDevice& device, const VkPhysicalDevice& physicalDevice,

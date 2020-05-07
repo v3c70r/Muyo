@@ -74,7 +74,7 @@ private:
 class IndexBuffer
 {
 public:
-    IndexBuffer(size_t size = 0) {}
+    IndexBuffer() {}
     ~IndexBuffer()
     {
         if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)

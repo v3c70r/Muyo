@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "x64",
+            "includePath": [
+                "C:/VulkanSDK/1.2.135.0/Include",
+                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.18362.0/ucrt",
+                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.18362.0/um",
+                "C:/Program Files (x86)/Windows Kits/10/Include/10.0.18362.0/shared",
+                "${workspaceFolder}/src",
+                "${workspaceFolder}/thirdparty/glfw/include",
+                "${workspaceFolder}/thirdparty/glm",
+                "${workspaceFolder}/thirdparty/imgui",
+                "${workspaceFolder}/thirdparty/stb",
+                "${workspaceFolder}/thirdparty/VulkanMemoryAllocator",
+                "${default}"
+            ],
+            "intelliSenseMode": "msvc-x64",
+            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.25.28610/bin/Hostx64/x64/cl.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "configurationProvider": "vector-of-bool.cmake-tools"
+        }
+    ],
+    "version": 4
+}

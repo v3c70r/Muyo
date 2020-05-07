@@ -27,14 +27,11 @@ class UniformBuffer
 public:
     UniformBuffer()
     {
-        constexpr size_t size = sizeof(T);
-        if (size != 0)
-        {
-            GetMemoryAllocator()->AllocateBuffer(
-                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "Uniform Buffer");
-        }
+        const size_t size = sizeof(T);
+        GetMemoryAllocator()->AllocateBuffer(
+            size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "Uniform Buffer");
     }
-    void setData(const T& buffer)
+    void setData(const T &buffer)
     {
         void* pMappedMemory = nullptr;
         GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedMemory);

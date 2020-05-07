@@ -31,7 +31,7 @@ PipelineStateBuilder& PipelineStateBuilder::setVertextInfo(
 {
     mVertexInputInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    mVertexInputInfo.vertexBindingDescriptionCount = bindingDescriptions.size();
+    mVertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
     mVertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
     mVertexInputInfo.vertexAttributeDescriptionCount =
         static_cast<uint32_t>(attribDescriptions.size());

@@ -44,7 +44,7 @@ public:
     {
         mDynamicStatesInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        mDynamicStatesInfo.dynamicStateCount = dynamicStates.size();
+        mDynamicStatesInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         mDynamicStatesInfo.pDynamicStates = dynamicStates.data();
         return *this;
     }

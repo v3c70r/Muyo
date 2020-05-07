@@ -1,7 +1,7 @@
 #pragma once
 #include "Swapchain.h"
 
-class GLFWwindow;
+struct GLFWwindow;
 class GLFWSwapchain : public Swapchain
 {
 public:
