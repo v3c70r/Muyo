@@ -5,7 +5,7 @@
 #include <array>
 #include <cassert>
 #include <chrono>
-#include <cstring>  // strcmp
+#include <cstring> // strcmp
 #include <fstream>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -40,25 +40,22 @@ const int HEIGHT = 600;
 
 thread_local size_t s_currentContext;
 
-
 static bool s_resizeWanted = true;
-
-
 
 static bool s_isValidationEnabled = true;
 
-static GLFWwindow* s_pWindow = nullptr;
+static GLFWwindow *s_pWindow = nullptr;
 
 PipelineManager gPipelineManager;
 
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                           (float)WIDTH / (float)HEIGHT, 0.1f,
                                           10.0f),
-                         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),   // Eye
-                                     glm::vec3(0.0f, 0.0f, 0.0f),    // Center
-                                     glm::vec3(0.0f, 1.0f, 0.0f)));  // Up
+                         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
+                                     glm::vec3(0.0f, 0.0f, 0.0f),   // Center
+                                     glm::vec3(0.0f, 1.0f, 0.0f))); // Up
 // GLFW mouse callback
-static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
+static void mouseCallback(GLFWwindow *window, int button, int action, int mods)
 {
     if (button == GLFW_MOUSE_BUTTON_LEFT)
     {
@@ -72,12 +69,12 @@ static void mouseCallback(GLFWwindow* window, int button, int action, int mods)
         }
     }
 }
-static void mouseCursorCallback(GLFWwindow* window, double xpos, double ypos)
+static void mouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
 {
     s_arcball.updateDrag(glm::vec2(xpos, ypos));
 }
 // GLFW key callbacks
-static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
+static void onKeyStroke(GLFWwindow *window, int key, int scancode, int action,
                         int mods)
 {
     std::cout << "Key pressed\n";
@@ -110,7 +107,6 @@ static void onKeyStroke(GLFWwindow* window, int key, int scancode, int action,
     //    }
 }
 
-
 #ifdef __APPLE__
 static const uint32_t NUM_BUFFERS = 2;
 #else
@@ -119,16 +115,15 @@ static const uint32_t NUM_BUFFERS = 3;
 
 static DebugUtilsMessenger s_debugMessenger;
 
+GLFWSwapchain *s_pSwapchain = nullptr;
 
-GLFWSwapchain* s_pSwapchain = nullptr;
+static VertexBuffer *s_pQuadVB = nullptr;
+static IndexBuffer *s_pQuadIB = nullptr;
 
-static VertexBuffer* s_pQuadVB = nullptr;
-static IndexBuffer* s_pQuadIB = nullptr;
-
-static VertexBuffer* s_pCubeVB = nullptr;
-static IndexBuffer* s_pCubeIB = nullptr;
-static UniformBuffer<PerViewData>* s_pUniformBuffer = nullptr;
-static Texture* s_pTexture = nullptr;
+static VertexBuffer *s_pCubeVB = nullptr;
+static IndexBuffer *s_pCubeIB = nullptr;
+static UniformBuffer<PerViewData> *s_pUniformBuffer = nullptr;
+static Texture *s_pTexture = nullptr;
 //static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
 
 // DescriptorLayout, which is part of the pipeline layout
@@ -144,10 +139,10 @@ static std::vector<VkSemaphore> s_renderFinishedSemaphores;
 static std::vector<VkFence> s_waitFences;
 
 // PHYSICAL Device extensions
-const std::vector<const char*> deviceExtensions = {
+const std::vector<const char *> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     //"VK_KHR_ray_tracing"
-    };
+};
 
 struct TinyObjInfo
 {
@@ -156,7 +151,7 @@ struct TinyObjInfo
     std::vector<tinyobj::material_t> materials;
 };
 
-void LoadMesh(const std::string path, TinyObjInfo& objInfo)
+void LoadMesh(const std::string path, TinyObjInfo &objInfo)
 {
     std::string err;
     bool ret = tinyobj::LoadObj(&(objInfo.attrib), &(objInfo.shapes),
@@ -178,7 +173,7 @@ void LoadMesh(const std::string path, TinyObjInfo& objInfo)
         for (size_t i = 0; i < objInfo.shapes.size(); i++)
         {
             std::cout << "Shape " << i << ": " << std::endl;
-            tinyobj::shape_t& shape = objInfo.shapes[i];
+            tinyobj::shape_t &shape = objInfo.shapes[i];
             std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
             std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
             // std::cout<<"\t"<<shape.mesh.vert
@@ -199,7 +194,7 @@ std::vector<Vertex> getCubeVertices()
     size_t numVert = vIndices.size();
     res.reserve(numVert);
 
-    for (const auto& meshIdx : vIndices)
+    for (const auto &meshIdx : vIndices)
     {
         res.emplace_back(Vertex(
             {{s_objInfo.attrib.vertices[3 * meshIdx.vertex_index],
@@ -216,7 +211,7 @@ std::vector<uint32_t> getCubeIndices()
     std::vector<uint32_t> indices;
     indices.reserve(s_objInfo.shapes[0].mesh.indices.size());
 
-    for (size_t i = 0; i< s_objInfo.shapes[0].mesh.indices.size(); i++)
+    for (size_t i = 0; i < s_objInfo.shapes[0].mesh.indices.size(); i++)
     {
         indices.push_back(i);
     }
@@ -239,8 +234,8 @@ std::vector<uint32_t> getQuadIndices()
     return indices;
 }
 
-void recreateSwapChain();  // fwd declaration
-static void onWindowResize(GLFWwindow* pWindow, int width, int height)
+void recreateSwapChain(); // fwd declaration
+static void onWindowResize(GLFWwindow *pWindow, int width, int height)
 {
     s_arcball.resize(glm::vec2((float)width, (float)height));
     recreateSwapChain();
@@ -259,7 +254,7 @@ std::vector<VkExtensionProperties> getSupportedExtensions()
 }
 
 bool areExtensionsSupportedByPhysicalDevice(
-    const std::vector<const char*> extensionNames, VkPhysicalDevice phyDevice)
+    const std::vector<const char *> extensionNames, VkPhysicalDevice phyDevice)
 {
     uint32_t extCount;
     vkEnumerateDeviceExtensionProperties(phyDevice, nullptr, &extCount,
@@ -269,7 +264,8 @@ bool areExtensionsSupportedByPhysicalDevice(
                                          exts.data());
     std::set<std::string> requiredExts(deviceExtensions.begin(),
                                        deviceExtensions.end());
-    for (const auto& ext : exts) requiredExts.erase(ext.extensionName);
+    for (const auto &ext : exts)
+        requiredExts.erase(ext.extensionName);
     return requiredExts.empty();
 }
 
@@ -281,34 +277,35 @@ std::vector<VkLayerProperties> getSupportedLayers()
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
     supportedLayers.resize(layerCount);
     vkEnumerateInstanceLayerProperties(&layerCount, supportedLayers.data());
-    std::cout<<"Supported Layers ==== \n";
+    std::cout << "Supported Layers ==== \n";
 
-    for (auto& supportedLayer : supportedLayers)
+    for (auto &supportedLayer : supportedLayers)
     {
-        std::cout<<supportedLayer.description<<std::endl;
+        std::cout << supportedLayer.description << std::endl;
     }
-    std::cout<<"Supported Layers ^^^ \n";
+    std::cout << "Supported Layers ^^^ \n";
 
     return supportedLayers;
 }
 
-bool isLayerSupported(const char* layerName)
+bool isLayerSupported(const char *layerName)
 {
     std::vector<VkLayerProperties> supportedLayers = getSupportedLayers();
-    for (const auto& layer : supportedLayers)
+    for (const auto &layer : supportedLayers)
     {
-        if (strcmp(layer.layerName, layerName) == 0) return true;
+        if (strcmp(layer.layerName, layerName) == 0)
+            return true;
     }
     return false;
 }
 
-bool areLayersSupported(const std::vector<const char*> layerNames)
+bool areLayersSupported(const std::vector<const char *> layerNames)
 {
-    for (const auto& layerName : layerNames)
+    for (const auto &layerName : layerNames)
     {
-        if (!isLayerSupported(layerName)) 
+        if (!isLayerSupported(layerName))
         {
-            std::cout<<layerName<<std::endl;
+            std::cout << layerName << std::endl;
             return false;
         }
     }
@@ -327,13 +324,13 @@ void initWindow()
     glfwSetCursorPosCallback(s_pWindow, mouseCursorCallback);
 }
 
-std::vector<const char*> getRequiredExtensions()
+std::vector<const char *> getRequiredExtensions()
 {
     // get glfw extensiIons
 
-    std::vector<const char*> extensions;
+    std::vector<const char *> extensions;
     uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions;
+    const char **glfwExtensions;
 
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
@@ -352,13 +349,14 @@ void createInstance()
     if (s_isValidationEnabled && !areLayersSupported(getValidationLayerNames()))
         throw std::runtime_error("Validation layer is not supported");
 
-    std::vector<const char*> extensions = getRequiredExtensions();
+    std::vector<const char *> extensions = getRequiredExtensions();
     std::cout << "Required extensions" << std::endl;
-    for (const auto& ext : extensions) std::cout << ext << std::endl;
+    for (const auto &ext : extensions)
+        std::cout << ext << std::endl;
 
     std::cout << "Supported exts" << std::endl;
     std::vector<VkExtensionProperties> supportedExts = getSupportedExtensions();
-    for (const auto& ext : supportedExts)
+    for (const auto &ext : supportedExts)
         std::cout << ext.extensionName << std::endl;
 
     if (s_isValidationEnabled)
@@ -367,7 +365,7 @@ void createInstance()
     }
     else
     {
-        std::vector<const char*> dummy;
+        std::vector<const char *> dummy;
         GetRenderDevice()->Initialize(dummy, extensions);
     }
 
@@ -429,7 +427,7 @@ QueueFamilyIndice mFindQueueFamily(VkPhysicalDevice device)
                                              queueFamilies.data());
 
     int i = 0;
-    for (const auto& queueFamily : queueFamilies)
+    for (const auto &queueFamily : queueFamilies)
     {
         // Check for graphics support
         if (queueFamily.queueCount > 0 &&
@@ -445,7 +443,8 @@ QueueFamilyIndice mFindQueueFamily(VkPhysicalDevice device)
         if (queueFamily.queueCount > 0 && presentSupport)
             indices.presentFamily = i;
 
-        if (indices.isComplete()) break;
+        if (indices.isComplete())
+            break;
         i++;
     }
     return indices;
@@ -485,8 +484,7 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
-
-std::vector<char> m_readSpv(const std::string& fileName)
+std::vector<char> m_readSpv(const std::string &fileName)
 {
     std::ifstream file(fileName, std::ios::ate | std::ios::binary);
     assert(file.is_open());
@@ -499,18 +497,17 @@ std::vector<char> m_readSpv(const std::string& fileName)
 
     return buffer;
 }
-VkShaderModule m_createShaderModule(const std::vector<char>& code)
+VkShaderModule m_createShaderModule(const std::vector<char> &code)
 {
     VkShaderModuleCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+    createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
     VkShaderModule shdrModule = VK_NULL_HANDLE;
     assert(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &shdrModule) ==
            VK_SUCCESS);
     return shdrModule;
 }
-
 
 void createGraphicsPipeline()
 {
@@ -579,7 +576,7 @@ void createFences()
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     s_waitFences.resize(NUM_BUFFERS);
-    for (auto& fence : s_waitFences)
+    for (auto &fence : s_waitFences)
     {
         assert(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence) ==
                VK_SUCCESS);
@@ -666,10 +663,9 @@ VkDescriptorSet createDescriptorSet(VkImageView view)
 void cleanupSwapChain()
 {
 
-
     gPipelineManager.DestroyStaticObjectPipeline();
     gPipelineManager.DestroyGBufferPipeline();
-    
+
     s_pSwapchain->destroySwapchain();
 
     vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), s_descriptorSetLayout, nullptr);
@@ -679,7 +675,8 @@ void recreateSwapChain()
 {
     int width, height;
     glfwGetWindowSize(s_pWindow, &width, &height);
-    if (width == 0 || height == 0) return;
+    if (width == 0 || height == 0)
+        return;
 
     vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
 
@@ -691,7 +688,7 @@ void recreateSwapChain()
 
     GetRenderResourceManager()->removeResource("depthTarget");
 
-    RenderTarget* pDepthResource = GetRenderResourceManager()->getDepthTarget(
+    RenderTarget *pDepthResource = GetRenderResourceManager()->getDepthTarget(
         "depthTarget", VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
                                    s_pSwapchain->getSwapchainExtent().height}));
 
@@ -714,12 +711,12 @@ void cleanup()
     pGBufferPass = nullptr;
     vkDestroyDescriptorPool(GetRenderDevice()->GetDevice(), s_descriptorPool, nullptr);
 
-    for (auto& somaphore : s_imageAvailableSemaphores)
+    for (auto &somaphore : s_imageAvailableSemaphores)
         vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
-    for (auto& somaphore : s_renderFinishedSemaphores)
+    for (auto &somaphore : s_renderFinishedSemaphores)
         vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
-    for (auto& fence : s_waitFences) vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
-
+    for (auto &fence : s_waitFences)
+        vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
 
     GetRenderDevice()->destroyCommandPools();
     GetRenderResourceManager()->Unintialize();
@@ -749,15 +746,14 @@ void present()
 
     // submit command buffer
     VkPipelineStageFlags stageFlag =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // only color attachment
-                                                        // waits for the
-                                                        // semaphore
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // only color attachment
+                                                       // waits for the
+                                                       // semaphore
 
-    std::array<VkCommandBuffer, 2> cmdBuffers = 
-    {
-        pGBufferPass->GetCommandBuffer(),
-        pFinalPass->GetCommandBuffer(imageIndex)
-    };
+    std::array<VkCommandBuffer, 2> cmdBuffers =
+        {
+            pGBufferPass->GetCommandBuffer(),
+            pFinalPass->GetCommandBuffer(imageIndex)};
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.waitSemaphoreCount = 1;
@@ -788,15 +784,15 @@ void present()
     vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
 }
 
-void updateUniformBuffer(UniformBuffer<PerViewData>* ub)
+void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 {
     static auto startTime = std::chrono::high_resolution_clock::now();
 
     auto currentTime = std::chrono::high_resolution_clock::now();
     double time = std::chrono::duration<float, std::chrono::seconds::period>(
-                     currentTime - startTime)
-                     .count() *
-                 0.01;
+                      currentTime - startTime)
+                      .count() *
+                  0.01;
     PerViewData ubo = {};
     ubo.model = glm::rotate(glm::mat4(1.0f), (float)time * glm::radians(10.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
@@ -821,7 +817,7 @@ int main()
     std::vector<const char *> vLogicalDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         //"VK_KHR_ray_tracing"
-        };
+    };
     if (s_isValidationEnabled)
     {
         s_debugMessenger.initialize();
@@ -831,7 +827,7 @@ int main()
     }
     else
     {
-        std::vector<const char*> dummy;
+        std::vector<const char *> dummy;
         GetRenderDevice()->createLogicalDevice(dummy,
                                                vLogicalDeviceExtensions,
                                                s_pSwapchain->getSurface());
@@ -844,14 +840,14 @@ int main()
 
     GetRenderDevice()->createCommandPools();
 
-    RenderTarget* pDepthResource =
+    RenderTarget *pDepthResource =
         GetRenderResourceManager()->getDepthTarget(
             "depthTarget",
             VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
                         s_pSwapchain->getSwapchainExtent().height}));
 
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
-    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(),s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
@@ -869,14 +865,14 @@ int main()
         // Create the cube
         s_pCubeVB = new VertexBuffer();
 
-        LoadMesh("assets/bruce/bruce.obj", s_objInfo);
-        s_pCubeVB->setData(reinterpret_cast<void*>(getCubeVertices().data()),
-                                 sizeof(Vertex) * getCubeVertices().size());
+        LoadMesh("assets/cube.obj", s_objInfo);
+        s_pCubeVB->setData(reinterpret_cast<void *>(getCubeVertices().data()),
+                           sizeof(Vertex) * getCubeVertices().size());
 
         s_pCubeIB = new IndexBuffer();
 
-        s_pCubeIB->setData(reinterpret_cast<void*>(getCubeIndices().data()),
-                                sizeof(uint32_t) * getCubeIndices().size());
+        s_pCubeIB->setData(reinterpret_cast<void *>(getCubeIndices().data()),
+                           sizeof(uint32_t) * getCubeIndices().size());
 
         // Create the quad
         s_pQuadVB = new VertexBuffer();

@@ -25,8 +25,12 @@ vec4 drawAxis(vec2 center, float width)
 }
 
 void main() {
-    outPosition = outPosition;
+    outPosition = inViewPos;
     outAlbedo = texture(texSampler, inTexCoord);
-    outNormal = vec4(0.0, 0.0, 1.0, 0.0);
+    // Calculate screen space normal,,, for now.
+    vec3 dFdxPos = dFdx( inViewPos.xyz );
+	vec3 dFdyPos = dFdy( inViewPos.xyz );
+	vec3 facenormal = normalize( cross(dFdxPos,dFdyPos ));
+    outNormal = vec4(facenormal, 0.0);
     outUV = vec4(inTexCoord, 0.0, 0.0);
 }
