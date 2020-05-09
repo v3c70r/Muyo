@@ -2,7 +2,7 @@
 #include <vulkan/vulkan.h>
 
 #include <string>
-#include <unordered_map>
+#include <array>
 #include <vector>
 
 #include "UniformBuffer.h"
@@ -11,17 +11,31 @@
 // 2. Create descriptor layout
 // 3. Allocate a descriptor from bool using the layout
 
+enum DescriptorLayoutType
+{
+    DESCRIPTOR_LAYOUT_GBUFFER,
+    DESCRIPTOR_LAYOUT_LIGHTING,
+    DESCRIPTOR_LAYOUT_COUNT,
+};
 class DescriptorManager
 {
+public:
     void createDescriptorPool();
     void destroyDescriptorPool();
     void createDescriptorSetLayouts();
     void destroyDescriptorSetLayouts();
+
     VkDescriptorSet allocateGBufferDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData, VkImageView textureView);
+
     VkDescriptorSet allocateLightingDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData, VkImageView position,
         VkImageView albedo, VkImageView Normal, VkImageView UV);
+
+    VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
+    {
+        return m_aDescriptorSetLayouts[type];
+    }
 
 private:
     static VkDescriptorSetLayoutBinding getPerViewDataBinding(uint32_t binding)
@@ -48,8 +62,8 @@ private:
         return samplerLayoutBinding;
     }
 
-    std::unordered_map<std::string, VkDescriptorSetLayout>
-        m_mDescriptorSetLayouts;
+    std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT>
+        m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
 
     const uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 100;
@@ -66,4 +80,4 @@ private:
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, DESCRIPTOR_COUNT_EACH_TYPE},
         {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, DESCRIPTOR_COUNT_EACH_TYPE}};
 };
-DescriptorManager& GetDescriptorManager();
+DescriptorManager* GetDescriptorManager();

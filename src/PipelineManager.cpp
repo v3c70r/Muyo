@@ -51,7 +51,7 @@ void PipelineManager::CreateStaticObjectPipeline(
     mScissorRect.offset = {0, 0};
     mScissorRect.extent = {width, height};
 
-    mDescriptorSetLayout = descriptorSetLayout;
+    maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT] = CreatePipelineLayout(descriptorSetLayout);
 
     std::string name = "Static Object";
     VkShaderModule vertShdr =
@@ -59,11 +59,10 @@ void PipelineManager::CreateStaticObjectPipeline(
     VkShaderModule fragShdr =
         CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
 
-    InitilaizePipelineLayout();
     // build the stuff with builder
     PipelineStateBuilder builder;
 
-    maPipelines[0] = builder.setShaderModules({vertShdr, fragShdr})
+    maPipelines[PIPELINE_TYPE_STATIC_OBJECT] = builder.setShaderModules({vertShdr, fragShdr})
                          .setVertextInfo({Vertex::getBindingDescription()},
                                          Vertex::getAttributeDescriptions())
                          .setAssembly(GetIAInfo())
@@ -71,7 +70,7 @@ void PipelineManager::CreateStaticObjectPipeline(
                          .setRasterizer(GetRasterInfo())
                          .setMSAA(GetMultisampleState())
                          .setColorBlending(GetBlendState(1))
-                         .setPipelineLayout(maPipelineLayouts[0])
+                         .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT])
                          .setDepthStencil(GetDepthStencilCreateinfo())
                          .setRenderPass(pass.GetPass())
                          .build(GetRenderDevice()->GetDevice());
@@ -80,15 +79,18 @@ void PipelineManager::CreateStaticObjectPipeline(
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 
     // Set debug name for the pipeline
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(maPipelines[0]), VK_OBJECT_TYPE_PIPELINE, name.data());
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(maPipelines[PIPELINE_TYPE_STATIC_OBJECT]), VK_OBJECT_TYPE_PIPELINE, name.data());
 }
+
 void PipelineManager::DestroyStaticObjectPipeline()
 {
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[0], nullptr);
-    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), maPipelineLayouts[0],
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(),
+                      maPipelines[PIPELINE_TYPE_STATIC_OBJECT], nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
+                            maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT],
                             nullptr);
-    maPipelines[0] = VK_NULL_HANDLE;
-    maPipelineLayouts[0] = VK_NULL_HANDLE;
+    maPipelines[PIPELINE_TYPE_STATIC_OBJECT] = VK_NULL_HANDLE;
+    maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT] = VK_NULL_HANDLE;
 }
 
 void PipelineManager::CreateGBufferPipeline(
@@ -104,17 +106,16 @@ void PipelineManager::CreateGBufferPipeline(
     mScissorRect.offset = {0, 0};
     mScissorRect.extent = {width, height};
 
-    mDescriptorSetLayout = descriptorSetLayout;
+    maPipelineLayouts[PIPELINE_TYPE_GBUFFER] = CreatePipelineLayout(descriptorSetLayout);
 
     std::string name = "GBuffer";
     VkShaderModule vertShdr =
         CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
     VkShaderModule fragShdr =
         CreateShaderModule(ReadSpv("shaders/gbuffer.frag.spv"));
-    InitilaizePipelineLayout();
     PipelineStateBuilder builder;
 
-    maPipelines[1] = builder.setShaderModules({vertShdr, fragShdr})
+    maPipelines[PIPELINE_TYPE_GBUFFER] = builder.setShaderModules({vertShdr, fragShdr})
                          .setVertextInfo({Vertex::getBindingDescription()},
                                          Vertex::getAttributeDescriptions())
                          .setAssembly(GetIAInfo())
@@ -122,7 +123,7 @@ void PipelineManager::CreateGBufferPipeline(
                          .setRasterizer(GetRasterInfo())
                          .setMSAA(GetMultisampleState())
                          .setColorBlending(GetBlendState(4))
-                         .setPipelineLayout(maPipelineLayouts[0])
+                         .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_GBUFFER])
                          .setDepthStencil(GetDepthStencilCreateinfo())
                          .setRenderPass(pass.GetPass())
                          .build(GetRenderDevice()->GetDevice());
@@ -131,15 +132,15 @@ void PipelineManager::CreateGBufferPipeline(
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 
     // Set debug name for the pipeline
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(maPipelines[1]), VK_OBJECT_TYPE_PIPELINE, name.data());
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(maPipelines[PIPELINE_TYPE_GBUFFER]), VK_OBJECT_TYPE_PIPELINE, name.data());
 }
 
 void PipelineManager::DestroyGBufferPipeline() {
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[1], nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[PIPELINE_TYPE_GBUFFER], nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
-                            maPipelineLayouts[0], nullptr);
-    maPipelines[1] = VK_NULL_HANDLE;
-    maPipelineLayouts[0] = VK_NULL_HANDLE;
+                            maPipelineLayouts[PIPELINE_TYPE_GBUFFER], nullptr);
+    maPipelines[PIPELINE_TYPE_GBUFFER] = VK_NULL_HANDLE;
+    maPipelineLayouts[PIPELINE_TYPE_GBUFFER] = VK_NULL_HANDLE;
 }
 
 // Private helpers
@@ -246,18 +247,19 @@ VkPipelineColorBlendStateCreateInfo PipelineManager::GetBlendState(size_t numAtt
     return colorBlending;
 }
 
-void PipelineManager::InitilaizePipelineLayout()
+VkPipelineLayout PipelineManager::CreatePipelineLayout(VkDescriptorSetLayout descriptorSetLayout)
 {
-    assert(mDescriptorSetLayout != VK_NULL_HANDLE);
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &mDescriptorSetLayout;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
     // pipelineLayoutInfo.pushConstantRangeCount = 0;
     // pipelineLayoutInfo.pPushConstantRanges = 0;
     assert(vkCreatePipelineLayout(GetRenderDevice()->GetDevice(),
                                   &pipelineLayoutInfo, nullptr,
-                                  &maPipelineLayouts[0]) == VK_SUCCESS);
+                                  &pipelineLayout) == VK_SUCCESS);
+    return pipelineLayout;
 }
 
 VkPipelineDepthStencilStateCreateInfo

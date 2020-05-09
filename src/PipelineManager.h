@@ -18,7 +18,6 @@ public:
     std::array<VkPipelineColorBlendAttachmentState, MAX_NUM_ATTACHMENTS> m_aBlendModes;
     VkViewport mViewport = {};
     VkRect2D mScissorRect = {};
-    VkDescriptorSetLayout mDescriptorSetLayout = VK_NULL_HANDLE;
     void InitializeDefaultBlendStats();
 
     PipelineManager();
@@ -30,13 +29,31 @@ public:
     void CreateGBufferPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, RenderPass& pass);
     void DestroyGBufferPipeline();
 
-    VkPipeline GetStaticObjectPipeline() {return maPipelines[0];}
-    VkPipelineLayout GetStaticObjectPipelineLayout() { return maPipelineLayouts[0];}
+    VkPipeline GetStaticObjectPipeline()
+    {
+        return maPipelines[PIPELINE_TYPE_STATIC_OBJECT];
+    }
+    VkPipelineLayout GetStaticObjectPipelineLayout()
+    {
+        return maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT];
+    }
 
-    VkPipeline GetGBufferPipeline() {return maPipelines[1];}
+    VkPipeline GetGBufferPipeline()
+    {
+        return maPipelines[PIPELINE_TYPE_GBUFFER];
+    }
+    VkPipelineLayout GetGBufferPipelineLayout()
+    {
+        return maPipelineLayouts[PIPELINE_TYPE_GBUFFER];
+    }
 
-
-public:
+    enum PipelineType
+    {
+        PIPELINE_TYPE_STATIC_OBJECT,
+        PIPELINE_TYPE_GBUFFER,
+        PIPELINE_TYPE_COUNT
+    };
+private:
     std::unordered_map<std::string, VkPipeline> m_vPipelines;
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
     std::vector<char> ReadSpv(const std::string& fileName);
@@ -51,8 +68,8 @@ public:
     VkPipelineColorBlendStateCreateInfo GetBlendState(size_t numAttachments);
     VkPipelineDepthStencilStateCreateInfo GetDepthStencilCreateinfo();
 
-    void InitilaizePipelineLayout();
+    VkPipelineLayout CreatePipelineLayout(VkDescriptorSetLayout descriptorLayout);
 
-    std ::array<VkPipeline, 2> maPipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE};
-    std ::array<VkPipelineLayout, 1> maPipelineLayouts = {VK_NULL_HANDLE};
+    std ::array<VkPipeline, PIPELINE_TYPE_COUNT> maPipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    std ::array<VkPipelineLayout, PIPELINE_TYPE_COUNT> maPipelineLayouts = {VK_NULL_HANDLE};
 };

@@ -119,21 +119,10 @@ static DebugUtilsMessenger s_debugMessenger;
 
 GLFWSwapchain *s_pSwapchain = nullptr;
 
-static VertexBuffer *s_pQuadVB = nullptr;
-static IndexBuffer *s_pQuadIB = nullptr;
-
-static VertexBuffer *s_pCubeVB = nullptr;
-static IndexBuffer *s_pCubeIB = nullptr;
 static UniformBuffer<PerViewData> *s_pUniformBuffer = nullptr;
+
+// TODO: Move to material
 static Texture *s_pTexture = nullptr;
-//static std::unique_ptr<UIOverlay> s_UIOverlay= nullptr;
-
-// DescriptorLayout, which is part of the pipeline layout
-static VkDescriptorSetLayout s_descriptorSetLayout;
-// Pipeline
-
-// Descriptor pool
-static VkDescriptorPool s_descriptorPool;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -146,6 +135,11 @@ const std::vector<const char *> deviceExtensions = {
     //"VK_KHR_ray_tracing"
 };
 
+// TODO: Move to Geometries
+static VertexBuffer *s_pQuadVB = nullptr;
+static IndexBuffer *s_pQuadIB = nullptr;
+static VertexBuffer *s_pCubeVB = nullptr;
+static IndexBuffer *s_pCubeIB = nullptr;
 struct TinyObjInfo
 {
     tinyobj::attrib_t attrib;
@@ -235,6 +229,8 @@ std::vector<uint32_t> getQuadIndices()
     const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
     return indices;
 }
+
+///////////////////////////////////////////
 
 void recreateSwapChain(); // fwd declaration
 static void onWindowResize(GLFWwindow *pWindow, int width, int height)
@@ -514,31 +510,43 @@ VkShaderModule m_createShaderModule(const std::vector<char> &code)
 void createGraphicsPipeline()
 {
 
-    gPipelineManager.CreateStaticObjectPipeline(
-        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-        s_descriptorSetLayout, *pFinalPass);
-
     gPipelineManager.CreateGBufferPipeline(
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-        s_descriptorSetLayout, *pGBufferPass);
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER), *pGBufferPass);
+
+    gPipelineManager.CreateStaticObjectPipeline(
+        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHTING), *pFinalPass);
 }
 
-VkDescriptorSet createDescriptorSet(VkImageView view);
 void createCommandBuffers()
 {
     pGBufferPass->recordCommandBuffer(
         s_pCubeVB->buffer(), s_pCubeIB->buffer(), static_cast<uint32_t>(getCubeIndices().size()),
         gPipelineManager.GetGBufferPipeline(),
-        gPipelineManager.GetStaticObjectPipelineLayout(), createDescriptorSet(s_pTexture->getImageView()));
+        gPipelineManager.GetGBufferPipelineLayout(), 
+        GetDescriptorManager()->allocateGBufferDescriptorSet(*s_pUniformBuffer, 
+            s_pTexture->getImageView())
+        );
 
     pFinalPass->RecordOnce(
         s_pQuadVB->buffer(), s_pQuadIB->buffer(),
         static_cast<uint32_t>(getQuadIndices().size()),
         gPipelineManager.GetStaticObjectPipeline(),
         gPipelineManager.GetStaticObjectPipelineLayout(),
-        createDescriptorSet(
+        GetDescriptorManager()->allocateLightingDescriptorSet(
+            *s_pUniformBuffer,
+            GetRenderResourceManager()
+                ->getColorTarget("GBUFFER_POSITION", VkExtent2D({0, 0}))
+                ->getView(),
             GetRenderResourceManager()
                 ->getColorTarget("GBUFFER_ALBEDO", VkExtent2D({0, 0}))
+                ->getView(),
+            GetRenderResourceManager()
+                ->getColorTarget("GBUFFER_NORMAL", VkExtent2D({0, 0}))
+                ->getView(),
+            GetRenderResourceManager()
+                ->getColorTarget("GBUFFER_UV", VkExtent2D({0, 0}))
                 ->getView()));
 }
 
@@ -570,82 +578,6 @@ void createFences()
     }
 }
 
-void createDescriptorPool()
-{
-    std::vector<VkDescriptorPoolSize> poolSizes = {
-        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}};
-
-    VkDescriptorPoolCreateInfo poolInfo = {};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = 1000 * static_cast<uint32_t>(poolSizes.size());
-    assert(vkCreateDescriptorPool(GetRenderDevice()->GetDevice(), &poolInfo, nullptr,
-                                  &s_descriptorPool) == VK_SUCCESS);
-};
-
-VkDescriptorSet createDescriptorSet(VkImageView view)
-{
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    // Create descriptor sets
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = s_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &s_descriptorSetLayout;
-
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
-
-    // Prepare buffer descriptor
-    {
-        VkDescriptorBufferInfo bufferInfo = {};
-        bufferInfo.buffer = s_pUniformBuffer->buffer();
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(PerViewData);
-
-        // prepare image descriptor
-        VkDescriptorImageInfo imageInfo = {};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = view;
-        imageInfo.sampler = s_pTexture->getSamper();
-
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSet;
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSet;
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &imageInfo;
-
-        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
-                               static_cast<uint32_t>(descriptorWrites.size()),
-                               descriptorWrites.data(), 0, nullptr);
-    }
-    return descriptorSet;
-}
 
 void cleanupSwapChain()
 {
@@ -655,7 +587,6 @@ void cleanupSwapChain()
 
     s_pSwapchain->destroySwapchain();
 
-    vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), s_descriptorSetLayout, nullptr);
 }
 
 void recreateSwapChain()
@@ -696,7 +627,8 @@ void cleanup()
     cleanupSwapChain();
     pFinalPass = nullptr;
     pGBufferPass = nullptr;
-    vkDestroyDescriptorPool(GetRenderDevice()->GetDevice(), s_descriptorPool, nullptr);
+    GetDescriptorManager()->destroyDescriptorSetLayouts();
+    GetDescriptorManager()->destroyDescriptorPool();
 
     for (auto &somaphore : s_imageAvailableSemaphores)
         vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
@@ -839,6 +771,9 @@ int main()
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
 
+    GetDescriptorManager()->createDescriptorPool();
+    GetDescriptorManager()->createDescriptorSetLayouts();
+
     createGraphicsPipeline();
 
     // Create memory allocator
@@ -874,8 +809,7 @@ int main()
 
         s_pTexture = new Texture();
         s_pTexture->LoadImage("assets/default.png");
-        GetSamplerManager().init();
-        createDescriptorPool();
+        GetSamplerManager()->createSamplers();
         createCommandBuffers();
         createSemaphores();
         createFences();
@@ -924,6 +858,7 @@ int main()
         delete s_pQuadIB;
         delete s_pUniformBuffer;
         delete s_pTexture;
+        GetSamplerManager()->destroySamplers();
     }
     cleanup();
     return 0;

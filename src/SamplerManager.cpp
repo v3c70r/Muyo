@@ -2,8 +2,8 @@
 
 static SamplerManager s_samplerManager;
 
-SamplerManager& GetSamplerManager()
+SamplerManager* GetSamplerManager()
 {
-    return s_samplerManager;
+    return &s_samplerManager;
 }
 

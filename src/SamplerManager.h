@@ -6,7 +6,7 @@
 #include <cassert>
 enum SamplerTypes
 {
-    FRAME_SAMPLER,
+    SAMPLER_FULL_SCREEN_TEXTURE,
     SAMPLER_TYPE_COUNT
 };
 class SamplerManager
@@ -19,7 +19,7 @@ public:
             sampler = VK_NULL_HANDLE;
         }
     }
-    void init()
+    void createSamplers()
     {
         // Frame sampler
         VkSamplerCreateInfo samplerInfo = {};
@@ -52,10 +52,17 @@ public:
 
         assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
                                nullptr,
-                               &m_aSamplers[FRAME_SAMPLER]) == VK_SUCCESS);
+                               &m_aSamplers[SAMPLER_FULL_SCREEN_TEXTURE]) == VK_SUCCESS);
         setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_aSamplers[FRAME_SAMPLER]),
+            reinterpret_cast<uint64_t>(m_aSamplers[SAMPLER_FULL_SCREEN_TEXTURE]),
             VK_OBJECT_TYPE_SAMPLER, "Frame Sampler");
+    }
+    void destroySamplers()
+    {
+        for (auto& sampler : m_aSamplers)
+        {
+            vkDestroySampler(GetRenderDevice()->GetDevice(), sampler, nullptr);
+        }
     }
     VkSampler getSampler(SamplerTypes type)
     {
@@ -66,4 +73,4 @@ private:
     std::array<VkSampler, SAMPLER_TYPE_COUNT> m_aSamplers;
 };
 
-SamplerManager& GetSamplerManager();
+SamplerManager* GetSamplerManager();
