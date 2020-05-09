@@ -90,6 +90,9 @@ public:
     {
     }
 
+    // Helper functions
+    VkSampler createSampler();
+
 private:
     // helper functions to create render device
     void createPhysicalDevice();

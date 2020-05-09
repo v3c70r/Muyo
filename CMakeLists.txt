@@ -117,6 +117,8 @@ add_executable( helloVulkan
     src/GLFWSwapchain.cpp
     src/RenderTargetResource.cpp
     src/RenderResourceManager.cpp
+    src/DescriptorManager.cpp
+    src/SamplerManager.cpp
     src/Debug.cpp
     )
 

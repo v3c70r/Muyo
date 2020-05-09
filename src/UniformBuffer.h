@@ -8,17 +8,7 @@ struct PerViewData {
     glm::mat4 model;
     glm::mat4 view;
     glm::mat4 proj;
-    static VkDescriptorSetLayoutBinding getDescriptorSetLayoutBinding()
-    {
-        VkDescriptorSetLayoutBinding uboLayoutBinding = {};
-        uboLayoutBinding.binding = 0;
-        uboLayoutBinding.descriptorCount = 1;
-        uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        uboLayoutBinding.pImmutableSamplers = nullptr;
-        uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-        return uboLayoutBinding;
-    }
 };
 
 template<class T>

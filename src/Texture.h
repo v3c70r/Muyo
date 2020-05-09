@@ -21,18 +21,6 @@ public:
     VkImageView getImageView() const { return m_imageView; }
     VkSampler getSamper() const { return m_textureSampler; }
 
-    static VkDescriptorSetLayoutBinding getSamplerLayoutBinding()
-    {
-        VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
-        samplerLayoutBinding.binding = 1;
-        samplerLayoutBinding.descriptorCount = 1;
-        samplerLayoutBinding.descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-        return samplerLayoutBinding;
-    }
-
     void createImage(uint32_t width, uint32_t height, VkFormat format,
                      VkImageTiling tiling, VkImageUsageFlags usage,
                      VmaMemoryUsage memoryUsage)

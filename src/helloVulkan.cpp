@@ -29,6 +29,8 @@
 #include "PipelineManager.h"
 #include "RenderPassGBuffer.h"
 #include "GLFWSwapchain.h"
+#include "DescriptorManager.h"
+#include "SamplerManager.h"
 #include "Debug.h"
 
 // TODO: Move them to renderpass manager
@@ -511,21 +513,6 @@ VkShaderModule m_createShaderModule(const std::vector<char> &code)
 
 void createGraphicsPipeline()
 {
-    // Create descriptor set layout
-    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
-    descriptorSetLayoutInfo.sType =
-        VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-        PerViewData::getDescriptorSetLayoutBinding(),
-        Texture::getSamplerLayoutBinding()};
-
-    descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
-    descriptorSetLayoutInfo.pBindings = bindings.data();
-
-    assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
-                                       &descriptorSetLayoutInfo, nullptr,
-                                       &s_descriptorSetLayout) == VK_SUCCESS);
 
     gPipelineManager.CreateStaticObjectPipeline(
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
@@ -887,6 +874,7 @@ int main()
 
         s_pTexture = new Texture();
         s_pTexture->LoadImage("assets/default.png");
+        GetSamplerManager().init();
         createDescriptorPool();
         createCommandBuffers();
         createSemaphores();
