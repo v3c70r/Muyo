@@ -59,12 +59,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
-        std::array<VkDescriptorSetLayoutBinding, 5> bindings = {
-            getPerViewDataBinding(0), 
-            getSamplerBinding(1),   // Positions
-            getSamplerBinding(2),   // Albedo
-            getSamplerBinding(3),   // Normal
-            getSamplerBinding(4)    // UV
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
+            getPerViewDataBinding(0),       // Pre view data
+            getSamplerArrayBinding(1, 4),   // gbuffers
         };
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -144,7 +141,7 @@ VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet(
 }
 VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData, VkImageView position,
-        VkImageView albedo, VkImageView Normal, VkImageView UV)
+        VkImageView albedo, VkImageView normal, VkImageView uv)
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     // Create descriptor sets
@@ -165,7 +162,7 @@ VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
         bufferInfo.range = sizeof(PerViewData);
 
 
-        std::array<VkWriteDescriptorSet, 5> descriptorWrites = {};
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[0].dstSet = descriptorSet;
@@ -175,25 +172,34 @@ VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
         descriptorWrites[0].descriptorCount = 1;
         descriptorWrites[0].pBufferInfo = &bufferInfo;
 
-        std::array<VkImageView*, 4> imageViews = {&position, &albedo, &Normal, &UV};
         // prepare image descriptor
-        for (uint32_t i = 1; i <= 4; i++)
-        {
-            VkDescriptorImageInfo imageInfo = {};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = *imageViews[i - 1];
+        std::array<VkDescriptorImageInfo, 4> imageInfos = {
+            // position
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            position,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            // albedo
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            albedo,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            // normal
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            normal,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            // UV
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            uv,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
 
-            imageInfo.sampler =
-                GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE);
-            descriptorWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[i].dstSet = descriptorSet;
-            descriptorWrites[i].dstBinding = i;
-            descriptorWrites[i].dstArrayElement = 0;
-            descriptorWrites[i].descriptorType =
-                VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrites[i].descriptorCount = 1;
-            descriptorWrites[i].pImageInfo = &imageInfo;
-        }
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = descriptorSet;
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[1].descriptorCount = static_cast<uint32_t>(imageInfos.size());
+        descriptorWrites[1].pImageInfo = imageInfos.data();
 
         vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
                                static_cast<uint32_t>(descriptorWrites.size()),

@@ -30,7 +30,7 @@ public:
 
     VkDescriptorSet allocateLightingDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData, VkImageView position,
-        VkImageView albedo, VkImageView Normal, VkImageView UV);
+        VkImageView albedo, VkImageView normal, VkImageView uv);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {
@@ -50,17 +50,24 @@ private:
         return uboLayoutBinding;
     }
 
-    static VkDescriptorSetLayoutBinding getSamplerBinding(uint32_t binding)
+    static VkDescriptorSetLayoutBinding getSamplerArrayBinding(uint32_t binding, uint32_t numSamplers)
     {
         VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
         samplerLayoutBinding.binding = binding;
-        samplerLayoutBinding.descriptorCount = 1;
+        samplerLayoutBinding.descriptorCount = numSamplers;
         samplerLayoutBinding.descriptorType =
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         return samplerLayoutBinding;
     }
+
+    static VkDescriptorSetLayoutBinding getSamplerBinding(uint32_t binding)
+    {
+        return getSamplerArrayBinding(binding, 1);
+    }
+
+
 
     std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT>
         m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
