@@ -108,7 +108,7 @@ add_executable( helloVulkan
     src/PipelineStateBuilder.cpp
     #src/UIOverlay.cpp 
     src/Texture.cpp
-    src/VkRenderDevice.cpp src/Util.cpp
+    src/VkRenderDevice.cpp
     src/VkMemoryAllocator.cpp
     src/RenderPass.cpp
     src/RenderPassGBuffer.cpp

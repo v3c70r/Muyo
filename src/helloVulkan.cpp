@@ -40,8 +40,6 @@ std::unique_ptr<RenderPassGBuffer> pGBufferPass = nullptr;
 const int WIDTH = 800;
 const int HEIGHT = 600;
 
-thread_local size_t s_currentContext;
-
 static bool s_resizeWanted = true;
 
 static bool s_isValidationEnabled = true;
@@ -656,8 +654,6 @@ void cleanup()
 void present()
 {
     uint32_t imageIndex = s_pSwapchain->getNextImage(s_imageAvailableSemaphores[0]);
-
-    s_currentContext = imageIndex;
 
     vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
