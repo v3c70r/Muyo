@@ -76,6 +76,31 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 "Lighting");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHTING] = layout;
     }
+
+    // IMGUI descriptor set layout
+    {
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
+            getSamplerBinding(0),  // gbuffers
+        };
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+
+
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "ImGui");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IMGUI] = layout;
+    }
 }
 
 void DescriptorManager::destroyDescriptorSetLayouts()
@@ -200,6 +225,46 @@ VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[1].descriptorCount = static_cast<uint32_t>(imageInfos.size());
         descriptorWrites[1].pImageInfo = imageInfos.data();
+
+        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
+                               static_cast<uint32_t>(descriptorWrites.size()),
+                               descriptorWrites.data(), 0, nullptr);
+    }
+    return descriptorSet;
+}
+
+VkDescriptorSet DescriptorManager::allocateImGuiDescriptorSet(
+    VkImageView textureView)
+{
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IMGUI];
+
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) == VK_SUCCESS);
+
+    // Prepare buffer descriptor
+    {
+        // prepare image descriptor
+        VkDescriptorImageInfo imageInfo = {};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = textureView;
+        imageInfo.sampler = GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE);
+
+        std::array<VkWriteDescriptorSet, 1> descriptorWrites = {};
+
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = descriptorSet;
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pImageInfo = &imageInfo;
 
         vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
                                static_cast<uint32_t>(descriptorWrites.size()),

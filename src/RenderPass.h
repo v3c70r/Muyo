@@ -22,7 +22,7 @@ class RenderPassFinal : public RenderPass
 {
 public:
     RenderPassFinal(VkFormat swapChainFormat);
-    ~RenderPassFinal();
+    virtual ~RenderPassFinal();
     void SetSwapchainImageViews(std::vector<VkImageView>& vImageViews,
                                 VkImageView depthImageView, uint32_t nWidth,
                                 uint32_t nHeight);
@@ -44,11 +44,12 @@ public:
         return m_vCommandBuffers[idx];
     }
 
-private:
-    void destroyFramebuffers();
+protected:
+    std::vector<VkCommandBuffer>
+        m_vCommandBuffers;  // Each command buffer draw to one frame buffer
     std::vector<VkFramebuffer>
         m_vFramebuffers;  // Each framebuffer bind to a swapchain image
     VkExtent2D mRenderArea = {0, 0};
-    std::vector<VkCommandBuffer>
-        m_vCommandBuffers;  // Each command buffer draw to one frame buffer
+private:
+    void destroyFramebuffers();
 };

@@ -7,14 +7,11 @@
 
 #include "UniformBuffer.h"
 
-// 1. Create descpritor set pool
-// 2. Create descriptor layout
-// 3. Allocate a descriptor from bool using the layout
-
 enum DescriptorLayoutType
 {
     DESCRIPTOR_LAYOUT_GBUFFER,
     DESCRIPTOR_LAYOUT_LIGHTING,
+    DESCRIPTOR_LAYOUT_IMGUI,
     DESCRIPTOR_LAYOUT_COUNT,
 };
 class DescriptorManager
@@ -31,6 +28,8 @@ public:
     VkDescriptorSet allocateLightingDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData, VkImageView position,
         VkImageView albedo, VkImageView normal, VkImageView uv);
+
+    VkDescriptorSet allocateImGuiDescriptorSet(VkImageView textureView);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {

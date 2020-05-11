@@ -32,10 +32,13 @@
 #include "DescriptorManager.h"
 #include "SamplerManager.h"
 #include "Debug.h"
+#include "RenderPassUI.h"
+
 
 // TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
 std::unique_ptr<RenderPassGBuffer> pGBufferPass = nullptr;
+std::unique_ptr<RenderPassUI> pUIPass = nullptr;
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -45,8 +48,6 @@ static bool s_resizeWanted = true;
 static bool s_isValidationEnabled = true;
 
 static GLFWwindow *s_pWindow = nullptr;
-
-PipelineManager gPipelineManager;
 
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                           (float)WIDTH / (float)HEIGHT, 0.1f,
@@ -508,21 +509,23 @@ VkShaderModule m_createShaderModule(const std::vector<char> &code)
 void createGraphicsPipeline()
 {
 
-    gPipelineManager.CreateGBufferPipeline(
+    GetPipelineManager()->CreateGBufferPipeline(
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER), *pGBufferPass);
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER), pGBufferPass->GetPass());
 
-    gPipelineManager.CreateStaticObjectPipeline(
+    GetPipelineManager()->CreateStaticObjectPipeline(
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHTING), *pFinalPass);
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHTING), pFinalPass->GetPass());
+
+    // ImGui Pipeline has been created in the render pass
 }
 
 void createCommandBuffers()
 {
     pGBufferPass->recordCommandBuffer(
         s_pCubeVB->buffer(), s_pCubeIB->buffer(), static_cast<uint32_t>(getCubeIndices().size()),
-        gPipelineManager.GetGBufferPipeline(),
-        gPipelineManager.GetGBufferPipelineLayout(), 
+        GetPipelineManager()->GetGBufferPipeline(),
+        GetPipelineManager()->GetGBufferPipelineLayout(), 
         GetDescriptorManager()->allocateGBufferDescriptorSet(*s_pUniformBuffer, 
             s_pTexture->getImageView())
         );
@@ -530,8 +533,8 @@ void createCommandBuffers()
     pFinalPass->RecordOnce(
         s_pQuadVB->buffer(), s_pQuadIB->buffer(),
         static_cast<uint32_t>(getQuadIndices().size()),
-        gPipelineManager.GetStaticObjectPipeline(),
-        gPipelineManager.GetStaticObjectPipelineLayout(),
+        GetPipelineManager()->GetStaticObjectPipeline(),
+        GetPipelineManager()->GetStaticObjectPipelineLayout(),
         GetDescriptorManager()->allocateLightingDescriptorSet(
             *s_pUniformBuffer,
             GetRenderResourceManager()
@@ -580,8 +583,8 @@ void createFences()
 void cleanupSwapChain()
 {
 
-    gPipelineManager.DestroyStaticObjectPipeline();
-    gPipelineManager.DestroyGBufferPipeline();
+    GetPipelineManager()->DestroyStaticObjectPipeline();
+    GetPipelineManager()->DestroyGBufferPipeline();
 
     s_pSwapchain->destroySwapchain();
 
@@ -613,6 +616,11 @@ void recreateSwapChain()
         s_pSwapchain->getSwapchainExtent().width,
         s_pSwapchain->getSwapchainExtent().height);
 
+    pUIPass->SetSwapchainImageViews(
+        s_pSwapchain->getImageViews(), pDepthResource->getView(),
+        s_pSwapchain->getSwapchainExtent().width,
+        s_pSwapchain->getSwapchainExtent().height);
+
     pGBufferPass->removeGBufferViews();
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
 
@@ -624,6 +632,7 @@ void cleanup()
 {
     cleanupSwapChain();
     pFinalPass = nullptr;
+    pUIPass = nullptr;
     pGBufferPass = nullptr;
     GetDescriptorManager()->destroyDescriptorSetLayouts();
     GetDescriptorManager()->destroyDescriptorPool();
@@ -665,18 +674,28 @@ void present()
                                                        // waits for the
                                                        // semaphore
 
-    std::array<VkCommandBuffer, 2> cmdBuffers =
+    std::array<VkCommandBuffer, 3> cmdBuffers = {
+        pGBufferPass->GetCommandBuffer(),
+        pFinalPass->GetCommandBuffer(imageIndex),
+        pUIPass->GetCommandBuffer(imageIndex)};
+
+    // Filter out null cmd buffers
+    std::vector<VkCommandBuffer> vCmdBuffers;
+    for (auto& cmdBuf : cmdBuffers)
+    {
+        if (cmdBuf != VK_NULL_HANDLE)
         {
-            pGBufferPass->GetCommandBuffer(),
-            pFinalPass->GetCommandBuffer(imageIndex)};
+            vCmdBuffers.push_back(cmdBuf);
+        }
+    }
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.waitSemaphoreCount = 1;
     submitInfo.pWaitSemaphores = &s_imageAvailableSemaphores[0];
     submitInfo.pWaitDstStageMask = &stageFlag;
 
-    submitInfo.commandBufferCount = static_cast<uint32_t>(cmdBuffers.size());
-    submitInfo.pCommandBuffers = cmdBuffers.data();
+    submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
+    submitInfo.pCommandBuffers = vCmdBuffers.data();
 
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
@@ -754,6 +773,9 @@ int main()
         VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
 
     GetRenderDevice()->createCommandPools();
+    GetDescriptorManager()->createDescriptorPool();
+    GetDescriptorManager()->createDescriptorSetLayouts();
+    GetSamplerManager()->createSamplers();
 
     RenderTarget *pDepthResource =
         GetRenderResourceManager()->getDepthTarget(
@@ -764,11 +786,13 @@ int main()
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
     pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
+    pUIPass = std::make_unique<RenderPassUI>(s_pSwapchain->getImageFormat());
+    pUIPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+
+
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
 
-    GetDescriptorManager()->createDescriptorPool();
-    GetDescriptorManager()->createDescriptorSetLayouts();
 
     createGraphicsPipeline();
 
@@ -805,7 +829,6 @@ int main()
 
         s_pTexture = new Texture();
         s_pTexture->LoadImage("assets/default.png");
-        GetSamplerManager()->createSamplers();
         createCommandBuffers();
         createSemaphores();
         createFences();
@@ -834,6 +857,9 @@ int main()
             //ImGui::NewFrame();
             //ImGui::Text("test");
             updateUniformBuffer(s_pUniformBuffer);
+            pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
+            pUIPass->updateBuffers();
+            pUIPass->recordCommandBuffer(s_pSwapchain->getSwapchainExtent());
             //ImGui::EndFrame();
             // wait on device to make sure it has been drawn
             // assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);

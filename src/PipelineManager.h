@@ -8,7 +8,6 @@
 #include <array>
 
 
-class RenderPass;
 // Trying to manage all of the pipelines here
 // Should be able to cache pipelines
 class PipelineManager
@@ -23,34 +22,48 @@ public:
     PipelineManager();
     ~PipelineManager();
 
-    void CreateStaticObjectPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, RenderPass& pass);
+    void CreateStaticObjectPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
     void DestroyStaticObjectPipeline();
 
-    void CreateGBufferPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, RenderPass& pass);
+    void CreateGBufferPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
     void DestroyGBufferPipeline();
 
-    VkPipeline GetStaticObjectPipeline()
+    void CreateImGuiPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
+    void DestroyImGuiPipeline();
+
+    VkPipeline GetStaticObjectPipeline() const
     {
         return maPipelines[PIPELINE_TYPE_STATIC_OBJECT];
     }
-    VkPipelineLayout GetStaticObjectPipelineLayout()
+    VkPipelineLayout GetStaticObjectPipelineLayout() const
     {
         return maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT];
     }
 
-    VkPipeline GetGBufferPipeline()
+    VkPipeline GetGBufferPipeline() const
     {
         return maPipelines[PIPELINE_TYPE_GBUFFER];
     }
-    VkPipelineLayout GetGBufferPipelineLayout()
+    VkPipelineLayout GetGBufferPipelineLayout() const
     {
         return maPipelineLayouts[PIPELINE_TYPE_GBUFFER];
+    }
+
+    VkPipelineLayout GetImGuiPipelineLayout() const
+    {
+        return maPipelineLayouts[PIPELINE_TYPE_IMGUI];
+    }
+
+    VkPipeline GetImGuiPipeline() const
+    {
+        return maPipelines[PIPELINE_TYPE_IMGUI];
     }
 
     enum PipelineType
     {
         PIPELINE_TYPE_STATIC_OBJECT,
         PIPELINE_TYPE_GBUFFER,
+        PIPELINE_TYPE_IMGUI,
         PIPELINE_TYPE_COUNT
     };
 private:
@@ -68,8 +81,12 @@ private:
     VkPipelineColorBlendStateCreateInfo GetBlendState(size_t numAttachments);
     VkPipelineDepthStencilStateCreateInfo GetDepthStencilCreateinfo();
 
-    VkPipelineLayout CreatePipelineLayout(VkDescriptorSetLayout descriptorLayout);
+    VkPipelineLayout CreatePipelineLayout(VkDescriptorSetLayout descriptorLayout, 
+            VkPushConstantRange pushConstantRange = {0, 0, 0});
 
     std ::array<VkPipeline, PIPELINE_TYPE_COUNT> maPipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     std ::array<VkPipelineLayout, PIPELINE_TYPE_COUNT> maPipelineLayouts = {VK_NULL_HANDLE};
 };
+
+// Singletone 
+PipelineManager* GetPipelineManager();

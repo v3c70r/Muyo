@@ -7,119 +7,52 @@
 #include <iostream>
 #include <memory>
 #include <vector>
+#include <cstring>
 
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
-
-class VertexBuffer
+class MemoryBuffer
 {
 public:
-    VertexBuffer(size_t size = 0)
-    {
-        if (size != 0)
-        {
-            GetMemoryAllocator()->AllocateBuffer(
-                size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "VertexBuffer");
-        }
-    }
-    ~VertexBuffer()
-    {
-        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
-        {
-            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
-        }
-    }
-    void setData(void* vertices, size_t size)
-    {
-        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
-        {
-            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
-        }
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation, "VertexBuffer");
-
-        // Create staging buffer
-        VkBuffer stagingBuffer = VK_NULL_HANDLE;
-        VmaAllocation stagingAllocation = VK_NULL_HANDLE;
-        GetMemoryAllocator()->AllocateBuffer(
-            size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
-            stagingBuffer, stagingAllocation);
-
-        void* pMappedMemory = nullptr;
-        GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
-        memcpy(pMappedMemory, vertices, size);
-        GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
-
-        // Submit the copy immedietly
-        GetRenderDevice()->executeImmediateCommand(
-            [&](VkCommandBuffer commandBuffer) {
-                VkBufferCopy copyRegion = {};
-                copyRegion.size = size;
-                vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1,
-                                &copyRegion);
-            });
-        GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);
-    }
-    VkBuffer buffer() const { return m_buffer; }
-
+    MemoryBuffer(bool stagedUpload = true);
+    void* map();
+    void unmap();
+    void setData(void* data, size_t size);
+    void flush();
+    const VkBuffer& buffer() const { return m_buffer; }
+    virtual ~MemoryBuffer();
+protected:
+    std::string m_sBufferName = "";
+    VkBufferUsageFlags m_bufferUsageFlags;
 private:
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
 
-    const VkBufferUsageFlags BUFFER_USAGE =
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_GPU_ONLY;
+    VmaMemoryUsage m_memoryUsage;
+    size_t m_nSize = 0;
 };
 
-class IndexBuffer
+class VertexBuffer : public MemoryBuffer
 {
 public:
-    IndexBuffer() {}
-    ~IndexBuffer()
+    VertexBuffer(bool stagedUpload = true,
+                 std::string sBufferName = "vertex buffer")
+        : MemoryBuffer(stagedUpload)
     {
-        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
-        {
-            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
-        }
+        m_bufferUsageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        m_sBufferName = sBufferName;
     }
-
-    void setData(void* indices, size_t size)
-    {
-        if (m_buffer != VK_NULL_HANDLE || m_allocation != VK_NULL_HANDLE)
-        {
-            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
-        }
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation, "IndexBuffer");
-
-        // Create staging buffer
-        VkBuffer stagingBuffer = VK_NULL_HANDLE;
-        VmaAllocation stagingAllocation = VK_NULL_HANDLE;
-        GetMemoryAllocator()->AllocateBuffer(
-            size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
-            stagingBuffer, stagingAllocation);
-
-        void* pMappedMemory = nullptr;
-        GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
-        memcpy(pMappedMemory, indices, size);
-        GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
-
-        GetRenderDevice()->executeImmediateCommand(
-            [&](VkCommandBuffer commandBuffer) {
-                VkBufferCopy copyRegion = {};
-                copyRegion.size = size;
-                vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1,
-                                &copyRegion);
-            });
-        GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);
-    }
-    VkBuffer buffer() const { return m_buffer; }
-
 private:
-    VkBuffer m_buffer = VK_NULL_HANDLE;
-    VmaAllocation m_allocation = VK_NULL_HANDLE;
+};
 
-    const VkBufferUsageFlags BUFFER_USAGE =
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_GPU_ONLY;
+class IndexBuffer : public MemoryBuffer
+{
+public:
+    IndexBuffer(bool stagedUpload = true,
+                 std::string sBufferName = "index buffer")
+        : MemoryBuffer(stagedUpload)
+    {
+        m_bufferUsageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        m_sBufferName = sBufferName;
+    }
 };

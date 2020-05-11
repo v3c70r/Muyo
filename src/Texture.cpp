@@ -33,7 +33,6 @@ void Texture::LoadPixels(void *pixels, int width, int height)
     GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
     memcpy(pMappedMemory, pixels, BUFFER_SIZE);
     GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
-    stbi_image_free(pixels);
 
     createImage(width, height, VK_FORMAT_R8G8B8A8_UNORM,
                 VK_IMAGE_TILING_OPTIMAL,

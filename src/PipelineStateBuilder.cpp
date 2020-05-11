@@ -75,7 +75,7 @@ VkPipeline PipelineStateBuilder::build(VkDevice device)
 
     pipelineInfo.pColorBlendState = &mColorBlendStateInfo;
 
-    pipelineInfo.pDynamicState = nullptr;
+    pipelineInfo.pDynamicState = &mDynamicStatesInfo;
 
     pipelineInfo.layout = mPipelineLayout;
 

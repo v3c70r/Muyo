@@ -37,6 +37,8 @@ if (NOT ${glm_FOUND})
     set(GLM_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/glm)
 endif()
 
+set(IMGUI_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/imgui)
+
 ## VULKAN
 if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
     list(APPEND CMAKE_PREFIX_PATH $ENV{VULKAN_SDK})
@@ -90,6 +92,7 @@ include_directories(
     ${Vulkan_INCLUDE_DIR}
     ${GLFW3_INCLUDE_DIR}
     ${GLM_INCLUDE_DIRS}
+    ${IMGUI_INCLUDE_DIRS}
     )
 
 add_library(imgui
@@ -110,6 +113,7 @@ add_executable( helloVulkan
     src/Texture.cpp
     src/VkRenderDevice.cpp
     src/VkMemoryAllocator.cpp
+    src/VertexBuffer.cpp
     src/RenderPass.cpp
     src/RenderPassGBuffer.cpp
     src/PipelineManager.cpp
@@ -117,6 +121,7 @@ add_executable( helloVulkan
     src/GLFWSwapchain.cpp
     src/RenderTargetResource.cpp
     src/RenderResourceManager.cpp
+    src/RenderPassUI.cpp
     src/DescriptorManager.cpp
     src/SamplerManager.cpp
     src/Debug.cpp
