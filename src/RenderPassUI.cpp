@@ -36,7 +36,7 @@ void ImGuiResource::destroyResources()
 }
 
 RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
-    : RenderPassFinal(swapChainFormat)
+    : RenderPassFinal(swapChainFormat, false)
 {
     ImGui::CreateContext();
     m_uiResources.createResources(m_renderPass);
@@ -53,7 +53,7 @@ void RenderPassUI::newFrame(VkExtent2D screenExtent)
     ImGui::GetIO().DisplaySize =
         ImVec2(screenExtent.width, screenExtent.height);
     ImGui::NewFrame();
-    // TODO: Add draw functions here
+    // TODO: Add /raw functions here
     ImGui::Text("Hello");
     ImGui::Render();
 }
@@ -113,6 +113,7 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent)
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
+    ImGuiIO& io = ImGui::GetIO();
 
     for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
@@ -140,11 +141,23 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent)
         vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        VkViewport viewport = {0.0, 0.0, (float)screenExtent.width, (float)screenExtent.height, 0.0, 1.0};
+        // Set dynamic viewport and scissor
+        VkViewport viewport = {
+            0.0, 0.0, (float)screenExtent.width, (float)screenExtent.height,
+            0.0, 1.0};
         vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
 
         VkRect2D scissor = {0, 0, screenExtent};
         vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
+
+        // UI scale and translate via push constants
+        PushConstBlock pushConstBlock;
+        pushConstBlock.scale =
+            glm::vec2(2.0f / io.DisplaySize.x, 2.0f / io.DisplaySize.y);
+        pushConstBlock.translate = glm::vec2(-1.0f);
+        vkCmdPushConstants(curCmdBuf, m_uiResources.pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT, 0,
+                           sizeof(PushConstBlock), &pushConstBlock);
 
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(curCmdBuf, 0, 1,

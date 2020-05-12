@@ -21,7 +21,7 @@ protected:
 class RenderPassFinal : public RenderPass
 {
 public:
-    RenderPassFinal(VkFormat swapChainFormat);
+    RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachments = true);
     virtual ~RenderPassFinal();
     void SetSwapchainImageViews(std::vector<VkImageView>& vImageViews,
                                 VkImageView depthImageView, uint32_t nWidth,

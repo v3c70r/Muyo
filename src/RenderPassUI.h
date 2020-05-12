@@ -16,7 +16,6 @@ struct UISettings
     float frameTimeMin = 9999.0f, frameTimeMax = 0.0f;
     float lightTimer = 0.0f;
 };
-
 class Texture;
 struct ImGuiResource
 {
@@ -49,5 +48,10 @@ public:
    void updateBuffers();
 
    private:
+       struct PushConstBlock
+       {
+           glm::vec2 scale;
+           glm::vec2 translate;
+       };
    ImGuiResource m_uiResources;
 };

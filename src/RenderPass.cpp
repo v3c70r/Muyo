@@ -1,7 +1,7 @@
 #include "RenderPass.h"
 #include "VkRenderDevice.h"
 #include "Debug.h"
-RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat)
+RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachments)
 {
     // Attachments
     //
@@ -10,12 +10,16 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat)
     colorAttachment.format = swapChainFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
 
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;  // Clear on load
+    colorAttachment.loadOp = bClearAttachments
+                                 ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                 : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.storeOp =
         VK_ATTACHMENT_STORE_OP_STORE;  // Store in the memory to read back
                                        // later
+    colorAttachment.stencilLoadOp = bClearAttachments
+                                        ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                        : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -25,7 +29,9 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat)
     VkAttachmentDescription depthAttachment = {};
     depthAttachment.format = VK_FORMAT_D32_SFLOAT;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.loadOp = bClearAttachments
+                                 ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                 : VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
