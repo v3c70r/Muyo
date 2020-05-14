@@ -44,6 +44,7 @@ RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
 
 RenderPassUI::~RenderPassUI()
 {
+
     m_uiResources.destroyResources();
     ImGui::DestroyContext();
 }
@@ -118,9 +119,9 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent)
     for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
         VkCommandBuffer& curCmdBuf = m_vCommandBuffers[i];
-        //if (curCmdBuf == VK_NULL_HANDLE)
+        if (curCmdBuf == VK_NULL_HANDLE)
         {
-            curCmdBuf = GetRenderDevice()->allocatePrimaryCommandbuffer();
+            curCmdBuf = GetRenderDevice()->allocateReusablePrimaryCommandbuffer();
         }
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
 

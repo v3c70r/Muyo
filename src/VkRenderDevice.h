@@ -54,8 +54,12 @@ public:
     }
 
     // Command buffer allocations
-    VkCommandBuffer allocatePrimaryCommandbuffer();
-    void freePrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
+    VkCommandBuffer allocateStaticPrimaryCommandbuffer();
+
+    void freeStaticPrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
+
+    VkCommandBuffer allocateReusablePrimaryCommandbuffer();
+    void freeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
 
     VkCommandBuffer allocateSecondaryCommandBuffer();
     void freeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer);
@@ -93,22 +97,26 @@ public:
     // Helper functions
     VkSampler createSampler();
 
-private:
-    // helper functions to create render device
+private: // Private structures
+    enum CommandPools
+    {
+        MAIN_CMD_POOL,
+        IMMEDIATE_CMD_POOL,
+        PER_FRAME_CMD_POOL,
+        NUM_CMD_POOLS
+    };
+private: // helper functions to create render device
     void createPhysicalDevice();
+    VkCommandBuffer allocatePrimaryCommandbuffer(CommandPools pool);
+    void freePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);
 
+private:// Members
     VkDevice mDevice = VK_NULL_HANDLE;
     VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
     VkQueue mGraphicsQueue = VK_NULL_HANDLE;
     VkQueue mPresentQueue = VK_NULL_HANDLE;
     VkInstance mInstance = VK_NULL_HANDLE;
 
-    enum CommandPools
-    {
-        MAIN_CMD_POOL,
-        IMMEDIATE_CMD_POOL,
-        NUM_CMD_POOLS
-    };
     std::array<VkCommandPool, NUM_CMD_POOLS> maCommandPools = {VK_NULL_HANDLE,
                                                                VK_NULL_HANDLE};
 

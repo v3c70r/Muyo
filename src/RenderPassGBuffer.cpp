@@ -138,7 +138,7 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
 
     assert(m_commandBuffer == VK_NULL_HANDLE &&
            "Command buffer has been created");
-    m_commandBuffer = GetRenderDevice()->allocatePrimaryCommandbuffer();
+    m_commandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
 
     VkRenderPassBeginInfo renderPassBeginInfo = {};

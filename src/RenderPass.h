@@ -22,7 +22,7 @@ class RenderPassFinal : public RenderPass
 {
 public:
     RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachments = true);
-    virtual ~RenderPassFinal();
+    virtual ~RenderPassFinal() override;
     void SetSwapchainImageViews(std::vector<VkImageView>& vImageViews,
                                 VkImageView depthImageView, uint32_t nWidth,
                                 uint32_t nHeight);

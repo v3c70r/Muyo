@@ -90,7 +90,7 @@ RenderPassFinal::~RenderPassFinal()
     destroyFramebuffers();
     for (auto& cmdBuf : m_vCommandBuffers)
     {
-        GetRenderDevice()->freePrimaryCommandbuffer(cmdBuf);
+        GetRenderDevice()->freeStaticPrimaryCommandbuffer(cmdBuf);
     }
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
@@ -136,7 +136,7 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
 
     for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
-        VkCommandBuffer curCmdBuf = GetRenderDevice()->allocatePrimaryCommandbuffer();
+        VkCommandBuffer curCmdBuf = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
