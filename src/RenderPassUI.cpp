@@ -44,7 +44,6 @@ RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
 
 RenderPassUI::~RenderPassUI()
 {
-
     m_uiResources.destroyResources();
     ImGui::DestroyContext();
 }
@@ -97,7 +96,7 @@ void RenderPassUI::updateBuffers()
     m_uiResources.indexBuffer.unmap();
 }
 
-void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent)
+void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx)
 {
     if (m_vCommandBuffers.size() != m_vFramebuffers.size())
     {
@@ -116,19 +115,19 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent)
     beginInfo.pInheritanceInfo = nullptr;
     ImGuiIO& io = ImGui::GetIO();
 
-    for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
-        VkCommandBuffer& curCmdBuf = m_vCommandBuffers[i];
+        VkCommandBuffer& curCmdBuf = m_vCommandBuffers[nBufferIdx];
         if (curCmdBuf == VK_NULL_HANDLE)
         {
             curCmdBuf = GetRenderDevice()->allocateReusablePrimaryCommandbuffer();
+            // No need to free it as it will be destroyed with the pool
         }
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassBeginInfo.renderPass = m_renderPass;
-        renderPassBeginInfo.framebuffer = m_vFramebuffers[i];
+        renderPassBeginInfo.framebuffer = m_vFramebuffers[nBufferIdx];
 
         renderPassBeginInfo.renderArea.offset = {0, 0};
         renderPassBeginInfo.renderArea.extent = mRenderArea;
@@ -170,7 +169,6 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent)
                                 m_uiResources.pipelineLayout, 0, 1,
                                 &m_uiResources.descriptorSet, 0, nullptr);
 
-        // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
         vkCmdDrawIndexed(curCmdBuf, m_uiResources.nTotalIndexCount, 1, 0, 0, 0);
 
         vkCmdEndRenderPass(curCmdBuf);
@@ -180,3 +178,4 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent)
                                 VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] UI");
     }
 }
+

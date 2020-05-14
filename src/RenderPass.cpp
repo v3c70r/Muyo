@@ -88,10 +88,6 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachment
 RenderPassFinal::~RenderPassFinal()
 {
     destroyFramebuffers();
-    for (auto& cmdBuf : m_vCommandBuffers)
-    {
-        GetRenderDevice()->freeStaticPrimaryCommandbuffer(cmdBuf);
-    }
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
 

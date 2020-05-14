@@ -17,6 +17,11 @@ protected:
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
 };
 
+// Render pass that outputs to swapchain
+class RenderPassToSwapchain : public RenderPass
+{
+};
+
 // The pass render to swap chain
 class RenderPassFinal : public RenderPass
 {
@@ -50,6 +55,7 @@ protected:
     std::vector<VkFramebuffer>
         m_vFramebuffers;  // Each framebuffer bind to a swapchain image
     VkExtent2D mRenderArea = {0, 0};
+
 private:
     void destroyFramebuffers();
 };

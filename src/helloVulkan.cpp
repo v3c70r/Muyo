@@ -664,9 +664,12 @@ void present()
 {
     uint32_t imageIndex = s_pSwapchain->getNextImage(s_imageAvailableSemaphores[0]);
 
+
     vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
     vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex]);
+
+    pUIPass->recordCommandBuffer(s_pSwapchain->getSwapchainExtent(), imageIndex);
 
     // submit command buffer
     VkPipelineStageFlags stageFlag =
@@ -677,7 +680,8 @@ void present()
     std::array<VkCommandBuffer, 3> cmdBuffers = {
         pGBufferPass->GetCommandBuffer(),
         pFinalPass->GetCommandBuffer(imageIndex),
-        pUIPass->GetCommandBuffer(imageIndex)};
+        pUIPass->GetCommandBuffer(imageIndex)
+    };
 
     // Filter out null cmd buffers
     std::vector<VkCommandBuffer> vCmdBuffers;
@@ -859,7 +863,6 @@ int main()
             updateUniformBuffer(s_pUniformBuffer);
             pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
             pUIPass->updateBuffers();
-            pUIPass->recordCommandBuffer(s_pSwapchain->getSwapchainExtent());
             //ImGui::EndFrame();
             // wait on device to make sure it has been drawn
             // assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);

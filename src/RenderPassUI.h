@@ -1,8 +1,9 @@
 #pragma once
-#include "RenderPass.h"
-#include "VertexBuffer.h"
-#include "Texture.h"
 #include <memory>
+
+#include "RenderPass.h"
+#include "Texture.h"
+#include "VertexBuffer.h"
 
 // Options and values to display/toggle from the UI
 struct UISettings
@@ -22,14 +23,14 @@ struct ImGuiResource
     VkSampler sampler;
     VertexBuffer vertexBuffer;
     IndexBuffer indexBuffer;
-	VkDeviceMemory fontMemory = VK_NULL_HANDLE;
+    VkDeviceMemory fontMemory = VK_NULL_HANDLE;
 
     std::unique_ptr<Texture> pTexture = nullptr;
 
-	VkPipelineCache pipelineCache = VK_NULL_HANDLE;
-	VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-	VkPipeline pipeline = VK_NULL_HANDLE;
-	VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    VkPipelineCache pipelineCache = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     int nTotalIndexCount = 0;
 
     void createResources(VkRenderPass UIRenderPass);
@@ -40,18 +41,18 @@ class RenderPassUI : public RenderPassFinal
 {
 public:
     RenderPassUI(VkFormat swapChainFormat);
-    void recordCommandBuffer(VkExtent2D screenExtent);
-   ~RenderPassUI();
+    void recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx);
+    ~RenderPassUI() override;
 
-   // ImGui Related functions
-   void newFrame(VkExtent2D screenExtent);
-   void updateBuffers();
+    // ImGui Related functions
+    void newFrame(VkExtent2D screenExtent);
+    void updateBuffers();
 
-   private:
-       struct PushConstBlock
-       {
-           glm::vec2 scale;
-           glm::vec2 translate;
-       };
-   ImGuiResource m_uiResources;
+private:
+    struct PushConstBlock
+    {
+        glm::vec2 scale;
+        glm::vec2 translate;
+    };
+    ImGuiResource m_uiResources;
 };
