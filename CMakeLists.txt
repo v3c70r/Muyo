@@ -109,7 +109,6 @@ add_library(imgui
 add_executable( helloVulkan
     src/helloVulkan.cpp
     src/PipelineStateBuilder.cpp
-    #src/UIOverlay.cpp 
     src/Texture.cpp
     src/VkRenderDevice.cpp
     src/VkMemoryAllocator.cpp

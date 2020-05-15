@@ -21,7 +21,6 @@
 #include "Camera.h"
 #include "PipelineStateBuilder.h"
 #include "MeshVertex.h"
-//#include "UIOverlay.h"
 #include "VkRenderDevice.h"
 #include "VkMemoryAllocator.h"
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
@@ -33,6 +32,7 @@
 #include "SamplerManager.h"
 #include "Debug.h"
 #include "RenderPassUI.h"
+#include "ImGuiGlfwControl.h"
 
 
 // TODO: Move them to renderpass manager
@@ -55,8 +55,9 @@ static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                          glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
                                      glm::vec3(0.0f, 0.0f, 0.0f),   // Center
                                      glm::vec3(0.0f, 1.0f, 0.0f))); // Up
-// GLFW mouse callback
-static void mouseCallback(GLFWwindow *window, int button, int action, int mods)
+
+// Arcball callbacks
+static void clickArcballCallback(GLFWwindow *window, int button, int action, int mods)
 {
     if (button == GLFW_MOUSE_BUTTON_LEFT)
     {
@@ -70,9 +71,21 @@ static void mouseCallback(GLFWwindow *window, int button, int action, int mods)
         }
     }
 }
-static void mouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
+
+static void rotateArcballCallback(GLFWwindow *window, double xpos, double ypos)
 {
     s_arcball.updateDrag(glm::vec2(xpos, ypos));
+}
+
+// GLFW mouse callback
+static void mouseCallback(GLFWwindow *window, int button, int action, int mods)
+{
+    clickArcballCallback(window, button, action, mods);
+    ImGui::MouseButtonCallback(window, button, action, mods);
+}
+static void mouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
+{
+    rotateArcballCallback(window, xpos, ypos);
 }
 // GLFW key callbacks
 static void onKeyStroke(GLFWwindow *window, int key, int scancode, int action,
@@ -106,6 +119,11 @@ static void onKeyStroke(GLFWwindow *window, int key, int scancode, int action,
     //            camera.pitch(0.1);
     //            break;
     //    }
+    ImGui::KeyCallback(window, key, scancode, action, mods);
+}
+void charCallback(GLFWwindow* window, unsigned int c)
+{
+    ImGui::CharCallback(window, c);
 }
 
 #ifdef __APPLE__
@@ -319,6 +337,9 @@ void initWindow()
     glfwSetKeyCallback(s_pWindow, onKeyStroke);
     glfwSetMouseButtonCallback(s_pWindow, mouseCallback);
     glfwSetCursorPosCallback(s_pWindow, mouseCursorCallback);
+    glfwSetScrollCallback(s_pWindow, ImGui::ScrollCallback);
+    glfwSetKeyCallback(s_pWindow, ImGui::KeyCallback);
+    glfwSetCharCallback(s_pWindow, ImGui::CharCallback);
 }
 
 std::vector<const char *> getRequiredExtensions()
@@ -405,7 +426,6 @@ SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice phyDevice)
 }
 
 // Hardware devices
-
 struct QueueFamilyIndice
 {
     int graphicsFamily = -1;
@@ -481,31 +501,6 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
-std::vector<char> m_readSpv(const std::string &fileName)
-{
-    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
-    assert(file.is_open());
-    size_t fileSize = (size_t)file.tellg();
-    std::vector<char> buffer(fileSize);
-
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-
-    return buffer;
-}
-VkShaderModule m_createShaderModule(const std::vector<char> &code)
-{
-    VkShaderModuleCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
-    VkShaderModule shdrModule = VK_NULL_HANDLE;
-    assert(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &shdrModule) ==
-           VK_SUCCESS);
-    return shdrModule;
-}
-
 void createGraphicsPipeline()
 {
 
@@ -516,8 +511,6 @@ void createGraphicsPipeline()
     GetPipelineManager()->CreateStaticObjectPipeline(
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHTING), pFinalPass->GetPass());
-
-    // ImGui Pipeline has been created in the render pass
 }
 
 void createCommandBuffers()
@@ -662,6 +655,7 @@ void cleanup()
 
 void present()
 {
+    // Begin new frame and get the frame id
     uint32_t imageIndex = s_pSwapchain->getNextImage(s_imageAvailableSemaphores[0]);
 
 
@@ -669,6 +663,7 @@ void present()
                     std::numeric_limits<uint64_t>::max());
     vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex]);
 
+    // Record command buffers
     pUIPass->recordCommandBuffer(s_pSwapchain->getSwapchainExtent(), imageIndex);
 
     // submit command buffer
@@ -800,6 +795,8 @@ int main()
 
     createGraphicsPipeline();
 
+    ImGui::Init(s_pWindow);
+
     // Create memory allocator
 
     // A bunch of news and deletes happend in the following block
@@ -836,19 +833,6 @@ int main()
         createCommandBuffers();
         createSemaphores();
         createFences();
-        //s_UIOverlay =
-        //    std::make_unique<UIOverlay>(GetRenderDevice()->GetDevice());
-
-        //s_UIOverlay->initialize(dynamic_cast<RenderContext&>(
-        //                            *(s_contextManager.getContext(CONTEXT_UI))),
-        //                        NUM_BUFFERS,
-        //                        GetRenderDevice()->GetPhysicalDevice());
-        //s_UIOverlay->initializeFontTexture(
-        //    GetRenderDevice()->GetPhysicalDevice(), s_commandPool,
-        //    GetRenderDevice()->GetGraphicsQueue());
-
-        //ImGui::GetIO().DisplaySize = ImVec2(s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
-
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
         {
@@ -858,25 +842,19 @@ int main()
             {
                 s_resizeWanted = false;
             }
-            //ImGui::NewFrame();
-            //ImGui::Text("test");
             updateUniformBuffer(s_pUniformBuffer);
             pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
             pUIPass->updateBuffers();
-            //ImGui::EndFrame();
-            // wait on device to make sure it has been drawn
-            // assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
-            //ImGui::Render();
-            //s_UIOverlay->renderDrawData(ImGui::GetDrawData(), *(static_cast<RenderContext*>(s_contextManager.getContext(CONTEXT_UI))), s_commandPool, GetRenderDevice()->GetGraphicsQueue());
             present();
+            ImGui::UpdateMousePosAndButtons();
+            ImGui::UpdateMouseCursor();
+            ImGui::UpdateGamepads();
         }
         std::cout << "Closing window, wait for device to finish..."
                   << std::endl;
         assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
-        //s_UIOverlay->finalize();
-        //s_UIOverlay = nullptr;
         delete s_pCubeVB;
         delete s_pCubeIB;
         delete s_pQuadVB;
@@ -885,6 +863,7 @@ int main()
         delete s_pTexture;
         GetSamplerManager()->destroySamplers();
     }
+    ImGui::Shutdown();
     cleanup();
     return 0;
 }
