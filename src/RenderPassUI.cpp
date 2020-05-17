@@ -5,7 +5,7 @@
 #include "Debug.h"
 #include <imgui.h>
 
-void ImGuiResource::createResources(VkRenderPass UIRenderPass) { 
+void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapchainBuffers) { 
     ImGuiIO& io = ImGui::GetIO();
     // Create font texture
     unsigned char* fontData;
@@ -25,8 +25,13 @@ void ImGuiResource::createResources(VkRenderPass UIRenderPass) {
     pipeline = GetPipelineManager()->GetImGuiPipeline();
     pipelineLayout = GetPipelineManager()->GetImGuiPipelineLayout();
 
-    vertexBuffer = VertexBuffer(false, "UI Vertex buffer");
-    indexBuffer = IndexBuffer(false, "UI Index buffer");
+    vertexBuffers.resize(numSwapchainBuffers);
+    indexBuffers.resize(numSwapchainBuffers);
+    for (uint32_t i = 0; i< numSwapchainBuffers; i++)
+    {
+        vertexBuffers[i] = VertexBuffer(false, "UI Vertex buffer");
+        indexBuffers[i] = IndexBuffer(false, "UI Index buffer");
+    }
 }
 
 void ImGuiResource::destroyResources()
@@ -35,11 +40,11 @@ void ImGuiResource::destroyResources()
     GetPipelineManager()->DestroyImGuiPipeline();
 }
 
-RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
+RenderPassUI::RenderPassUI(VkFormat swapChainFormat, uint32_t numSwapchainBuffers)
     : RenderPassFinal(swapChainFormat, false)
 {
     ImGui::CreateContext();
-    m_uiResources.createResources(m_renderPass);
+    m_uiResources.createResources(m_renderPass, numSwapchainBuffers);
 }
 
 RenderPassUI::~RenderPassUI()
@@ -58,7 +63,7 @@ void RenderPassUI::newFrame(VkExtent2D screenExtent)
     ImGui::Render();
 }
 
-void RenderPassUI::updateBuffers()
+void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)
 {
     ImDrawData* imDrawData = ImGui::GetDrawData();
 
@@ -75,11 +80,11 @@ void RenderPassUI::updateBuffers()
     }
 
     // Prepare vertex buffer and index buffer
-    m_uiResources.vertexBuffer.setData(nullptr, vertexBufferSize);
-    m_uiResources.indexBuffer.setData(nullptr, indexBufferSize);
+    m_uiResources.vertexBuffers[nSwapchainBufferIndex].setData(nullptr, vertexBufferSize);
+    m_uiResources.indexBuffers[nSwapchainBufferIndex].setData(nullptr, indexBufferSize);
 
-    ImDrawVert* vtxDst = (ImDrawVert*)m_uiResources.vertexBuffer.map();
-    ImDrawIdx* idxDst = (ImDrawIdx*)m_uiResources.indexBuffer.map();
+    ImDrawVert* vtxDst = (ImDrawVert*)m_uiResources.vertexBuffers[nSwapchainBufferIndex].map();
+    ImDrawIdx* idxDst = (ImDrawIdx*)m_uiResources.indexBuffers[nSwapchainBufferIndex].map();
 
     for (int n = 0; n < imDrawData->CmdListsCount; n++)
     {
@@ -92,11 +97,11 @@ void RenderPassUI::updateBuffers()
         idxDst += cmd_list->IdxBuffer.Size;
     }
 
-    m_uiResources.vertexBuffer.unmap();
-    m_uiResources.indexBuffer.unmap();
+    m_uiResources.vertexBuffers[nSwapchainBufferIndex].unmap();
+    m_uiResources.indexBuffers[nSwapchainBufferIndex].unmap();
 }
 
-void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx)
+void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapchainBufferIndex)
 {
     if (m_vCommandBuffers.size() != m_vFramebuffers.size())
     {
@@ -116,7 +121,7 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBuffer
     ImGuiIO& io = ImGui::GetIO();
 
     {
-        VkCommandBuffer& curCmdBuf = m_vCommandBuffers[nBufferIdx];
+        VkCommandBuffer& curCmdBuf = m_vCommandBuffers[nSwapchainBufferIndex];
         if (curCmdBuf == VK_NULL_HANDLE)
         {
             curCmdBuf = GetRenderDevice()->allocateReusablePrimaryCommandbuffer();
@@ -127,7 +132,7 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBuffer
         VkRenderPassBeginInfo renderPassBeginInfo = {};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassBeginInfo.renderPass = m_renderPass;
-        renderPassBeginInfo.framebuffer = m_vFramebuffers[nBufferIdx];
+        renderPassBeginInfo.framebuffer = m_vFramebuffers[nSwapchainBufferIndex];
 
         renderPassBeginInfo.renderArea.offset = {0, 0};
         renderPassBeginInfo.renderArea.extent = mRenderArea;
@@ -161,8 +166,8 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBuffer
 
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(curCmdBuf, 0, 1,
-                               &m_uiResources.vertexBuffer.buffer(), &offset);
-        vkCmdBindIndexBuffer(curCmdBuf, m_uiResources.indexBuffer.buffer(), 0,
+                               &m_uiResources.vertexBuffers[nSwapchainBufferIndex].buffer(), &offset);
+        vkCmdBindIndexBuffer(curCmdBuf, m_uiResources.indexBuffers[nSwapchainBufferIndex].buffer(), 0,
                              VK_INDEX_TYPE_UINT32);
         vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_uiResources.pipeline);
         vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,

@@ -91,7 +91,7 @@ RenderPassFinal::~RenderPassFinal()
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
 
-void RenderPassFinal::SetSwapchainImageViews(
+void RenderPassFinal::setSwapchainImageViews(
     std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
     uint32_t nWidth, uint32_t nHeight)
 {

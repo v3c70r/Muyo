@@ -12,7 +12,6 @@ class RenderPass
 public:
     virtual ~RenderPass() {}
     VkRenderPass GetPass() { return m_renderPass; }
-
 protected:
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
 };
@@ -28,7 +27,7 @@ class RenderPassFinal : public RenderPass
 public:
     RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachments = true);
     virtual ~RenderPassFinal() override;
-    void SetSwapchainImageViews(std::vector<VkImageView>& vImageViews,
+    virtual void setSwapchainImageViews(std::vector<VkImageView>& vImageViews,
                                 VkImageView depthImageView, uint32_t nWidth,
                                 uint32_t nHeight);
     void RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,

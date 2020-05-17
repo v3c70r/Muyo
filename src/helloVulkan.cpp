@@ -604,12 +604,12 @@ void recreateSwapChain()
         "depthTarget", VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
                                    s_pSwapchain->getSwapchainExtent().height}));
 
-    pFinalPass->SetSwapchainImageViews(
+    pFinalPass->setSwapchainImageViews(
         s_pSwapchain->getImageViews(), pDepthResource->getView(),
         s_pSwapchain->getSwapchainExtent().width,
         s_pSwapchain->getSwapchainExtent().height);
 
-    pUIPass->SetSwapchainImageViews(
+    pUIPass->setSwapchainImageViews(
         s_pSwapchain->getImageViews(), pDepthResource->getView(),
         s_pSwapchain->getSwapchainExtent().width,
         s_pSwapchain->getSwapchainExtent().height);
@@ -653,18 +653,22 @@ void cleanup()
     glfwTerminate();
 }
 
-void present()
+uint32_t beginFrame()
 {
     // Begin new frame and get the frame id
-    uint32_t imageIndex = s_pSwapchain->getNextImage(s_imageAvailableSemaphores[0]);
+    uint32_t nIamgeIndex = s_pSwapchain->getNextImage(s_imageAvailableSemaphores[0]);
 
 
-    vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex], VK_TRUE,
+    vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex], VK_TRUE,
                     std::numeric_limits<uint64_t>::max());
-    vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[imageIndex]);
+    vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex]);
+    return nIamgeIndex;
+}
 
+void present(uint32_t nIamgeIndex)
+{
     // Record command buffers
-    pUIPass->recordCommandBuffer(s_pSwapchain->getSwapchainExtent(), imageIndex);
+    pUIPass->recordCommandBuffer(s_pSwapchain->getSwapchainExtent(), nIamgeIndex);
 
     // submit command buffer
     VkPipelineStageFlags stageFlag =
@@ -674,8 +678,8 @@ void present()
 
     std::array<VkCommandBuffer, 3> cmdBuffers = {
         pGBufferPass->GetCommandBuffer(),
-        pFinalPass->GetCommandBuffer(imageIndex),
-        pUIPass->GetCommandBuffer(imageIndex)
+        pFinalPass->GetCommandBuffer(nIamgeIndex),
+        pUIPass->GetCommandBuffer(nIamgeIndex)
     };
 
     // Filter out null cmd buffers
@@ -700,7 +704,7 @@ void present()
     submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
 
     assert(vkQueueSubmit(GetRenderDevice()->GetGraphicsQueue(), 1, &submitInfo,
-                         s_waitFences[imageIndex]) == VK_SUCCESS);
+                         s_waitFences[nIamgeIndex]) == VK_SUCCESS);
 
     // Present swap chain
     VkPresentInfoKHR presentInfo = {};
@@ -710,7 +714,7 @@ void present()
 
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &(s_pSwapchain->getSwapChain());
-    presentInfo.pImageIndices = &imageIndex;
+    presentInfo.pImageIndices = &nIamgeIndex;
 
     presentInfo.pResults = nullptr;
 
@@ -783,10 +787,11 @@ int main()
                         s_pSwapchain->getSwapchainExtent().height}));
 
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
-    pFinalPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    pFinalPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
-    pUIPass = std::make_unique<RenderPassUI>(s_pSwapchain->getImageFormat());
-    pUIPass->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    pUIPass = std::make_unique<RenderPassUI>(
+        s_pSwapchain->getImageFormat(), s_pSwapchain->getImageViews().size());
+    pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
@@ -843,9 +848,11 @@ int main()
                 s_resizeWanted = false;
             }
             updateUniformBuffer(s_pUniformBuffer);
+
+            uint32_t nImageIndex = beginFrame();
             pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
-            pUIPass->updateBuffers();
-            present();
+            pUIPass->updateBuffers(nImageIndex);
+            present(nImageIndex);
             ImGui::UpdateMousePosAndButtons();
             ImGui::UpdateMouseCursor();
             ImGui::UpdateGamepads();

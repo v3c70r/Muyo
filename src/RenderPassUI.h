@@ -20,9 +20,11 @@ struct UISettings
 class Texture;
 struct ImGuiResource
 {
+    // Vertex buffer and index buffer can be updated each frame
+    std::vector<VertexBuffer> vertexBuffers;
+    std::vector<IndexBuffer> indexBuffers;
+
     VkSampler sampler;
-    VertexBuffer vertexBuffer;
-    IndexBuffer indexBuffer;
     VkDeviceMemory fontMemory = VK_NULL_HANDLE;
 
     std::unique_ptr<Texture> pTexture = nullptr;
@@ -33,20 +35,20 @@ struct ImGuiResource
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     int nTotalIndexCount = 0;
 
-    void createResources(VkRenderPass UIRenderPass);
+    void createResources(VkRenderPass UIRenderPass, uint32_t numSwapchainBuffers);
     void destroyResources();
 };
 
 class RenderPassUI : public RenderPassFinal
 {
 public:
-    RenderPassUI(VkFormat swapChainFormat);
+    RenderPassUI(VkFormat swapChainFormat, uint32_t numSwapchainBuffers);
     void recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx);
     ~RenderPassUI() override;
 
     // ImGui Related functions
     void newFrame(VkExtent2D screenExtent);
-    void updateBuffers();
+    void updateBuffers(uint32_t nSwapchainBufferIndex);
 
 private:
     struct PushConstBlock

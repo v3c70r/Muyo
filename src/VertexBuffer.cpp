@@ -29,8 +29,9 @@ void MemoryBuffer::setData(void* data, size_t size)
     if (m_buffer != VK_NULL_HANDLE && size > m_nSize)
     {
         GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
+        m_buffer = VK_NULL_HANDLE;
     }
-    else if (m_buffer == VK_NULL_HANDLE)
+    if (m_buffer == VK_NULL_HANDLE)
     {
         GetMemoryAllocator()->AllocateBuffer(size, m_bufferUsageFlags,
                                              m_memoryUsage, m_buffer,
