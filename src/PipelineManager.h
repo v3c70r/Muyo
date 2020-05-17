@@ -79,7 +79,9 @@ private:
     VkPipelineRasterizationStateCreateInfo GetRasterInfo(bool bWireframe = false);
     VkPipelineMultisampleStateCreateInfo GetMultisampleState();
     VkPipelineColorBlendStateCreateInfo GetBlendState(size_t numAttachments);
-    VkPipelineDepthStencilStateCreateInfo GetDepthStencilCreateinfo();
+    VkPipelineDepthStencilStateCreateInfo GetDepthStencilCreateinfo(
+        VkBool32 bEnableDepthTest = VK_TRUE, VkBool32 bEnableStencilTest = VK_TRUE,
+        VkCompareOp compareOp = VK_COMPARE_OP_LESS);
 
     VkPipelineLayout CreatePipelineLayout(VkDescriptorSetLayout descriptorLayout, 
             VkPushConstantRange pushConstantRange = {0, 0, 0});

@@ -18,20 +18,18 @@ PipelineManager::PipelineManager()
 void PipelineManager::InitializeDefaultBlendStats()
 {
     VkPipelineColorBlendAttachmentState defaultBlendState = {};
+    defaultBlendState.blendEnable = VK_TRUE;
     defaultBlendState.colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    defaultBlendState.blendEnable = VK_FALSE;
-    defaultBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-    defaultBlendState.dstColorBlendFactor =
-        VK_BLEND_FACTOR_ZERO;                                        // Optional
-    defaultBlendState.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
-    defaultBlendState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
-    defaultBlendState.dstAlphaBlendFactor =
-        VK_BLEND_FACTOR_ZERO;                             // Optional
-    defaultBlendState.alphaBlendOp = VK_BLEND_OP_ADD;  // Optional
+    defaultBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    defaultBlendState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    defaultBlendState.colorBlendOp = VK_BLEND_OP_ADD;
+    defaultBlendState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    defaultBlendState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    defaultBlendState.alphaBlendOp = VK_BLEND_OP_ADD;
 
-    for(auto& state : m_aBlendModes)
+    for (auto& state : m_aBlendModes)
     {
         state = defaultBlendState;
     }
@@ -201,7 +199,7 @@ void PipelineManager::CreateImGuiPipeline(
             .setColorBlending(GetBlendState(1))
             .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_IMGUI])
             .setDynamicStates(dynamicStateEnables)
-            .setDepthStencil(GetDepthStencilCreateinfo())
+            .setDepthStencil(GetDepthStencilCreateinfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL))
             .setRenderPass(pass)
             .build(GetRenderDevice()->GetDevice());
 
@@ -347,14 +345,14 @@ VkPipelineLayout PipelineManager::CreatePipelineLayout(VkDescriptorSetLayout des
 }
 
 VkPipelineDepthStencilStateCreateInfo
-PipelineManager::GetDepthStencilCreateinfo()
+PipelineManager::GetDepthStencilCreateinfo(VkBool32 bEnableDepthTest, VkBool32 bEnableStencilTest, VkCompareOp compareOp)
 {
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
     depthStencil.sType =
         VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthTestEnable = bEnableDepthTest;
+    depthStencil.depthWriteEnable = bEnableStencilTest;
+    depthStencil.depthCompareOp = compareOp;
     // depth clamp?
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.front = {};
