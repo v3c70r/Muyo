@@ -1,7 +1,10 @@
 #include "RenderPass.h"
-#include "VkRenderDevice.h"
+
 #include "Debug.h"
-RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachments)
+#include "Geometry.h"
+#include "VkRenderDevice.h"
+RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
+                                 bool bClearAttachments)
 {
     // Attachments
     //
@@ -29,9 +32,8 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachment
     VkAttachmentDescription depthAttachment = {};
     depthAttachment.format = VK_FORMAT_D32_SFLOAT;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = bClearAttachments
-                                 ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                 : VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.loadOp = bClearAttachments ? VK_ATTACHMENT_LOAD_OP_CLEAR
+                                               : VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -118,11 +120,10 @@ void RenderPassFinal::setSwapchainImageViews(
     mRenderArea = {nWidth, nHeight};
 }
 
-void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
-                             uint32_t numIndices,
-                             VkPipeline pipeline,
-                             VkPipelineLayout pipelineLayout,
-                             VkDescriptorSet descriptorSet)
+void RenderPassFinal::RecordOnce(const Geometry& quadGeometry,
+                                 VkPipeline pipeline,
+                                 VkPipelineLayout pipelineLayout,
+                                 VkDescriptorSet descriptorSet)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -132,7 +133,8 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
 
     for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
-        VkCommandBuffer curCmdBuf = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
+        VkCommandBuffer curCmdBuf =
+            GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
@@ -152,16 +154,24 @@ void RenderPassFinal::RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
         vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
-        vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-        vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 0, 1, &descriptorSet, 0,
-                                nullptr);
+        for (const auto& prim : quadGeometry.getPrimitives())
+        {
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
+            VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
+            uint32_t nIndexCount = prim->getIndexCount();
+            vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0,
+                                 VK_INDEX_TYPE_UINT32);
+            vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              pipeline);
+            vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipelineLayout, 0, 1, &descriptorSet, 0,
+                                    nullptr);
+            vkCmdDrawIndexed(curCmdBuf, nIndexCount, 1, 0, 0, 0);
+        }
 
         // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
-        vkCmdDrawIndexed(curCmdBuf, numIndices, 1, 0, 0, 0);
 
         vkCmdEndRenderPass(curCmdBuf);
         vkEndCommandBuffer(curCmdBuf);
@@ -184,5 +194,4 @@ void RenderPassFinal::destroyFramebuffers()
     }
     m_vFramebuffers.clear();
 }
-
 

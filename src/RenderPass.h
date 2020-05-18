@@ -7,11 +7,13 @@
 #include <string>
 #include <vector>
 
+class Geometry;
 class RenderPass
 {
 public:
     virtual ~RenderPass() {}
     VkRenderPass GetPass() { return m_renderPass; }
+
 protected:
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
 };
@@ -28,10 +30,9 @@ public:
     RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachments = true);
     virtual ~RenderPassFinal() override;
     virtual void setSwapchainImageViews(std::vector<VkImageView>& vImageViews,
-                                VkImageView depthImageView, uint32_t nWidth,
-                                uint32_t nHeight);
-    void RecordOnce(VkBuffer vertexBuffer, VkBuffer indexBuffer,
-                    uint32_t numIndices, VkPipeline pipeline,
+                                        VkImageView depthImageView,
+                                        uint32_t nWidth, uint32_t nHeight);
+    void RecordOnce(const Geometry& quadGeometry, VkPipeline pipeline,
                     VkPipelineLayout pipelineLayout,
                     VkDescriptorSet descriptorSet);
 

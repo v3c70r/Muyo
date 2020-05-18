@@ -33,6 +33,7 @@
 #include "Debug.h"
 #include "RenderPassUI.h"
 #include "ImGuiGlfwControl.h"
+#include "Geometry.h"
 
 
 // TODO: Move them to renderpass manager
@@ -152,9 +153,7 @@ const std::vector<const char *> deviceExtensions = {
     //"VK_KHR_ray_tracing"
 };
 
-// TODO: Move to Geometries
-static VertexBuffer *s_pQuadVB = nullptr;
-static IndexBuffer *s_pQuadIB = nullptr;
+static std::unique_ptr<Geometry> s_pQuadGeometry = nullptr;
 static VertexBuffer *s_pCubeVB = nullptr;
 static IndexBuffer *s_pCubeIB = nullptr;
 struct TinyObjInfo
@@ -524,8 +523,7 @@ void createCommandBuffers()
         );
 
     pFinalPass->RecordOnce(
-        s_pQuadVB->buffer(), s_pQuadIB->buffer(),
-        static_cast<uint32_t>(getQuadIndices().size()),
+        *s_pQuadGeometry, 
         GetPipelineManager()->GetStaticObjectPipeline(),
         GetPipelineManager()->GetStaticObjectPipelineLayout(),
         GetDescriptorManager()->allocateLightingDescriptorSet(
@@ -823,13 +821,7 @@ int main()
                            sizeof(uint32_t) * getCubeIndices().size());
 
         // Create the quad
-        s_pQuadVB = new VertexBuffer();
-        s_pQuadVB->setData(getQuadVertices().data(),
-                           sizeof(Vertex) * getQuadVertices().size());
-
-        s_pQuadIB = new IndexBuffer();
-        s_pQuadIB->setData(getQuadIndices().data(),
-                           sizeof(uint32_t) * getQuadIndices().size());
+        s_pQuadGeometry = getQuad();
 
         s_pUniformBuffer = new UniformBuffer<PerViewData>();
 
@@ -864,10 +856,10 @@ int main()
 
         delete s_pCubeVB;
         delete s_pCubeIB;
-        delete s_pQuadVB;
-        delete s_pQuadIB;
+        
         delete s_pUniformBuffer;
         delete s_pTexture;
+        s_pQuadGeometry = nullptr;
         GetSamplerManager()->destroySamplers();
     }
     ImGui::Shutdown();

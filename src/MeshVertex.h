@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <imgui.h>  // for ImDrawVert structure
 #include <vector>
-
+using Index = uint32_t;
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 textureCoord;
@@ -62,6 +62,5 @@ struct UIVertex {
         attribDesc[2].format = VK_FORMAT_R8G8B8A8_UNORM;
         attribDesc[2].offset = offsetof(ImDrawVert, col);
         return attribDesc;
- 
     }
 };

@@ -17,7 +17,7 @@ public:
     MemoryBuffer(bool stagedUpload = true);
     void* map();
     void unmap();
-    void setData(void* data, size_t size);
+    void setData(const void* data, size_t size);
     void flush();
     const VkBuffer& buffer() const { return m_buffer; }
     virtual ~MemoryBuffer();

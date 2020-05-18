@@ -24,7 +24,7 @@ void* MemoryBuffer::map()
 
 void MemoryBuffer::unmap() { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
 
-void MemoryBuffer::setData(void* data, size_t size)
+void MemoryBuffer::setData(const void* data, size_t size)
 {
     if (m_buffer != VK_NULL_HANDLE && size > m_nSize)
     {

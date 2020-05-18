@@ -60,6 +60,7 @@ include_directories(${CMAKE_SOURCE_DIR}/thirdparty/stb)
 add_library(stb ${CMAKE_SOURCE_DIR}/thirdparty/stb/stb.cpp)
 
 ## tiny obj
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader)
 add_library(tinyobj ${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader/tiny_obj_loader.cc)
 
 
@@ -100,7 +101,6 @@ add_library(imgui
     thirdparty/imgui/imgui_demo.cpp
     thirdparty/imgui/imgui_draw.cpp
     thirdparty/imgui/imgui_widgets.cpp
-    thirdparty/imgui/imgui_impl_vulkan.cpp
     )
     
 #Enable CPPCHECK
@@ -124,6 +124,7 @@ add_executable( helloVulkan
     src/DescriptorManager.cpp
     src/SamplerManager.cpp
     src/Debug.cpp
+    src/Geometry.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)
