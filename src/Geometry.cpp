@@ -1,6 +1,5 @@
 #include "Geometry.h"
 #include <tiny_obj_loader.h>
-#include "SphereGeneartor.h"
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation)
 {
 
