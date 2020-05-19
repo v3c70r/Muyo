@@ -1,7 +1,9 @@
 #pragma once
 #include <array>
+#include <memory>
 
 #include "RenderPass.h"
+#include "Geometry.h"
 
 class RenderPassGBuffer : public RenderPass
 {
@@ -34,8 +36,8 @@ public:
     };
     RenderPassGBuffer();
     ~RenderPassGBuffer();
-    void recordCommandBuffer(VkBuffer vertexBuffer, VkBuffer indexBuffer,
-                             uint32_t numIndices, VkPipeline pipeline,
+    void recordCommandBuffer(const PrimitiveList& primitives,
+                             VkPipeline pipeline,
                              VkPipelineLayout pipelineLayout,
                              VkDescriptorSet descriptorSet);
     void createFramebuffer();

@@ -121,15 +121,11 @@ void RenderPassGBuffer::destroyFramebuffer()
                          nullptr);
 }
 
-void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
-                                            VkBuffer indexBuffer,
-                                            uint32_t numIndices,
+void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
                                             VkPipeline pipeline,
                                             VkPipelineLayout pipelineLayout,
                                             VkDescriptorSet descriptorSet)
 {
-
-
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -168,17 +164,24 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
     vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo,
                          VK_SUBPASS_CONTENTS_INLINE);
 
-    VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, &offset);
-    vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      pipeline);
-    vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    for (const auto& prim : primitives)
+    {
+        VkDeviceSize offset = 0;
+        VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
+        VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
+        uint32_t nIndexCount = prim->getIndexCount();
+        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pipeline);
+        vkCmdBindDescriptorSets(m_commandBuffer,
+                                VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                                0, 1, &descriptorSet, 0, nullptr);
 
-    // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
-    vkCmdDrawIndexed(m_commandBuffer, numIndices, 1, 0, 0, 0);
-
+        // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
+        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+    }
 
     vkCmdEndRenderPass(m_commandBuffer);
 
@@ -191,7 +194,6 @@ void RenderPassGBuffer::recordCommandBuffer(VkBuffer vertexBuffer,
         m_commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_DEPENDENCY_DEVICE_GROUP_BIT,
         1, &memoryBarrier, 0, nullptr, 0, nullptr);
-
 
     vkEndCommandBuffer(m_commandBuffer);
 

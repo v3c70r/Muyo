@@ -154,98 +154,7 @@ const std::vector<const char *> deviceExtensions = {
 };
 
 static std::unique_ptr<Geometry> s_pQuadGeometry = nullptr;
-static VertexBuffer *s_pCubeVB = nullptr;
-static IndexBuffer *s_pCubeIB = nullptr;
-struct TinyObjInfo
-{
-    tinyobj::attrib_t attrib;
-    std::vector<tinyobj::shape_t> shapes;
-    std::vector<tinyobj::material_t> materials;
-};
-
-void LoadMesh(const std::string path, TinyObjInfo &objInfo)
-{
-    std::string err;
-    bool ret = tinyobj::LoadObj(&(objInfo.attrib), &(objInfo.shapes),
-                                &(objInfo.materials), &err, path.c_str());
-    if (!ret)
-    {
-        std::cerr << err << std::endl;
-    }
-    else
-    {
-        std::cout << "Num verts :" << objInfo.attrib.vertices.size() / 3
-                  << std::endl;
-        std::cout << "Num Normals :" << objInfo.attrib.normals.size() / 3
-                  << std::endl;
-        std::cout << "Num TexCoords :" << objInfo.attrib.texcoords.size() / 2
-                  << std::endl;
-
-        // Print out mesh summery
-        for (size_t i = 0; i < objInfo.shapes.size(); i++)
-        {
-            std::cout << "Shape " << i << ": " << std::endl;
-            tinyobj::shape_t &shape = objInfo.shapes[i];
-            std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
-            std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
-            // std::cout<<"\t"<<shape.mesh.vert
-        }
-    }
-}
-
-static TinyObjInfo s_objInfo;
-// Hardcoded vertices and indices
-std::vector<Vertex> getCubeVertices()
-{
-    std::vector<Vertex> res;
-
-    assert(s_objInfo.shapes.size() == 1 && "Supports only one obj");
-
-    const auto &vIndices = s_objInfo.shapes[0].mesh.indices;
-
-    size_t numVert = vIndices.size();
-    res.reserve(numVert);
-
-    for (const auto &meshIdx : vIndices)
-    {
-        res.emplace_back(Vertex(
-            {{s_objInfo.attrib.vertices[3 * meshIdx.vertex_index],
-              s_objInfo.attrib.vertices[3 * meshIdx.vertex_index + 1],
-              s_objInfo.attrib.vertices[3 * meshIdx.vertex_index + 2]},
-             {s_objInfo.attrib.texcoords[2 * meshIdx.texcoord_index],
-              s_objInfo.attrib.texcoords[2 * meshIdx.texcoord_index + 1], 0}}));
-    }
-    return res;
-}
-
-std::vector<uint32_t> getCubeIndices()
-{
-    std::vector<uint32_t> indices;
-    indices.reserve(s_objInfo.shapes[0].mesh.indices.size());
-
-    for (size_t i = 0; i < s_objInfo.shapes[0].mesh.indices.size(); i++)
-    {
-        indices.push_back(i);
-    }
-    return indices;
-}
-
-std::vector<Vertex> getQuadVertices()
-{
-    const std::vector<Vertex> vertices = {
-        {{-1.0f, -1.0f, 0.0}, {0.0f, 0.0f, 0.0f}},
-        {{1.0f, -1.0f, 0.0}, {1.0f, 0.0f, 0.0f}},
-        {{1.0f, 1.0f, 0.0}, {1.0f, 1.0f, 1.0f}},
-        {{-1.0f, 1.0f, 0.0}, {0.0f, 1.0f, 1.0f}}};
-    return vertices;
-}
-
-std::vector<uint32_t> getQuadIndices()
-{
-    const std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
-    return indices;
-}
-
+static std::unique_ptr<Geometry> s_pObjGeometry = nullptr;
 ///////////////////////////////////////////
 
 void recreateSwapChain(); // fwd declaration
@@ -515,7 +424,7 @@ void createGraphicsPipeline()
 void createCommandBuffers()
 {
     pGBufferPass->recordCommandBuffer(
-        s_pCubeVB->buffer(), s_pCubeIB->buffer(), static_cast<uint32_t>(getCubeIndices().size()),
+        s_pObjGeometry->getPrimitives(),
         GetPipelineManager()->GetGBufferPipeline(),
         GetPipelineManager()->GetGBufferPipelineLayout(), 
         GetDescriptorManager()->allocateGBufferDescriptorSet(*s_pUniformBuffer, 
@@ -807,21 +716,9 @@ int main()
     // Looking for a way to convert them to smart pointers, otherwise a major
     // refactorying is required.
     {
-
-        // Create the cube
-        s_pCubeVB = new VertexBuffer();
-
-        LoadMesh("assets/cube.obj", s_objInfo);
-        s_pCubeVB->setData(reinterpret_cast<void *>(getCubeVertices().data()),
-                           sizeof(Vertex) * getCubeVertices().size());
-
-        s_pCubeIB = new IndexBuffer();
-
-        s_pCubeIB->setData(reinterpret_cast<void *>(getCubeIndices().data()),
-                           sizeof(uint32_t) * getCubeIndices().size());
-
         // Create the quad
         s_pQuadGeometry = getQuad();
+        s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
 
         s_pUniformBuffer = new UniformBuffer<PerViewData>();
 
@@ -854,11 +751,9 @@ int main()
         assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
-        delete s_pCubeVB;
-        delete s_pCubeIB;
-        
         delete s_pUniformBuffer;
         delete s_pTexture;
+        s_pObjGeometry = nullptr;
         s_pQuadGeometry = nullptr;
         GetSamplerManager()->destroySamplers();
     }

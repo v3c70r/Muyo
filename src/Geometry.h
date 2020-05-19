@@ -39,6 +39,10 @@ private:
     glm::mat4 m_mLocalTrans = glm::mat4(1.0);
 };
 
+// Simplify the types
+using PrimitiveList = std::vector<std::unique_ptr<Primitive>>;
+using PrimitiveListRef = PrimitiveList&;
+using PrimitiveListConstRef = const PrimitiveList&;
 class Geometry
 {
 public:
@@ -57,7 +61,7 @@ public:
     {
         m_vPrimitives.push_back(std::move(pPrimitive));
     }
-    const std::vector<std::unique_ptr<Primitive>>& getPrimitives() const
+    PrimitiveListConstRef getPrimitives() const
     {
         return m_vPrimitives;
     }
@@ -75,5 +79,5 @@ private:
 
 std::unique_ptr<Geometry> getQuad();
 
-Geometry loadObj(const std::string& path);
+std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));
 

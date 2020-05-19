@@ -1,6 +1,7 @@
 #include "Geometry.h"
 #include <tiny_obj_loader.h>
-Geometry loadObj(const std::string& path)
+#include "SphereGeneartor.h"
+std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation)
 {
 
     struct TinyObjInfo
@@ -46,24 +47,28 @@ Geometry loadObj(const std::string& path)
         vertices.reserve(numVert);
         for (const auto &meshIdx : vIndices)
         {
+            glm::vec4 pos(objInfo.attrib.vertices[3 * meshIdx.vertex_index],
+                          objInfo.attrib.vertices[3 * meshIdx.vertex_index + 1],
+                          objInfo.attrib.vertices[3 * meshIdx.vertex_index + 2],
+                          1.0);
+            pos = pos * mTransformation;
+
             vertices.emplace_back(Vertex(
-                {{objInfo.attrib.vertices[3 * meshIdx.vertex_index],
-                  objInfo.attrib.vertices[3 * meshIdx.vertex_index + 1],
-                  objInfo.attrib.vertices[3 * meshIdx.vertex_index + 2]},
+                {{pos.x, pos.y, pos.z},
                  {objInfo.attrib.texcoords[2 * meshIdx.texcoord_index],
                   objInfo.attrib.texcoords[2 * meshIdx.texcoord_index + 1],
                   0}}));
         }
         std::vector<Index> indices;
         indices.reserve(objInfo.shapes[i].mesh.indices.size());
-        for (size_t i = 0; i < objInfo.shapes[i].mesh.indices.size(); i++)
+        for (size_t index = 0; index < objInfo.shapes[i].mesh.indices.size(); index++)
         {
-            indices.push_back(i);
+            indices.push_back(index);
         }
 
         primitives.emplace_back(std::make_unique<Primitive>(vertices, indices));
     }
-    return Geometry(primitives);
+    return std::make_unique<Geometry>(primitives);
 }
 std::unique_ptr<Geometry> getQuad()
 {
@@ -74,5 +79,6 @@ std::unique_ptr<Geometry> getQuad()
         {{-1.0f, 1.0f, 0.0}, {0.0f, 1.0f, 1.0f}}};
 
     static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
-    return std::make_unique<Geometry>(std::make_unique<Primitive>(VERTICES, INDICES));
+    return std::make_unique<Geometry>(
+        std::make_unique<Primitive>(VERTICES, INDICES));
 }
