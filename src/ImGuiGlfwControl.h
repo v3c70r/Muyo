@@ -99,7 +99,7 @@ static bool Init(GLFWwindow* window)
     io.GetClipboardTextFn = GetClipboardText;
     io.ClipboardUserData = g_Window;
 #if defined(_WIN32)
-    io.ImeWindowHandle = (void*)glfwGetWin32Window(g_Window);
+    //io.ImeWindowHandle = (void*)glfwGetWin32Window(g_Window);
 #endif
 
     // Create mouse cursors
