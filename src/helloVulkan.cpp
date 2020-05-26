@@ -34,6 +34,7 @@
 #include "RenderPassUI.h"
 #include "ImGuiGlfwControl.h"
 #include "Geometry.h"
+#include "Material.h"
 
 
 // TODO: Move them to renderpass manager
@@ -138,9 +139,6 @@ static DebugUtilsMessenger s_debugMessenger;
 GLFWSwapchain *s_pSwapchain = nullptr;
 
 static UniformBuffer<PerViewData> *s_pUniformBuffer = nullptr;
-
-// TODO: Move to material
-static Texture *s_pTexture = nullptr;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -423,13 +421,21 @@ void createGraphicsPipeline()
 
 void createCommandBuffers()
 {
+    const Material* pMaterial = GetMaterialManager()->m_mMaterials["plasticpattern"].get();
+    Material::PBRViews views = 
+    {
+        pMaterial->getImageView(Material::TEX_ALBEDO),
+        pMaterial->getImageView(Material::TEX_NORMAL),
+        pMaterial->getImageView(Material::TEX_METALNESS),
+        pMaterial->getImageView(Material::TEX_ROUGHNESS),
+        pMaterial->getImageView(Material::TEX_AO),
+    };
     pGBufferPass->recordCommandBuffer(
         s_pObjGeometry->getPrimitives(),
         GetPipelineManager()->GetGBufferPipeline(),
-        GetPipelineManager()->GetGBufferPipelineLayout(), 
-        GetDescriptorManager()->allocateGBufferDescriptorSet(*s_pUniformBuffer, 
-            s_pTexture->getImageView())
-        );
+        GetPipelineManager()->GetGBufferPipelineLayout(),
+        GetDescriptorManager()->allocateGBufferDescriptorSet(*s_pUniformBuffer,
+                                                             views));
 
     pFinalPass->RecordOnce(
         *s_pQuadGeometry, 
@@ -722,8 +728,32 @@ int main()
 
         s_pUniformBuffer = new UniformBuffer<PerViewData>();
 
-        s_pTexture = new Texture();
-        s_pTexture->LoadImage("assets/default.png");
+        // Load materials
+        GetMaterialManager()->m_mMaterials["plasticpattern"] = std::make_unique<Material>();
+        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
+            Material::TEX_ALBEDO,
+            "assets/Materials/plasticpattern1-ue/"
+            "plasticpattern1-albedo.png");
+
+        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
+            Material::TEX_METALNESS,
+            "assets/Materials/plasticpattern1-ue/"
+            "plasticpattern1-metalness.png");
+
+        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
+            Material::TEX_NORMAL,
+            "assets/Materials/plasticpattern1-ue/"
+            "plasticpattern1-normal2b.png");
+
+        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
+            Material::TEX_ROUGHNESS,
+            "assets/Materials/plasticpattern1-ue/"
+            "plasticpattern1-roughness2.png");
+
+        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
+            Material::TEX_AO,
+            "assets/Materials/white5x5.png");
+
         createCommandBuffers();
         createSemaphores();
         createFences();
@@ -752,7 +782,7 @@ int main()
         std::cout << "Device finished" << std::endl;
 
         delete s_pUniformBuffer;
-        delete s_pTexture;
+        GetMaterialManager()->destroyMaterials();
         s_pObjGeometry = nullptr;
         s_pQuadGeometry = nullptr;
         GetSamplerManager()->destroySamplers();

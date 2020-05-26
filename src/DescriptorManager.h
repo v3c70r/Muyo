@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "UniformBuffer.h"
+#include "Material.h"
 
 enum DescriptorLayoutType
 {
@@ -23,7 +24,8 @@ public:
     void destroyDescriptorSetLayouts();
 
     VkDescriptorSet allocateGBufferDescriptorSet(
-        const UniformBuffer<PerViewData>& perViewData, VkImageView textureView);
+        const UniformBuffer<PerViewData>& perViewData,
+        const Material::PBRViews& pbrViews);
 
     VkDescriptorSet allocateLightingDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData, VkImageView position,

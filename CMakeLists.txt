@@ -125,6 +125,7 @@ add_executable( helloVulkan
     src/SamplerManager.cpp
     src/Debug.cpp
     src/Geometry.cpp
+    src/Material.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)

@@ -37,7 +37,8 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-            getPerViewDataBinding(0), getSamplerBinding(1)};
+            getPerViewDataBinding(0), 
+            getSamplerArrayBinding(1, Material::TEX_COUNT)};  // PBR material textures
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -113,7 +114,8 @@ void DescriptorManager::destroyDescriptorSetLayouts()
 }
 
 VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet(
-    const UniformBuffer<PerViewData>& perViewData, VkImageView textureView)
+    const UniformBuffer<PerViewData>& perViewData,
+    const Material::PBRViews& pbrViews)
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     // Create descriptor sets
@@ -134,11 +136,6 @@ VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet(
         bufferInfo.range = sizeof(PerViewData);
 
         // prepare image descriptor
-        VkDescriptorImageInfo imageInfo = {};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = textureView;
-        imageInfo.sampler = GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE);
-
         std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
 
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -149,14 +146,39 @@ VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet(
         descriptorWrites[0].descriptorCount = 1;
         descriptorWrites[0].pBufferInfo = &bufferInfo;
 
+        // prepare image descriptor
+        std::array<VkDescriptorImageInfo, Material::TEX_COUNT> imageInfos = {
+            // albedo
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            pbrViews.at(Material::TEX_ALBEDO),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            // normal
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            pbrViews.at(Material::TEX_NORMAL),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            // metalness
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            pbrViews.at(Material::TEX_METALNESS),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            // roughness
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            pbrViews.at(Material::TEX_ROUGHNESS),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            // AO
+            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            pbrViews.at(Material::TEX_AO),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+
+
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[1].dstSet = descriptorSet;
         descriptorWrites[1].dstBinding = 1;
         descriptorWrites[1].dstArrayElement = 0;
         descriptorWrites[1].descriptorType =
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pImageInfo = &imageInfo;
+        descriptorWrites[1].descriptorCount = static_cast<uint32_t>(imageInfos.size());
+        descriptorWrites[1].pImageInfo = imageInfos.data();
 
         vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
                                static_cast<uint32_t>(descriptorWrites.size()),
