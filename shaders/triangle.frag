@@ -46,6 +46,7 @@ vec4 getFragColor()
 }
 
 void main() {
-    outColor = getFragColor();
+    //outColor = getFragColor();
+    outColor = texture(inGBuffers[GBUFFER_POS], texCoords);
     outColor.a = 1.0;
 }

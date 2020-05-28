@@ -724,8 +724,8 @@ int main()
     {
         // Create the quad
         s_pQuadGeometry = getQuad();
-        //s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
-        s_pObjGeometry = loadObj("assets/cube.obj");
+        s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
+        //s_pObjGeometry = loadObj("assets/cube.obj");
 
         s_pUniformBuffer = new UniformBuffer<PerViewData>();
 
