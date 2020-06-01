@@ -7,7 +7,7 @@
 #include "VkRenderDevice.h"
 
 RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
-                           uint32_t width, uint32_t height)
+                           uint32_t width, uint32_t height, uint32_t numMips, uint32_t numLayers)
 {
     VkImageAspectFlags aspectMask = 0;
     VkImageLayout imageLayout=VK_IMAGE_LAYOUT_UNDEFINED;
@@ -30,14 +30,18 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
+    imageInfo.mipLevels = numMips;
+    imageInfo.arrayLayers = numLayers;
     imageInfo.format = format;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (numLayers > 1)
+    {
+        imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    }
 
     GetMemoryAllocator()->AllocateImage(&imageInfo, VMA_MEMORY_USAGE_GPU_ONLY,
                                         m_image, m_allocation);
@@ -59,9 +63,9 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
     // subresource
     createInfo.subresourceRange.aspectMask = aspectMask;
     createInfo.subresourceRange.baseMipLevel = 0;
-    createInfo.subresourceRange.levelCount = 1;
+    createInfo.subresourceRange.levelCount = numMips;
     createInfo.subresourceRange.baseArrayLayer = 0;
-    createInfo.subresourceRange.layerCount = 1;
+    createInfo.subresourceRange.layerCount = numLayers;
     assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo,
                              nullptr, &m_view) == VK_SUCCESS);
 

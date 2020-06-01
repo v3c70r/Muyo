@@ -3,6 +3,7 @@
 #include "DescriptorManager.h"
 #include "PipelineManager.h"
 #include "Debug.h"
+#include "RenderResourceManager.h"
 #include <imgui.h>
 
 void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapchainBuffers) { 
@@ -59,7 +60,11 @@ void RenderPassUI::newFrame(VkExtent2D screenExtent)
         ImVec2(screenExtent.width, screenExtent.height);
     ImGui::NewFrame();
     // TODO: Add /raw functions here
-    ImGui::Text("Hello");
+    const auto& resourceMap = GetRenderResourceManager()->getResourceMap();
+    for (const auto& resMap : resourceMap)
+    {
+        ImGui::Text("%s", resMap.first.c_str());
+    }
     ImGui::Render();
 }
 

@@ -126,6 +126,7 @@ add_executable( helloVulkan
     src/Debug.cpp
     src/Geometry.cpp
     src/Material.cpp
+    src/RenderPassIBL.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)

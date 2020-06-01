@@ -222,6 +222,79 @@ void PipelineManager::DestroyImGuiPipeline()
     maPipelineLayouts[PIPELINE_TYPE_IMGUI] = VK_NULL_HANDLE;
 }
 
+void PipelineManager::CreateIBLPipeline(
+    uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
+    VkRenderPass pass)
+{
+    mViewport.x = 0.0f;
+    mViewport.y = 0.0f;
+    mViewport.width = (float)width;
+    mViewport.height = (float)height;
+    mViewport.minDepth = 0.0f;
+    mViewport.maxDepth = 1.0f;
+    mScissorRect.offset = {0, 0};
+    mScissorRect.extent = {width, height};
+
+    // Push constants for IBL
+    struct PushConstBlock
+    {
+        glm::mat4 mMvp;
+        float deltaPhi = (2.0f * float(M_PI)) / 180.0f;
+        float deltaTheta = (0.5f * float(M_PI)) / 64.0f;
+    };
+
+    VkPushConstantRange pushConstantRange;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.size = sizeof(PushConstBlock);
+    pushConstantRange.offset = 0;
+
+    maPipelineLayouts[PIPELINE_TYPE_IBL] =
+        CreatePipelineLayout(descriptorSetLayout, pushConstantRange);
+
+    // Dynmaic state
+    std::vector<VkDynamicState> dynamicStateEnables = {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+    VkShaderModule vertShdr =
+        CreateShaderModule(ReadSpv("shaders/ui.vert.spv"));
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/ui.frag.spv"));
+    PipelineStateBuilder builder;
+
+    maPipelines[PIPELINE_TYPE_IBL] =
+        builder.setShaderModules({vertShdr, fragShdr})
+            .setVertextInfo({UIVertex::getBindingDescription()},
+                            UIVertex::getAttributeDescriptions())
+            .setAssembly(GetIAInfo())
+            .setViewport(mViewport, mScissorRect)
+            .setRasterizer(GetRasterInfo())
+            .setMSAA(GetMultisampleState())
+            .setColorBlending(GetBlendState(1))
+            .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_IBL])
+            .setDynamicStates(dynamicStateEnables)
+            .setDepthStencil(GetDepthStencilCreateinfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL))
+            .setRenderPass(pass)
+            .build(GetRenderDevice()->GetDevice());
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+
+    // Set debug name for the pipeline
+    setDebugUtilsObjectName(
+        reinterpret_cast<uint64_t>(maPipelines[PIPELINE_TYPE_IBL]),
+        VK_OBJECT_TYPE_PIPELINE, "IBL");
+}
+
+void PipelineManager::DestroyIBLPipeline()
+{
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(),
+                      maPipelines[PIPELINE_TYPE_IBL], nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
+                            maPipelineLayouts[PIPELINE_TYPE_IBL], nullptr);
+    maPipelines[PIPELINE_TYPE_IBL] = VK_NULL_HANDLE;
+    maPipelineLayouts[PIPELINE_TYPE_IBL] = VK_NULL_HANDLE;
+}
+
 // Private helpers
 VkShaderModule PipelineManager::CreateShaderModule(
     const std::vector<char>& code)

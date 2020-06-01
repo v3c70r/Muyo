@@ -2,10 +2,12 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+
 #include <array>
 #include <cassert>
+#include <cassert>  // assert
 #include <chrono>
-#include <cstring> // strcmp
+#include <cstring>  // strcmp
 #include <fstream>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -13,34 +15,35 @@
 #include <limits>
 #include <set>
 #include <vector>
-#include <cassert> // assert
+
+#include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
+#include "Camera.h"
+#include "Debug.h"
+#include "DescriptorManager.h"
+#include "GLFWSwapchain.h"
+#include "Geometry.h"
+#include "ImGuiGlfwControl.h"
+#include "Material.h"
+#include "MeshVertex.h"
+#include "PipelineManager.h"
+#include "PipelineStateBuilder.h"
+#include "RenderPass.h"
+#include "RenderPassGBuffer.h"
+#include "RenderPassIBL.h"
+#include "RenderPassUI.h"
 #include "RenderResourceManager.h"
+#include "SamplerManager.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
-#include "Camera.h"
-#include "PipelineStateBuilder.h"
-#include "MeshVertex.h"
-#include "VkRenderDevice.h"
 #include "VkMemoryAllocator.h"
-#include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
-#include "RenderPass.h"
-#include "PipelineManager.h"
-#include "RenderPassGBuffer.h"
-#include "GLFWSwapchain.h"
-#include "DescriptorManager.h"
-#include "SamplerManager.h"
-#include "Debug.h"
-#include "RenderPassUI.h"
-#include "ImGuiGlfwControl.h"
-#include "Geometry.h"
-#include "Material.h"
-
+#include "VkRenderDevice.h"
 
 // TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
 std::unique_ptr<RenderPassGBuffer> pGBufferPass = nullptr;
 std::unique_ptr<RenderPassUI> pUIPass = nullptr;
+std::unique_ptr<RenderPassIBL> pIBLPass = nullptr;
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -540,6 +543,7 @@ void cleanup()
     pFinalPass = nullptr;
     pUIPass = nullptr;
     pGBufferPass = nullptr;
+    pIBLPass = nullptr;
     GetDescriptorManager()->destroyDescriptorSetLayouts();
     GetDescriptorManager()->destroyDescriptorPool();
 
@@ -705,6 +709,9 @@ int main()
     pUIPass = std::make_unique<RenderPassUI>(
         s_pSwapchain->getImageFormat(), s_pSwapchain->getImageViews().size());
     pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+
+    pIBLPass = std::make_unique<RenderPassIBL>();
+    pIBLPass->initializeIBLConvolutedMapView();
 
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();

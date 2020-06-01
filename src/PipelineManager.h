@@ -31,6 +31,9 @@ public:
     void CreateImGuiPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
     void DestroyImGuiPipeline();
 
+    void CreateIBLPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
+    void DestroyIBLPipeline();
+
     VkPipeline GetStaticObjectPipeline() const
     {
         return maPipelines[PIPELINE_TYPE_STATIC_OBJECT];
@@ -64,6 +67,7 @@ public:
         PIPELINE_TYPE_STATIC_OBJECT,
         PIPELINE_TYPE_GBUFFER,
         PIPELINE_TYPE_IMGUI,
+        PIPELINE_TYPE_IBL,
         PIPELINE_TYPE_COUNT
     };
 private:
