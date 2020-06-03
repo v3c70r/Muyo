@@ -31,8 +31,9 @@ public:
     void CreateImGuiPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
     void DestroyImGuiPipeline();
 
-    void CreateIBLPipeline(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
-    void DestroyIBLPipeline();
+// IBL pipelines
+    void CreateIBLPipelines(uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout, VkRenderPass pass);
+    void DestroyIBLPipelines();
 
     VkPipeline GetStaticObjectPipeline() const
     {
@@ -67,7 +68,9 @@ public:
         PIPELINE_TYPE_STATIC_OBJECT,
         PIPELINE_TYPE_GBUFFER,
         PIPELINE_TYPE_IMGUI,
-        PIPELINE_TYPE_IBL,
+        PIPELINE_TYPE_IBL_BRDF_LUT,     // Generate speclular lookup lut
+        PIPELINE_TYPE_IBL_IRRADIANCE,   // generate irradiance map
+        PIPELINE_TYPE_IBL_PF_ENV,       // generate pre-filtered environment map
         PIPELINE_TYPE_COUNT
     };
 private:

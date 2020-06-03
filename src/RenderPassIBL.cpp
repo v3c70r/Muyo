@@ -45,7 +45,7 @@ RenderPassIBL::RenderPassIBL()
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     // Renderpass
-    VkRenderPassCreateInfo renderPassInfo ={};
+    VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = 1;
     renderPassInfo.pAttachments = &attDesc;
@@ -64,8 +64,7 @@ RenderPassIBL::~RenderPassIBL()
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
 
-
-void RenderPassIBL::initializeIBLConvolutedMapView()
+void RenderPassIBL::initializeIBLResources()
 {
     // Create a framebuffer render to a cube
     if (m_framebuffer != VK_NULL_HANDLE)
@@ -86,34 +85,61 @@ void RenderPassIBL::initializeIBLConvolutedMapView()
     framebufferInfo.renderPass = m_renderPass;
     framebufferInfo.attachmentCount = 1;
     framebufferInfo.pAttachments = &view;
-    framebufferInfo.width = 1;
-    framebufferInfo.height = 1;
+    framebufferInfo.width = CUBE_DIM;
+    framebufferInfo.height = CUBE_DIM;
     framebufferInfo.layers = 1;
     assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo,
                                nullptr, &m_framebuffer) == VK_SUCCESS);
     m_renderArea = {CUBE_DIM, CUBE_DIM};
 
     // Create pipeline
-    GetPipelineManager()->CreateIBLPipeline(
+    GetPipelineManager()->CreateIBLPipelines(
         CUBE_DIM, CUBE_DIM,
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IMGUI),   // Simply a single input sampler
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IMGUI), // Simply a single input sampler
         m_renderPass);
 }
-
 
 void RenderPassIBL::destroyFramebuffer()
 {
     vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_framebuffer,
                          nullptr);
-    GetPipelineManager()->DestroyIBLPipeline();
+    GetPipelineManager()->DestroyIBLPipelines();
 }
 
 void RenderPassIBL::initializeIBLPipeline() {}
 void RenderPassIBL::destroyIBLPipeline() {}
-void RenderPassIBL::recordCommandBuffer(const PrimitiveList& primitives,
-                                        VkPipeline pipeline,
-                                        VkPipelineLayout pipelineLayout,
-                                        VkDescriptorSet descriptorSet)
+void RenderPassIBL::recordCommandBuffer()
 {
-}
 
+    // TODO: Setup command buffer to render
+    VkCommandBufferBeginInfo beginInfo = {};
+
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    m_commandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
+                            VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] GBuffer");
+
+    vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
+
+    VkRenderPassBeginInfo renderPassBeginInfo = {};
+    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassBeginInfo.renderPass = m_renderPass;
+    renderPassBeginInfo.framebuffer = m_framebuffer;
+
+    renderPassBeginInfo.renderArea.offset = {0, 0};
+    renderPassBeginInfo.renderArea.extent = m_renderArea;
+
+    VkClearValue clearValues[1];
+    clearValues[0].color = {{0.0f, 0.0f, 0.2f, 0.0f}};
+    renderPassBeginInfo.clearValueCount = 1;
+    renderPassBeginInfo.pClearValues = clearValues;
+
+    vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo,
+                         VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdEndRenderPass(m_commandBuffer);
+    vkEndCommandBuffer(m_commandBuffer);
+}

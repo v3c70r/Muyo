@@ -458,6 +458,8 @@ void createCommandBuffers()
             GetRenderResourceManager()
                 ->getColorTarget("GBUFFER_UV", VkExtent2D({0, 0}))
                 ->getView()));
+
+    pIBLPass->recordCommandBuffer();
 }
 
 void createSemaphores()
@@ -593,7 +595,8 @@ void present(uint32_t nIamgeIndex)
                                                        // waits for the
                                                        // semaphore
 
-    std::array<VkCommandBuffer, 3> cmdBuffers = {
+    std::array<VkCommandBuffer, 4> cmdBuffers = {
+        pIBLPass->GetCommandBuffer(),
         pGBufferPass->GetCommandBuffer(),
         pFinalPass->GetCommandBuffer(nIamgeIndex),
         pUIPass->GetCommandBuffer(nIamgeIndex)
@@ -711,7 +714,7 @@ int main()
     pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pIBLPass = std::make_unique<RenderPassIBL>();
-    pIBLPass->initializeIBLConvolutedMapView();
+    pIBLPass->initializeIBLResources();
 
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
