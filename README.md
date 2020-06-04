@@ -1,1 +1,1 @@
-# 無用 is a useless rendere
+# 無用 is a useless renderer
