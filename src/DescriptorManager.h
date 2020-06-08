@@ -12,7 +12,7 @@ enum DescriptorLayoutType
 {
     DESCRIPTOR_LAYOUT_GBUFFER,
     DESCRIPTOR_LAYOUT_LIGHTING,
-    DESCRIPTOR_LAYOUT_IMGUI,
+    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,   // A single sampler descriptor set layout at binding 0
     DESCRIPTOR_LAYOUT_COUNT,
 };
 class DescriptorManager

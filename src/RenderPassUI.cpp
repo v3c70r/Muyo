@@ -17,14 +17,15 @@ void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapc
     // Allocate descriptor
     descriptorSet = GetDescriptorManager()->allocateImGuiDescriptorSet(
         pTexture->getImageView());
-    GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IMGUI);
+    GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER);
 
     GetPipelineManager()->CreateImGuiPipeline(
         1, 1,
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IMGUI),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
         UIRenderPass);
     pipeline = GetPipelineManager()->GetImGuiPipeline();
-    pipelineLayout = GetPipelineManager()->GetImGuiPipelineLayout();
+    pipelineLayout = 
+        GetPipelineManager()->GetImGuiPipelineLayout();
 
     vertexBuffers.resize(numSwapchainBuffers);
     indexBuffers.resize(numSwapchainBuffers);

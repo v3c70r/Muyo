@@ -459,7 +459,9 @@ void createCommandBuffers()
                 ->getColorTarget("GBUFFER_UV", VkExtent2D({0, 0}))
                 ->getView()));
 
-    pIBLPass->recordCommandBuffer();
+    // Load env view
+    pIBLPass->setEnvMap("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
+    pIBLPass->generateIrradianceCube();
 }
 
 void createSemaphores()
@@ -596,7 +598,7 @@ void present(uint32_t nIamgeIndex)
                                                        // semaphore
 
     std::array<VkCommandBuffer, 4> cmdBuffers = {
-        pIBLPass->GetCommandBuffer(),
+        //pIBLPass->GetCommandBuffer(),
         pGBufferPass->GetCommandBuffer(),
         pFinalPass->GetCommandBuffer(nIamgeIndex),
         pUIPass->GetCommandBuffer(nIamgeIndex)
@@ -734,8 +736,8 @@ int main()
     {
         // Create the quad
         s_pQuadGeometry = getQuad();
-        s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
-        //s_pObjGeometry = loadObj("assets/cube.obj");
+        //s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
+        s_pObjGeometry = loadObj("assets/cube.obj");
 
         s_pUniformBuffer = new UniformBuffer<PerViewData>();
 

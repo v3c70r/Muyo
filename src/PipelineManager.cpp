@@ -1,23 +1,23 @@
 #include "PipelineManager.h"
+
 #include <cassert>
 #include <fstream>
+
+#include "Debug.h"
 #include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
+#include "PushConstantBlocks.h"
 #include "RenderPass.h"
-#include "Debug.h"
 
 #ifndef M_PI
-    #define M_PI 3.14159265358979323846
+#define M_PI 3.14159265358979323846
 #endif
 
 // Singletone
 static PipelineManager sPipelineManager;
 PipelineManager *GetPipelineManager() { return &sPipelineManager; }
 
-PipelineManager::PipelineManager()
-{
-    InitializeDefaultBlendStats();
-}
+PipelineManager::PipelineManager() { InitializeDefaultBlendStats(); }
 
 void PipelineManager::InitializeDefaultBlendStats()
 {
@@ -57,7 +57,8 @@ void PipelineManager::CreateStaticObjectPipeline(
     mScissorRect.offset = {0, 0};
     mScissorRect.extent = {width, height};
 
-    maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT] = CreatePipelineLayout(descriptorSetLayout);
+    maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT] =
+        CreatePipelineLayout(descriptorSetLayout);
 
     VkShaderModule vertShdr =
         CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
@@ -114,7 +115,8 @@ void PipelineManager::CreateGBufferPipeline(
     mScissorRect.offset = {0, 0};
     mScissorRect.extent = {width, height};
 
-    maPipelineLayouts[PIPELINE_TYPE_GBUFFER] = CreatePipelineLayout(descriptorSetLayout);
+    maPipelineLayouts[PIPELINE_TYPE_GBUFFER] =
+        CreatePipelineLayout(descriptorSetLayout);
 
     VkShaderModule vertShdr =
         CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
@@ -147,7 +149,8 @@ void PipelineManager::CreateGBufferPipeline(
 
 void PipelineManager::DestroyGBufferPipeline()
 {
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), maPipelines[PIPELINE_TYPE_GBUFFER], nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(),
+                      maPipelines[PIPELINE_TYPE_GBUFFER], nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
                             maPipelineLayouts[PIPELINE_TYPE_GBUFFER], nullptr);
     maPipelines[PIPELINE_TYPE_GBUFFER] = VK_NULL_HANDLE;
@@ -167,21 +170,9 @@ void PipelineManager::CreateImGuiPipeline(
     mScissorRect.offset = {0, 0};
     mScissorRect.extent = {width, height};
 
-    // Push constants for UI
-    // UI params are set via push constants
-    struct PushConstBlock
-    {
-        glm::vec2 scale;
-        glm::vec2 translate;
-    };
-
-    VkPushConstantRange pushConstantRange;
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    pushConstantRange.size = sizeof(PushConstBlock);
-    pushConstantRange.offset = 0;
-
-    maPipelineLayouts[PIPELINE_TYPE_IMGUI] =
-        CreatePipelineLayout(descriptorSetLayout, pushConstantRange);
+    maPipelineLayouts[PIPELINE_TYPE_IMGUI] = CreatePipelineLayout(
+        descriptorSetLayout,
+        getPushConstantRange<UIPushConstBlock>(VK_SHADER_STAGE_VERTEX_BIT));
 
     // Dynmaic state
     std::vector<VkDynamicState> dynamicStateEnables = {
@@ -204,7 +195,8 @@ void PipelineManager::CreateImGuiPipeline(
             .setColorBlending(GetBlendState(1))
             .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_IMGUI])
             .setDynamicStates(dynamicStateEnables)
-            .setDepthStencil(GetDepthStencilCreateinfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL))
+            .setDepthStencil(GetDepthStencilCreateinfo(
+                VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL))
             .setRenderPass(pass)
             .build(GetRenderDevice()->GetDevice());
 
@@ -242,30 +234,20 @@ void PipelineManager::CreateIBLPipelines(
 
     // Irradiance map
     {
-        // Push constants for IBL
-        struct PushConstBlock
-        {
-            glm::mat4 mMvp;
-            float deltaPhi = (2.0f * float(M_PI)) / 180.0f;
-            float deltaTheta = (0.5f * float(M_PI)) / 64.0f;
-        };
-
-        VkPushConstantRange pushConstantRange;
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        pushConstantRange.size = sizeof(PushConstBlock);
-        pushConstantRange.offset = 0;
-
-        maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE] =
-            CreatePipelineLayout(descriptorSetLayout, pushConstantRange);
+        maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE] = CreatePipelineLayout(
+            descriptorSetLayout,
+            getPushConstantRange<IrradianceMapPushConstBlock>(
+                (VkShaderStageFlagBits)(VK_SHADER_STAGE_VERTEX_BIT |
+                                        VK_SHADER_STAGE_FRAGMENT_BIT)));
 
         // Dynmaic state
         std::vector<VkDynamicState> dynamicStateEnables = {
             VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
         VkShaderModule vertShdr =
-            CreateShaderModule(ReadSpv("shaders/ui.vert.spv"));
+            CreateShaderModule(ReadSpv("shaders/filtercube.vert.spv"));
         VkShaderModule fragShdr =
-            CreateShaderModule(ReadSpv("shaders/ui.frag.spv"));
+            CreateShaderModule(ReadSpv("shaders/irradiancecube.frag.spv"));
         PipelineStateBuilder builder;
 
         maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE] =
@@ -277,19 +259,23 @@ void PipelineManager::CreateIBLPipelines(
                 .setRasterizer(GetRasterInfo())
                 .setMSAA(GetMultisampleState())
                 .setColorBlending(GetBlendState(1))
-                .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE])
+                .setPipelineLayout(
+                    maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE])
                 .setDynamicStates(dynamicStateEnables)
-                .setDepthStencil(GetDepthStencilCreateinfo(VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL))
+                .setDepthStencil(GetDepthStencilCreateinfo(
+                    VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS_OR_EQUAL))
                 .setRenderPass(pass)
                 .build(GetRenderDevice()->GetDevice());
 
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
+                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
+                              nullptr);
 
         // Set debug name for the pipeline
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE]),
-            VK_OBJECT_TYPE_PIPELINE, "IBL Irradiance");
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(
+                                    maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE]),
+                                VK_OBJECT_TYPE_PIPELINE, "IBL Irradiance");
     }
 }
 
@@ -298,7 +284,8 @@ void PipelineManager::DestroyIBLPipelines()
     vkDestroyPipeline(GetRenderDevice()->GetDevice(),
                       maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE], nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
-                            maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE], nullptr);
+                            maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE],
+                            nullptr);
     maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE] = VK_NULL_HANDLE;
     maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE] = VK_NULL_HANDLE;
 }
@@ -361,7 +348,7 @@ VkPipelineRasterizationStateCreateInfo PipelineManager::GetRasterInfo(
         VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizerInfo.depthClampEnable = VK_FALSE;
     rasterizerInfo.rasterizerDiscardEnable =
-        VK_FALSE; // Discard any output to framebuffer
+        VK_FALSE;  // Discard any output to framebuffer
     rasterizerInfo.polygonMode =
         bWireframe ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
     rasterizerInfo.lineWidth = 1.0f;
@@ -370,9 +357,9 @@ VkPipelineRasterizationStateCreateInfo PipelineManager::GetRasterInfo(
 
     // Depth bias, disabled for now
     rasterizerInfo.depthBiasEnable = VK_FALSE;
-    rasterizerInfo.depthBiasConstantFactor = 0.0f; // Optional
-    rasterizerInfo.depthBiasClamp = 0.0f;          // Optional
-    rasterizerInfo.depthBiasSlopeFactor = 0.0f;    // Optional
+    rasterizerInfo.depthBiasConstantFactor = 0.0f;  // Optional
+    rasterizerInfo.depthBiasClamp = 0.0f;           // Optional
+    rasterizerInfo.depthBiasSlopeFactor = 0.0f;     // Optional
     return rasterizerInfo;
 }
 
@@ -390,24 +377,27 @@ VkPipelineMultisampleStateCreateInfo PipelineManager::GetMultisampleState()
     return multisamplingInfo;
 }
 
-VkPipelineColorBlendStateCreateInfo PipelineManager::GetBlendState(size_t numAttachments)
+VkPipelineColorBlendStateCreateInfo PipelineManager::GetBlendState(
+    size_t numAttachments)
 {
     assert(numAttachments <= MAX_NUM_ATTACHMENTS);
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
     colorBlending.sType =
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.logicOp = VK_LOGIC_OP_COPY; // Optional
+    colorBlending.logicOp = VK_LOGIC_OP_COPY;  // Optional
     colorBlending.attachmentCount = static_cast<uint32_t>(numAttachments);
     colorBlending.pAttachments = m_aBlendModes.data();
-    colorBlending.blendConstants[0] = 0.0f; // Optional
-    colorBlending.blendConstants[1] = 0.0f; // Optional
-    colorBlending.blendConstants[2] = 0.0f; // Optional
-    colorBlending.blendConstants[3] = 0.0f; // Optional
+    colorBlending.blendConstants[0] = 0.0f;  // Optional
+    colorBlending.blendConstants[1] = 0.0f;  // Optional
+    colorBlending.blendConstants[2] = 0.0f;  // Optional
+    colorBlending.blendConstants[3] = 0.0f;  // Optional
     return colorBlending;
 }
 
-VkPipelineLayout PipelineManager::CreatePipelineLayout(VkDescriptorSetLayout descriptorSetLayout, VkPushConstantRange pushConstantRange)
+VkPipelineLayout PipelineManager::CreatePipelineLayout(
+    VkDescriptorSetLayout descriptorSetLayout,
+    VkPushConstantRange pushConstantRange)
 {
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
@@ -426,7 +416,9 @@ VkPipelineLayout PipelineManager::CreatePipelineLayout(VkDescriptorSetLayout des
 }
 
 VkPipelineDepthStencilStateCreateInfo
-PipelineManager::GetDepthStencilCreateinfo(VkBool32 bEnableDepthTest, VkBool32 bEnableStencilTest, VkCompareOp compareOp)
+PipelineManager::GetDepthStencilCreateinfo(VkBool32 bEnableDepthTest,
+                                           VkBool32 bEnableStencilTest,
+                                           VkCompareOp compareOp)
 {
     VkPipelineDepthStencilStateCreateInfo depthStencil = {};
     depthStencil.sType =

@@ -81,3 +81,5 @@ std::unique_ptr<Geometry> getQuad();
 
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));
 
+std::unique_ptr<Geometry> getSkybox();
+

@@ -4,9 +4,15 @@
 #include <vulkan/vulkan.h>
 #include <array>
 #include <cassert>
+#include <cmath>
 enum SamplerTypes
 {
-    SAMPLER_FULL_SCREEN_TEXTURE,
+    SAMPLER_1_MIPS,
+    SAMPLER_2_MIPS,
+    SAMPLER_4_MIPS,
+    SAMPLER_8_MIPS,
+    SAMPLER_16_MIPS,
+    SAMPLER_32_MIPS,
     SAMPLER_TYPE_COUNT
 };
 class SamplerManager
@@ -48,14 +54,17 @@ public:
         samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         samplerInfo.mipLodBias = 0.0f;
         samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
+        samplerInfo.maxLod = 1.0f;
 
-        assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
-                               nullptr,
-                               &m_aSamplers[SAMPLER_FULL_SCREEN_TEXTURE]) == VK_SUCCESS);
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_aSamplers[SAMPLER_FULL_SCREEN_TEXTURE]),
-            VK_OBJECT_TYPE_SAMPLER, "Frame Sampler");
+        // full screen texture sampler
+        for (int i = 0; i<SAMPLER_TYPE_COUNT; i++)
+        {
+            samplerInfo.maxLod = std::pow(2, i);
+            assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
+                                   nullptr, &m_aSamplers[i]) == VK_SUCCESS);
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aSamplers[i]),
+                                    VK_OBJECT_TYPE_SAMPLER, "Frame Sampler");
+        }
     }
     void destroySamplers()
     {

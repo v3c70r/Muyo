@@ -1,6 +1,9 @@
 #pragma once
+#include <memory>
+
 #include "Geometry.h"
 #include "RenderPass.h"
+#include "Texture.h"
 
 class RenderPassIBL : public RenderPass
 {
@@ -12,8 +15,12 @@ public:
     void initializeIBLPipeline();
     void destroyIBLPipeline();
     void destroyFramebuffer();
+    void setEnvMap(const std::string path)
+    {
+        m_texEnvMap.LoadImage(path);
+    }
 
-    void recordCommandBuffer();
+    void generateIrradianceCube();
 
     VkCommandBuffer GetCommandBuffer() const
     {
@@ -28,5 +35,7 @@ private:
     VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
     VkExtent2D m_renderArea = {0, 0};
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+    Texture m_texEnvMap;
+    std::unique_ptr<Geometry> m_pSkybox = nullptr;
 };
 

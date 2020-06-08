@@ -53,14 +53,24 @@ public:
         return maPipelineLayouts[PIPELINE_TYPE_GBUFFER];
     }
 
+    VkPipeline GetImGuiPipeline() const
+    {
+        return maPipelines[PIPELINE_TYPE_IMGUI];
+    }
+
     VkPipelineLayout GetImGuiPipelineLayout() const
     {
         return maPipelineLayouts[PIPELINE_TYPE_IMGUI];
     }
 
-    VkPipeline GetImGuiPipeline() const
+    VkPipeline GetIBLIrradiancePipeline() const
     {
-        return maPipelines[PIPELINE_TYPE_IMGUI];
+        return maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE];
+    }
+
+    VkPipelineLayout GetIBLIrradiancePipelineLayout() const
+    {
+        return maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE];
     }
 
     enum PipelineType
@@ -73,6 +83,10 @@ public:
         PIPELINE_TYPE_IBL_PF_ENV,       // generate pre-filtered environment map
         PIPELINE_TYPE_COUNT
     };
+    static VkPipelineLayout CreatePipelineLayout(
+        VkDescriptorSetLayout descriptorLayout,
+        VkPushConstantRange pushConstantRange = {0, 0, 0});
+
 private:
     std::unordered_map<std::string, VkPipeline> m_vPipelines;
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
@@ -90,8 +104,6 @@ private:
         VkBool32 bEnableDepthTest = VK_TRUE, VkBool32 bEnableStencilTest = VK_TRUE,
         VkCompareOp compareOp = VK_COMPARE_OP_LESS);
 
-    VkPipelineLayout CreatePipelineLayout(VkDescriptorSetLayout descriptorLayout, 
-            VkPushConstantRange pushConstantRange = {0, 0, 0});
 
     std ::array<VkPipeline, PIPELINE_TYPE_COUNT> maPipelines = {VK_NULL_HANDLE, VK_NULL_HANDLE};
     std ::array<VkPipelineLayout, PIPELINE_TYPE_COUNT> maPipelineLayouts = {VK_NULL_HANDLE};

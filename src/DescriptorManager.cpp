@@ -99,8 +99,8 @@ void DescriptorManager::createDescriptorSetLayouts()
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
-                                "ImGui");
-        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IMGUI] = layout;
+                                "Single sampler");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SINGLE_SAMPLER] = layout;
     }
 }
 
@@ -149,23 +149,23 @@ VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet(
         // prepare image descriptor
         std::array<VkDescriptorImageInfo, Material::TEX_COUNT> imageInfos = {
             // albedo
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             pbrViews.at(Material::TEX_ALBEDO),
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // normal
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             pbrViews.at(Material::TEX_NORMAL),
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // metalness
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             pbrViews.at(Material::TEX_METALNESS),
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // roughness
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             pbrViews.at(Material::TEX_ROUGHNESS),
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // AO
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             pbrViews.at(Material::TEX_AO),
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
@@ -222,19 +222,19 @@ VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
         // prepare image descriptor
         std::array<VkDescriptorImageInfo, 4> imageInfos = {
             // position
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             position,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // albedo
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             albedo,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // normal
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             normal,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // UV
-            GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE),
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
             uv,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
@@ -264,7 +264,7 @@ VkDescriptorSet DescriptorManager::allocateImGuiDescriptorSet(
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = m_descriptorPool;
     allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IMGUI];
+    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SINGLE_SAMPLER];
 
     assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
                                     &descriptorSet) == VK_SUCCESS);
@@ -275,7 +275,7 @@ VkDescriptorSet DescriptorManager::allocateImGuiDescriptorSet(
         VkDescriptorImageInfo imageInfo = {};
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         imageInfo.imageView = textureView;
-        imageInfo.sampler = GetSamplerManager()->getSampler(SAMPLER_FULL_SCREEN_TEXTURE);
+        imageInfo.sampler = GetSamplerManager()->getSampler(SAMPLER_1_MIPS);
 
         std::array<VkWriteDescriptorSet, 1> descriptorWrites = {};
 

@@ -81,3 +81,8 @@ std::unique_ptr<Geometry> getQuad()
     return std::make_unique<Geometry>(
         std::make_unique<Primitive>(VERTICES, INDICES));
 }
+
+std::unique_ptr<Geometry> getSkybox()
+{
+    return loadObj("assets/cube.obj");
+}
