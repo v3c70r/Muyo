@@ -15,8 +15,8 @@ class PipelineManager
 public:
     static constexpr size_t MAX_NUM_ATTACHMENTS = 4;
     std::array<VkPipelineColorBlendAttachmentState, MAX_NUM_ATTACHMENTS> m_aBlendModes;
-    VkViewport mViewport = {};
-    VkRect2D mScissorRect = {};
+    //VkViewport mViewport = {};
+    //VkRect2D mScissorRect = {};
     void InitializeDefaultBlendStats();
 
     PipelineManager();
@@ -89,14 +89,11 @@ public:
 
 private:
     std::unordered_map<std::string, VkPipeline> m_vPipelines;
-    VkShaderModule CreateShaderModule(const std::vector<char>& code);
-    std::vector<char> ReadSpv(const std::string& fileName);
 
     VkPipelineInputAssemblyStateCreateInfo GetIAInfo(
         VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         bool bEnablePrimtiveStart = false);
 
-    VkPipelineViewportStateCreateInfo GetViewportState(uint32_t width, uint32_t height);
     VkPipelineRasterizationStateCreateInfo GetRasterInfo(bool bWireframe = false);
     VkPipelineMultisampleStateCreateInfo GetMultisampleState();
     VkPipelineColorBlendStateCreateInfo GetBlendState(size_t numAttachments);

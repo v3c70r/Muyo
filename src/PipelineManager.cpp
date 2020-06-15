@@ -1,7 +1,6 @@
 #include "PipelineManager.h"
 
 #include <cassert>
-#include <fstream>
 
 #include "Debug.h"
 #include "MeshVertex.h"
@@ -47,15 +46,10 @@ void PipelineManager::CreateStaticObjectPipeline(
     uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
     VkRenderPass pass)
 {
-    mViewport.x = 0.0f;
-    mViewport.y = 0.0f;
-    mViewport.width = (float)width;
-    mViewport.height = (float)height;
-    mViewport.minDepth = 0.0f;
-    mViewport.maxDepth = 1.0f;
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(width, height).build();
 
-    mScissorRect.offset = {0, 0};
-    mScissorRect.extent = {width, height};
+    VkRect2D scissorRect = {{0, 0}, {width, height}};
 
     maPipelineLayouts[PIPELINE_TYPE_STATIC_OBJECT] =
         CreatePipelineLayout(descriptorSetLayout);
@@ -73,7 +67,7 @@ void PipelineManager::CreateStaticObjectPipeline(
             .setVertextInfo({Vertex::getBindingDescription()},
                             Vertex::getAttributeDescriptions())
             .setAssembly(GetIAInfo())
-            .setViewport(mViewport, mScissorRect)
+            .setViewport(viewport, scissorRect)
             .setRasterizer(GetRasterInfo())
             .setMSAA(GetMultisampleState())
             .setColorBlending(GetBlendState(1))
@@ -106,14 +100,11 @@ void PipelineManager::CreateGBufferPipeline(
     uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
     VkRenderPass pass)
 {
-    mViewport.x = 0.0f;
-    mViewport.y = 0.0f;
-    mViewport.width = (float)width;
-    mViewport.height = (float)height;
-    mViewport.minDepth = 0.0f;
-    mViewport.maxDepth = 1.0f;
-    mScissorRect.offset = {0, 0};
-    mScissorRect.extent = {width, height};
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(width, height).build();
+    VkRect2D scissorRect;
+    scissorRect.offset = {0, 0};
+    scissorRect.extent = {width, height};
 
     maPipelineLayouts[PIPELINE_TYPE_GBUFFER] =
         CreatePipelineLayout(descriptorSetLayout);
@@ -129,7 +120,7 @@ void PipelineManager::CreateGBufferPipeline(
             .setVertextInfo({Vertex::getBindingDescription()},
                             Vertex::getAttributeDescriptions())
             .setAssembly(GetIAInfo())
-            .setViewport(mViewport, mScissorRect)
+            .setViewport(viewport, scissorRect)
             .setRasterizer(GetRasterInfo())
             .setMSAA(GetMultisampleState())
             .setColorBlending(GetBlendState(4))
@@ -161,14 +152,9 @@ void PipelineManager::CreateImGuiPipeline(
     uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
     VkRenderPass pass)
 {
-    mViewport.x = 0.0f;
-    mViewport.y = 0.0f;
-    mViewport.width = (float)width;
-    mViewport.height = (float)height;
-    mViewport.minDepth = 0.0f;
-    mViewport.maxDepth = 1.0f;
-    mScissorRect.offset = {0, 0};
-    mScissorRect.extent = {width, height};
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(width, height).build();
+    VkRect2D scissorRect = {{0, 0}, {width, height}};
 
     maPipelineLayouts[PIPELINE_TYPE_IMGUI] = CreatePipelineLayout(
         descriptorSetLayout,
@@ -189,7 +175,7 @@ void PipelineManager::CreateImGuiPipeline(
             .setVertextInfo({UIVertex::getBindingDescription()},
                             UIVertex::getAttributeDescriptions())
             .setAssembly(GetIAInfo())
-            .setViewport(mViewport, mScissorRect)
+            .setViewport(viewport, scissorRect)
             .setRasterizer(GetRasterInfo())
             .setMSAA(GetMultisampleState())
             .setColorBlending(GetBlendState(1))
@@ -223,14 +209,10 @@ void PipelineManager::CreateIBLPipelines(
     uint32_t width, uint32_t height, VkDescriptorSetLayout descriptorSetLayout,
     VkRenderPass pass)
 {
-    mViewport.x = 0.0f;
-    mViewport.y = 0.0f;
-    mViewport.width = (float)width;
-    mViewport.height = (float)height;
-    mViewport.minDepth = 0.0f;
-    mViewport.maxDepth = 1.0f;
-    mScissorRect.offset = {0, 0};
-    mScissorRect.extent = {width, height};
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(width, height).build();
+
+    VkRect2D scissorRect = {{0, 0}, {width, height}};
 
     // Irradiance map
     {
@@ -255,7 +237,7 @@ void PipelineManager::CreateIBLPipelines(
                 .setVertextInfo({UIVertex::getBindingDescription()},
                                 UIVertex::getAttributeDescriptions())
                 .setAssembly(GetIAInfo())
-                .setViewport(mViewport, mScissorRect)
+                .setViewport(viewport, scissorRect)
                 .setRasterizer(GetRasterInfo())
                 .setMSAA(GetMultisampleState())
                 .setColorBlending(GetBlendState(1))
@@ -290,33 +272,6 @@ void PipelineManager::DestroyIBLPipelines()
     maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE] = VK_NULL_HANDLE;
 }
 
-// Private helpers
-VkShaderModule PipelineManager::CreateShaderModule(
-    const std::vector<char> &code)
-{
-    VkShaderModuleCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
-    VkShaderModule shdrModule;
-    assert(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo,
-                                nullptr, &shdrModule) == VK_SUCCESS);
-    return shdrModule;
-}
-
-std::vector<char> PipelineManager::ReadSpv(const std::string &fileName)
-{
-    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
-    assert(file.is_open());
-    size_t fileSize = (size_t)file.tellg();
-    std::vector<char> buffer(fileSize);
-
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-
-    return buffer;
-}
 VkPipelineInputAssemblyStateCreateInfo PipelineManager::GetIAInfo(
     VkPrimitiveTopology topology, bool bEnablePrimtiveStart)
 {
@@ -326,18 +281,6 @@ VkPipelineInputAssemblyStateCreateInfo PipelineManager::GetIAInfo(
     inputAssemblyInfo.topology = topology;
     inputAssemblyInfo.primitiveRestartEnable = bEnablePrimtiveStart;
     return inputAssemblyInfo;
-}
-
-VkPipelineViewportStateCreateInfo PipelineManager::GetViewportState(
-    uint32_t width, uint32_t height)
-{
-    VkPipelineViewportStateCreateInfo viewportState = {};
-    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &mViewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &mScissorRect;
-    return viewportState;
 }
 
 VkPipelineRasterizationStateCreateInfo PipelineManager::GetRasterInfo(

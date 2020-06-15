@@ -5,6 +5,7 @@
 #include "PushConstantBlocks.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
+#include "PipelineStateBuilder.h"
 #include "glm/gtc/matrix_transform.hpp"
 RenderPassIBL::RenderPassIBL()
 {
@@ -238,4 +239,67 @@ void RenderPassIBL::generateIrradianceCube()
 
     // vkCmdEndRenderPass(m_commandBuffer);
     vkEndCommandBuffer(m_commandBuffer);
+}
+
+void RenderPassIBL::envMapToCubemap(VkImageView envMap)
+{
+    // Create descriptors
+    //
+    // Create pipeline
+
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(CUBE_DIM, CUBE_DIM).build();
+
+    VkRect2D scissorRect;
+    scissorRect.offset = {0, 0};
+    scissorRect.extent = {CUBE_DIM, CUBE_DIM};
+
+    InputAssemblyStateCIBuilder iaBuilder;
+    RasterizationStateCIBuilder rasterizerBuilder;
+    MultisampleStateCIBuilder msBuilder;
+    BlendStateCIBuilder blendStateBuilder;
+    blendStateBuilder.setAttachments(1);
+    DepthStencilCIBuilder depthStencilBuilder;
+    depthStencilBuilder.setDepthTestEnabled(false)
+        .setDepthWriteEnabled(false)
+        .setDepthCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+
+    envToCubeMapPipeline = CreatePipelineLayout(
+        descriptorSetLayout,
+        getPushConstantRange<IrradianceMapPushConstBlock>(
+            (VkShaderStageFlagBits)(VK_SHADER_STAGE_VERTEX_BIT |
+                                    VK_SHADER_STAGE_FRAGMENT_BIT)));
+
+    // Dynmaic state
+    std::vector<VkDynamicState> dynamicStateEnables = {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+    VkShaderModule vertShdr =
+        CreateShaderModule(ReadSpv("shaders/filtercube.vert.spv"));
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/irradiancecube.frag.spv"));
+    PipelineStateBuilder builder;
+
+    envToCubeMapPipeline =
+        builder.setShaderModules({vertShdr, fragShdr})
+            .setVertextInfo({UIVertex::getBindingDescription()},
+                            UIVertex::getAttributeDescriptions())
+            .setAssembly(iaBuilder.build())
+            .setViewport(viewport, scissorRect)
+            .setRasterizer(rasterizerBuilder.build())
+            .setMSAA(msBuilder.build())
+            .setColorBlending(blendStateBuilder.build())
+            .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE])
+            .setDynamicStates(dynamicStateEnables)
+            .setDepthStencil(depthStencilBuilder.build())
+            .setRenderPass(pass)
+            .build(GetRenderDevice()->GetDevice());
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+
+    // Set debug name for the pipeline
+    setDebugUtilsObjectName(
+        reinterpret_cast<uint64_t>(maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE]),
+        VK_OBJECT_TYPE_PIPELINE, "IBL Irradiance");
 }
