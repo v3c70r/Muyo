@@ -46,6 +46,8 @@ private:
 
     void envMapToCubemap(VkImageView envMap);
     Texture m_texEnvCupMap;
-    VkPipeline envToCubeMapPipeline = VK_NULL_HANDLE;
+    VkPipeline m_envToCubeMapPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_envToCubeMapPipelineLayout = VK_NULL_HANDLE;
+
 };
 

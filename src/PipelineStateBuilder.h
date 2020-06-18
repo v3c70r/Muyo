@@ -299,31 +299,7 @@ public:
     }
 };
 
-// Helper function
 
-VkShaderModule CreateShaderModule(const std::vector<char>& code)
-{
-    VkShaderModuleCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = code.size();
-    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-    VkShaderModule shdrModule;
-    assert(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo,
-                                nullptr, &shdrModule) == VK_SUCCESS);
-    return shdrModule;
-}
 
-std::vector<char> ReadSpv(const std::string& fileName)
-{
-    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
-    assert(file.is_open());
-    size_t fileSize = (size_t)file.tellg();
-    std::vector<char> buffer(fileSize);
-
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-
-    return buffer;
-}
-
+VkShaderModule CreateShaderModule(const std::vector<char>& code);
+std::vector<char> ReadSpv(const std::string& fileName);

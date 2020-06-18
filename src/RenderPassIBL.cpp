@@ -153,7 +153,7 @@ void RenderPassIBL::generateIrradianceCube()
     // create descriptor set from the view
     VkDescriptorSet descriptorSet =
         GetDescriptorManager()->allocateImGuiDescriptorSet(
-            m_texEnvMap.getImageView());
+            m_texEnvCupMap.getImageView());
 
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -264,8 +264,9 @@ void RenderPassIBL::envMapToCubemap(VkImageView envMap)
         .setDepthWriteEnabled(false)
         .setDepthCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
 
-    envToCubeMapPipeline = CreatePipelineLayout(
-        descriptorSetLayout,
+    m_envToCubeMapPipelineLayout = PipelineManager::CreatePipelineLayout(
+        GetDescriptorManager()->getDescriptorLayout(
+            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
         getPushConstantRange<IrradianceMapPushConstBlock>(
             (VkShaderStageFlagBits)(VK_SHADER_STAGE_VERTEX_BIT |
                                     VK_SHADER_STAGE_FRAGMENT_BIT)));
@@ -280,7 +281,7 @@ void RenderPassIBL::envMapToCubemap(VkImageView envMap)
         CreateShaderModule(ReadSpv("shaders/irradiancecube.frag.spv"));
     PipelineStateBuilder builder;
 
-    envToCubeMapPipeline =
+    m_envToCubeMapPipeline =
         builder.setShaderModules({vertShdr, fragShdr})
             .setVertextInfo({UIVertex::getBindingDescription()},
                             UIVertex::getAttributeDescriptions())
@@ -289,10 +290,10 @@ void RenderPassIBL::envMapToCubemap(VkImageView envMap)
             .setRasterizer(rasterizerBuilder.build())
             .setMSAA(msBuilder.build())
             .setColorBlending(blendStateBuilder.build())
-            .setPipelineLayout(maPipelineLayouts[PIPELINE_TYPE_IBL_IRRADIANCE])
+            .setPipelineLayout(m_envToCubeMapPipelineLayout)
             .setDynamicStates(dynamicStateEnables)
             .setDepthStencil(depthStencilBuilder.build())
-            .setRenderPass(pass)
+            .setRenderPass(m_renderPass)
             .build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
@@ -300,6 +301,6 @@ void RenderPassIBL::envMapToCubemap(VkImageView envMap)
 
     // Set debug name for the pipeline
     setDebugUtilsObjectName(
-        reinterpret_cast<uint64_t>(maPipelines[PIPELINE_TYPE_IBL_IRRADIANCE]),
-        VK_OBJECT_TYPE_PIPELINE, "IBL Irradiance");
+        reinterpret_cast<uint64_t>(m_envToCubeMapPipeline),
+        VK_OBJECT_TYPE_PIPELINE, "EnvMapToCubeMap");
 }
