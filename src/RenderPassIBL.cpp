@@ -241,7 +241,7 @@ void RenderPassIBL::generateIrradianceCube()
     vkEndCommandBuffer(m_commandBuffer);
 }
 
-void RenderPassIBL::envMapToCubemap(VkImageView envMap)
+void RenderPassIBL::equirectangularMapToCubeMap(VkImageView envMap)
 {
     // Create descriptors
     //
@@ -276,9 +276,9 @@ void RenderPassIBL::envMapToCubemap(VkImageView envMap)
         VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
     VkShaderModule vertShdr =
-        CreateShaderModule(ReadSpv("shaders/filtercube.vert.spv"));
+        CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
     VkShaderModule fragShdr =
-        CreateShaderModule(ReadSpv("shaders/irradiancecube.frag.spv"));
+        CreateShaderModule(ReadSpv("shaders/equirectangularToCubeMap.frag"));
     PipelineStateBuilder builder;
 
     m_envToCubeMapPipeline =
@@ -302,5 +302,5 @@ void RenderPassIBL::envMapToCubemap(VkImageView envMap)
     // Set debug name for the pipeline
     setDebugUtilsObjectName(
         reinterpret_cast<uint64_t>(m_envToCubeMapPipeline),
-        VK_OBJECT_TYPE_PIPELINE, "EnvMapToCubeMap");
+        VK_OBJECT_TYPE_PIPELINE, "EquirectangularMapToCubeMap");
 }

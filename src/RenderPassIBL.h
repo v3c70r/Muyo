@@ -44,7 +44,7 @@ private:
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
     std::unique_ptr<Geometry> m_pSkybox = nullptr;
 
-    void envMapToCubemap(VkImageView envMap);
+    void equirectangularMapToCubeMap(VkImageView envMap);
     Texture m_texEnvCupMap;
     VkPipeline m_envToCubeMapPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_envToCubeMapPipelineLayout = VK_NULL_HANDLE;
