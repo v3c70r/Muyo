@@ -241,7 +241,7 @@ void RenderPassIBL::generateIrradianceCube()
     vkEndCommandBuffer(m_commandBuffer);
 }
 
-void RenderPassIBL::equirectangularMapToCubeMap(VkImageView envMap)
+void RenderPassIBL::createEquirectangularMapToCubeMapPipeline()
 {
     // Create descriptors
     //
@@ -266,25 +266,26 @@ void RenderPassIBL::equirectangularMapToCubeMap(VkImageView envMap)
 
     m_envToCubeMapPipelineLayout = PipelineManager::CreatePipelineLayout(
         GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
-        getPushConstantRange<IrradianceMapPushConstBlock>(
-            (VkShaderStageFlagBits)(VK_SHADER_STAGE_VERTEX_BIT |
-                                    VK_SHADER_STAGE_FRAGMENT_BIT)));
+            DESCRIPTOR_LAYOUT_GBUFFER));
+
+        //,getPushConstantRange<IrradianceMapPushConstBlock>(
+        //    (VkShaderStageFlagBits)(VK_SHADER_STAGE_VERTEX_BIT |
+        //                            VK_SHADER_STAGE_FRAGMENT_BIT)));
 
     // Dynmaic state
     std::vector<VkDynamicState> dynamicStateEnables = {
         VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
     VkShaderModule vertShdr =
-        CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
+        CreateShaderModule(ReadSpv("shaders/equirectangularToCubeMap.vert.spv"));
     VkShaderModule fragShdr =
-        CreateShaderModule(ReadSpv("shaders/equirectangularToCubeMap.frag"));
+        CreateShaderModule(ReadSpv("shaders/equirectangularToCubeMap.frag.spv"));
     PipelineStateBuilder builder;
 
     m_envToCubeMapPipeline =
         builder.setShaderModules({vertShdr, fragShdr})
-            .setVertextInfo({UIVertex::getBindingDescription()},
-                            UIVertex::getAttributeDescriptions())
+            .setVertextInfo({Vertex::getBindingDescription()},
+                            Vertex::getAttributeDescriptions())
             .setAssembly(iaBuilder.build())
             .setViewport(viewport, scissorRect)
             .setRasterizer(rasterizerBuilder.build())
@@ -304,3 +305,4 @@ void RenderPassIBL::equirectangularMapToCubeMap(VkImageView envMap)
         reinterpret_cast<uint64_t>(m_envToCubeMapPipeline),
         VK_OBJECT_TYPE_PIPELINE, "EquirectangularMapToCubeMap");
 }
+void RenderPassIBL::recordEquirectangularMapToCubeMapCmd(VkImageView envMap) {}

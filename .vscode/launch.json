@@ -8,9 +8,10 @@
             "name": "vulkanTutorial",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${command:cmake.launchTargetPath}",
+            //"program": "${command:cmake.launchTargetPath}",
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
+            "program": "${workspaceFolder}/build/helloVulkan",
             "externalConsole": false,
             "linux": {
                 "environment": [
@@ -44,6 +45,7 @@
                 "program": "${workspaceFolder}/build/helloVulkan",
             },
             "windows": {
+                "program": "${command:cmake.launchTargetPath}",
                 "MIMode": "gdb",
                 "miDebuggerPath": "C:/Users/qgu/scoop/apps/gdb/7.9.1/bin/gdb.exe",
                 "setupCommands": [

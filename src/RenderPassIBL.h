@@ -33,6 +33,8 @@ public:
     {
         return m_commandBuffer;
     }
+    void createEquirectangularMapToCubeMapPipeline();
+    void recordEquirectangularMapToCubeMapCmd(VkImageView envMap);
 
 private:
     const uint32_t CUBE_DIM = 64;
@@ -44,7 +46,6 @@ private:
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
     std::unique_ptr<Geometry> m_pSkybox = nullptr;
 
-    void equirectangularMapToCubeMap(VkImageView envMap);
     Texture m_texEnvCupMap;
     VkPipeline m_envToCubeMapPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_envToCubeMapPipelineLayout = VK_NULL_HANDLE;

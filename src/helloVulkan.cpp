@@ -460,8 +460,11 @@ void createCommandBuffers()
                 ->getView()));
 
     // Load env view
-    pIBLPass->setEnvMap("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
-    pIBLPass->generateIrradianceCube();
+    //pIBLPass->setEnvMap("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
+    Texture* pTexture = new Texture;
+    pTexture->LoadImage("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
+    pIBLPass->createEquirectangularMapToCubeMapPipeline();
+    pIBLPass->recordEquirectangularMapToCubeMapCmd(pTexture->getImageView());
 }
 
 void createSemaphores()
@@ -716,7 +719,7 @@ int main()
     pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pIBLPass = std::make_unique<RenderPassIBL>();
-    pIBLPass->initializeIBLResources();
+    //pIBLPass->initializeIBLResources();
 
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
