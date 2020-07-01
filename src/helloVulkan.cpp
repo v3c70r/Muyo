@@ -162,6 +162,8 @@ void recreateSwapChain(); // fwd declaration
 static void onWindowResize(GLFWwindow *pWindow, int width, int height)
 {
     s_arcball.resize(glm::vec2((float)width, (float)height));
+    GetRenderDevice()->setViewportSize(VkExtent2D(
+        {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}));
     recreateSwapChain();
 }
 
@@ -461,10 +463,10 @@ void createCommandBuffers()
 
     // Load env view
     //pIBLPass->setEnvMap("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
-    Texture* pTexture = new Texture;
-    pTexture->LoadImage("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
-    pIBLPass->createEquirectangularMapToCubeMapPipeline();
-    pIBLPass->recordEquirectangularMapToCubeMapCmd(pTexture->getImageView());
+    //Texture* pTexture = new Texture;
+    //pTexture->LoadImage("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
+    //pIBLPass->createEquirectangularMapToCubeMapPipeline();
+    //pIBLPass->recordEquirectangularMapToCubeMapCmd(pTexture->getImageView());
 }
 
 void createSemaphores()
@@ -699,6 +701,8 @@ int main()
     s_pSwapchain->createSwapchain(
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
         VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
+
+    GetRenderDevice()->setViewportSize(s_pSwapchain->getSwapchainExtent());
 
     GetRenderDevice()->createCommandPools();
     GetDescriptorManager()->createDescriptorPool();

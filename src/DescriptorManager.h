@@ -13,6 +13,7 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_GBUFFER,
     DESCRIPTOR_LAYOUT_LIGHTING,
     DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,   // A single sampler descriptor set layout at binding 0
+    DESCRIPTOR_LAYOUT_PER_VIEW_DATA,    // A layout contains mvp matrices at binding 0
     DESCRIPTOR_LAYOUT_COUNT,
 };
 class DescriptorManager
@@ -32,6 +33,8 @@ public:
         VkImageView albedo, VkImageView normal, VkImageView uv);
 
     VkDescriptorSet allocateImGuiDescriptorSet(VkImageView textureView);
+
+    VkDescriptorSet allocatePerviewDataDescriptorSet(const UniformBuffer<PerViewData>& perViewData);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {

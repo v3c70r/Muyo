@@ -358,6 +358,29 @@ VkPipelineLayout PipelineManager::CreatePipelineLayout(
     return pipelineLayout;
 }
 
+VkPipelineLayout PipelineManager::CreatePipelineLayout(
+    const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts,
+    const std::vector<VkPushConstantRange> &pushConstantRanges)
+{
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+    pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
+    
+    if (pushConstantRanges.size() > 0)
+    {
+        pipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
+        pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
+    }
+
+    assert(vkCreatePipelineLayout(GetRenderDevice()->GetDevice(),
+                                  &pipelineLayoutInfo, nullptr,
+                                  &pipelineLayout) == VK_SUCCESS);
+    return pipelineLayout;
+}
+
+
 VkPipelineDepthStencilStateCreateInfo
 PipelineManager::GetDepthStencilCreateinfo(VkBool32 bEnableDepthTest,
                                            VkBool32 bEnableStencilTest,

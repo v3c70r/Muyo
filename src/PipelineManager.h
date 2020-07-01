@@ -87,6 +87,12 @@ public:
         VkDescriptorSetLayout descriptorLayout,
         VkPushConstantRange pushConstantRange = {0, 0, 0});
 
+    static VkPipelineLayout CreatePipelineLayout(
+        const std::vector<VkDescriptorSetLayout> &descriptorLayouts,
+        const std::vector<VkPushConstantRange>& pushConstantRanges);
+
+        //VkPushConstantRange pushConstantRange = {0, 0, 0});
+
 private:
     std::unordered_map<std::string, VkPipeline> m_vPipelines;
 

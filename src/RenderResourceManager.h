@@ -1,6 +1,7 @@
 #pragma once
 #include "RenderTargetResource.h"
 #include "Debug.h"
+#include "Texture.h"
 
 #include <memory>
 #include <string>
@@ -37,6 +38,22 @@ public:
         return static_cast<RenderTarget*>(m_mResources[name].get());
     }
 
+    Texture* getTexture(const std::string name, const std::string path)
+    {
+        if (m_mResources.find(name) == m_mResources.end())
+        {
+
+            m_mResources[name] = std::make_unique<Texture>();
+            static_cast<Texture*>(m_mResources[name].get())->LoadImage(path);
+            setDebugUtilsObjectName(
+                reinterpret_cast<uint64_t>(
+                    static_cast<ImageResource*>(m_mResources[name].get())
+                        ->getImage()),
+                VK_OBJECT_TYPE_IMAGE, name.c_str());
+        }
+        return static_cast<Texture*>(m_mResources[name].get());
+    }
+
     RenderTarget* getDepthTarget(const std::string name, VkExtent2D extent,
                                  VkFormat format = VK_FORMAT_D32_SFLOAT)
     {
@@ -44,9 +61,9 @@ public:
     }
 
     RenderTarget* getColorTarget(const std::string name, VkExtent2D extent,
-                                 VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT)
+                                 VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t numMips = 1, uint32_t numLayers = 1)
     {
-        return getRenderTarget(name, true, extent, format);
+        return getRenderTarget(name, true, extent, format, numMips, numLayers);
     }
 
     void removeResource(const std::string name)

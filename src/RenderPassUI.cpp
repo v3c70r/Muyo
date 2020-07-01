@@ -16,7 +16,7 @@ void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapc
     pTexture->LoadPixels(fontData, texWidth, texHeight);
     // Allocate descriptor
     descriptorSet = GetDescriptorManager()->allocateImGuiDescriptorSet(
-        pTexture->getImageView());
+        pTexture->getView());
     GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER);
 
     GetPipelineManager()->CreateImGuiPipeline(

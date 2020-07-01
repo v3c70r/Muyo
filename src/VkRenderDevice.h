@@ -97,6 +97,9 @@ public:
     // Helper functions
     VkSampler createSampler();
 
+    VkExtent2D getViewportSize() const { return mViewportSize; }
+    void setViewportSize(VkExtent2D vp) { mViewportSize = vp; }
+
 private: // Private structures
     enum CommandPools
     {
@@ -126,6 +129,7 @@ private:// Members
     bool mbIsValidationEnabled = false;
     std::vector<const char*> mLayers;
     std::vector<const char*> mExtensions;
+    VkExtent2D mViewportSize;
 };
 
 VkRenderDevice* GetRenderDevice();

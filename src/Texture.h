@@ -1,13 +1,14 @@
 #pragma once
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
+#include "RenderResource.h"
 #include <stdexcept>
 #include <string>
 #include "Buffer.h"
 #include "VkRenderDevice.h"
 #include "VkMemoryAllocator.h"
 
-class Texture
+class Texture : public ImageResource
 {
 public:
     Texture();
@@ -17,7 +18,6 @@ public:
 
     void LoadImage(const std::string path);
 
-    VkImageView getImageView() const { return m_imageView; }
     VkSampler getSamper() const { return m_textureSampler; }
 
     void createImage(uint32_t width, uint32_t height, VkFormat format,
@@ -162,7 +162,7 @@ private:
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
         assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &viewInfo,
-                                 nullptr, &m_imageView) == VK_SUCCESS);
+                                 nullptr, &m_view) == VK_SUCCESS);
     }
 
     void mInitSampler()
@@ -199,8 +199,5 @@ private:
                                nullptr, &m_textureSampler) == VK_SUCCESS);
     }
 
-    VkImage m_image;
-    VmaAllocation m_allocation = VK_NULL_HANDLE;
-    VkImageView m_imageView;
     VkSampler m_textureSampler;
 };

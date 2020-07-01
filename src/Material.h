@@ -26,7 +26,7 @@ public:
     }
     VkImageView getImageView(TextureTypes type) const
     {
-        return m_aTextures[type].getImageView();
+        return m_aTextures[type].getView();
     }
 private:
     std::array<Texture, TEX_COUNT> m_aTextures;

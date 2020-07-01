@@ -2,19 +2,14 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "../thirdparty/stb/stb_image.h"
 
-Texture::Texture()
-    : m_image(VK_NULL_HANDLE),
-      m_imageView(VK_NULL_HANDLE),
-      m_textureSampler(VK_NULL_HANDLE)
-{
-}
+Texture::Texture() : m_textureSampler(VK_NULL_HANDLE) {}
 
 Texture::~Texture()
 {
     if (GetRenderDevice()->GetDevice() != VK_NULL_HANDLE)
     {
         vkDestroySampler(GetRenderDevice()->GetDevice(), m_textureSampler, nullptr);
-        vkDestroyImageView(GetRenderDevice()->GetDevice(), m_imageView, nullptr);
+        vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
         GetMemoryAllocator()->FreeImage(m_image, m_allocation);
     }
 }
