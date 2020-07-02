@@ -158,10 +158,35 @@ VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
     info.objectType = objectType;
     info.objectHandle = objectHandle;
 
-    auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(
+    static auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(
         GetRenderDevice()->GetInstance(), "vkSetDebugUtilsObjectNameEXT");
     if (func != nullptr)
         return func(GetRenderDevice()->GetDevice(), &info);
     else
         return VK_ERROR_EXTENSION_NOT_PRESENT;
+}
+
+void beginMarker(VkCommandBuffer cmd, std::string&& marker, uint64_t color)
+{
+    VkDebugMarkerMarkerInfoEXT debugInfo = {};
+    debugInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_MARKER_INFO_EXT;
+    debugInfo.pMarkerName = marker.c_str();
+    debugInfo.color[0] = 1.0;
+    debugInfo.color[1] = 1.0;
+    debugInfo.color[2] = 1.0;
+    debugInfo.color[3] = 1.0;
+
+    static auto func = (PFN_vkCmdDebugMarkerBeginEXT)vkGetDeviceProcAddr(
+        GetRenderDevice()->GetDevice(), "vkCmdDebugMarkerBeginEXT");
+
+    assert (func != nullptr && "Feature not present");
+    func(cmd, &debugInfo);
+}
+
+void endMarker(VkCommandBuffer cmd)
+{
+    static auto func = (PFN_vkCmdDebugMarkerEndEXT)vkGetDeviceProcAddr(
+        GetRenderDevice()->GetDevice(), "vkCmdDebugMarkerEndEXT");
+    assert (func != nullptr && "Feature not present");
+    func(cmd);
 }

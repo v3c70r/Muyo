@@ -186,14 +186,14 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
     vkCmdEndRenderPass(m_commandBuffer);
 
     // Add barriers
-    VkMemoryBarrier memoryBarrier = {};
-    memoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    vkCmdPipelineBarrier(
-        m_commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_DEPENDENCY_DEVICE_GROUP_BIT,
-        1, &memoryBarrier, 0, nullptr, 0, nullptr);
+    //VkMemoryBarrier memoryBarrier = {};
+    //memoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    //memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    //memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    //vkCmdPipelineBarrier(
+    //    m_commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+    //    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_DEPENDENCY_DEVICE_GROUP_BIT,
+    //    1, &memoryBarrier, 0, nullptr, 0, nullptr);
 
     vkEndCommandBuffer(m_commandBuffer);
 

@@ -29,7 +29,7 @@ void RenderPassIBL::setupRenderPass()
         attDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         attDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         attDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        attDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attDesc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
     // Irradiance map, will be used later in other passes
@@ -66,12 +66,16 @@ void RenderPassIBL::setupRenderPass()
         subpassDesc.colorAttachmentCount = 1;
         subpassDesc.pColorAttachments = &colorRef;
     }
+    VkAttachmentReference inputReference = {
+        0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     {
         VkSubpassDescription& subpassDesc = subpassDescs[SUBPASS_COMPUTE_IRR_MAP];
         subpassDesc = {};
         subpassDesc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpassDesc.colorAttachmentCount = 1;
         subpassDesc.pColorAttachments = &colorRef;
+        subpassDesc.inputAttachmentCount = 1;
+        subpassDesc.pInputAttachments = &inputReference;
     }
     
     // Subpass layout dependencies 
@@ -390,6 +394,8 @@ void RenderPassIBL::recordCommandBuffer()
     // First sub pass
     // Renders the components of the scene to the G-Buffer atttachments
     {
+        //ScopedGPUMarker(m_commandBuffer, "First IBL pass");
+
         std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
                                                m_envMapDescriptorSet};
 
@@ -407,6 +413,30 @@ void RenderPassIBL::recordCommandBuffer()
                              VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
     }
+    // Second subpass
+    {
+        //ScopedGPUMarker(m_commandBuffer, "Second IBL Pass");
+
+        std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
+                                               m_irrMapDescriptorSet};
+        vkCmdNextSubpass(m_commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          m_irrCubeMapPipeline);
+
+        vkCmdBindDescriptorSets(
+            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_irrCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+
+        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1,
+                               &vertexBuffer, offsets);
+        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+    }
+    vkCmdEndRenderPass(m_commandBuffer);
+    vkEndCommandBuffer(m_commandBuffer);
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
+                            VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
 }
 
 RenderPassIBL::RenderPassIBL()

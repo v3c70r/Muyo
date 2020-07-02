@@ -51,7 +51,8 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlagBits usage,
     VkImageViewCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     createInfo.image = m_image;
-    createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    createInfo.viewType =
+        numLayers == 1 ? VK_IMAGE_VIEW_TYPE_2D : VK_IMAGE_VIEW_TYPE_CUBE;
     createInfo.format = format;
 
     // Swizzles
