@@ -74,6 +74,12 @@ public:
         mRenderPass = renderPass;
         return *this;
     }
+    PipelineStateBuilder& setSubpassIndex(uint32_t subpassIndex)
+    {
+        mSubpassIndex = subpassIndex;
+        return *this;
+    }
+
     VkPipeline build(VkDevice device);
 
 private:
@@ -91,6 +97,7 @@ private:
     VkPipelineDynamicStateCreateInfo mDynamicStatesInfo = {
         VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, nullptr, 0};
     VkRenderPass mRenderPass = {};
+    uint32_t mSubpassIndex = 0;
 };
 
 // TODO: Finish other builders

@@ -80,7 +80,7 @@ VkPipeline PipelineStateBuilder::build(VkDevice device)
     pipelineInfo.layout = mPipelineLayout;
 
     pipelineInfo.renderPass = mRenderPass;
-    pipelineInfo.subpass = 0;
+    pipelineInfo.subpass = mSubpassIndex;
 
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;

@@ -12,7 +12,7 @@ void RenderPassIBL::setupRenderPass()
     //1. Create two attachments, one for env cube map, another for diffuse irradiance map
     enum Attachments
     {
-        ATTACHMENT_ENV_MAP = 0,
+        ATTACHMENT_ENV_CUBE_MAP = 0,
         ATTACHMENT_IRR_MAP,
         ATTACHMENT_COUNT
     };
@@ -20,7 +20,7 @@ void RenderPassIBL::setupRenderPass()
 
     // Env map
     {
-        VkAttachmentDescription &attDesc = attachments[ATTACHMENT_ENV_MAP];
+        VkAttachmentDescription &attDesc = attachments[ATTACHMENT_ENV_CUBE_MAP];
         attDesc = {};
         attDesc.format = TEX_FORMAT;
         attDesc.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -57,25 +57,28 @@ void RenderPassIBL::setupRenderPass()
     std::array<VkSubpassDescription, SUBPASS_COUNT> subpassDescs;
 
     // Subpass descriptions
-    VkAttachmentReference colorRef;
-    colorRef = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference envColorRef = {
+        ATTACHMENT_ENV_CUBE_MAP, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     {
         VkSubpassDescription& subpassDesc = subpassDescs[SUBPASS_LOAD_ENV_MAP];
         subpassDesc = {};
         subpassDesc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpassDesc.colorAttachmentCount = 1;
-        subpassDesc.pColorAttachments = &colorRef;
+        subpassDesc.pColorAttachments = &envColorRef;
     }
-    VkAttachmentReference inputReference = {
-        0, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+    VkAttachmentReference irrColorRef = {
+        ATTACHMENT_IRR_MAP, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference irrInputReference = {
+        ATTACHMENT_ENV_CUBE_MAP, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     {
         VkSubpassDescription& subpassDesc = subpassDescs[SUBPASS_COMPUTE_IRR_MAP];
         subpassDesc = {};
         subpassDesc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpassDesc.colorAttachmentCount = 1;
-        subpassDesc.pColorAttachments = &colorRef;
+        subpassDesc.pColorAttachments = &irrColorRef;
         subpassDesc.inputAttachmentCount = 1;
-        subpassDesc.pInputAttachments = &inputReference;
+        subpassDesc.pInputAttachments = &irrInputReference;
     }
     
     // Subpass layout dependencies 
@@ -233,6 +236,7 @@ void RenderPassIBL::setupPipeline()
                 .setDynamicStates(dynamicStateEnables)
                 .setDepthStencil(depthStencilBuilder.build())
                 .setRenderPass(m_renderPass)
+                .setSubpassIndex(0)
                 .build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
@@ -307,6 +311,7 @@ void RenderPassIBL::setupPipeline()
                 .setDynamicStates(dynamicStateEnables)
                 .setDepthStencil(depthStencilBuilder.build())
                 .setRenderPass(m_renderPass)
+                .setSubpassIndex(1)
                 .build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
