@@ -171,7 +171,7 @@ void RenderPassIBL::setupFramebuffer()
         frameBufferCreateInfo.pAttachments = vImageViews.data();
         frameBufferCreateInfo.width = ENV_CUBE_DIM;
         frameBufferCreateInfo.height = ENV_CUBE_DIM;
-        frameBufferCreateInfo.layers = NUM_FACES;
+        frameBufferCreateInfo.layers = 1;
 
         assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(),
                                    &frameBufferCreateInfo, nullptr,

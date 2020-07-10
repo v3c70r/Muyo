@@ -2,6 +2,9 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
+#ifdef _MSC_VER
+static constexpr float M_PI = 3.141592653f;
+#endif
 
 struct UIPushConstBlock
 {
