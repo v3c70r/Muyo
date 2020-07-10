@@ -270,6 +270,9 @@ std::vector<const char *> getRequiredExtensions()
     if (s_isValidationEnabled)
         extensions.push_back(getValidationExtensionName());
 
+    // This exteinsion is required by logical device's multiview extension
+    extensions.push_back("VK_KHR_get_physical_device_properties2");
+
     return extensions;
 }
 
@@ -681,7 +684,7 @@ int main()
 
     std::vector<const char *> vLogicalDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        //"VK_KHR_ray_tracing"
+        VK_KHR_MULTIVIEW_EXTENSION_NAME,
     };
     if (s_isValidationEnabled)
     {

@@ -82,24 +82,25 @@ void RenderPassIBL::setupRenderPass()
     }
     
     // Subpass layout dependencies 
-    std::array<VkSubpassDependency, 3> dependencies;
+    // TODO: Investigate why the subpass dependencies between the renderpasses are necessary here
+    std::array<VkSubpassDependency, 1> dependencies;
 
     // First subpass dependency is from external to the first pass, used for layout transition
-    {
-        VkSubpassDependency& subpassDep = dependencies[0];
-        subpassDep = {};
-        subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
-        subpassDep.dstSubpass = 0;
-        subpassDep.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-        subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpassDep.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-        subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        subpassDep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-    }
+    //{
+    //    VkSubpassDependency& subpassDep = dependencies[0];
+    //    subpassDep = {};
+    //    subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
+    //    subpassDep.dstSubpass = 0;
+    //    subpassDep.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    //    subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    //    subpassDep.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+    //    subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+    //                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    //    subpassDep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    //}
     // Second subpass dependency to transit the env cube map from rt to srv 
     {
-        VkSubpassDependency& subpassDep = dependencies[1];
+        VkSubpassDependency& subpassDep = dependencies[0];
         subpassDep = {};
         subpassDep.srcSubpass = 0;
         subpassDep.dstSubpass = 1;
@@ -110,17 +111,26 @@ void RenderPassIBL::setupRenderPass()
         subpassDep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
     }
     // The final subpass dependency writes the output to external texture
-    {
-        VkSubpassDependency& subpassDep = dependencies[2];
-        subpassDep = {};
-        subpassDep.srcSubpass = 1;
-        subpassDep.dstSubpass = VK_SUBPASS_EXTERNAL;
-        subpassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        subpassDep.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        subpassDep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        subpassDep.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        subpassDep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-    }
+    //{
+    //    VkSubpassDependency& subpassDep = dependencies[1];
+    //    subpassDep = {};
+    //    subpassDep.srcSubpass = 1;
+    //    subpassDep.dstSubpass = VK_SUBPASS_EXTERNAL;
+    //    subpassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    //    subpassDep.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    //    subpassDep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    //    subpassDep.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    //    subpassDep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    //}
+
+    // 2.5 Create multiview info
+    std::array<uint32_t, 2> viewMasks = {0b111111, 0b111111};   // Two subpasses, each render to 6 faces of the cube
+    VkRenderPassMultiviewCreateInfo multiViewCI = {};
+    multiViewCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+    multiViewCI.subpassCount = viewMasks.size();
+    multiViewCI.pViewMasks = viewMasks.data();
+    //multiViewCI.correlationMaskCount = correlationMasks.size();
+    //multiViewCI.pCorrelationMasks = correlationMasks.data();
 
     // 3. Create the renderpass
     VkRenderPassCreateInfo renderPassInfo = {};
@@ -132,6 +142,7 @@ void RenderPassIBL::setupRenderPass()
     renderPassInfo.pSubpasses = subpassDescs.data();
     renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
     renderPassInfo.pDependencies = dependencies.data();
+    renderPassInfo.pNext = &multiViewCI;
 
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
                               nullptr, &m_renderPass) == VK_SUCCESS);
@@ -351,6 +362,7 @@ void RenderPassIBL::recordCommandBuffer()
 {
     // Get skybox vertex data
     m_pSkybox = getSkybox();
+    m_pQuad = getQuad();
     PrimitiveListConstRef primitives = m_pSkybox->getPrimitives();
     assert(primitives.size() == 1);
     VkDeviceSize offset = 0;
@@ -410,6 +422,8 @@ void RenderPassIBL::recordCommandBuffer()
         vkCmdBindDescriptorSets(
             m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_envCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+        // TODO: Update views to render a quad for times to fill the cubemap
+        // Possibly to render it with VkRenderPassMultiviewCreateInfo
 
         vkCmdBindVertexBuffers(m_commandBuffer, 0, 1,
                                &vertexBuffer, offsets);

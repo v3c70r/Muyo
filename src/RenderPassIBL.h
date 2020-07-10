@@ -54,6 +54,7 @@ private:
     VkExtent2D m_renderArea = {0, 0};
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
     std::unique_ptr<Geometry> m_pSkybox = nullptr;
+    std::unique_ptr<Geometry> m_pQuad = nullptr;
 
     Texture m_texEnvCupMap;
 
