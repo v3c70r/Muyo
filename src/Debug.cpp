@@ -3,8 +3,8 @@
 #include <cassert>
 #include <iostream>
 #include <ostream>
-
 #include "VkRenderDevice.h"
+
 namespace Color
 {
 enum Code
@@ -166,27 +166,40 @@ VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
         return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
-void beginMarker(VkCommandBuffer cmd, std::string&& marker, uint64_t color)
+// specialization for VkQueue and VkCommandBuffer
+void beginMarker(VkQueue queue, std::string&& name, uint64_t color)
 {
-    VkDebugMarkerMarkerInfoEXT debugInfo = {};
-    debugInfo.sType = VK_STRUCTURE_TYPE_DEBUG_MARKER_MARKER_INFO_EXT;
-    debugInfo.pMarkerName = marker.c_str();
-    debugInfo.color[0] = 1.0;
-    debugInfo.color[1] = 1.0;
-    debugInfo.color[2] = 1.0;
-    debugInfo.color[3] = 1.0;
+    VkDebugUtilsLabelEXT labelInfo = {};
+    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+    labelInfo.pLabelName = name.data();
 
-    static auto func = (PFN_vkCmdDebugMarkerBeginEXT)vkGetDeviceProcAddr(
-        GetRenderDevice()->GetDevice(), "vkCmdDebugMarkerBeginEXT");
+    static auto func = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+        GetRenderDevice()->GetDevice(), "vkQueueBeginDebugUtilsLabelEXT");
+    func(queue, &labelInfo);
+}
 
-    assert (func != nullptr && "Feature not present");
-    func(cmd, &debugInfo);
+void endMarker(VkQueue queue)
+{
+    static auto func = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+        GetRenderDevice()->GetDevice(), "vkQueueEndDebugUtilsLabelEXT");
+    func(queue);
+}
+
+// specialization for VkQueue and VkCommandBuffer
+void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t color)
+{
+    VkDebugUtilsLabelEXT labelInfo = {};
+    labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
+    labelInfo.pLabelName = name.data();
+
+    static auto func = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+        GetRenderDevice()->GetDevice(), "vkCmdBeginDebugUtilsLabelEXT");
+    func(cmd, &labelInfo);
 }
 
 void endMarker(VkCommandBuffer cmd)
 {
-    static auto func = (PFN_vkCmdDebugMarkerEndEXT)vkGetDeviceProcAddr(
-        GetRenderDevice()->GetDevice(), "vkCmdDebugMarkerEndEXT");
-    assert (func != nullptr && "Feature not present");
+    static auto func = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+        GetRenderDevice()->GetDevice(), "vkCmdEndDebugUtilsLabelEXT");
     func(cmd);
 }

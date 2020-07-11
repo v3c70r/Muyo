@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 
+
 class DebugUtilsMessenger
 {
 public:
@@ -19,24 +20,35 @@ const char* getValidationExtensionName();
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
                                  const char* sName);
 
-void beginMarker(VkCommandBuffer cmd, std::string&& marker, uint64_t color);
 
+// Scoped markers
+void beginMarker(VkQueue queue, std::string&& name, uint64_t color);
+void endMarker(VkQueue queue);
+
+void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t color);
 void endMarker(VkCommandBuffer cmd);
 
-class ScopedGPUMarker
+// Using template to handle command buffer and queue markers
+template <class T>
+class ScopedMarker
 {
 public:
-    ScopedGPUMarker(VkCommandBuffer cmd, std::string&& marker)
+    ScopedMarker(T vkObj, std::string&& marker)
     {
-        beginMarker(cmd, std::forward<std::string>(marker), (uint16_t)16);
+        m_markedVkObject = vkObj;
+        beginMarker(vkObj, std::forward<std::string>(marker), uint64_t(0));
     }
-    ~ScopedGPUMarker()
+    ~ScopedMarker()
     {
-        endMarker(m_cmd);
+        endMarker(m_markedVkObject);
     }
 private:
-    VkCommandBuffer m_cmd = VK_NULL_HANDLE;
-
+    T m_markedVkObject = VK_NULL_HANDLE;
 };
 
-    
+// Create a macro to generate local variables 
+#define TOKENPASTE(x, y) x ## y
+#define TOKENPASTE2(x, y) TOKENPASTE(x, y)
+#define SCOPED_MARKER(OBJ, MESSAGE)\
+    auto TOKENPASTE2(scoped_marker_,__LINE__) = ScopedMarker(OBJ, MESSAGE)
+

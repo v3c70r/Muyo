@@ -361,7 +361,7 @@ void RenderPassIBL::setupDescriptorSets()
 void RenderPassIBL::recordCommandBuffer()
 {
     // Get skybox vertex data
-    m_pSkybox = getSkybox();
+    m_pSkybox = getQuad();
     m_pQuad = getQuad();
     PrimitiveListConstRef primitives = m_pSkybox->getPrimitives();
     assert(primitives.size() == 1);
@@ -412,6 +412,7 @@ void RenderPassIBL::recordCommandBuffer()
     // Renders the components of the scene to the G-Buffer atttachments
     {
         //ScopedGPUMarker(m_commandBuffer, "First IBL pass");
+        SCOPED_MARKER(m_commandBuffer, "First IBL pass");
 
         std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
                                                m_envMapDescriptorSet};
