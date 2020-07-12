@@ -15,27 +15,12 @@ class RenderPassIBL : public RenderPass
 public:
     RenderPassIBL();
     ~RenderPassIBL();
-    void initializeIBLResources();
-    void initializeIBLPipeline();
-    void destroyIBLPipeline();
     void destroyFramebuffer();
-
-    void setEnvMap(const std::string path)
-    {
-        Texture equirectangularMap;
-        equirectangularMap.LoadImage(path);
-        // TODO: Convert this texture to cubemap
-
-    }
-
-    void generateIrradianceCube();
 
     VkCommandBuffer GetCommandBuffer() const
     {
         return m_commandBuffer;
     }
-    void createEquirectangularMapToCubeMapPipeline();
-    void recordEquirectangularMapToCubeMapCmd(VkImageView envMap);
 
 private:    // Methods
     void setupRenderPass();
@@ -54,7 +39,6 @@ private:
     VkExtent2D m_renderArea = {0, 0};
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
     std::unique_ptr<Geometry> m_pSkybox = nullptr;
-    std::unique_ptr<Geometry> m_pQuad = nullptr;
 
     Texture m_texEnvCupMap;
 

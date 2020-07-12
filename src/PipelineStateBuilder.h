@@ -190,6 +190,12 @@ public:
         m_info.polygonMode = polygonMode;
         return *this;
     }
+
+    RasterizationStateCIBuilder& setFrontFace(VkFrontFace frontFace)
+    {
+        m_info.frontFace = frontFace;
+        return *this;
+    }
     // TODO: Add more builders if necessary
 };
 
