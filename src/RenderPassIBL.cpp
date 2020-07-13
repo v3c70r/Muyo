@@ -155,11 +155,11 @@ void RenderPassIBL::setupFramebuffer()
 {
     std::array<VkImageView, 2> vImageViews = {
         GetRenderResourceManager()
-            ->getColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM},
+            ->getColorTarget("env_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM},
                              TEX_FORMAT, 1, 6)
             ->getView(),
         GetRenderResourceManager()
-            ->getColorTarget("irr_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM},
+            ->getColorTarget("irr_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM},
                              TEX_FORMAT, 1, 6)
             ->getView()};
 
@@ -169,8 +169,8 @@ void RenderPassIBL::setupFramebuffer()
         frameBufferCreateInfo.renderPass = m_renderPass;
         frameBufferCreateInfo.attachmentCount = static_cast<uint32_t>(vImageViews.size());
         frameBufferCreateInfo.pAttachments = vImageViews.data();
-        frameBufferCreateInfo.width = ENV_CUBE_DIM;
-        frameBufferCreateInfo.height = ENV_CUBE_DIM;
+        frameBufferCreateInfo.width = IRR_CUBE_DIM;
+        frameBufferCreateInfo.height = IRR_CUBE_DIM;
         frameBufferCreateInfo.layers = 1;
 
         assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(),
@@ -190,12 +190,12 @@ void RenderPassIBL::setupPipeline()
         // Viewport
         ViewportBuilder vpBuilder;
         VkViewport viewport =
-            vpBuilder.setWH(ENV_CUBE_DIM, ENV_CUBE_DIM).build();
+            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).build();
 
         // Scissor
         VkRect2D scissorRect;
         scissorRect.offset = {0, 0};
-        scissorRect.extent = {ENV_CUBE_DIM, ENV_CUBE_DIM};
+        scissorRect.extent = {IRR_CUBE_DIM, IRR_CUBE_DIM};
 
         // Input assembly
         InputAssemblyStateCIBuilder iaBuilder;
@@ -266,7 +266,7 @@ void RenderPassIBL::setupPipeline()
         // Viewport
         ViewportBuilder vpBuilder;
         VkViewport viewport =
-            vpBuilder.setWH(ENV_CUBE_DIM, ENV_CUBE_DIM).build();
+            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -277,6 +277,7 @@ void RenderPassIBL::setupPipeline()
         InputAssemblyStateCIBuilder iaBuilder;
         // Rasterizer
         RasterizationStateCIBuilder rasterizerBuilder;
+        rasterizerBuilder.setFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
         // MSAA
         MultisampleStateCIBuilder msBuilder;
         // Blend
@@ -354,7 +355,7 @@ void RenderPassIBL::setupDescriptorSets()
     // Environment cube map descriptor set
     m_irrMapDescriptorSet = GetDescriptorManager()->allocateImGuiDescriptorSet(
         GetRenderResourceManager()
-            ->getColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM},
+            ->getColorTarget("env_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM},
                              TEX_FORMAT, 1, 6)
             ->getView());
 }
@@ -381,8 +382,8 @@ void RenderPassIBL::recordCommandBuffer()
     renderPassBeginInfo.renderPass = m_renderPass;
     renderPassBeginInfo.renderArea.offset.x = 0;
     renderPassBeginInfo.renderArea.offset.y = 0;
-    renderPassBeginInfo.renderArea.extent.width = ENV_CUBE_DIM;
-    renderPassBeginInfo.renderArea.extent.height = ENV_CUBE_DIM;
+    renderPassBeginInfo.renderArea.extent.width = IRR_CUBE_DIM;
+    renderPassBeginInfo.renderArea.extent.height = IRR_CUBE_DIM;
     renderPassBeginInfo.clearValueCount = 1;
 
     std::vector<VkClearValue> clearValues = {{0.0f, 0.0f, 0.0f, 0.0f},
@@ -401,10 +402,10 @@ void RenderPassIBL::recordCommandBuffer()
     vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, &offset);
 
     ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(ENV_CUBE_DIM, ENV_CUBE_DIM).build();
+    VkViewport viewport = vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).build();
     vkCmdSetViewport(m_commandBuffer, 0, 1, &viewport);
 
-    VkRect2D scissor = {0, 0, ENV_CUBE_DIM, ENV_CUBE_DIM};
+    VkRect2D scissor = {0, 0, IRR_CUBE_DIM, IRR_CUBE_DIM};
     vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
 
     VkDeviceSize offsets[1] = {0};
