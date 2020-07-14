@@ -684,7 +684,9 @@ int main()
 
     std::vector<const char *> vLogicalDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+#ifndef __APPLE__
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
+#endif
     };
     if (s_isValidationEnabled)
     {
