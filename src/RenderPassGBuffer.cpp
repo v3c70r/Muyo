@@ -3,6 +3,7 @@
 #include "Debug.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
+#include "PipelineStateBuilder.h"
 
 RenderPassGBuffer::LightingAttachments::LightingAttachments()
 {
@@ -40,12 +41,32 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
 
 RenderPassGBuffer::RenderPassGBuffer()
 {
+    // Create two supasses, one for GBuffer and another for opaque lighting
     // Subpass
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = m_attachments.aColorAttachmentRef.size();
-    subpass.pColorAttachments = m_attachments.aColorAttachmentRef.data();
-    subpass.pDepthStencilAttachment = &m_attachments.m_depthAttachment;
+    constexpr uint32_t NUM_SUBPASSES = 2;
+    std::array<VkSubpassDescription, NUM_SUBPASSES> aSubpasses = {{{}, {}}};
+    // First subpass, render to gbuffer attachments
+    {
+        VkSubpassDescription& subpass = aSubpasses[0];
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount =
+            m_attachments.aGBufferColorAttachmentRef.size();
+        subpass.pColorAttachments =
+            m_attachments.aGBufferColorAttachmentRef.data();
+        subpass.pDepthStencilAttachment = &m_attachments.m_depthAttachment;
+    }
+    // Second subpass, render to lighting output
+    {
+        VkSubpassDescription& subpass = aSubpasses[1];
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount =
+            m_attachments.aLightingColorAttachmentRef.size();
+        subpass.pColorAttachments =
+            m_attachments.aLightingColorAttachmentRef.data();
+        subpass.pDepthStencilAttachment = &m_attachments.m_depthAttachment;
+    }
+
+    VkSubpassDescription &subpass = aSubpasses[0];
 
     // subpass deps
     VkSubpassDependency subpassDep = {};
@@ -81,6 +102,7 @@ void RenderPassGBuffer::setGBufferImageViews(VkImageView positionView,
                                              VkImageView albedoView,
                                              VkImageView normalView,
                                              VkImageView uvView,
+                                             VkImageView lightingOutput,
                                              VkImageView depthView,
                                              uint32_t nWidth, uint32_t nHeight)
 {
@@ -91,7 +113,8 @@ void RenderPassGBuffer::setGBufferImageViews(VkImageView positionView,
         m_framebuffer = VK_NULL_HANDLE;
     }
     std::array<VkImageView, LightingAttachments::ATTACHMENTS_COUNT> views = {
-        positionView, albedoView, normalView, uvView, depthView};
+        positionView, albedoView,     normalView,
+        uvView,       lightingOutput, depthView};
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.renderPass = m_renderPass;
@@ -127,29 +150,17 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
     m_commandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
 
-    VkRenderPassBeginInfo renderPassBeginInfo = {};
-    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassBeginInfo.renderPass = m_renderPass;
-    renderPassBeginInfo.framebuffer = m_framebuffer;
+    RenderPassBeginInfoBuilder rpbiBuilder;
 
-    renderPassBeginInfo.renderArea.offset = {0, 0};
-    renderPassBeginInfo.renderArea.extent = mRenderArea;
-
-    std::array<VkClearValue, LightingAttachments::ATTACHMENTS_COUNT>
-        clearValues = {};
-    clearValues[LightingAttachments::GBUFFER_POSITION].color = {
-        {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[LightingAttachments::GBUFFER_ALBEDO].color = {
-        {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[LightingAttachments::GBUFFER_NORMAL].color = {
-        {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[LightingAttachments::GBUFFER_UV].color = {
-        {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[LightingAttachments::GBUFFER_DEPTH].depthStencil = {1.0f, 0};
-
-    renderPassBeginInfo.clearValueCount =
-        static_cast<uint32_t>(clearValues.size());
-    renderPassBeginInfo.pClearValues = clearValues.data();
+    std::vector<VkClearValue> vClearValeus(
+        LightingAttachments::aClearValues.begin(),
+        LightingAttachments::aClearValues.end());
+    VkRenderPassBeginInfo renderPassBeginInfo =
+        rpbiBuilder.setRenderArea(mRenderArea)
+            .setRenderPass(m_renderPass)
+            .setFramebuffer(m_framebuffer)
+            .setClearValues(vClearValeus)
+            .build();
 
     vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo,
                          VK_SUBPASS_CONTENTS_INLINE);
@@ -191,6 +202,7 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
                                         m_attachments.aFormats[i])
                        ->getView();
     }
+    
     // Depth attachments
     for (int i = LightingAttachments::COLOR_ATTACHMENTS_COUNT;
          i < LightingAttachments::ATTACHMENTS_COUNT; i++)
@@ -202,7 +214,7 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
     }
 
     setGBufferImageViews(views[0], views[1], views[2], views[3], views[4],
-                         size.width, size.height);
+                         views[5], size.width, size.height);
 }
 void RenderPassGBuffer::removeGBufferViews()
 {

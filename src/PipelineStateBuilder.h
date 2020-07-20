@@ -106,7 +106,7 @@ private:
 // Should I use static builder or non static builder?
 // Viewport state builder
 // Raster
-template<class T>
+template <class T>
 class IBuilder
 {
 public:
@@ -154,15 +154,14 @@ public:
         m_viewport.maxDepth = maxDepth;
         return *this;
     }
-    VkViewport build() const override
-    {
-        return m_viewport;
-    }
+    VkViewport build() const override { return m_viewport; }
+
 private:
     VkViewport m_viewport = {};
 };
 
-class RasterizationStateCIBuilder : public InfoBuilder<VkPipelineRasterizationStateCreateInfo>
+class RasterizationStateCIBuilder
+    : public InfoBuilder<VkPipelineRasterizationStateCreateInfo>
 {
 public:
     RasterizationStateCIBuilder()
@@ -199,10 +198,12 @@ public:
     // TODO: Add more builders if necessary
 };
 
-class MultisampleStateCIBuilder : public InfoBuilder<VkPipelineMultisampleStateCreateInfo>
+class MultisampleStateCIBuilder
+    : public InfoBuilder<VkPipelineMultisampleStateCreateInfo>
 {
 public:
-    MultisampleStateCIBuilder() {
+    MultisampleStateCIBuilder()
+    {
         m_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         m_info.sampleShadingEnable = VK_FALSE;
         m_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
@@ -211,10 +212,11 @@ public:
         m_info.alphaToCoverageEnable = VK_FALSE;
         m_info.alphaToOneEnable = VK_FALSE;
     }
-    //TODO: Create setters when necesssary
+    // TODO: Create setters when necesssary
 };
 
-class BlendStateCIBuilder : public InfoBuilder<VkPipelineColorBlendStateCreateInfo>
+class BlendStateCIBuilder
+    : public InfoBuilder<VkPipelineColorBlendStateCreateInfo>
 {
 public:
     BlendStateCIBuilder()
@@ -236,6 +238,7 @@ public:
         m_info.pAttachments = blendAttachmentStates.data();
         return *this;
     }
+
 private:
     VkPipelineColorBlendAttachmentState getAttachmentBlendState()
     {
@@ -257,7 +260,8 @@ private:
     std::vector<VkPipelineColorBlendAttachmentState> blendAttachmentStates;
 };
 
-class InputAssemblyStateCIBuilder : public InfoBuilder<VkPipelineInputAssemblyStateCreateInfo>
+class InputAssemblyStateCIBuilder
+    : public InfoBuilder<VkPipelineInputAssemblyStateCreateInfo>
 {
 public:
     InputAssemblyStateCIBuilder()
@@ -277,10 +281,10 @@ public:
         m_info.primitiveRestartEnable = isEnabled;
         return *this;
     }
-
 };
 
-class DepthStencilCIBuilder : public InfoBuilder<VkPipelineDepthStencilStateCreateInfo>
+class DepthStencilCIBuilder
+    : public InfoBuilder<VkPipelineDepthStencilStateCreateInfo>
 {
 public:
     DepthStencilCIBuilder()
@@ -336,7 +340,8 @@ public:
         m_info.renderArea.extent = WH;
         return *this;
     }
-    RenderPassBeginInfoBuilder& setClearValues(const std::vector<VkClearValue>& values)
+    RenderPassBeginInfoBuilder& setClearValues(
+        const std::vector<VkClearValue>& values)
     {
         m_info.clearValueCount = values.size();
         m_info.pClearValues = values.data();
@@ -348,7 +353,6 @@ public:
         return *this;
     }
 };
-
 
 VkShaderModule CreateShaderModule(const std::vector<char>& code);
 std::vector<char> ReadSpv(const std::string& fileName);

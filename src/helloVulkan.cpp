@@ -606,8 +606,8 @@ void present(uint32_t nIamgeIndex)
                                                        // semaphore
 
     std::array<VkCommandBuffer, 4> cmdBuffers = {
+        // TODO: Disable IBL submitting for every frame
         //pIBLPass->GetCommandBuffer(),
-        pIBLPass->GetCommandBuffer(),
         pGBufferPass->GetCommandBuffer(),
         pFinalPass->GetCommandBuffer(nIamgeIndex),
         pUIPass->GetCommandBuffer(nIamgeIndex)
