@@ -114,7 +114,7 @@ public:
 };
 
 template <class T>
-class CIBuilder : public IBuilder<T>
+class InfoBuilder : public IBuilder<T>
 {
 public:
     T build() const override { return m_info; }
@@ -162,7 +162,7 @@ private:
     VkViewport m_viewport = {};
 };
 
-class RasterizationStateCIBuilder : public CIBuilder<VkPipelineRasterizationStateCreateInfo>
+class RasterizationStateCIBuilder : public InfoBuilder<VkPipelineRasterizationStateCreateInfo>
 {
 public:
     RasterizationStateCIBuilder()
@@ -199,7 +199,7 @@ public:
     // TODO: Add more builders if necessary
 };
 
-class MultisampleStateCIBuilder : public CIBuilder<VkPipelineMultisampleStateCreateInfo>
+class MultisampleStateCIBuilder : public InfoBuilder<VkPipelineMultisampleStateCreateInfo>
 {
 public:
     MultisampleStateCIBuilder() {
@@ -214,7 +214,7 @@ public:
     //TODO: Create setters when necesssary
 };
 
-class BlendStateCIBuilder : public CIBuilder<VkPipelineColorBlendStateCreateInfo>
+class BlendStateCIBuilder : public InfoBuilder<VkPipelineColorBlendStateCreateInfo>
 {
 public:
     BlendStateCIBuilder()
@@ -257,7 +257,7 @@ private:
     std::vector<VkPipelineColorBlendAttachmentState> blendAttachmentStates;
 };
 
-class InputAssemblyStateCIBuilder : public CIBuilder<VkPipelineInputAssemblyStateCreateInfo>
+class InputAssemblyStateCIBuilder : public InfoBuilder<VkPipelineInputAssemblyStateCreateInfo>
 {
 public:
     InputAssemblyStateCIBuilder()
@@ -280,7 +280,7 @@ public:
 
 };
 
-class DepthStencilCIBuilder : public CIBuilder<VkPipelineDepthStencilStateCreateInfo>
+class DepthStencilCIBuilder : public InfoBuilder<VkPipelineDepthStencilStateCreateInfo>
 {
 public:
     DepthStencilCIBuilder()
@@ -312,6 +312,42 @@ public:
     }
 };
 
+class RenderPassBeginInfoBuilder : public InfoBuilder<VkRenderPassBeginInfo>
+{
+public:
+    RenderPassBeginInfoBuilder()
+    {
+        m_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    }
+    RenderPassBeginInfoBuilder& setRenderPass(VkRenderPass renderPass)
+    {
+        m_info.renderPass = renderPass;
+        return *this;
+    }
+    RenderPassBeginInfoBuilder& setRenderArea(VkRect2D renderArea)
+    {
+        m_info.renderArea = renderArea;
+        return *this;
+    }
+    RenderPassBeginInfoBuilder& setRenderArea(VkExtent2D WH)
+    {
+        m_info.renderArea.offset.x = 0;
+        m_info.renderArea.offset.y = 0;
+        m_info.renderArea.extent = WH;
+        return *this;
+    }
+    RenderPassBeginInfoBuilder& setClearValues(const std::vector<VkClearValue>& values)
+    {
+        m_info.clearValueCount = values.size();
+        m_info.pClearValues = values.data();
+        return *this;
+    }
+    RenderPassBeginInfoBuilder& setFramebuffer(VkFramebuffer fb)
+    {
+        m_info.framebuffer = fb;
+        return *this;
+    }
+};
 
 
 VkShaderModule CreateShaderModule(const std::vector<char>& code);
