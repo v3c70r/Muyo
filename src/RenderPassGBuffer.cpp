@@ -4,7 +4,7 @@
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
 
-RenderPassGBuffer::GBufferAttachments::GBufferAttachments()
+RenderPassGBuffer::LightingAttachments::LightingAttachments()
 {
     // Construct color attachment descriptions
     VkAttachmentDescription desc = {};
@@ -15,6 +15,7 @@ RenderPassGBuffer::GBufferAttachments::GBufferAttachments()
     desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     desc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
     aAttachmentDesc[GBUFFER_POSITION] = desc;
     aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
@@ -27,6 +28,9 @@ RenderPassGBuffer::GBufferAttachments::GBufferAttachments()
     aAttachmentDesc[GBUFFER_NORMAL] = desc;
     aAttachmentDesc[GBUFFER_NORMAL].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
+    aAttachmentDesc[LIGHTING_OUTPUT] = desc;
+    aAttachmentDesc[LIGHTING_OUTPUT].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+
     // Depth target
     aAttachmentDesc[GBUFFER_DEPTH] = desc;
     aAttachmentDesc[GBUFFER_DEPTH].format = VK_FORMAT_D32_SFLOAT;
@@ -36,26 +40,12 @@ RenderPassGBuffer::GBufferAttachments::GBufferAttachments()
 
 RenderPassGBuffer::RenderPassGBuffer()
 {
-    std::array<VkAttachmentReference,
-               GBufferAttachments::COLOR_ATTACHMENTS_COUNT>
-        aColorReferences;
-    for (uint32_t i = 0; i < GBufferAttachments::COLOR_ATTACHMENTS_COUNT; i++)
-    {
-        aColorReferences[i] = {i, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    }
-
-    VkAttachmentReference depthReference = {
-        GBufferAttachments::GBUFFER_DEPTH,
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-
     // Subpass
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = aColorReferences.size();
-    subpass.pColorAttachments = aColorReferences.data();  // the index is the
-                                                          // output from the
-                                                          // fragment shader
-    subpass.pDepthStencilAttachment = &depthReference;
+    subpass.colorAttachmentCount = m_attachments.aColorAttachmentRef.size();
+    subpass.pColorAttachments = m_attachments.aColorAttachmentRef.data();
+    subpass.pDepthStencilAttachment = &m_attachments.m_depthAttachment;
 
     // subpass deps
     VkSubpassDependency subpassDep = {};
@@ -100,7 +90,7 @@ void RenderPassGBuffer::setGBufferImageViews(VkImageView positionView,
                              nullptr);
         m_framebuffer = VK_NULL_HANDLE;
     }
-    std::array<VkImageView, GBufferAttachments::ATTACHMENTS_COUNT> views = {
+    std::array<VkImageView, LightingAttachments::ATTACHMENTS_COUNT> views = {
         positionView, albedoView, normalView, uvView, depthView};
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -145,17 +135,17 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
     renderPassBeginInfo.renderArea.offset = {0, 0};
     renderPassBeginInfo.renderArea.extent = mRenderArea;
 
-    std::array<VkClearValue, GBufferAttachments::ATTACHMENTS_COUNT>
+    std::array<VkClearValue, LightingAttachments::ATTACHMENTS_COUNT>
         clearValues = {};
-    clearValues[GBufferAttachments::GBUFFER_POSITION].color = {
+    clearValues[LightingAttachments::GBUFFER_POSITION].color = {
         {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[GBufferAttachments::GBUFFER_ALBEDO].color = {
+    clearValues[LightingAttachments::GBUFFER_ALBEDO].color = {
         {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[GBufferAttachments::GBUFFER_NORMAL].color = {
+    clearValues[LightingAttachments::GBUFFER_NORMAL].color = {
         {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[GBufferAttachments::GBUFFER_UV].color = {
+    clearValues[LightingAttachments::GBUFFER_UV].color = {
         {0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[GBufferAttachments::GBUFFER_DEPTH].depthStencil = {1.0f, 0};
+    clearValues[LightingAttachments::GBUFFER_DEPTH].depthStencil = {1.0f, 0};
 
     renderPassBeginInfo.clearValueCount =
         static_cast<uint32_t>(clearValues.size());
@@ -184,17 +174,6 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
     }
 
     vkCmdEndRenderPass(m_commandBuffer);
-
-    // Add barriers
-    //VkMemoryBarrier memoryBarrier = {};
-    //memoryBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    //memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    //memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    //vkCmdPipelineBarrier(
-    //    m_commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    //    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_DEPENDENCY_DEVICE_GROUP_BIT,
-    //    1, &memoryBarrier, 0, nullptr, 0, nullptr);
-
     vkEndCommandBuffer(m_commandBuffer);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
@@ -203,9 +182,9 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
 
 void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
 {
-    std::array<VkImageView, GBufferAttachments::ATTACHMENTS_COUNT> views;
+    std::array<VkImageView, LightingAttachments::ATTACHMENTS_COUNT> views;
     // Color attachments
-    for (int i = 0; i < GBufferAttachments::COLOR_ATTACHMENTS_COUNT; i++)
+    for (int i = 0; i < LightingAttachments::COLOR_ATTACHMENTS_COUNT; i++)
     {
         views[i] = GetRenderResourceManager()
                        ->getColorTarget(m_attachments.aNames[i], size,
@@ -213,8 +192,8 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
                        ->getView();
     }
     // Depth attachments
-    for (int i = GBufferAttachments::COLOR_ATTACHMENTS_COUNT;
-         i < GBufferAttachments::ATTACHMENTS_COUNT; i++)
+    for (int i = LightingAttachments::COLOR_ATTACHMENTS_COUNT;
+         i < LightingAttachments::ATTACHMENTS_COUNT; i++)
     {
         views[i] = GetRenderResourceManager()
                        ->getDepthTarget(m_attachments.aNames[i], size,
@@ -227,7 +206,7 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
 }
 void RenderPassGBuffer::removeGBufferViews()
 {
-    for (int i = 0; i < GBufferAttachments::ATTACHMENTS_COUNT; i++)
+    for (int i = 0; i < LightingAttachments::ATTACHMENTS_COUNT; i++)
     {
         GetRenderResourceManager()->removeResource(m_attachments.aNames[i]);
     }

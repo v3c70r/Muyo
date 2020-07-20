@@ -6,15 +6,15 @@
 #include "Texture.h"
 #include "UniformBuffer.h"
 
-class RenderPassIBL : public RenderPass
+class RenderLayerIBL
 {
     struct IBLPassResource
     {
     };
     // Generate convoluted irradiance map
 public:
-    RenderPassIBL();
-    ~RenderPassIBL();
+    RenderLayerIBL();
+    ~RenderLayerIBL();
     void destroyFramebuffer();
 
     VkCommandBuffer GetCommandBuffer() const

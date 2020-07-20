@@ -1,4 +1,4 @@
-#include "RenderPassIBL.h"
+#include "RenderLayerIBL.h"
 
 #include "DescriptorManager.h"
 #include "PipelineManager.h"
@@ -7,7 +7,7 @@
 #include "VkRenderDevice.h"
 #include "PipelineStateBuilder.h"
 #include "glm/gtc/matrix_transform.hpp"
-void RenderPassIBL::setupRenderPass()
+void RenderLayerIBL::setupRenderPass()
 {
     //1. Create two attachments, one for env cube map, another for diffuse irradiance map
     std::array<VkAttachmentDescription, RENDERPASS_COUNT> attachments;
@@ -77,7 +77,7 @@ void RenderPassIBL::setupRenderPass()
     }
 }
 
-void RenderPassIBL::setupFramebuffer()
+void RenderLayerIBL::setupFramebuffer()
 {
     std::array<VkImageView, 2> vImageViews = {
         GetRenderResourceManager()
@@ -110,7 +110,7 @@ void RenderPassIBL::setupFramebuffer()
     }
 }
 
-void RenderPassIBL::setupPipeline()
+void RenderLayerIBL::setupPipeline()
 {
     // Create two pipelines for two subpasses
     // 1. Generate environment cube map from equirectangle hdr image
@@ -265,7 +265,7 @@ void RenderPassIBL::setupPipeline()
     }
 }
 
-void RenderPassIBL::setupDescriptorSets()
+void RenderLayerIBL::setupDescriptorSets()
 {
     // Per veiw data
     m_perViewDataDescriptorSet =
@@ -286,7 +286,7 @@ void RenderPassIBL::setupDescriptorSets()
             ->getView());
 }
 
-void RenderPassIBL::recordCommandBuffer()
+void RenderLayerIBL::recordCommandBuffer()
 {
     // Get skybox vertex data
     m_pSkybox = getSkybox();
@@ -398,7 +398,7 @@ void RenderPassIBL::recordCommandBuffer()
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
 }
 
-RenderPassIBL::RenderPassIBL()
+RenderLayerIBL::RenderLayerIBL()
 {
     setupRenderPass();
     setupFramebuffer();
@@ -407,7 +407,7 @@ RenderPassIBL::RenderPassIBL()
     recordCommandBuffer();
 }
 
-RenderPassIBL::~RenderPassIBL()
+RenderLayerIBL::~RenderLayerIBL()
 {
     destroyFramebuffer();
     for (auto renderpass : m_aRenderPasses)
@@ -423,7 +423,7 @@ RenderPassIBL::~RenderPassIBL()
 
 
 
-void RenderPassIBL::destroyFramebuffer()
+void RenderLayerIBL::destroyFramebuffer()
 {
     for (auto framebuffer : m_aFramebuffers)
     {

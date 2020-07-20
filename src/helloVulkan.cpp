@@ -29,7 +29,7 @@
 #include "PipelineStateBuilder.h"
 #include "RenderPass.h"
 #include "RenderPassGBuffer.h"
-#include "RenderPassIBL.h"
+#include "RenderLayerIBL.h"
 #include "RenderPassUI.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
@@ -43,7 +43,7 @@
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
 std::unique_ptr<RenderPassGBuffer> pGBufferPass = nullptr;
 std::unique_ptr<RenderPassUI> pUIPass = nullptr;
-std::unique_ptr<RenderPassIBL> pIBLPass = nullptr;
+std::unique_ptr<RenderLayerIBL> pIBLPass = nullptr;
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -728,7 +728,7 @@ int main()
         s_pSwapchain->getImageFormat(), s_pSwapchain->getImageViews().size());
     pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
-    pIBLPass = std::make_unique<RenderPassIBL>();
+    pIBLPass = std::make_unique<RenderLayerIBL>();
     //pIBLPass->initializeIBLResources();
 
 
