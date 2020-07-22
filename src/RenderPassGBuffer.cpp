@@ -1,9 +1,11 @@
 #include "RenderPassGBuffer.h"
 
 #include "Debug.h"
+#include "DescriptorManager.h"
+#include "PipelineManager.h"
+#include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
-#include "PipelineStateBuilder.h"
 
 RenderPassGBuffer::LightingAttachments::LightingAttachments()
 {
@@ -50,23 +52,23 @@ RenderPassGBuffer::RenderPassGBuffer()
         VkSubpassDescription& subpass = aSubpasses[0];
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount =
-            m_attachments.aGBufferColorAttachmentRef.size();
+            mAttachments.aGBufferColorAttachmentRef.size();
         subpass.pColorAttachments =
-            m_attachments.aGBufferColorAttachmentRef.data();
-        subpass.pDepthStencilAttachment = &m_attachments.m_depthAttachment;
+            mAttachments.aGBufferColorAttachmentRef.data();
+        subpass.pDepthStencilAttachment = &mAttachments.m_depthAttachment;
     }
     // Second subpass, render to lighting output
     {
         VkSubpassDescription& subpass = aSubpasses[1];
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount =
-            m_attachments.aLightingColorAttachmentRef.size();
+            mAttachments.aLightingColorAttachmentRef.size();
         subpass.pColorAttachments =
-            m_attachments.aLightingColorAttachmentRef.data();
-        subpass.pDepthStencilAttachment = &m_attachments.m_depthAttachment;
+            mAttachments.aLightingColorAttachmentRef.data();
+        subpass.pDepthStencilAttachment = &mAttachments.m_depthAttachment;
     }
 
-    VkSubpassDescription &subpass = aSubpasses[0];
+    VkSubpassDescription& subpass = aSubpasses[0];
 
     // subpass deps
     VkSubpassDependency subpassDep = {};
@@ -81,8 +83,8 @@ RenderPassGBuffer::RenderPassGBuffer()
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount =
-        static_cast<uint32_t>(m_attachments.aAttachmentDesc.size());
-    renderPassInfo.pAttachments = m_attachments.aAttachmentDesc.data();
+        static_cast<uint32_t>(mAttachments.aAttachmentDesc.size());
+    renderPassInfo.pAttachments = mAttachments.aAttachmentDesc.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -98,19 +100,16 @@ RenderPassGBuffer::~RenderPassGBuffer()
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 }
 
-void RenderPassGBuffer::setGBufferImageViews(VkImageView positionView,
-                                             VkImageView albedoView,
-                                             VkImageView normalView,
-                                             VkImageView uvView,
-                                             VkImageView lightingOutput,
-                                             VkImageView depthView,
-                                             uint32_t nWidth, uint32_t nHeight)
+void RenderPassGBuffer::setGBufferImageViews(
+    VkImageView positionView, VkImageView albedoView, VkImageView normalView,
+    VkImageView uvView, VkImageView lightingOutput, VkImageView depthView,
+    uint32_t nWidth, uint32_t nHeight)
 {
-    if (m_framebuffer != VK_NULL_HANDLE)
+    if (mFramebuffer != VK_NULL_HANDLE)
     {
-        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_framebuffer,
+        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), mFramebuffer,
                              nullptr);
-        m_framebuffer = VK_NULL_HANDLE;
+        mFramebuffer = VK_NULL_HANDLE;
     }
     std::array<VkImageView, LightingAttachments::ATTACHMENTS_COUNT> views = {
         positionView, albedoView,     normalView,
@@ -124,20 +123,16 @@ void RenderPassGBuffer::setGBufferImageViews(VkImageView positionView,
     framebufferInfo.height = nHeight;
     framebufferInfo.layers = 1;
     assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo,
-                               nullptr, &m_framebuffer) == VK_SUCCESS);
+                               nullptr, &mFramebuffer) == VK_SUCCESS);
     mRenderArea = {nWidth, nHeight};
 }
 
 void RenderPassGBuffer::destroyFramebuffer()
 {
-    vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_framebuffer,
-                         nullptr);
+    vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), mFramebuffer, nullptr);
 }
 
-void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
-                                            VkPipeline pipeline,
-                                            VkPipelineLayout pipelineLayout,
-                                            VkDescriptorSet descriptorSet)
+void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -145,10 +140,10 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    assert(m_commandBuffer == VK_NULL_HANDLE &&
+    assert(mCommandBuffer == VK_NULL_HANDLE &&
            "Command buffer has been created");
-    m_commandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
-    vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
+    mCommandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
+    vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
 
     RenderPassBeginInfoBuilder rpbiBuilder;
 
@@ -158,11 +153,11 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
     VkRenderPassBeginInfo renderPassBeginInfo =
         rpbiBuilder.setRenderArea(mRenderArea)
             .setRenderPass(m_renderPass)
-            .setFramebuffer(m_framebuffer)
+            .setFramebuffer(mFramebuffer)
             .setClearValues(vClearValeus)
             .build();
 
-    vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo,
+    vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
                          VK_SUBPASS_CONTENTS_INLINE);
 
     for (const auto& prim : primitives)
@@ -171,23 +166,23 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives,
         VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
         VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
         uint32_t nIndexCount = prim->getIndexCount();
-        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, &offset);
-        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+        vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
                              VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          pipeline);
-        vkCmdBindDescriptorSets(m_commandBuffer,
-                                VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
-                                0, 1, &descriptorSet, 0, nullptr);
+        vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          mGBufferPipeline);
+        vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                mGBufferPipelineLayout, 0, 1, &mGBufferDescriptorSet, 0,
+                                nullptr);
 
         // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
-        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+        vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
     }
 
-    vkCmdEndRenderPass(m_commandBuffer);
-    vkEndCommandBuffer(m_commandBuffer);
+    vkCmdEndRenderPass(mCommandBuffer);
+    vkEndCommandBuffer(mCommandBuffer);
 
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] GBuffer");
 }
 
@@ -198,18 +193,18 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
     for (int i = 0; i < LightingAttachments::COLOR_ATTACHMENTS_COUNT; i++)
     {
         views[i] = GetRenderResourceManager()
-                       ->getColorTarget(m_attachments.aNames[i], size,
-                                        m_attachments.aFormats[i])
+                       ->getColorTarget(mAttachments.aNames[i], size,
+                                        mAttachments.aFormats[i])
                        ->getView();
     }
-    
+
     // Depth attachments
     for (int i = LightingAttachments::COLOR_ATTACHMENTS_COUNT;
          i < LightingAttachments::ATTACHMENTS_COUNT; i++)
     {
         views[i] = GetRenderResourceManager()
-                       ->getDepthTarget(m_attachments.aNames[i], size,
-                                        m_attachments.aFormats[i])
+                       ->getDepthTarget(mAttachments.aNames[i], size,
+                                        mAttachments.aFormats[i])
                        ->getView();
     }
 
@@ -220,7 +215,71 @@ void RenderPassGBuffer::removeGBufferViews()
 {
     for (int i = 0; i < LightingAttachments::ATTACHMENTS_COUNT; i++)
     {
-        GetRenderResourceManager()->removeResource(m_attachments.aNames[i]);
+        GetRenderResourceManager()->removeResource(mAttachments.aNames[i]);
     }
     destroyFramebuffer();
+}
+
+void RenderPassGBuffer::allocateDescriptorSets()
+{
+    const Material* pMaterial =
+        GetMaterialManager()->m_mMaterials["plasticpattern"].get();
+    Material::PBRViews views = {
+        pMaterial->getImageView(Material::TEX_ALBEDO),
+        pMaterial->getImageView(Material::TEX_NORMAL),
+        pMaterial->getImageView(Material::TEX_METALNESS),
+        pMaterial->getImageView(Material::TEX_ROUGHNESS),
+        pMaterial->getImageView(Material::TEX_AO),
+    };
+    const UniformBuffer<PerViewData>* perView =
+        GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+
+    mGBufferDescriptorSet = GetDescriptorManager()->allocateGBufferDescriptorSet(*perView,
+                                                         views);
+}
+
+void RenderPassGBuffer::createPipelines()
+{
+    // Create GBuffer Pipeline
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(mRenderArea).build();
+    VkRect2D scissorRect;
+    scissorRect.offset = {0, 0};
+    scissorRect.extent = mRenderArea;
+
+    mGBufferPipelineLayout = PipelineManager::CreatePipelineLayout(
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER));
+
+    VkShaderModule vertShdr =
+        CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/gbuffer.frag.spv"));
+    PipelineStateBuilder builder;
+
+    InputAssemblyStateCIBuilder iaBuilder;
+    RasterizationStateCIBuilder rsBuilder;
+    MultisampleStateCIBuilder msBuilder;
+    BlendStateCIBuilder blendBuilder;
+    blendBuilder.setAttachments(4);
+    DepthStencilCIBuilder depthStencilBuilder;
+
+    mGBufferPipeline = builder.setShaderModules({vertShdr, fragShdr})
+                           .setVertextInfo({Vertex::getBindingDescription()},
+                                           Vertex::getAttributeDescriptions())
+                           .setAssembly(iaBuilder.build())
+                           .setViewport(viewport, scissorRect)
+                           .setRasterizer(rsBuilder.build())
+                           .setMSAA(msBuilder.build())
+                           .setColorBlending(blendBuilder.build())
+                           .setPipelineLayout(mGBufferPipelineLayout)
+                           .setDepthStencil(depthStencilBuilder.build())
+                           .setRenderPass(m_renderPass)
+                           .build(GetRenderDevice()->GetDevice());
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+
+    // Set debug name for the pipeline
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mGBufferPipeline),
+                            VK_OBJECT_TYPE_PIPELINE, "GBuffer");
 }

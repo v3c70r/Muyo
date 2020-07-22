@@ -429,21 +429,7 @@ void createGraphicsPipeline()
 
 void createCommandBuffers()
 {
-    const Material* pMaterial = GetMaterialManager()->m_mMaterials["plasticpattern"].get();
-    Material::PBRViews views = 
-    {
-        pMaterial->getImageView(Material::TEX_ALBEDO),
-        pMaterial->getImageView(Material::TEX_NORMAL),
-        pMaterial->getImageView(Material::TEX_METALNESS),
-        pMaterial->getImageView(Material::TEX_ROUGHNESS),
-        pMaterial->getImageView(Material::TEX_AO),
-    };
-    pGBufferPass->recordCommandBuffer(
-        s_pObjGeometry->getPrimitives(),
-        GetPipelineManager()->GetGBufferPipeline(),
-        GetPipelineManager()->GetGBufferPipelineLayout(),
-        GetDescriptorManager()->allocateGBufferDescriptorSet(*s_pUniformBuffer,
-                                                             views));
+    pGBufferPass->recordCommandBuffer(s_pObjGeometry->getPrimitives());
 
     pFinalPass->RecordOnce(
         *s_pQuadGeometry, 

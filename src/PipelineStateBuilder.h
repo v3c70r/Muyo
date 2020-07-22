@@ -148,6 +148,13 @@ public:
         return *this;
     }
 
+    ViewportBuilder& setWH(VkExtent2D wh)
+    {
+        m_viewport.width = wh.width;
+        m_viewport.height = wh.height;
+        return *this;
+    }
+
     ViewportBuilder& setMinMaxDepth(float minDepth, float maxDepth)
     {
         m_viewport.minDepth = minDepth;

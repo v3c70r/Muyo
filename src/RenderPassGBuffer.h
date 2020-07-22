@@ -71,10 +71,7 @@ public:
     };
     RenderPassGBuffer();
     ~RenderPassGBuffer();
-    void recordCommandBuffer(const PrimitiveList& primitives,
-                             VkPipeline pipeline,
-                             VkPipelineLayout pipelineLayout,
-                             VkDescriptorSet descriptorSet);
+    void recordCommandBuffer(const PrimitiveList& primitives);
     void createFramebuffer();
     void destroyFramebuffer();
     void setGBufferImageViews(VkImageView positionView, VkImageView albedoView,
@@ -83,11 +80,23 @@ public:
                               uint32_t nWidth, uint32_t nHeight);
     void createGBufferViews(VkExtent2D size);
     void removeGBufferViews();
-    VkCommandBuffer GetCommandBuffer() { return m_commandBuffer; }
+    VkCommandBuffer GetCommandBuffer() { return mCommandBuffer; }
 
 private:
-    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
-    LightingAttachments m_attachments;
-    VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
+    void createPipelines();
+    void allocateDescriptorSets();
+private:
+    VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
+    LightingAttachments mAttachments;
+    VkFramebuffer mFramebuffer = VK_NULL_HANDLE;
     VkExtent2D mRenderArea = {0, 0};
+
+
+    VkPipeline mGBufferPipeline = VK_NULL_HANDLE;
+    VkPipeline mLightingPipeline = VK_NULL_HANDLE;
+
+    VkPipelineLayout mGBufferPipelineLayout = VK_NULL_HANDLE;
+    VkPipelineLayout mLightingPipelineLayout = VK_NULL_HANDLE;
+
+    VkDescriptorSet mGBufferDescriptorSet;
 };

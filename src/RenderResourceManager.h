@@ -6,6 +6,7 @@
 #include "Debug.h"
 #include "RenderTargetResource.h"
 #include "Texture.h"
+#include "UniformBuffer.h"
 
 class RenderResourceManager
 {
@@ -77,6 +78,22 @@ public:
         }
     }
     const ResourceMap& getResourceMap() { return m_mResources; }
+
+    template <class T>
+    UniformBuffer<T>* getUniformBuffer(const std::string name)
+    {
+        if (m_mResources.find(name) == m_mResources.end())
+        {
+            m_mResources[name] = std::make_unique<UniformBuffer<T>>();
+
+            setDebugUtilsObjectName(
+                reinterpret_cast<uint64_t>(
+                    static_cast<UniformBuffer<T>*>(m_mResources[name].get())
+                        ->buffer()),
+                VK_OBJECT_TYPE_BUFFER, name.c_str());
+        }
+        return static_cast<UniformBuffer<T>*>(m_mResources[name].get());
+    }
 
 protected:
     ResourceMap m_mResources;

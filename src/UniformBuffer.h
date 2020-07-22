@@ -6,6 +6,7 @@
 
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
+#include "RenderResource.h"
 
 struct PerViewData
 {
@@ -15,7 +16,7 @@ struct PerViewData
 };
 
 template <class T>
-class UniformBuffer
+class UniformBuffer : public IRenderResource
 {
 public:
     UniformBuffer()
