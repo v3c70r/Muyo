@@ -92,12 +92,20 @@ RenderPassGBuffer::RenderPassGBuffer()
 
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
                               nullptr, &m_renderPass) == VK_SUCCESS);
+                              
+
 }
 
 RenderPassGBuffer::~RenderPassGBuffer()
 {
     destroyFramebuffer();
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
+
+    // Destroy pipelines and pipeline layouts
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), mGBufferPipeline, nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), mLightingPipeline, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), mGBufferPipelineLayout, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), mLightingPipelineLayout, nullptr);
 }
 
 void RenderPassGBuffer::setGBufferImageViews(
@@ -222,6 +230,13 @@ void RenderPassGBuffer::removeGBufferViews()
 
 void RenderPassGBuffer::allocateDescriptorSets()
 {
+    // TODO: Split perview data and materials to different descriptor sets
+    std::vector<VkDescriptorSetLayout> descLayouts = {
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_MATERIALS)
+    };
+
+
     const Material* pMaterial =
         GetMaterialManager()->m_mMaterials["plasticpattern"].get();
     Material::PBRViews views = {
@@ -234,8 +249,8 @@ void RenderPassGBuffer::allocateDescriptorSets()
     const UniformBuffer<PerViewData>* perView =
         GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
-    mGBufferDescriptorSet = GetDescriptorManager()->allocateGBufferDescriptorSet(*perView,
-                                                         views);
+    mPerViewDescSet = GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
+    mMaterialDescSet =  GetDescriptorManager()->allocateMaterialDescriptorSet(views);
 }
 
 void RenderPassGBuffer::createPipelines()
@@ -247,8 +262,15 @@ void RenderPassGBuffer::createPipelines()
     scissorRect.offset = {0, 0};
     scissorRect.extent = mRenderArea;
 
-    mGBufferPipelineLayout = PipelineManager::CreatePipelineLayout(
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER));
+    std::vector<VkDescriptorSetLayout> descLayouts = 
+    {
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_MATERIALS)
+    };
+
+    std::vector<VkPushConstantRange> pushConstants;
+
+    mGBufferPipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
 
     VkShaderModule vertShdr =
         CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));

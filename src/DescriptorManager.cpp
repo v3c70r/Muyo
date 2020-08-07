@@ -124,6 +124,31 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 "PerViewData");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA] = layout;
     }
+
+    // Material layout
+    {
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+ 
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings ={
+            getSamplerArrayBinding(1, Material::TEX_COUNT) };  // PBR material textures
+
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "Material");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_MATERIALS] = layout;
+
+    }
 }
 
 void DescriptorManager::destroyDescriptorSetLayouts()
@@ -208,6 +233,72 @@ VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet(
     }
     return descriptorSet;
 }
+
+VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet()
+{
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_MATERIALS];
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) == VK_SUCCESS);
+    return descriptorSet;
+}
+
+VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet(const Material::PBRViews &textureViews)
+{
+    VkDescriptorSet descSet = allocateMaterialDescriptorSet();
+    updateMaterialDescriptorSet(descSet, textureViews);
+    return descSet;
+}
+
+void DescriptorManager::updateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::PBRViews& textureViews)
+{
+    assert(textureViews.size() == Material::TEX_COUNT);
+
+    // prepare image descriptor
+    std::array<VkDescriptorImageInfo, Material::TEX_COUNT> imageInfos ={
+        // albedo
+        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+        textureViews.at(Material::TEX_ALBEDO),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        // normal
+        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+        textureViews.at(Material::TEX_NORMAL),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        // metalness
+        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+        textureViews.at(Material::TEX_METALNESS),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        // roughness
+        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+        textureViews.at(Material::TEX_ROUGHNESS),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        // AO
+        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+        textureViews.at(Material::TEX_AO),
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    };
+
+    VkWriteDescriptorSet descriptorWrite;
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = descriptorSet;
+    descriptorWrite.dstBinding = 1;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType =
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = static_cast<uint32_t>(imageInfos.size());
+    descriptorWrite.pImageInfo = imageInfos.data();
+
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
+        1,
+        &descriptorWrite, 0, nullptr);
+}
+
+
 VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData, VkImageView position,
         VkImageView albedo, VkImageView normal, VkImageView uv)

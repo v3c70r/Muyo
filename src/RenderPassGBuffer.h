@@ -91,12 +91,12 @@ private:
     VkFramebuffer mFramebuffer = VK_NULL_HANDLE;
     VkExtent2D mRenderArea = {0, 0};
 
-
     VkPipeline mGBufferPipeline = VK_NULL_HANDLE;
     VkPipeline mLightingPipeline = VK_NULL_HANDLE;
 
     VkPipelineLayout mGBufferPipelineLayout = VK_NULL_HANDLE;
     VkPipelineLayout mLightingPipelineLayout = VK_NULL_HANDLE;
 
-    VkDescriptorSet mGBufferDescriptorSet;
+    VkDescriptorSet mPerViewDescSet;
+    VkDescriptorSet mMaterialDescSet;
 };
