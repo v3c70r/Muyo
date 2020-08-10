@@ -418,9 +418,9 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
 void createGraphicsPipeline()
 {
 
-    GetPipelineManager()->CreateGBufferPipeline(
-        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER), pGBufferPass->GetPass());
+    //GetPipelineManager()->CreateGBufferPipeline(
+    //    s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
+    //    GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER), pGBufferPass->GetPass());
 
     GetPipelineManager()->CreateStaticObjectPipeline(
         s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
@@ -720,6 +720,7 @@ int main()
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
+    pGBufferPass->createPipelines();
 
 
     createGraphicsPipeline();

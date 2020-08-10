@@ -6,6 +6,7 @@
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
+#include "Geometry.h"
 
 RenderPassGBuffer::LightingAttachments::LightingAttachments()
 {
@@ -66,33 +67,38 @@ RenderPassGBuffer::RenderPassGBuffer()
         subpass.pColorAttachments =
             mAttachments.aLightingColorAttachmentRef.data();
         subpass.pDepthStencilAttachment = &mAttachments.m_depthAttachment;
+        subpass.inputAttachmentCount =
+            static_cast<uint32_t>(mAttachments.aLightingInputRef.size());
+        subpass.pInputAttachments = mAttachments.aLightingInputRef.data();
     }
-
-    VkSubpassDescription& subpass = aSubpasses[0];
 
     // subpass deps
     VkSubpassDependency subpassDep = {};
-    subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpassDep.dstSubpass = 0;
-    subpassDep.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDep.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-    subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    subpassDep.srcSubpass = 0;
+    subpassDep.dstSubpass = 1;
+    subpassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDep.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    subpassDep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    subpassDep.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    subpassDep.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
     VkRenderPassCreateInfo renderPassInfo = {};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount =
         static_cast<uint32_t>(mAttachments.aAttachmentDesc.size());
     renderPassInfo.pAttachments = mAttachments.aAttachmentDesc.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.subpassCount = aSubpasses.size();
+    renderPassInfo.pSubpasses = aSubpasses.data();
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
 
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
                               nullptr, &m_renderPass) == VK_SUCCESS);
-                              
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass),
+                            VK_OBJECT_TYPE_RENDER_PASS, "Opaque Lighting");
+
+    mpQuad = getQuad();
 
 }
 
@@ -102,10 +108,14 @@ RenderPassGBuffer::~RenderPassGBuffer()
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
 
     // Destroy pipelines and pipeline layouts
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), mGBufferPipeline, nullptr);
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), mLightingPipeline, nullptr);
-    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), mGBufferPipelineLayout, nullptr);
-    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), mLightingPipelineLayout, nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), mGBufferPipeline,
+                      nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), mLightingPipeline,
+                      nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
+                            mGBufferPipelineLayout, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
+                            mLightingPipelineLayout, nullptr);
 }
 
 void RenderPassGBuffer::setGBufferImageViews(
@@ -158,6 +168,7 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
     std::vector<VkClearValue> vClearValeus(
         LightingAttachments::aClearValues.begin(),
         LightingAttachments::aClearValues.end());
+
     VkRenderPassBeginInfo renderPassBeginInfo =
         rpbiBuilder.setRenderArea(mRenderArea)
             .setRenderPass(m_renderPass)
@@ -167,6 +178,48 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
 
     vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
                          VK_SUBPASS_CONTENTS_INLINE);
+
+    // Allocate descriptor sets
+    const Material* pMaterial =
+        GetMaterialManager()->m_mMaterials["plasticpattern"].get();
+    Material::PBRViews views = {
+        pMaterial->getImageView(Material::TEX_ALBEDO),
+        pMaterial->getImageView(Material::TEX_NORMAL),
+        pMaterial->getImageView(Material::TEX_METALNESS),
+        pMaterial->getImageView(Material::TEX_ROUGHNESS),
+        pMaterial->getImageView(Material::TEX_AO),
+    };
+
+    const UniformBuffer<PerViewData>* perView =
+        GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+
+    // Create gbuffer render target views and allocate descriptor set
+    GBufferViews gBufferViews = {
+        GetRenderResourceManager()
+            ->getColorTarget("GBUFFER_POSITION", mRenderArea)
+            ->getView(),
+
+        GetRenderResourceManager()
+            ->getColorTarget("GBUFFER_ALBEDO", mRenderArea)
+            ->getView(),
+
+        GetRenderResourceManager()
+            ->getColorTarget("GBUFFER_NORMAL", mRenderArea)
+            ->getView(),
+
+        GetRenderResourceManager()
+            ->getColorTarget("GBUFFER_UV", mRenderArea)
+            ->getView()};
+
+    VkDescriptorSet perViewSets =
+        GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
+    std::vector<VkDescriptorSet> gBufferDescSets = {
+        perViewSets,
+        GetDescriptorManager()->allocateMaterialDescriptorSet(views)};
+
+    std::vector<VkDescriptorSet> lightingDescSets = {
+        perViewSets,
+        GetDescriptorManager()->allocateGBufferDescriptorSet(gBufferViews)};
 
     for (const auto& prim : primitives)
     {
@@ -180,10 +233,32 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
         vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                           mGBufferPipeline);
         vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                mGBufferPipelineLayout, 0, 1, &mGBufferDescriptorSet, 0,
-                                nullptr);
+                                mGBufferPipelineLayout, 0, gBufferDescSets.size(),
+                                gBufferDescSets.data(), 0, nullptr);
 
         // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
+        vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+    }
+
+    vkCmdNextSubpass(mCommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+
+    // second subpass
+    {
+        const Primitive* prim = mpQuad->getPrimitives().at(0).get();
+        VkDeviceSize offset = 0;
+        VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
+        VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
+        uint32_t nIndexCount = prim->getIndexCount();
+
+        vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+        vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          mLightingPipeline);
+        vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                mLightingPipelineLayout, 0,
+                                lightingDescSets.size(),
+                                lightingDescSets.data(), 0, nullptr);
         vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
     }
 
@@ -191,7 +266,7 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
     vkEndCommandBuffer(mCommandBuffer);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
-                            VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] GBuffer");
+                            VK_OBJECT_TYPE_COMMAND_BUFFER, "OpaqueLighting");
 }
 
 void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
@@ -228,80 +303,123 @@ void RenderPassGBuffer::removeGBufferViews()
     destroyFramebuffer();
 }
 
-void RenderPassGBuffer::allocateDescriptorSets()
-{
-    // TODO: Split perview data and materials to different descriptor sets
-    std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_MATERIALS)
-    };
-
-
-    const Material* pMaterial =
-        GetMaterialManager()->m_mMaterials["plasticpattern"].get();
-    Material::PBRViews views = {
-        pMaterial->getImageView(Material::TEX_ALBEDO),
-        pMaterial->getImageView(Material::TEX_NORMAL),
-        pMaterial->getImageView(Material::TEX_METALNESS),
-        pMaterial->getImageView(Material::TEX_ROUGHNESS),
-        pMaterial->getImageView(Material::TEX_AO),
-    };
-    const UniformBuffer<PerViewData>* perView =
-        GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
-
-    mPerViewDescSet = GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
-    mMaterialDescSet =  GetDescriptorManager()->allocateMaterialDescriptorSet(views);
-}
-
 void RenderPassGBuffer::createPipelines()
 {
-    // Create GBuffer Pipeline
+    // Pipeline should be created after mRenderArea been updated
     ViewportBuilder vpBuilder;
     VkViewport viewport = vpBuilder.setWH(mRenderArea).build();
     VkRect2D scissorRect;
     scissorRect.offset = {0, 0};
     scissorRect.extent = mRenderArea;
 
-    std::vector<VkDescriptorSetLayout> descLayouts = 
     {
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_MATERIALS)
-    };
+        // Create GBuffer Pipeline
 
-    std::vector<VkPushConstantRange> pushConstants;
+        // Descriptor layouts
+        std::vector<VkDescriptorSetLayout> descLayouts = {
+            GetDescriptorManager()->getDescriptorLayout(
+                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->getDescriptorLayout(
+                DESCRIPTOR_LAYOUT_MATERIALS)};
 
-    mGBufferPipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+        std::vector<VkPushConstantRange> pushConstants;
 
-    VkShaderModule vertShdr =
-        CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
-    VkShaderModule fragShdr =
-        CreateShaderModule(ReadSpv("shaders/gbuffer.frag.spv"));
-    PipelineStateBuilder builder;
+        mGBufferPipelineLayout =
+            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
 
-    InputAssemblyStateCIBuilder iaBuilder;
-    RasterizationStateCIBuilder rsBuilder;
-    MultisampleStateCIBuilder msBuilder;
-    BlendStateCIBuilder blendBuilder;
-    blendBuilder.setAttachments(4);
-    DepthStencilCIBuilder depthStencilBuilder;
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mGBufferPipelineLayout),
+                                VK_OBJECT_TYPE_PIPELINE_LAYOUT, "GBuffer");
 
-    mGBufferPipeline = builder.setShaderModules({vertShdr, fragShdr})
-                           .setVertextInfo({Vertex::getBindingDescription()},
-                                           Vertex::getAttributeDescriptions())
-                           .setAssembly(iaBuilder.build())
-                           .setViewport(viewport, scissorRect)
-                           .setRasterizer(rsBuilder.build())
-                           .setMSAA(msBuilder.build())
-                           .setColorBlending(blendBuilder.build())
-                           .setPipelineLayout(mGBufferPipelineLayout)
-                           .setDepthStencil(depthStencilBuilder.build())
-                           .setRenderPass(m_renderPass)
-                           .build(GetRenderDevice()->GetDevice());
+        VkShaderModule vertShdr =
+            CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
+        VkShaderModule fragShdr =
+            CreateShaderModule(ReadSpv("shaders/gbuffer.frag.spv"));
+        PipelineStateBuilder builder;
 
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+        InputAssemblyStateCIBuilder iaBuilder;
+        RasterizationStateCIBuilder rsBuilder;
+        MultisampleStateCIBuilder msBuilder;
+        BlendStateCIBuilder blendBuilder;
+        blendBuilder.setAttachments(LightingAttachments::GBUFFER_ATTACHMENTS_COUNT);
+        DepthStencilCIBuilder depthStencilBuilder;
 
-    // Set debug name for the pipeline
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mGBufferPipeline),
-                            VK_OBJECT_TYPE_PIPELINE, "GBuffer");
+        mGBufferPipeline =
+            builder.setShaderModules({vertShdr, fragShdr})
+                .setVertextInfo({Vertex::getBindingDescription()},
+                                Vertex::getAttributeDescriptions())
+                .setAssembly(iaBuilder.build())
+                .setViewport(viewport, scissorRect)
+                .setRasterizer(rsBuilder.build())
+                .setMSAA(msBuilder.build())
+                .setColorBlending(blendBuilder.build())
+                .setPipelineLayout(mGBufferPipelineLayout)
+                .setDepthStencil(depthStencilBuilder.build())
+                .setRenderPass(m_renderPass)
+                .setSubpassIndex(0)
+                .build(GetRenderDevice()->GetDevice());
+
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
+                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
+                              nullptr);
+
+        // Set debug name for the pipeline
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mGBufferPipeline),
+                                VK_OBJECT_TYPE_PIPELINE, "GBuffer");
+    }
+
+    {
+        // Create lighting pipeline
+        std::vector<VkDescriptorSetLayout> descLayouts = {
+            GetDescriptorManager()->getDescriptorLayout(
+                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->getDescriptorLayout(
+                DESCRIPTOR_LAYOUT_GBUFFER)};
+
+        std::vector<VkPushConstantRange> pushConstants;
+
+        mLightingPipelineLayout =
+            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mLightingPipelineLayout),
+                                VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Lighting");
+
+        VkShaderModule vertShdr =
+            CreateShaderModule(ReadSpv("shaders/lighting.vert.spv"));
+        VkShaderModule fragShdr =
+            CreateShaderModule(ReadSpv("shaders/lighting.frag.spv"));
+
+        InputAssemblyStateCIBuilder iaBuilder;
+        RasterizationStateCIBuilder rsBuilder;
+        MultisampleStateCIBuilder msBuilder;
+        BlendStateCIBuilder blendBuilder;
+        blendBuilder.setAttachments(1);
+        DepthStencilCIBuilder depthStencilBuilder;
+
+        PipelineStateBuilder builder;
+
+        mLightingPipeline =
+            builder.setShaderModules({vertShdr, fragShdr})
+                .setVertextInfo({Vertex::getBindingDescription()},
+                                Vertex::getAttributeDescriptions())
+                .setAssembly(iaBuilder.build())
+                .setViewport(viewport, scissorRect)
+                .setRasterizer(rsBuilder.build())
+                .setMSAA(msBuilder.build())
+                .setColorBlending(blendBuilder.build())
+                .setPipelineLayout(mLightingPipelineLayout)
+                .setDepthStencil(depthStencilBuilder.build())
+                .setRenderPass(m_renderPass)
+                .setSubpassIndex(1)
+                .build(GetRenderDevice()->GetDevice());
+
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
+                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
+                              nullptr);
+
+        // Set debug name for the pipeline
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mGBufferPipeline),
+                                VK_OBJECT_TYPE_PIPELINE, "Lighting");
+    }
 }

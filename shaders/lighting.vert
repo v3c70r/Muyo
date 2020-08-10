@@ -11,14 +11,12 @@ layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inTexCoord;
 
 layout (location = 0) out vec2 outTexCoord;
-layout (location = 1) out vec4 outViewPos;
 
 out gl_PerVertex {
     vec4 gl_Position;
 };
 
 void main() {
+    gl_Position = vec4(inPos, 1.0);
     outTexCoord = inTexCoord.xy;
-    outViewPos = ubo.view * ubo.model * vec4(inPos, 1.0);
-    gl_Position = ubo.proj * outViewPos;
 }

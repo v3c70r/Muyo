@@ -23,7 +23,6 @@ public:
             ATTACHMENTS_COUNT,
             COLOR_ATTACHMENTS_COUNT = GBUFFER_DEPTH,
             GBUFFER_ATTACHMENTS_COUNT = LIGHTING_OUTPUT
-
         };
         const std::array<const std::string, ATTACHMENTS_COUNT> aNames = {
             "GBUFFER_POSITION", "GBUFFER_ALBEDO",  "GBUFFER_NORMAL",
@@ -41,6 +40,15 @@ public:
                 {GBUFFER_ALBEDO, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
                 {GBUFFER_NORMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
                 {GBUFFER_UV, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+            }};
+
+        static constexpr std::array<VkAttachmentReference,
+                                    GBUFFER_ATTACHMENTS_COUNT>
+            aLightingInputRef = {{
+                {GBUFFER_POSITION, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                {GBUFFER_ALBEDO, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                {GBUFFER_NORMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                {GBUFFER_UV, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             }};
 
         static constexpr std::array<VkAttachmentReference, 1>
@@ -69,6 +77,8 @@ public:
         LightingAttachments();
 
     };
+    using GBufferViews = std::array<VkImageView, LightingAttachments::GBUFFER_ATTACHMENTS_COUNT>;
+
     RenderPassGBuffer();
     ~RenderPassGBuffer();
     void recordCommandBuffer(const PrimitiveList& primitives);
@@ -81,10 +91,9 @@ public:
     void createGBufferViews(VkExtent2D size);
     void removeGBufferViews();
     VkCommandBuffer GetCommandBuffer() { return mCommandBuffer; }
+    void createPipelines();
 
 private:
-    void createPipelines();
-    void allocateDescriptorSets();
 private:
     VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
     LightingAttachments mAttachments;
@@ -99,4 +108,5 @@ private:
 
     VkDescriptorSet mPerViewDescSet;
     VkDescriptorSet mMaterialDescSet;
+    std::unique_ptr<Geometry> mpQuad;
 };

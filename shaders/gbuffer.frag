@@ -73,12 +73,12 @@ const uint TEX_METALNESS = 2;
 const uint TEX_ROUGHNESS = 3;
 const uint TEX_AO = 4;
 const uint TEX_COUNT = 5;
-layout (binding = 0) uniform UniformBufferObject {
+layout (set = 0, binding = 0) uniform UniformBufferObject {
     mat4 model;
     mat4 view;
     mat4 proj;
 } ubo;
-layout(binding = 1) uniform sampler2D texPBR[TEX_COUNT];
+layout(set = 1, binding = 0) uniform sampler2D texPBR[TEX_COUNT];
 
 void main() {
 
