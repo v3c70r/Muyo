@@ -163,106 +163,115 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
     mCommandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
 
-    RenderPassBeginInfoBuilder rpbiBuilder;
+    {
+        SCOPED_MARKER(mCommandBuffer, "Opaque Lighting Pass");
 
-    std::vector<VkClearValue> vClearValeus(
-        LightingAttachments::aClearValues.begin(),
-        LightingAttachments::aClearValues.end());
+        RenderPassBeginInfoBuilder rpbiBuilder;
 
-    VkRenderPassBeginInfo renderPassBeginInfo =
-        rpbiBuilder.setRenderArea(mRenderArea)
+        std::vector<VkClearValue> vClearValeus(
+            LightingAttachments::aClearValues.begin(),
+            LightingAttachments::aClearValues.end());
+
+        VkRenderPassBeginInfo renderPassBeginInfo =
+            rpbiBuilder.setRenderArea(mRenderArea)
             .setRenderPass(m_renderPass)
             .setFramebuffer(mFramebuffer)
             .setClearValues(vClearValeus)
             .build();
 
-    vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
-                         VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
+            VK_SUBPASS_CONTENTS_INLINE);
 
-    // Allocate descriptor sets
-    const Material* pMaterial =
-        GetMaterialManager()->m_mMaterials["plasticpattern"].get();
-    Material::PBRViews views = {
-        pMaterial->getImageView(Material::TEX_ALBEDO),
-        pMaterial->getImageView(Material::TEX_NORMAL),
-        pMaterial->getImageView(Material::TEX_METALNESS),
-        pMaterial->getImageView(Material::TEX_ROUGHNESS),
-        pMaterial->getImageView(Material::TEX_AO),
-    };
+        // Allocate descriptor sets
+        const Material* pMaterial =
+            GetMaterialManager()->m_mMaterials["plasticpattern"].get();
+        Material::PBRViews views ={
+            pMaterial->getImageView(Material::TEX_ALBEDO),
+            pMaterial->getImageView(Material::TEX_NORMAL),
+            pMaterial->getImageView(Material::TEX_METALNESS),
+            pMaterial->getImageView(Material::TEX_ROUGHNESS),
+            pMaterial->getImageView(Material::TEX_AO),
+        };
 
-    const UniformBuffer<PerViewData>* perView =
-        GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+        const UniformBuffer<PerViewData>* perView =
+            GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
-    // Create gbuffer render target views and allocate descriptor set
-    GBufferViews gBufferViews = {
-        GetRenderResourceManager()
+        // Create gbuffer render target views and allocate descriptor set
+        GBufferViews gBufferViews ={
+            GetRenderResourceManager()
             ->getColorTarget("GBUFFER_POSITION", mRenderArea)
             ->getView(),
 
-        GetRenderResourceManager()
+            GetRenderResourceManager()
             ->getColorTarget("GBUFFER_ALBEDO", mRenderArea)
             ->getView(),
 
-        GetRenderResourceManager()
+            GetRenderResourceManager()
             ->getColorTarget("GBUFFER_NORMAL", mRenderArea)
             ->getView(),
 
-        GetRenderResourceManager()
+            GetRenderResourceManager()
             ->getColorTarget("GBUFFER_UV", mRenderArea)
-            ->getView()};
+            ->getView() };
 
-    VkDescriptorSet perViewSets =
-        GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
-    std::vector<VkDescriptorSet> gBufferDescSets = {
-        perViewSets,
-        GetDescriptorManager()->allocateMaterialDescriptorSet(views)};
+        VkDescriptorSet perViewSets =
+            GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
+        std::vector<VkDescriptorSet> gBufferDescSets ={
+            perViewSets,
+            GetDescriptorManager()->allocateMaterialDescriptorSet(views) };
 
-    std::vector<VkDescriptorSet> lightingDescSets = {
-        perViewSets,
-        GetDescriptorManager()->allocateGBufferDescriptorSet(gBufferViews)};
+        std::vector<VkDescriptorSet> lightingDescSets ={
+            perViewSets,
+            GetDescriptorManager()->allocateGBufferDescriptorSet(gBufferViews) };
 
-    for (const auto& prim : primitives)
-    {
-        VkDeviceSize offset = 0;
-        VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
-        VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
-        uint32_t nIndexCount = prim->getIndexCount();
-        vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer, &offset);
-        vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          mGBufferPipeline);
-        vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                mGBufferPipelineLayout, 0, gBufferDescSets.size(),
-                                gBufferDescSets.data(), 0, nullptr);
+        {
+            SCOPED_MARKER(mCommandBuffer, "GBuffer Pass");
+            for (const auto& prim : primitives)
+            {
+                VkDeviceSize offset = 0;
+                VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
+                VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
+                uint32_t nIndexCount = prim->getIndexCount();
+                vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
+                    VK_INDEX_TYPE_UINT32);
+                vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    mGBufferPipeline);
+                vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    mGBufferPipelineLayout, 0, gBufferDescSets.size(),
+                    gBufferDescSets.data(), 0, nullptr);
 
-        // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
-        vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+                // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
+                vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+            }
+        }
+
+        vkCmdNextSubpass(mCommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+
+        // second subpass
+        {
+
+            SCOPED_MARKER(mCommandBuffer, "Lighting Pass");
+            const Primitive* prim = mpQuad->getPrimitives().at(0).get();
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
+            VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
+            uint32_t nIndexCount = prim->getIndexCount();
+
+            vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
+                VK_INDEX_TYPE_UINT32);
+            vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                mLightingPipeline);
+            vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                mLightingPipelineLayout, 0,
+                lightingDescSets.size(),
+                lightingDescSets.data(), 0, nullptr);
+            vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+        }
+
+        vkCmdEndRenderPass(mCommandBuffer);
     }
-
-    vkCmdNextSubpass(mCommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
-
-    // second subpass
-    {
-        const Primitive* prim = mpQuad->getPrimitives().at(0).get();
-        VkDeviceSize offset = 0;
-        VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
-        VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
-        uint32_t nIndexCount = prim->getIndexCount();
-
-        vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer, &offset);
-        vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          mLightingPipeline);
-        vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                mLightingPipelineLayout, 0,
-                                lightingDescSets.size(),
-                                lightingDescSets.data(), 0, nullptr);
-        vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
-    }
-
-    vkCmdEndRenderPass(mCommandBuffer);
     vkEndCommandBuffer(mCommandBuffer);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
