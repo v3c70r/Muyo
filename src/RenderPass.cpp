@@ -3,6 +3,8 @@
 #include "Debug.h"
 #include "Geometry.h"
 #include "VkRenderDevice.h"
+#include "DescriptorManager.h"
+#include "PipelineStateBuilder.h"
 RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
                                  bool bClearAttachments)
 {
@@ -87,10 +89,13 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
                               nullptr, &m_renderPass) == VK_SUCCESS);
 }
 
+
 RenderPassFinal::~RenderPassFinal()
 {
     destroyFramebuffers();
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
 }
 
 void RenderPassFinal::setSwapchainImageViews(
@@ -118,13 +123,77 @@ void RenderPassFinal::setSwapchainImageViews(
                                    &m_vFramebuffers[i]) == VK_SUCCESS);
     }
     mRenderArea = {nWidth, nHeight};
+    setupPipeline();
 }
 
-void RenderPassFinal::RecordOnce(const Geometry& quadGeometry,
-                                 VkPipeline pipeline,
-                                 VkPipelineLayout pipelineLayout,
-                                 VkDescriptorSet descriptorSet)
+void RenderPassFinal::setupPipeline()
 {
+    if (m_pipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
+        vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
+                                m_pipelineLayout, nullptr);
+    }
+    // Allocate pipeline layout
+    std::vector<VkDescriptorSetLayout> descLayouts = {
+        GetDescriptorManager()->getDescriptorLayout(
+            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+
+    std::vector<VkPushConstantRange> pushConstants;
+    m_pipelineLayout =
+        PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout),
+                            VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Final pass");
+
+    // Allocate pipeline
+    VkShaderModule vertShdr =
+        CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
+
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
+
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(mRenderArea).build();
+    VkRect2D scissorRect;
+    scissorRect.offset = {0, 0};
+    scissorRect.extent = mRenderArea;
+
+    InputAssemblyStateCIBuilder iaBuilder;
+    RasterizationStateCIBuilder rsBuilder;
+    MultisampleStateCIBuilder msBuilder;
+    BlendStateCIBuilder blendBuilder;
+    blendBuilder.setAttachments(1);
+    DepthStencilCIBuilder depthStencilBuilder;
+    PipelineStateBuilder builder;
+
+    m_pipeline =
+        builder.setShaderModules({vertShdr, fragShdr})
+            .setVertextInfo({Vertex::getBindingDescription()},
+                            Vertex::getAttributeDescriptions())
+            .setAssembly(iaBuilder.build())
+            .setViewport(viewport, scissorRect)
+            .setRasterizer(rsBuilder.build())
+            .setMSAA(msBuilder.build())
+            .setColorBlending(blendBuilder.build())
+            .setPipelineLayout(m_pipelineLayout)
+            .setDepthStencil(depthStencilBuilder.build())
+            .setRenderPass(m_renderPass)
+            .build(GetRenderDevice()->GetDevice());
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+
+    // Set debug name for the pipeline
+    setDebugUtilsObjectName(
+        reinterpret_cast<uint64_t>(m_pipeline),
+        VK_OBJECT_TYPE_PIPELINE, "Final Pass");
+}
+
+void RenderPassFinal::RecordOnce(const Geometry& quadGeometry, VkImageView inputView)
+{
+    VkDescriptorSet descSet =
+        GetDescriptorManager()->allocateSingleSamplerDescriptorSet(inputView);
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -164,9 +233,9 @@ void RenderPassFinal::RecordOnce(const Geometry& quadGeometry,
             vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0,
                                  VK_INDEX_TYPE_UINT32);
             vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              pipeline);
+                              m_pipeline);
             vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout, 0, 1, &descriptorSet, 0,
+                                    m_pipelineLayout, 0, 1, &descSet, 0,
                                     nullptr);
             vkCmdDrawIndexed(curCmdBuf, nIndexCount, 1, 0, 0, 0);
         }

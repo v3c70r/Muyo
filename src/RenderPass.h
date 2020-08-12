@@ -32,9 +32,7 @@ public:
     virtual void setSwapchainImageViews(std::vector<VkImageView>& vImageViews,
                                         VkImageView depthImageView,
                                         uint32_t nWidth, uint32_t nHeight);
-    void RecordOnce(const Geometry& quadGeometry, VkPipeline pipeline,
-                    VkPipelineLayout pipelineLayout,
-                    VkDescriptorSet descriptorSet);
+    void RecordOnce(const Geometry& quadGeometry, VkImageView inputView);
 
     // Getters
     VkRenderPass& GetRenderPass() { return m_renderPass; }
@@ -55,6 +53,10 @@ protected:
     std::vector<VkFramebuffer>
         m_vFramebuffers;  // Each framebuffer bind to a swapchain image
     VkExtent2D mRenderArea = {0, 0};
+
+    virtual void setupPipeline();
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
 
 private:
     void destroyFramebuffers();

@@ -39,7 +39,8 @@ public:
         VkDescriptorSet descriptorSet,
         const RenderPassGBuffer::GBufferViews& gbufferViews);
 
-    VkDescriptorSet allocateImGuiDescriptorSet(VkImageView textureView);
+    VkDescriptorSet allocateSingleSamplerDescriptorSet(VkImageView textureView);
+
 
     VkDescriptorSet allocatePerviewDataDescriptorSet(
         const UniformBuffer<PerViewData>& perViewData);

@@ -367,7 +367,7 @@ void DescriptorManager::updateGBufferDescriptorSet(
                            0, nullptr);
 }
 
-VkDescriptorSet DescriptorManager::allocateImGuiDescriptorSet(
+VkDescriptorSet DescriptorManager::allocateSingleSamplerDescriptorSet(
     VkImageView textureView)
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
@@ -383,7 +383,7 @@ VkDescriptorSet DescriptorManager::allocateImGuiDescriptorSet(
                                     &descriptorSet) == VK_SUCCESS);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
-                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "ImGui");
+                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single Sampler");
 
     // Prepare buffer descriptor
     {

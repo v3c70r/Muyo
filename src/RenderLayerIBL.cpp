@@ -1,7 +1,6 @@
 #include "RenderLayerIBL.h"
 
 #include "DescriptorManager.h"
-#include "PipelineManager.h"
 #include "PushConstantBlocks.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
@@ -276,10 +275,10 @@ void RenderLayerIBL::setupDescriptorSets()
     VkImageView envMapView =
         GetRenderResourceManager()->getTexture("EnvMap", "assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr")->getView();
     m_envMapDescriptorSet =
-        GetDescriptorManager()->allocateImGuiDescriptorSet(envMapView);
+        GetDescriptorManager()->allocateSingleSamplerDescriptorSet(envMapView);
 
     // Environment cube map descriptor set
-    m_irrMapDescriptorSet = GetDescriptorManager()->allocateImGuiDescriptorSet(
+    m_irrMapDescriptorSet = GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
         GetRenderResourceManager()
             ->getColorTarget("env_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM},
                              TEX_FORMAT, 1, 6)
@@ -430,5 +429,4 @@ void RenderLayerIBL::destroyFramebuffer()
         vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), framebuffer,
                              nullptr);
     }
-    GetPipelineManager()->DestroyIBLPipelines();
 }

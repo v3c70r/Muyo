@@ -2,7 +2,6 @@
 
 #include "Debug.h"
 #include "DescriptorManager.h"
-#include "PipelineManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"

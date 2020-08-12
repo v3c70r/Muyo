@@ -30,8 +30,8 @@ struct ImGuiResource
     std::unique_ptr<Texture> pTexture = nullptr;
 
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
+    //VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    //VkPipeline pipeline = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     int nTotalIndexCount = 0;
 
@@ -49,6 +49,8 @@ public:
     // ImGui Related functions
     void newFrame(VkExtent2D screenExtent);
     void updateBuffers(uint32_t nSwapchainBufferIndex);
+protected:
+    void setupPipeline() override;
 
 private:
     struct PushConstBlock

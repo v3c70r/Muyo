@@ -1,9 +1,10 @@
 #include "RenderPassUI.h"
 #include "VkRenderDevice.h"
 #include "DescriptorManager.h"
-#include "PipelineManager.h"
 #include "Debug.h"
 #include "RenderResourceManager.h"
+#include "PipelineStateBuilder.h"
+#include "PushConstantBlocks.h"
 #include <imgui.h>
 
 void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapchainBuffers) { 
@@ -15,17 +16,9 @@ void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapc
     pTexture = std::make_unique<Texture>();
     pTexture->LoadPixels(fontData, texWidth, texHeight);
     // Allocate descriptor
-    descriptorSet = GetDescriptorManager()->allocateImGuiDescriptorSet(
+    descriptorSet = GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
         pTexture->getView());
     GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER);
-
-    GetPipelineManager()->CreateImGuiPipeline(
-        1, 1,
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
-        UIRenderPass);
-    pipeline = GetPipelineManager()->GetImGuiPipeline();
-    pipelineLayout = 
-        GetPipelineManager()->GetImGuiPipelineLayout();
 
     vertexBuffers.resize(numSwapchainBuffers);
     indexBuffers.resize(numSwapchainBuffers);
@@ -39,7 +32,6 @@ void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapc
 void ImGuiResource::destroyResources()
 {
     pTexture = nullptr;
-    GetPipelineManager()->DestroyImGuiPipeline();
 }
 
 RenderPassUI::RenderPassUI(VkFormat swapChainFormat, uint32_t numSwapchainBuffers)
@@ -53,6 +45,69 @@ RenderPassUI::~RenderPassUI()
 {
     m_uiResources.destroyResources();
     ImGui::DestroyContext();
+}
+
+void RenderPassUI::setupPipeline()
+{
+    // Create pipeline layout
+    std::vector<VkDescriptorSetLayout> descLayouts = {
+        GetDescriptorManager()->getDescriptorLayout(
+            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+
+    std::vector<VkPushConstantRange> pushConstants = {
+        getPushConstantRange<UIPushConstBlock>(VK_SHADER_STAGE_VERTEX_BIT)};
+
+    m_pipelineLayout =
+        PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout),
+                            VK_OBJECT_TYPE_PIPELINE_LAYOUT, "ImGui");
+
+    // Create pipeline
+    ViewportBuilder vpBuilder;
+    VkViewport viewport = vpBuilder.setWH(1, 1).build();
+    VkRect2D scissorRect = {{0, 0}, {1, 1}};
+
+    // Dynmaic state
+    std::vector<VkDynamicState> dynamicStateEnables = {
+        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+    VkShaderModule vertShdr =
+        CreateShaderModule(ReadSpv("shaders/ui.vert.spv"));
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/ui.frag.spv"));
+    PipelineStateBuilder builder;
+    // Build pipeline
+
+    InputAssemblyStateCIBuilder iaBuilder;
+    RasterizationStateCIBuilder rsBuilder;
+    MultisampleStateCIBuilder msBuilder;
+    BlendStateCIBuilder blendBuilder;
+    blendBuilder.setAttachments(1);
+    DepthStencilCIBuilder depthStencilBuilder;
+    depthStencilBuilder.setDepthTestEnabled(false);
+    depthStencilBuilder.setDepthWriteEnabled(false);
+    depthStencilBuilder.setDepthCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+
+    m_pipeline = builder.setShaderModules({vertShdr, fragShdr})
+                     .setVertextInfo({UIVertex::getBindingDescription()},
+                                     UIVertex::getAttributeDescriptions())
+                     .setAssembly(iaBuilder.build())
+                     .setViewport(viewport, scissorRect)
+                     .setRasterizer(rsBuilder.build())
+                     .setMSAA(msBuilder.build())
+                     .setColorBlending(blendBuilder.build())
+                     .setPipelineLayout(m_pipelineLayout)
+                     .setDepthStencil(depthStencilBuilder.build())
+                     .setRenderPass(m_renderPass)
+                     .setSubpassIndex(0)
+                     .build(GetRenderDevice()->GetDevice());
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline),
+                            VK_OBJECT_TYPE_PIPELINE, "ImGui");
 }
 
 void RenderPassUI::newFrame(VkExtent2D screenExtent)
@@ -166,7 +221,7 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
         pushConstBlock.scale =
             glm::vec2(2.0f / io.DisplaySize.x, 2.0f / io.DisplaySize.y);
         pushConstBlock.translate = glm::vec2(-1.0f);
-        vkCmdPushConstants(curCmdBuf, m_uiResources.pipelineLayout,
+        vkCmdPushConstants(curCmdBuf, m_pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(PushConstBlock), &pushConstBlock);
 
@@ -175,9 +230,9 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
                                &m_uiResources.vertexBuffers[nSwapchainBufferIndex].buffer(), &offset);
         vkCmdBindIndexBuffer(curCmdBuf, m_uiResources.indexBuffers[nSwapchainBufferIndex].buffer(), 0,
                              VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_uiResources.pipeline);
+        vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
         vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_uiResources.pipelineLayout, 0, 1,
+                                m_pipelineLayout, 0, 1,
                                 &m_uiResources.descriptorSet, 0, nullptr);
 
         vkCmdDrawIndexed(curCmdBuf, m_uiResources.nTotalIndexCount, 1, 0, 0, 0);

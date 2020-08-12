@@ -25,7 +25,6 @@
 #include "ImGuiGlfwControl.h"
 #include "Material.h"
 #include "MeshVertex.h"
-#include "PipelineManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderPass.h"
 #include "RenderPassGBuffer.h"
@@ -415,47 +414,16 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
 }
 
-void createGraphicsPipeline()
-{
-
-    //GetPipelineManager()->CreateGBufferPipeline(
-    //    s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-    //    GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER), pGBufferPass->GetPass());
-
-    GetPipelineManager()->CreateStaticObjectPipeline(
-        s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height,
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHTING), pFinalPass->GetPass());
-}
 
 void createCommandBuffers()
 {
     pGBufferPass->recordCommandBuffer(s_pObjGeometry->getPrimitives());
 
     pFinalPass->RecordOnce(
-        *s_pQuadGeometry, 
-        GetPipelineManager()->GetStaticObjectPipeline(),
-        GetPipelineManager()->GetStaticObjectPipelineLayout(),
-        GetDescriptorManager()->allocateLightingDescriptorSet(
-            *s_pUniformBuffer,
-            GetRenderResourceManager()
-                ->getColorTarget("GBUFFER_POSITION", VkExtent2D({0, 0}))
-                ->getView(),
-            GetRenderResourceManager()
-                ->getColorTarget("GBUFFER_ALBEDO", VkExtent2D({0, 0}))
-                ->getView(),
-            GetRenderResourceManager()
-                ->getColorTarget("GBUFFER_NORMAL", VkExtent2D({0, 0}))
-                ->getView(),
-            GetRenderResourceManager()
-                ->getColorTarget("GBUFFER_UV", VkExtent2D({0, 0}))
-                ->getView()));
-
-    // Load env view
-    //pIBLPass->setEnvMap("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
-    //Texture* pTexture = new Texture;
-    //pTexture->LoadImage("assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr");
-    //pIBLPass->createEquirectangularMapToCubeMapPipeline();
-    //pIBLPass->recordEquirectangularMapToCubeMapCmd(pTexture->getImageView());
+        *s_pQuadGeometry,
+        GetRenderResourceManager()
+            ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
+            ->getView());
 }
 
 void createSemaphores()
@@ -489,12 +457,7 @@ void createFences()
 
 void cleanupSwapChain()
 {
-
-    GetPipelineManager()->DestroyStaticObjectPipeline();
-    GetPipelineManager()->DestroyGBufferPipeline();
-
     s_pSwapchain->destroySwapchain();
-
 }
 
 void recreateSwapChain()
@@ -531,7 +494,6 @@ void recreateSwapChain()
     pGBufferPass->removeGBufferViews();
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
 
-    createGraphicsPipeline();
     createCommandBuffers();
 }
 
@@ -722,9 +684,6 @@ int main()
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
     pGBufferPass->createPipelines();
 
-
-    createGraphicsPipeline();
-
     ImGui::Init(s_pWindow);
 
     // Create memory allocator
@@ -739,7 +698,9 @@ int main()
         //s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
         s_pObjGeometry = loadObj("assets/cube.obj");
 
-        s_pUniformBuffer = new UniformBuffer<PerViewData>();
+        s_pUniformBuffer =
+            GetRenderResourceManager()->getUniformBuffer<PerViewData>(
+                "perView");
 
         // Load materials
         GetMaterialManager()->m_mMaterials["plasticpattern"] = std::make_unique<Material>();
@@ -794,7 +755,6 @@ int main()
         assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
-        delete s_pUniformBuffer;
         GetMaterialManager()->destroyMaterials();
         s_pObjGeometry = nullptr;
         s_pQuadGeometry = nullptr;
