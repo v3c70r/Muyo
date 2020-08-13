@@ -43,13 +43,8 @@ set(IMGUI_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/imgui)
 if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
     list(APPEND CMAKE_PREFIX_PATH $ENV{VULKAN_SDK})
 endif()
-if(APPLE)
-    set (Vulkan_INCLUDE_DIR $ENV{VULKAN_SDK}/include)
-    set (Vulkan_LIBRARIES $ENV{VULKAN_SDK}/lib/libvulkan.1.dylib)
-    message (STATUS "Found vulkan " ${Vulkan_INCLUDE_DIR})
-else()
-    find_package(Vulkan REQUIRED)
-endif()
+
+find_package(Vulkan REQUIRED)
 
 ## Vulkan Memory Allocator
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
