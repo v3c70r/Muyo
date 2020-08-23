@@ -17,7 +17,7 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
     desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     desc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    desc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    desc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     aAttachmentDesc[GBUFFER_POSITION] = desc;
     aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -33,6 +33,7 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
 
     aAttachmentDesc[LIGHTING_OUTPUT] = desc;
     aAttachmentDesc[LIGHTING_OUTPUT].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    aAttachmentDesc[LIGHTING_OUTPUT].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     // Depth target
     aAttachmentDesc[GBUFFER_DEPTH] = desc;

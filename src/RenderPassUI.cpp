@@ -100,6 +100,7 @@ void RenderPassUI::setupPipeline()
                      .setPipelineLayout(m_pipelineLayout)
                      .setDepthStencil(depthStencilBuilder.build())
                      .setRenderPass(m_renderPass)
+                     .setDynamicStates(dynamicStateEnables)
                      .setSubpassIndex(0)
                      .build(GetRenderDevice()->GetDevice());
 

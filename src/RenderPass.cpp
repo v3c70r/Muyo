@@ -17,17 +17,19 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
 
     colorAttachment.loadOp = bClearAttachments
                                  ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                 : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                                 : VK_ATTACHMENT_LOAD_OP_LOAD;
     colorAttachment.storeOp =
         VK_ATTACHMENT_STORE_OP_STORE;  // Store in the memory to read back
                                        // later
     colorAttachment.stencilLoadOp = bClearAttachments
                                         ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                        : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+                                        : VK_ATTACHMENT_LOAD_OP_LOAD;
 
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
 
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.initialLayout = bClearAttachments
+                                        ? VK_IMAGE_LAYOUT_UNDEFINED
+                                        : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     // Depth attachments
@@ -35,11 +37,13 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
     depthAttachment.format = VK_FORMAT_D32_SFLOAT;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = bClearAttachments ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                               : VK_ATTACHMENT_LOAD_OP_CLEAR;
+                                               : VK_ATTACHMENT_LOAD_OP_LOAD;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.initialLayout = bClearAttachments
+                                        ? VK_IMAGE_LAYOUT_UNDEFINED
+                                        : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     depthAttachment.finalLayout =
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 

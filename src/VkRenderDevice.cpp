@@ -40,7 +40,7 @@ void VkRenderDevice::createPhysicalDevice()
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
     assert(deviceCount != 0);
-    assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
+    //assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
     mPhysicalDevice = devices[0];
