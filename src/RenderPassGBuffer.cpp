@@ -19,17 +19,17 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
     desc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     desc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    aAttachmentDesc[GBUFFER_POSITION] = desc;
-    aAttachmentDesc[GBUFFER_POSITION].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    aAttachmentDesc[GBUFFER_POSITION_AO] = desc;
+    aAttachmentDesc[GBUFFER_POSITION_AO].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-    aAttachmentDesc[GBUFFER_ALBEDO] = desc;
-    aAttachmentDesc[GBUFFER_ALBEDO].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    aAttachmentDesc[GBUFFER_ALBEDO_TRANSMITTANCE] = desc;
+    aAttachmentDesc[GBUFFER_ALBEDO_TRANSMITTANCE].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-    aAttachmentDesc[GBUFFER_UV] = desc;
-    aAttachmentDesc[GBUFFER_UV].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    aAttachmentDesc[GBUFFER_METALNESS_TRANSLUCENCY] = desc;
+    aAttachmentDesc[GBUFFER_METALNESS_TRANSLUCENCY].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
-    aAttachmentDesc[GBUFFER_NORMAL] = desc;
-    aAttachmentDesc[GBUFFER_NORMAL].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    aAttachmentDesc[GBUFFER_NORMAL_ROUGHNESS] = desc;
+    aAttachmentDesc[GBUFFER_NORMAL_ROUGHNESS].format = VK_FORMAT_R16G16B16A16_SFLOAT;
 
     aAttachmentDesc[LIGHTING_OUTPUT] = desc;
     aAttachmentDesc[LIGHTING_OUTPUT].format = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -199,30 +199,36 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
         // Create gbuffer render target views and allocate descriptor set
         GBufferViews gBufferViews ={
             GetRenderResourceManager()
-            ->getColorTarget("GBUFFER_POSITION", mRenderArea)
+            ->getColorTarget("GBUFFER_POSITION_AO", mRenderArea)
             ->getView(),
 
             GetRenderResourceManager()
-            ->getColorTarget("GBUFFER_ALBEDO", mRenderArea)
+            ->getColorTarget("GBUFFER_ALBEDO_TRANSMITTANCE", mRenderArea)
             ->getView(),
 
             GetRenderResourceManager()
-            ->getColorTarget("GBUFFER_NORMAL", mRenderArea)
+            ->getColorTarget("GBUFFER_NORMAL_ROUGHNESS", mRenderArea)
             ->getView(),
 
             GetRenderResourceManager()
-            ->getColorTarget("GBUFFER_UV", mRenderArea)
+            ->getColorTarget("GBUFFER_METALNESS_TRANSLUCENCY", mRenderArea)
             ->getView() };
 
         VkDescriptorSet perViewSets =
             GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
+
         std::vector<VkDescriptorSet> gBufferDescSets ={
             perViewSets,
             GetDescriptorManager()->allocateMaterialDescriptorSet(views) };
 
-        std::vector<VkDescriptorSet> lightingDescSets ={
+        std::vector<VkDescriptorSet> lightingDescSets = {
             perViewSets,
-            GetDescriptorManager()->allocateGBufferDescriptorSet(gBufferViews) };
+            GetDescriptorManager()->allocateGBufferDescriptorSet(gBufferViews),
+            GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
+                GetRenderResourceManager()
+                    ->getColorTarget("irr_cube_map", {0, 0},
+                                     VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                    ->getView())};
 
         {
             SCOPED_MARKER(mCommandBuffer, "GBuffer Pass");
@@ -349,7 +355,7 @@ void RenderPassGBuffer::createPipelines()
         RasterizationStateCIBuilder rsBuilder;
         MultisampleStateCIBuilder msBuilder;
         BlendStateCIBuilder blendBuilder;
-        blendBuilder.setAttachments(LightingAttachments::GBUFFER_ATTACHMENTS_COUNT);
+        blendBuilder.setAttachments(LightingAttachments::GBUFFER_ATTACHMENTS_COUNT, false);
         DepthStencilCIBuilder depthStencilBuilder;
 
         mGBufferPipeline =
@@ -381,9 +387,12 @@ void RenderPassGBuffer::createPipelines()
         // Create lighting pipeline
         std::vector<VkDescriptorSetLayout> descLayouts = {
             GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),  // MPV matrices
             GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_GBUFFER)};
+                DESCRIPTOR_LAYOUT_GBUFFER),  // GBuffer textures
+            GetDescriptorManager()->getDescriptorLayout(
+                DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)  // Irradiance map
+        };
 
         std::vector<VkPushConstantRange> pushConstants;
 

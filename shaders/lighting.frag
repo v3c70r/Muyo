@@ -42,6 +42,11 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
     return F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
 }
 
+vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
+{
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
+}   
+
 // Light informations
 const int LIGHT_COUNT = 4;
 const int USED_LIGHT_COUNT = 1;
@@ -70,11 +75,12 @@ layout(location = 0) in vec2 texCoords;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 1, binding = 0) uniform sampler2D inGBuffers[GBUFFER_COUNT];
+layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
 
 void main() {
     // GBuffer info
     const vec3 vViewPos = texture(inGBuffers[GBUFFER_POS_AO], texCoords).xyz;
-    const float fAO = texture(inGBuffers[GBUFFER_POS_AO], texCoords).r;
+    const float fAO = texture(inGBuffers[GBUFFER_POS_AO], texCoords).w;
     const vec3 vAlbedo = texture(inGBuffers[GBUFFER_ALBEDO_TRANSMITTANCE], texCoords).xyz;
     const vec3 vFaceNormal = texture(inGBuffers[GBUFFER_NORMAL_ROUGHNESS], texCoords).xyz;
     const float fRoughness = texture(inGBuffers[GBUFFER_NORMAL_ROUGHNESS], texCoords).w;
@@ -83,28 +89,28 @@ void main() {
 
     vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetallic);
     vec3 vLo = vec3(0.0);
+    vec3 V = normalize(-vViewPos);
 
     // For each light source
     for(int i = 0; i < USED_LIGHT_COUNT; ++i)
     {
         vec3 lightPosView = (vec4(lightPositions[i], 1.0)).xyz;
         vec3 L = normalize(lightPosView - vViewPos.xyz);
-        vec3 H = normalize(-vViewPos + L);
+        vec3 H = normalize(L + V);
         float distance = length(lightPosView - vViewPos.xyz);
         float attenuation = 1.0 / (distance * distance);
         vec3 radiance = lightColors[i] * attenuation;
 
         // cook-torrance brdf
         float NDF = DistributionGGX(vFaceNormal, H, fRoughness);
-        float G = GeometrySmith(vFaceNormal, -vViewPos, L, fRoughness);
-        vec3 F = fresnelSchlick(max(dot(H, -vViewPos), 0.0), vF0);
-
+        float G = GeometrySmith(vFaceNormal, V, L, fRoughness);
+        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), vF0);
         vec3 kS = F;
         vec3 kD = vec3(1.0) - kS;
         kD *= 1.0 - fMetallic;
 
         vec3 numerator = NDF * G * F;
-        float denominator = 4.0 * max(dot(vFaceNormal, -vViewPos), 0.0) *
+        float denominator = 4.0 * max(dot(vFaceNormal, V), 0.0) *
                             max(dot(vFaceNormal, L), 0.0);
         vec3 specular = numerator / max(denominator, 0.001);
 
@@ -112,7 +118,13 @@ void main() {
         float NdotL = max(dot(vFaceNormal, L), 0.0);
         vLo += (kD * vAlbedo / PI + specular) * radiance * NdotL;
     }
-    vec3 vAmbient = vec3(0.03) * vAlbedo * fAO;
+    // Calculate ambiance
+    vec3 kS = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
+    vec3 kD = 1.0 - kS;
+    vec3 irradiance = texture(irradianceMap, vFaceNormal).xyz * 0.03;
+    vec3 vDiffuse = irradiance * vAlbedo;
+    vec3 vAmbient = (kD * vDiffuse) * fAO;
+
     vec3 vColor = vAmbient + vLo;
 
     // Gamma correction

@@ -238,30 +238,40 @@ public:
         m_info.blendConstants[2] = 0.0f;  // Optional
         m_info.blendConstants[3] = 0.0f;  // Optional
     }
-    BlendStateCIBuilder& setAttachments(uint32_t numAttachments)
+    BlendStateCIBuilder& setAttachments(uint32_t numAttachments, bool bEnabled = true)
     {
-        blendAttachmentStates.resize(numAttachments, getAttachmentBlendState());
+        blendAttachmentStates.resize(numAttachments, getAttachmentBlendState(bEnabled));
         m_info.attachmentCount = numAttachments;
         m_info.pAttachments = blendAttachmentStates.data();
         return *this;
     }
 
 private:
-    VkPipelineColorBlendAttachmentState getAttachmentBlendState()
+    static VkPipelineColorBlendAttachmentState getAttachmentBlendState(bool bEnabled)
     {
         VkPipelineColorBlendAttachmentState defaultBlendState = {};
-        defaultBlendState.blendEnable = VK_TRUE;
-        defaultBlendState.colorWriteMask =
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        defaultBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        defaultBlendState.dstColorBlendFactor =
-            VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        defaultBlendState.colorBlendOp = VK_BLEND_OP_ADD;
-        defaultBlendState.srcAlphaBlendFactor =
-            VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        defaultBlendState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        defaultBlendState.alphaBlendOp = VK_BLEND_OP_ADD;
+        if (bEnabled)
+        {
+            defaultBlendState.blendEnable = VK_TRUE;
+            defaultBlendState.colorWriteMask =
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            defaultBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            defaultBlendState.dstColorBlendFactor =
+                VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            defaultBlendState.colorBlendOp = VK_BLEND_OP_ADD;
+            defaultBlendState.srcAlphaBlendFactor =
+                VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            defaultBlendState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            defaultBlendState.alphaBlendOp = VK_BLEND_OP_ADD;
+        }
+        else
+        {
+            defaultBlendState.blendEnable = VK_FALSE;
+            defaultBlendState.colorWriteMask =
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        }
         return defaultBlendState;
     }
     std::vector<VkPipelineColorBlendAttachmentState> blendAttachmentStates;

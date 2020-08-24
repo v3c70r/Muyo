@@ -555,7 +555,7 @@ void present(uint32_t nIamgeIndex)
 
     std::array<VkCommandBuffer, 4> cmdBuffers = {
         // TODO: Disable IBL submitting for every frame
-        //pIBLPass->GetCommandBuffer(),
+        pIBLPass->GetCommandBuffer(),
         pGBufferPass->GetCommandBuffer(),
         pFinalPass->GetCommandBuffer(nIamgeIndex),
         pUIPass->GetCommandBuffer(nIamgeIndex)
@@ -677,7 +677,6 @@ int main()
     pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pIBLPass = std::make_unique<RenderLayerIBL>();
-    //pIBLPass->initializeIBLResources();
 
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();

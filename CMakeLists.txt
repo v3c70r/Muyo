@@ -138,7 +138,7 @@ foreach (GLSL ${GLSL_SOURCE_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${GLSL_VALIDATOR} -V -H ${GLSL} -o ${SPIRV}
+        COMMAND ${GLSL_VALIDATOR} -g -V -H ${GLSL} -o ${SPIRV}
         DEPENDS ${GLSL})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()

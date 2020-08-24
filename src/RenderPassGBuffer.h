@@ -12,10 +12,10 @@ public:
     {
         enum LightingAttachmentNames
         {
-            GBUFFER_POSITION,
-            GBUFFER_ALBEDO,
-            GBUFFER_NORMAL,
-            GBUFFER_UV,
+            GBUFFER_POSITION_AO,
+            GBUFFER_ALBEDO_TRANSMITTANCE,
+            GBUFFER_NORMAL_ROUGHNESS,
+            GBUFFER_METALNESS_TRANSLUCENCY,
             LIGHTING_OUTPUT,
             GBUFFER_DEPTH,
 
@@ -25,8 +25,8 @@ public:
             GBUFFER_ATTACHMENTS_COUNT = LIGHTING_OUTPUT
         };
         const std::array<const std::string, ATTACHMENTS_COUNT> aNames = {
-            "GBUFFER_POSITION", "GBUFFER_ALBEDO",  "GBUFFER_NORMAL",
-            "GBUFFER_UV",       "LIGHTING_OUTPUT", "GBUFFER_DEPTH"};
+            "GBUFFER_POSITION_AO", "GBUFFER_ALBEDO_TRANSMITTANCE",  "GBUFFER_NORMAL_ROUGHNESS",
+            "GBUFFER_METALNESS_TRANSLUCENCY",       "LIGHTING_OUTPUT", "GBUFFER_DEPTH"};
 
         static constexpr std::array<VkFormat, ATTACHMENTS_COUNT> aFormats = {
             VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -36,19 +36,19 @@ public:
         static constexpr std::array<VkAttachmentReference,
                                     GBUFFER_ATTACHMENTS_COUNT>
             aGBufferColorAttachmentRef = {{
-                {GBUFFER_POSITION, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                {GBUFFER_ALBEDO, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                {GBUFFER_NORMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
-                {GBUFFER_UV, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+                {GBUFFER_POSITION_AO, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+                {GBUFFER_ALBEDO_TRANSMITTANCE, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+                {GBUFFER_NORMAL_ROUGHNESS, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
+                {GBUFFER_METALNESS_TRANSLUCENCY, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL},
             }};
 
         static constexpr std::array<VkAttachmentReference,
                                     GBUFFER_ATTACHMENTS_COUNT>
             aLightingInputRef = {{
-                {GBUFFER_POSITION, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                {GBUFFER_ALBEDO, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                {GBUFFER_NORMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
-                {GBUFFER_UV, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                {GBUFFER_POSITION_AO, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                {GBUFFER_ALBEDO_TRANSMITTANCE, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                {GBUFFER_NORMAL_ROUGHNESS, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                {GBUFFER_METALNESS_TRANSLUCENCY, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
             }};
 
         static constexpr std::array<VkAttachmentReference, 1>
@@ -61,11 +61,11 @@ public:
 
         static constexpr std::array<VkClearValue, ATTACHMENTS_COUNT>
             aClearValues = {{
-                {.color = {0.0f, 0.0f, 0.0f, 1.0f}},  // Position
-                {.color = {0.0f, 0.0f, 0.0f, 1.0f}},  // Albedo
-                {.color = {0.0f, 0.0f, 0.0f, 1.0f}},  // Normal
-                {.color = {0.0f, 0.0f, 0.0f, 1.0f}},  // UV
-                {.color = {0.0f, 0.0f, 0.0f, 1.0f}},  // Lighting output
+                {.color = {0.0f, 0.0f, 0.0f, 0.0f}},  // Position
+                {.color = {0.0f, 0.0f, 0.0f, 0.0f}},  // Albedo
+                {.color = {0.0f, 0.0f, 0.0f, 0.0f}},  // Normal
+                {.color = {0.0f, 0.0f, 0.0f, 0.0f}},  // UV
+                {.color = {0.0f, 0.0f, 0.0f, 0.0f}},  // Lighting output
                 {.depthStencil = {1.0f, 0}},          // Depth stencil
             }};
 
