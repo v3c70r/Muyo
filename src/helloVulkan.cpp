@@ -542,6 +542,7 @@ uint32_t beginFrame()
     return nIamgeIndex;
 }
 
+static bool bIrradianceMapGenerated = false;
 void present(uint32_t nIamgeIndex)
 {
     // Record command buffers
@@ -549,17 +550,28 @@ void present(uint32_t nIamgeIndex)
 
     // submit command buffer
     VkPipelineStageFlags stageFlag =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT; // only color attachment
-                                                       // waits for the
-                                                       // semaphore
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // only color attachment
+                                                        // waits for the
+                                                        // semaphore
 
-    std::array<VkCommandBuffer, 4> cmdBuffers = {
-        // TODO: Disable IBL submitting for every frame
-        pIBLPass->GetCommandBuffer(),
-        pGBufferPass->GetCommandBuffer(),
-        pFinalPass->GetCommandBuffer(nIamgeIndex),
-        pUIPass->GetCommandBuffer(nIamgeIndex)
-    };
+    std::vector<VkCommandBuffer> cmdBuffers;
+    if (bIrradianceMapGenerated)
+    {
+        cmdBuffers = {// TODO: Disable IBL submitting for every frame
+                      // pIBLPass->GetCommandBuffer(),
+                      pGBufferPass->GetCommandBuffer(),
+                      pFinalPass->GetCommandBuffer(nIamgeIndex),
+                      pUIPass->GetCommandBuffer(nIamgeIndex)};
+    }
+    else
+    {
+        cmdBuffers = {
+            // TODO: Disable IBL submitting for every frame
+            pIBLPass->GetCommandBuffer(), pGBufferPass->GetCommandBuffer(),
+            pFinalPass->GetCommandBuffer(nIamgeIndex),
+            pUIPass->GetCommandBuffer(nIamgeIndex)};
+        bIrradianceMapGenerated = true;
+    }
 
     // Filter out null cmd buffers
     std::vector<VkCommandBuffer> vCmdBuffers;
