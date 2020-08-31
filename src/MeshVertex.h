@@ -6,6 +6,7 @@
 using Index = uint32_t;
 struct Vertex {
     glm::vec3 pos;
+    glm::vec3 normal;
     glm::vec3 textureCoord;
     static VkVertexInputBindingDescription getBindingDescription()
     {
@@ -20,7 +21,7 @@ struct Vertex {
     getAttributeDescriptions()
     {
         std::vector<VkVertexInputAttributeDescription> attribDesc;
-        attribDesc.resize(2);
+        attribDesc.resize(3);
         attribDesc[0].location = 0;
         attribDesc[0].binding = 0;
         attribDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -29,7 +30,12 @@ struct Vertex {
         attribDesc[1].location = 1;
         attribDesc[1].binding = 0;
         attribDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attribDesc[1].offset = offsetof(Vertex, textureCoord);
+        attribDesc[1].offset = offsetof(Vertex, normal);
+
+        attribDesc[2].location = 2;
+        attribDesc[2].binding = 0;
+        attribDesc[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attribDesc[2].offset = offsetof(Vertex, textureCoord);
         return attribDesc;
     }
 };

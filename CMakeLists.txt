@@ -50,14 +50,17 @@ find_package(Vulkan REQUIRED)
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
 add_library(vma ${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator/vk_mem_alloc.cpp)
 
-## stb images
-include_directories(${CMAKE_SOURCE_DIR}/thirdparty/stb)
-add_library(stb ${CMAKE_SOURCE_DIR}/thirdparty/stb/stb.cpp)
-
 ## tiny obj
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader)
 add_library(tinyobj ${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader/tiny_obj_loader.cc)
 
+## tiny gltf
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/tinygltf)
+add_library(tinygltf ${CMAKE_SOURCE_DIR}/thirdparty/tinygltf/tiny_gltf.cc)
+
+## stb images
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/stb)
+add_library(stb ${CMAKE_SOURCE_DIR}/thirdparty/stb/stb.cpp)
 
 find_file(GLSL_VALIDATOR 
     NAMES 
@@ -123,7 +126,7 @@ add_executable( helloVulkan
     src/RenderLayerIBL.cpp
     )
 
-target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} stb vma tinyobj)
+target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} vma stb tinygltf tinyobj)
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES

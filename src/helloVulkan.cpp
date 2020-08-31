@@ -155,6 +155,7 @@ const std::vector<const char *> deviceExtensions = {
 
 static std::unique_ptr<Geometry> s_pQuadGeometry = nullptr;
 static std::unique_ptr<Geometry> s_pObjGeometry = nullptr;
+static std::unique_ptr<Geometry> s_pMesh = nullptr;
 ///////////////////////////////////////////
 
 void recreateSwapChain(); // fwd declaration
@@ -631,6 +632,11 @@ void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
     ubo.view = s_arcball.getViewMat();
     ubo.proj = s_arcball.getProjMat();
 
+    // Update auxiliary matrices
+    ubo.objectToView = ubo.view * ubo.model;
+    ubo.viewToObject = glm::inverse(ubo.objectToView);
+    ubo.normalObjectToView = glm::transpose(ubo.viewToObject);
+
     ub->setData(ubo);
 };
 
@@ -708,6 +714,9 @@ int main()
         s_pQuadGeometry = getQuad();
         //s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
         s_pObjGeometry = loadObj("assets/cube.obj");
+        s_pMesh = loadGLTF("assets/mazda_mx-5/scene.gltf");
+
+
 
         s_pUniformBuffer =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>(

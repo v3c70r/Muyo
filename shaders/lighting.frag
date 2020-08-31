@@ -74,15 +74,27 @@ const uint GBUFFER_COUNT = 4;
 layout(location = 0) in vec2 texCoords;
 layout(location = 0) out vec4 outColor;
 
+layout (set = 0, binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+
+    mat4 objectToView;
+    mat4 viewToObject;
+    mat4 normalObjectToView;
+} ubo;
+
 layout(set = 1, binding = 0) uniform sampler2D inGBuffers[GBUFFER_COUNT];
 layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
 
 void main() {
     // GBuffer info
-    const vec3 vViewPos = texture(inGBuffers[GBUFFER_POS_AO], texCoords).xyz;
+    const vec3 vWorldPos = texture(inGBuffers[GBUFFER_POS_AO], texCoords).xyz;
+    const vec3 vViewPos = (ubo.view * vec4(vWorldPos, 1.0)).xyz;
     const float fAO = texture(inGBuffers[GBUFFER_POS_AO], texCoords).w;
     const vec3 vAlbedo = texture(inGBuffers[GBUFFER_ALBEDO_TRANSMITTANCE], texCoords).xyz;
-    const vec3 vFaceNormal = texture(inGBuffers[GBUFFER_NORMAL_ROUGHNESS], texCoords).xyz;
+    const vec3 vWorldNormal = texture(inGBuffers[GBUFFER_NORMAL_ROUGHNESS], texCoords).xyz;
+    const vec3 vFaceNormal = normalize((ubo.objectToView * vec4(vWorldNormal, 0.0)).xyz);
     const float fRoughness = texture(inGBuffers[GBUFFER_NORMAL_ROUGHNESS], texCoords).w;
     const float fMetallic = texture(inGBuffers[GBUFFER_METALNESS_TRANSLUCENCY], texCoords).r;
     //TODO: Read transmittence and translucency if necessary
@@ -121,17 +133,18 @@ void main() {
     // Calculate ambiance
     vec3 kS = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
     vec3 kD = 1.0 - kS;
-    vec3 irradiance = texture(irradianceMap, vFaceNormal).xyz * 0.03;
+    vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz * 0.03;
     vec3 vDiffuse = irradiance * vAlbedo;
     vec3 vAmbient = (kD * vDiffuse) * fAO;
 
-    vec3 vColor = vAmbient + vLo;
+    vec3 vColor = vLo;
 
     // Gamma correction
     vColor = vColor / (vColor + vec3(1.0));
     vColor = pow(vColor, vec3(1.0 / 2.2));
 
     outColor = vec4(vColor, 1.0);
+    outColor = vec4(vWorldNormal, 1.0);
     //outColor = texture(inGBuffers[GBUFFER_POS_AO], texCoords);
     outColor.a = 1.0;
 }

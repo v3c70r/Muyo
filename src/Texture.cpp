@@ -1,5 +1,4 @@
 #include "Texture.h"
-#define STB_IMAGE_IMPLEMENTATION
 #include "../thirdparty/stb/stb_image.h"
 
 Texture::Texture() : m_textureSampler(VK_NULL_HANDLE) {}
