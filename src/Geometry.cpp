@@ -1,4 +1,5 @@
 #include "Geometry.h"
+#include <cassert>
 #include <tiny_obj_loader.h>
 #include <tiny_gltf.h>
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation)
@@ -98,6 +99,9 @@ std::unique_ptr<Geometry> getSkybox()
 
 std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransformation)
 {
+
+    std::vector<std::unique_ptr<Primitive>> primitives;
+
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
     std::string err, warn;
@@ -110,15 +114,77 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
     };
     for (const auto &mesh : model.meshes)
     {
-        std::cout << "Name: " << mesh.name << std::endl;
+        std::cout << "Mesh Name: " << mesh.name << std::endl;
         // List attributes
-        std::cout << "Num primitives: " << mesh.primitives.size() << std::endl;
         for (const auto &primitive : mesh.primitives)
         {
-            for (const std::string &attribKey : READ_VALUES)
+            std::vector<Vertex> verts;
+            std::vector<uint32_t> indices;
+            size_t nPositionOffset = 0;
+            size_t nNormalOffset = 0;
+            size_t nTexCoordOffset = 0;
+
             {
-                std::cout << primitive.attributes.at(attribKey)<<std::endl;
+                // Vec3 float
+                // construct position
+                std::cout<<"Position"<<std::endl;
+                const std::string sAttribkey = "POSITION";
+                const auto &accessor =
+                    model.accessors.at(primitive.attributes.at(sAttribkey));
+                const auto &bufferView = model.bufferViews[accessor.bufferView];
+                const auto &buffer = model.buffers[bufferView.buffer];
+                std::cout<<"Num vertices: "<<accessor.count<<std::endl;
+                std::cout<<"Vector Type: "<<accessor.type<<std::endl;
+                std::cout<<"Component Type: "<<accessor.componentType<<std::endl;
+
+                assert(accessor.type == TINYGLTF_TYPE_VEC3);
+                assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
+
             }
+
+            {
+                std::cout<<"Normal"<<std::endl;
+                const std::string sAttribkey = "NORMAL";
+                const auto &accessor =
+                    model.accessors.at(primitive.attributes.at(sAttribkey));
+                const auto &bufferView = model.bufferViews[accessor.bufferView];
+                const auto &buffer = model.buffers[bufferView.buffer];
+                std::cout<<"Num vertices: "<<accessor.count<<std::endl;
+                std::cout<<"Vector Type: "<<accessor.type<<std::endl;
+                std::cout<<"Component Type: "<<accessor.componentType<<std::endl;
+
+                assert(accessor.type == TINYGLTF_TYPE_VEC3);
+                assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
+            }
+
+            {
+                std::cout<<"TexCoord"<<std::endl;
+                const std::string sAttribkey = "TEXCOORD_0";
+                const auto &accessor =
+                    model.accessors.at(primitive.attributes.at(sAttribkey));
+                const auto &bufferView = model.bufferViews[accessor.bufferView];
+                const auto &buffer = model.buffers[bufferView.buffer];
+                std::cout<<"Num vertices: "<<accessor.count<<std::endl;
+                std::cout<<"Vector Type: "<<accessor.type<<std::endl;
+                std::cout<<"Component Type: "<<accessor.componentType<<std::endl;
+
+                assert(accessor.type == TINYGLTF_TYPE_VEC2);
+                assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
+            }
+
+            //for (const std::string &attribKey : READ_VALUES)
+            //{
+            //    std::cout << " Attribute: " << attribKey << std::endl;
+
+            //    const auto &accessor =
+            //        model.accessors.at(primitive.attributes.at(attribKey));
+
+            //    std::cout << "  Accessor: " << accessor.name << std::endl;
+
+            //    std::cout << "  Buffer View: "
+            //              << model.bufferViews[accessor.bufferView].name
+            //              << std::endl;
+            //}
         }
     }
 
