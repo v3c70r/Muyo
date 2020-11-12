@@ -72,7 +72,7 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
         indices.reserve(objInfo.shapes[i].mesh.indices.size());
         for (size_t index = 0; index < objInfo.shapes[i].mesh.indices.size(); index++)
         {
-            indices.push_back(index);
+            indices.push_back((Index)index);
         }
 
         primitives.emplace_back(std::make_unique<Primitive>(vertices, indices));
@@ -100,7 +100,7 @@ std::unique_ptr<Geometry> getSkybox()
 std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransformation)
 {
 
-    std::vector<std::unique_ptr<Primitive>> primitives;
+    std::vector<std::unique_ptr<Primitive>> vPrimitives;
 
     tinygltf::Model model;
     tinygltf::TinyGLTF loader;
@@ -118,15 +118,12 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
         // List attributes
         for (const auto &primitive : mesh.primitives)
         {
-            std::vector<Vertex> verts;
-            std::vector<uint32_t> indices;
-            size_t nPositionOffset = 0;
-            size_t nNormalOffset = 0;
-            size_t nTexCoordOffset = 0;
+            std::vector<glm::vec3> vPositions;
+            std::vector<glm::vec3> vUVs;
+            std::vector<glm::vec3> vNormals;
 
+            // vPositions
             {
-                // Vec3 float
-                // construct position
                 std::cout<<"Position"<<std::endl;
                 const std::string sAttribkey = "POSITION";
                 const auto &accessor =
@@ -139,9 +136,15 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
 
                 assert(accessor.type == TINYGLTF_TYPE_VEC3);
                 assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
+                // confirm we use the standard format
+                assert(bufferView.byteStride == 12);
+                assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+
+                vPositions.resize(accessor.count);
+                memcpy(vPositions.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
 
             }
-
+            // vNormals
             {
                 std::cout<<"Normal"<<std::endl;
                 const std::string sAttribkey = "NORMAL";
@@ -155,8 +158,14 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
 
                 assert(accessor.type == TINYGLTF_TYPE_VEC3);
                 assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
-            }
+                // confirm we use the standard format
+                assert(bufferView.byteStride == 12);
+                assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
 
+                vNormals.resize(accessor.count);
+                memcpy(vNormals.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
+            }
+            // vUVs
             {
                 std::cout<<"TexCoord"<<std::endl;
                 const std::string sAttribkey = "TEXCOORD_0";
@@ -170,23 +179,40 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
 
                 assert(accessor.type == TINYGLTF_TYPE_VEC2);
                 assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+                // confirm we use the standard format
+                assert(bufferView.byteStride == 8);
+                assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+                vUVs.resize(accessor.count);
+                memcpy(vUVs.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
             }
 
-            //for (const std::string &attribKey : READ_VALUES)
-            //{
-            //    std::cout << " Attribute: " << attribKey << std::endl;
-
-            //    const auto &accessor =
-            //        model.accessors.at(primitive.attributes.at(attribKey));
-
-            //    std::cout << "  Accessor: " << accessor.name << std::endl;
-
-            //    std::cout << "  Buffer View: "
-            //              << model.bufferViews[accessor.bufferView].name
-            //              << std::endl;
-            //}
+            assert(vUVs.size() == vPositions.size());
+            assert(vNormals.size() == vPositions.size());
+            std::vector<Vertex> vVertices(vUVs.size());
+            for (size_t i=0; i< vVertices.size(); i++ )
+            {
+                Vertex& vertex = vVertices[i];
+                vertex.pos = vPositions[i];
+                vertex.normal = vNormals[i];
+                vertex.textureCoord = {vUVs[i].x, vUVs[i].y, 0.0};
+            }
+            // Indices
+            std::vector<Index> vIndices;
+            {
+                const auto &accessor =
+                    model.accessors.at(primitive.indices);
+                const auto &bufferView = model.bufferViews[accessor.bufferView];
+                const auto &buffer = model.buffers[bufferView.buffer];
+                assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
+                vIndices.resize(accessor.count);
+                memcpy(vIndices.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * sizeof(Index));
+            }
+            vPrimitives.emplace_back(std::make_unique<Primitive>(vVertices, vIndices));
         }
+
     }
+    return std::make_unique<Geometry>(vPrimitives);
 
     // bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, argv[1]); //
     // for binary glTF(.glb)

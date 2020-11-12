@@ -713,8 +713,9 @@ int main()
         // Create the quad
         s_pQuadGeometry = getQuad();
         //s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
-        s_pObjGeometry = loadObj("assets/cube.obj");
-        s_pMesh = loadGLTF("assets/mazda_mx-5/scene.gltf");
+        //s_pObjGeometry = loadObj("assets/cube.obj");
+        //s_pMesh = loadGLTF("assets/mazda_mx-5/scene.gltf");
+        s_pObjGeometry = loadGLTF("assets/mazda_mx-5/scene.gltf");
 
 
 
