@@ -37,6 +37,7 @@
 #include "VertexBuffer.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
+#include "SceneImporter.h"
 
 // TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
@@ -90,6 +91,13 @@ static void mouseCallback(GLFWwindow *window, int button, int action, int mods)
 static void mouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
 {
     rotateArcballCallback(window, xpos, ypos);
+}
+
+void scrollCallback(GLFWwindow* window, double xoffset,
+                                   double yoffset)
+{
+    s_arcball.AddZoom(yoffset * -0.1f);
+    ImGui::ScrollCallback(window, xoffset, yoffset);
 }
 // GLFW key callbacks
 static void onKeyStroke(GLFWwindow *window, int key, int scancode, int action,
@@ -248,7 +256,7 @@ void initWindow()
     glfwSetKeyCallback(s_pWindow, onKeyStroke);
     glfwSetMouseButtonCallback(s_pWindow, mouseCallback);
     glfwSetCursorPosCallback(s_pWindow, mouseCursorCallback);
-    glfwSetScrollCallback(s_pWindow, ImGui::ScrollCallback);
+    glfwSetScrollCallback(s_pWindow, scrollCallback);
     glfwSetKeyCallback(s_pWindow, ImGui::KeyCallback);
     glfwSetCharCallback(s_pWindow, ImGui::CharCallback);
 }
@@ -716,8 +724,8 @@ int main()
         //s_pObjGeometry = loadObj("assets/cube.obj");
         //s_pMesh = loadGLTF("assets/mazda_mx-5/scene.gltf");
         s_pObjGeometry = loadGLTF("assets/mazda_mx-5/scene.gltf");
-
-
+        GLTFImporter importer;
+        std::vector<Scene> vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
 
         s_pUniformBuffer =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>(
@@ -764,8 +772,21 @@ int main()
             updateUniformBuffer(s_pUniformBuffer);
 
             uint32_t nImageIndex = beginFrame();
+ 
             pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
+            // Draw scene debug
+            {
+                ImGui::Begin("Debug Scene");
+                for (const auto &scene : vScenes)
+                {
+                    scene.DrawSceneDebug();
+                }
+                ImGui::End();
+            }
+            ImGui::Render();
             pUIPass->updateBuffers(nImageIndex);
+
+            ImGui::Render();
             present(nImageIndex);
             ImGui::UpdateMousePosAndButtons();
             ImGui::UpdateMouseCursor();

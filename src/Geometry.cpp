@@ -2,6 +2,12 @@
 #include <cassert>
 #include <tiny_obj_loader.h>
 #include <tiny_gltf.h>
+
+static GeometryManager s_geometryManager;
+GeometryManager *GetGeometryManager()
+{
+    return &s_geometryManager;
+}
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation)
 {
     struct TinyObjInfo
@@ -109,12 +115,41 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
     bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, path.c_str());
     std::cout<<"Loading GLTF===\n";
     std::cout<<"Num meshes: "<<model.meshes.size()<<std::endl;
+    std::cout<<"Num nodes:" << model.nodes.size()<<std::endl;
     const std::vector<std::string> READ_VALUES = {
         "NORMAL", "POSITION", "TEXCOORD_0"
     };
-    for (const auto &mesh : model.meshes)
+    for (const auto &node : model.nodes)
     {
-        std::cout << "Mesh Name: " << mesh.name << std::endl;
+        if (node.mesh < 0) continue;
+        const auto &mesh = model.meshes[node.mesh];
+
+        // construct transformation matrix;
+        glm::mat4 mNodeTransformation = glm::mat4(1.0);
+        glm::mat4 mNormalTransformation = glm::mat4(1.0);
+        if (node.matrix.size() > 0)
+        {
+            assert(node.matrix.size() == 16);
+            for (size_t i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < 4; j++)
+                {
+                    mNodeTransformation[i][j] = (float)node.matrix[i * 4 + j];
+                }
+            }
+            mNormalTransformation =
+                glm::transpose(glm::inverse(mNodeTransformation));
+        }
+
+        std::cout<<"Node name: "<<node.name<<std::endl;
+        if (node.children.size() > 0)
+        {
+            std::cout << "Num children" << node.children.size()<<std::endl;
+        }
+
+    //for (const auto &mesh : model.meshes)
+    //{
+        //std::cout << "Mesh Name: " << mesh.name << std::endl;
         // List attributes
         for (const auto &primitive : mesh.primitives)
         {
@@ -124,15 +159,11 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
 
             // vPositions
             {
-                std::cout<<"Position"<<std::endl;
                 const std::string sAttribkey = "POSITION";
                 const auto &accessor =
                     model.accessors.at(primitive.attributes.at(sAttribkey));
                 const auto &bufferView = model.bufferViews[accessor.bufferView];
                 const auto &buffer = model.buffers[bufferView.buffer];
-                std::cout<<"Num vertices: "<<accessor.count<<std::endl;
-                std::cout<<"Vector Type: "<<accessor.type<<std::endl;
-                std::cout<<"Component Type: "<<accessor.componentType<<std::endl;
 
                 assert(accessor.type == TINYGLTF_TYPE_VEC3);
                 assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
@@ -146,15 +177,11 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
             }
             // vNormals
             {
-                std::cout<<"Normal"<<std::endl;
                 const std::string sAttribkey = "NORMAL";
                 const auto &accessor =
                     model.accessors.at(primitive.attributes.at(sAttribkey));
                 const auto &bufferView = model.bufferViews[accessor.bufferView];
                 const auto &buffer = model.buffers[bufferView.buffer];
-                std::cout<<"Num vertices: "<<accessor.count<<std::endl;
-                std::cout<<"Vector Type: "<<accessor.type<<std::endl;
-                std::cout<<"Component Type: "<<accessor.componentType<<std::endl;
 
                 assert(accessor.type == TINYGLTF_TYPE_VEC3);
                 assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
@@ -167,15 +194,11 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
             }
             // vUVs
             {
-                std::cout<<"TexCoord"<<std::endl;
                 const std::string sAttribkey = "TEXCOORD_0";
                 const auto &accessor =
                     model.accessors.at(primitive.attributes.at(sAttribkey));
                 const auto &bufferView = model.bufferViews[accessor.bufferView];
                 const auto &buffer = model.buffers[bufferView.buffer];
-                std::cout<<"Num vertices: "<<accessor.count<<std::endl;
-                std::cout<<"Vector Type: "<<accessor.type<<std::endl;
-                std::cout<<"Component Type: "<<accessor.componentType<<std::endl;
 
                 assert(accessor.type == TINYGLTF_TYPE_VEC2);
                 assert(accessor.componentType ==  TINYGLTF_COMPONENT_TYPE_FLOAT);
@@ -193,9 +216,15 @@ std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransform
             for (size_t i=0; i< vVertices.size(); i++ )
             {
                 Vertex& vertex = vVertices[i];
-                vertex.pos = vPositions[i];
-                vertex.normal = vNormals[i];
-                vertex.textureCoord = {vUVs[i].x, vUVs[i].y, 0.0};
+                {
+                    glm::vec4 pos(vPositions[i], 1.0);
+                    pos = mNodeTransformation * pos;
+                    vertex.pos = pos;
+                    glm::vec4 normal(vNormals[i], 1.0);
+                    normal = mNormalTransformation * normal;
+                    vertex.normal = normal;
+                    vertex.textureCoord = {vUVs[i].x, vUVs[i].y, 0.0};
+                }
             }
             // Indices
             std::vector<Index> vIndices;

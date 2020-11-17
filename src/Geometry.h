@@ -71,11 +71,13 @@ private:
     glm::mat4 m_mModel = glm::mat4(1.0);
 };
 
-class Scene
+class GeometryManager
 {
-private:
-    std::unordered_map<std::string, Geometry> m_mScene;
+public:
+    std::vector<std::unique_ptr<Geometry>> vpGeometries;
 };
+
+GeometryManager* GetGeometryManager();
 
 std::unique_ptr<Geometry> getQuad();
 

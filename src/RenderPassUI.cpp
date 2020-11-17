@@ -116,13 +116,16 @@ void RenderPassUI::newFrame(VkExtent2D screenExtent)
     ImGui::GetIO().DisplaySize =
         ImVec2(screenExtent.width, screenExtent.height);
     ImGui::NewFrame();
-    // TODO: Add /raw functions here
-    const auto& resourceMap = GetRenderResourceManager()->getResourceMap();
-    for (const auto& resMap : resourceMap)
     {
-        ImGui::Text("%s", resMap.first.c_str());
+        ImGui::Begin("Debug Resources");
+        // TODO: Add /raw functions here
+        const auto& resourceMap = GetRenderResourceManager()->getResourceMap();
+        for (const auto& resMap : resourceMap)
+        {
+            ImGui::Text("%s", resMap.first.c_str());
+        }
+        ImGui::End();
     }
-    ImGui::Render();
 }
 
 void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)

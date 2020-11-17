@@ -41,10 +41,9 @@ public:
         mArcballRotate(glm::mat4(1.0)),
         mIsDragging(false), 
         mIsFirstPos(false),
-        mZoom(1.0)
+        mZoom(0.0)
         
     {
-        mZoom = 2.0;
         update();
     }
     void startDragging()
@@ -56,6 +55,11 @@ public:
     {
         mIsDragging = false;
         mIsFirstPos = true;
+    }
+
+    void AddZoom(float fZoom)
+    {
+        mZoom += fZoom;
     }
 
     bool isDragging() const
@@ -97,7 +101,9 @@ public:
 
     glm::mat4 getViewMat() const override
     {
-        return mView * mArcballRotate;
+        glm::mat4 mViewMatrix =
+            glm::translate(mView, glm::vec3(0.0, 0.0, mZoom));
+        return mViewMatrix * mArcballRotate;
     }
 
     void update() override

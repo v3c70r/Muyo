@@ -144,7 +144,7 @@ void main() {
     vColor = pow(vColor, vec3(1.0 / 2.2));
 
     outColor = vec4(vColor, 1.0);
-    outColor = vec4(vWorldNormal, 1.0);
+    //outColor = vec4(vWorldNormal, 1.0);
     //outColor = texture(inGBuffers[GBUFFER_POS_AO], texCoords);
     outColor.a = 1.0;
 }
