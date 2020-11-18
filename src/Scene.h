@@ -2,14 +2,22 @@
 #include <memory>
 #include <vector>
 #include <glm/glm.hpp>
+#include <string>
+#include <sstream>
 
 class SceneNode
 {
 public:
     SceneNode(const std::string& name) : m_sName(name){}
     SceneNode() : m_sName("Root"){}
+    virtual ~SceneNode() {}
     void SetName(const std::string& name) { m_sName = name; }
     const std::string& GetName() const { return m_sName; }
+
+    void SetMatrix(const glm::mat4& mMat)
+    {
+        m_mTransformation = mMat;
+    }
     virtual void AppendChild(SceneNode*);
     const std::vector<std::unique_ptr<SceneNode>>& GetChildren() const
     {
@@ -27,9 +35,9 @@ class Scene
 public:
     SceneNode* GetRoot() { return m_pRoot.get(); }
     const SceneNode* GetRoot() const { return m_pRoot.get(); }
-    void DrawSceneDebug() const;
-    void DrawSceneDebugRecursive(const SceneNode* node, int layer) const;
+    std::string ConstructDebugString() const;
 protected:
+    void ConstructDebugStringRecursive(const SceneNode* node, int layer, std::stringstream &ss) const;
     std::unique_ptr<SceneNode> m_pRoot = std::make_unique<SceneNode>();
 };
 

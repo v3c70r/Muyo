@@ -13,6 +13,8 @@
                 "${workspaceFolder}/thirdparty/imgui",
                 "${workspaceFolder}/thirdparty/stb",
                 "${workspaceFolder}/thirdparty/VulkanMemoryAllocator",
+                "${workspaceFolder}/thirdparty/tinyobjloader",
+                "${workspaceFolder}/thirdparty/tinygltf",
                 "${default}"
             ],
             "intelliSenseMode": "msvc-x64",

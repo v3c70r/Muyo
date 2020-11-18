@@ -658,9 +658,9 @@ int main()
 
     std::vector<const char *> vLogicalDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-#ifndef __APPLE__
+//#ifndef __APPLE__
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
-#endif
+//#endif
     };
     if (s_isValidationEnabled)
     {
@@ -726,6 +726,10 @@ int main()
         s_pObjGeometry = loadGLTF("assets/mazda_mx-5/scene.gltf");
         GLTFImporter importer;
         std::vector<Scene> vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
+        for (const auto &scene : vScenes)
+        {
+            std::cout<<scene.ConstructDebugString()<<std::endl;
+        }
 
         s_pUniformBuffer =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>(
@@ -774,16 +778,6 @@ int main()
             uint32_t nImageIndex = beginFrame();
  
             pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
-            // Draw scene debug
-            {
-                ImGui::Begin("Debug Scene");
-                for (const auto &scene : vScenes)
-                {
-                    scene.DrawSceneDebug();
-                }
-                ImGui::End();
-            }
-            ImGui::Render();
             pUIPass->updateBuffers(nImageIndex);
 
             ImGui::Render();

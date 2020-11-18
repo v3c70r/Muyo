@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
-project(TinyRenderer)
+project(Muyo)
 
 # Set system env
 #if (NOT DEFINED VK_SDK_PATH)
@@ -164,6 +164,15 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/assets ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
     )
 message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
+# Tests
+add_executable(testSceneImporter
+    src/SceneImporter.cpp
+    src/Scene.cpp
+    src/tests/testSceneImporter.cpp
+)
+
+target_link_libraries(testSceneImporter tinygltf stb)
 
 #add_custom_command(TARGET helloVulkan POST_BUILD
 #    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:helloVulkan>/shaders/"

@@ -126,6 +126,7 @@ void RenderPassUI::newFrame(VkExtent2D screenExtent)
         }
         ImGui::End();
     }
+    ImGui::Render();
 }
 
 void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)

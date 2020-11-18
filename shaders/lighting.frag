@@ -137,7 +137,7 @@ void main() {
     vec3 vDiffuse = irradiance * vAlbedo;
     vec3 vAmbient = (kD * vDiffuse) * fAO;
 
-    vec3 vColor = vLo;
+    vec3 vColor = vLo + vAmbient;
 
     // Gamma correction
     vColor = vColor / (vColor + vec3(1.0));
