@@ -106,6 +106,7 @@ add_library(imgui
 
 add_executable( helloVulkan
     src/helloVulkan.cpp
+
     src/PipelineStateBuilder.cpp
     src/Texture.cpp
     src/VkRenderDevice.cpp
@@ -166,13 +167,16 @@ add_custom_command(
 message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Tests
-add_executable(testSceneImporter
-    src/SceneImporter.cpp
-    src/Scene.cpp
-    src/tests/testSceneImporter.cpp
-)
+# Disable tests for now until proper method has been found to load the gltf
+#add_executable(testSceneImporter
+#    src/Geometry.cpp
+#    src/SceneImporter.cpp
+#    src/Scene.cpp
+#
+#    src/tests/testSceneImporter.cpp
+#)
 
-target_link_libraries(testSceneImporter tinygltf stb)
+#target_link_libraries(testSceneImporter tinygltf stb)
 
 #add_custom_command(TARGET helloVulkan POST_BUILD
 #    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:helloVulkan>/shaders/"

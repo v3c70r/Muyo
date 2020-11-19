@@ -44,6 +44,16 @@ protected:
 class Geometry;
 class GeometrySceneNode : public SceneNode
 {
+public:
+    void SetGeometry(Geometry* pGeometry)
+    {
+        m_pGeometry = pGeometry;
+    }
+    const Geometry* GetGeometry() const 
+    {
+        return m_pGeometry;
+    }
+
 protected:
-    Geometry* pGeometry;
+    Geometry* m_pGeometry;
 };

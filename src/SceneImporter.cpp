@@ -2,7 +2,8 @@
 
 #include <tiny_gltf.h>
 #include <cassert>
-
+#include <functional>
+#include "Geometry.h"
 #include "SceneImporter.h"
 #include <glm/gtc/quaternion.hpp>
 
@@ -26,7 +27,31 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string& sSceneFile)
         {
             tinygltf::Node node = model.nodes[nNodeIdx];
             SceneNode* pSceneNode = new SceneNode(node.name);
-            CopyGLTFNodeIterative(*pSceneNode, node, model.nodes);
+
+            std::function<void(SceneNode &, const tinygltf::Node &)> CopyGLTFNodeRecursive = [&](SceneNode &sceneNode, const tinygltf::Node &gltfNode) {
+                for (int nNodeIdx : gltfNode.children)
+                {
+                    const tinygltf::Node &node = model.nodes[nNodeIdx];
+                    SceneNode *pSceneNode = nullptr;
+                    if (node.mesh != -1)
+                    {
+                        // Has mesh
+                        const tinygltf::Mesh mesh = model.meshes[node.mesh];
+                        pSceneNode = new GeometrySceneNode;
+                        CopyGLTFNode(sceneNode, gltfNode);
+                        ConstructGeometryNode(static_cast<GeometrySceneNode&>(*pSceneNode), mesh, model);
+                    }
+                    else
+                    {
+                        pSceneNode = new SceneNode;
+                        CopyGLTFNode(sceneNode, gltfNode);
+                    }
+
+                    CopyGLTFNodeRecursive(*pSceneNode, node);
+                    sceneNode.AppendChild(pSceneNode);
+                }
+            };
+            CopyGLTFNodeRecursive(*pSceneNode, node);
             pSceneRoot->AppendChild(pSceneNode);
         }
     }
@@ -40,20 +65,29 @@ void GLTFImporter::CopyGLTFNode(SceneNode& sceneNode,
 
     {
         glm::vec3 vT(0.0f);
-        vT.x = gltfNode.translation[1];
-        vT.y = gltfNode.translation[2];
-        vT.z = gltfNode.translation[3];
+        if (gltfNode.translation.size() > 0)
+        {
+            vT.x = (float)gltfNode.translation[1];
+            vT.y = (float)gltfNode.translation[2];
+            vT.z = (float)gltfNode.translation[3];
+        }
 
         glm::quat qR;
-        qR.x = gltfNode.rotation[0];
-        qR.y = gltfNode.rotation[1];
-        qR.z = gltfNode.rotation[2];
-        qR.w = gltfNode.rotation[3];
+        if (gltfNode.rotation.size() > 0)
+        {
+            qR.x = (float)gltfNode.rotation[0];
+            qR.y = (float)gltfNode.rotation[1];
+            qR.z = (float)gltfNode.rotation[2];
+            qR.w = (float)gltfNode.rotation[3];
+        }
 
         glm::vec3 vS(0.0f);
-        vS.x = gltfNode.scale[0];
-        vS.x = gltfNode.scale[1];
-        vS.x = gltfNode.scale[2];
+        if (gltfNode.scale.size() > 0)
+        {
+            vS.x = (float)gltfNode.scale[0];
+            vS.x = (float)gltfNode.scale[1];
+            vS.x = (float)gltfNode.scale[2];
+        }
 
         glm::mat4 mMat;
         glm::translate(mMat, vT);
@@ -63,25 +97,95 @@ void GLTFImporter::CopyGLTFNode(SceneNode& sceneNode,
     }
 }
 
-void GLTFImporter::CopyGLTFNodeIterative(SceneNode& sceneNode, const tinygltf::Node& gltfNode,
-                           const std::vector<tinygltf::Node>& vNodes)
+void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tinygltf::Mesh &mesh, const tinygltf::Model &model)
 {
-    CopyGLTFNode(sceneNode, gltfNode);
-    for (int nNodeIdx : gltfNode.children)
+    std::vector<std::unique_ptr<Primitive>> vPrimitives;
+    for (const auto &primitive : mesh.primitives)
     {
-        const tinygltf::Node& node = vNodes[nNodeIdx];
-        SceneNode* pSceneNode = nullptr;
-        if (node.mesh != -1)
+        std::vector<glm::vec3> vPositions;
+        std::vector<glm::vec3> vUVs;
+        std::vector<glm::vec3> vNormals;
+
+        // vPositions
         {
-            pSceneNode = new GeometrySceneNode;
+            const std::string sAttribkey = "POSITION";
+            const auto &accessor =
+                model.accessors.at(primitive.attributes.at(sAttribkey));
+            const auto &bufferView = model.bufferViews[accessor.bufferView];
+            const auto &buffer = model.buffers[bufferView.buffer];
+
+            assert(accessor.type == TINYGLTF_TYPE_VEC3);
+            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+            // confirm we use the standard format
+            assert(bufferView.byteStride == 12);
+            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+
+            vPositions.resize(accessor.count);
+            memcpy(vPositions.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
         }
-        else
+        // vNormals
         {
-            pSceneNode = new SceneNode;
+            const std::string sAttribkey = "NORMAL";
+            const auto &accessor =
+                model.accessors.at(primitive.attributes.at(sAttribkey));
+            const auto &bufferView = model.bufferViews[accessor.bufferView];
+            const auto &buffer = model.buffers[bufferView.buffer];
+
+            assert(accessor.type == TINYGLTF_TYPE_VEC3);
+            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+            // confirm we use the standard format
+            assert(bufferView.byteStride == 12);
+            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+
+            vNormals.resize(accessor.count);
+            memcpy(vNormals.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
+        }
+        // vUVs
+        {
+            const std::string sAttribkey = "TEXCOORD_0";
+            const auto &accessor =
+                model.accessors.at(primitive.attributes.at(sAttribkey));
+            const auto &bufferView = model.bufferViews[accessor.bufferView];
+            const auto &buffer = model.buffers[bufferView.buffer];
+
+            assert(accessor.type == TINYGLTF_TYPE_VEC2);
+            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+            // confirm we use the standard format
+            assert(bufferView.byteStride == 8);
+            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+            vUVs.resize(accessor.count);
+            memcpy(vUVs.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
         }
 
-        CopyGLTFNodeIterative(*pSceneNode, node, vNodes);
-        sceneNode.AppendChild(pSceneNode);
+        assert(vUVs.size() == vPositions.size());
+        assert(vNormals.size() == vPositions.size());
+        std::vector<Vertex> vVertices(vUVs.size());
+        for (size_t i = 0; i < vVertices.size(); i++)
+        {
+            Vertex &vertex = vVertices[i];
+            {
+                glm::vec4 pos(vPositions[i], 1.0);
+                vertex.pos = pos;
+                glm::vec4 normal(vNormals[i], 1.0);
+                vertex.normal = normal;
+                vertex.textureCoord = {vUVs[i].x, vUVs[i].y, 0.0};
+            }
+        }
+        // Indices
+        std::vector<Index> vIndices;
+        {
+            const auto &accessor =
+                model.accessors.at(primitive.indices);
+            const auto &bufferView = model.bufferViews[accessor.bufferView];
+            const auto &buffer = model.buffers[bufferView.buffer];
+            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
+            vIndices.resize(accessor.count);
+            memcpy(vIndices.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * sizeof(Index));
+        }
+        vPrimitives.emplace_back(std::make_unique<Primitive>(vVertices, vIndices));
     }
+    Geometry* pGeometry = new Geometry(vPrimitives);
+    GetGeometryManager()->vpGeometries.emplace_back(pGeometry);
+    geomNode.SetGeometry(pGeometry);
 }
-

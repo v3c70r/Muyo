@@ -15,7 +15,7 @@ public:
                                sizeof(Vertex) * vertices.size());
         m_indexBuffer.setData(reinterpret_cast<const void*>(indices.data()),
                               sizeof(Index) * indices.size());
-        m_nIndexCount = indices.size();
+        m_nIndexCount = (uint32_t)indices.size();
     }
     VkBuffer getVertexDeviceBuffer() const
     {
@@ -75,6 +75,7 @@ class GeometryManager
 {
 public:
     std::vector<std::unique_ptr<Geometry>> vpGeometries;
+    void Destroy() { vpGeometries.clear(); }
 };
 
 GeometryManager* GetGeometryManager();

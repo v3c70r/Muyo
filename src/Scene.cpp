@@ -1,5 +1,6 @@
 #include "Scene.h"
 #include <imgui.h>
+#include <functional>
 
 void SceneNode::AppendChild(SceneNode* node)
 {

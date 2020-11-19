@@ -794,6 +794,7 @@ int main()
         GetMaterialManager()->destroyMaterials();
         s_pObjGeometry = nullptr;
         s_pQuadGeometry = nullptr;
+        GetGeometryManager()->Destroy();
         GetSamplerManager()->destroySamplers();
     }
     ImGui::Shutdown();

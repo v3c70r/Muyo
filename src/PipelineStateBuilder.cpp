@@ -58,7 +58,7 @@ VkPipeline PipelineStateBuilder::build(VkDevice device)
     VkPipeline res = VK_NULL_HANDLE;
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = mShaderStagesInfo.size();
+    pipelineInfo.stageCount = (uint32_t)mShaderStagesInfo.size();
     pipelineInfo.pStages = mShaderStagesInfo.data();
 
     pipelineInfo.pVertexInputState = &mVertexInputInfo;

@@ -150,8 +150,8 @@ public:
 
     ViewportBuilder& setWH(VkExtent2D wh)
     {
-        m_viewport.width = wh.width;
-        m_viewport.height = wh.height;
+        m_viewport.width = (float)wh.width;
+        m_viewport.height = (float)wh.height;
         return *this;
     }
 
