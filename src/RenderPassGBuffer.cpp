@@ -98,7 +98,7 @@ RenderPassGBuffer::RenderPassGBuffer()
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass),
                             VK_OBJECT_TYPE_RENDER_PASS, "Opaque Lighting");
 
-    mpQuad = getQuad();
+    mpQuad = GetQuad();
 
 }
 
@@ -183,7 +183,7 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
             VK_SUBPASS_CONTENTS_INLINE);
 
         // Allocate descriptor sets
-        const Material* pMaterial =
+        const Material* pMaterial = 
             GetMaterialManager()->m_mMaterials["plasticpattern"].get();
         Material::PBRViews views ={
             pMaterial->getImageView(Material::TEX_ALBEDO),
@@ -243,9 +243,30 @@ void RenderPassGBuffer::recordCommandBuffer(const PrimitiveList& primitives)
                     VK_INDEX_TYPE_UINT32);
                 vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                     mGBufferPipeline);
-                vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    mGBufferPipelineLayout, 0, gBufferDescSets.size(),
-                    gBufferDescSets.data(), 0, nullptr);
+
+                if (prim->GetMaterial() != nullptr)
+                {
+                    // Use material from  
+                    const Material *pMaterial =
+                        prim->GetMaterial();
+                    Material::PBRViews views = {
+                        pMaterial->getImageView(Material::TEX_ALBEDO),
+                        pMaterial->getImageView(Material::TEX_NORMAL),
+                        pMaterial->getImageView(Material::TEX_METALNESS),
+                        pMaterial->getImageView(Material::TEX_ROUGHNESS),
+                        pMaterial->getImageView(Material::TEX_AO),
+                    };
+
+                    std::vector<VkDescriptorSet> gBufferDescSets = {
+                        perViewSets,
+                        GetDescriptorManager()->allocateMaterialDescriptorSet(views)};
+                }
+                else
+                {
+                    vkCmdBindDescriptorSets(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            mGBufferPipelineLayout, 0, gBufferDescSets.size(),
+                                            gBufferDescSets.data(), 0, nullptr);
+                }
 
                 // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
                 vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);

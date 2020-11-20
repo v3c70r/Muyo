@@ -5,6 +5,7 @@
 
 #include "MeshVertex.h"
 #include "VertexBuffer.h"
+class Material;
 class Primitive
 {
 public:
@@ -32,11 +33,15 @@ public:
         return m_nIndexCount;
     }
 
+    void SetMaterial(Material *pMaterial) { m_pMaterial = pMaterial; }
+    const Material *GetMaterial() const { return m_pMaterial; }
+
 private:
     VertexBuffer m_vertexBuffer;
     IndexBuffer m_indexBuffer;
     uint32_t m_nIndexCount;
     glm::mat4 m_mLocalTrans = glm::mat4(1.0);
+    Material* m_pMaterial = nullptr;
 };
 
 // Simplify the types
@@ -80,7 +85,7 @@ public:
 
 GeometryManager* GetGeometryManager();
 
-std::unique_ptr<Geometry> getQuad();
+Geometry* GetQuad();
 
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));
 std::unique_ptr<Geometry> loadGLTF(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));

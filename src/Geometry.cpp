@@ -85,7 +85,8 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
     }
     return std::make_unique<Geometry>(primitives);
 }
-std::unique_ptr<Geometry> getQuad()
+
+Geometry* GetQuad()
 {
     static const std::vector<Vertex> VERTICES = {
         {{-1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 0.0f, 0.0f}},
@@ -94,8 +95,9 @@ std::unique_ptr<Geometry> getQuad()
         {{-1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 1.0f, 1.0f}}};
 
     static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
-    return std::make_unique<Geometry>(
-        std::make_unique<Primitive>(VERTICES, INDICES));
+    Geometry* pGeometry = new Geometry(std::make_unique<Primitive>(VERTICES, INDICES));
+    GetGeometryManager()->vpGeometries.emplace_back(pGeometry);
+    return pGeometry;
 }
 
 std::unique_ptr<Geometry> getSkybox()

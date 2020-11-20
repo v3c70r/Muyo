@@ -104,33 +104,6 @@ static void onKeyStroke(GLFWwindow *window, int key, int scancode, int action,
                         int mods)
 {
     std::cout << "Key pressed\n";
-    // OpenGLRenderer* renderer =
-    //    static_cast<OpenGLRenderer*>(glfwGetWindowUserPointer(window));
-    // FPScamera& camera = renderer->world_.camera();
-    // if (action == GLFW_PRESS) switch (key) {
-    //        case GLFW_KEY_ESCAPE:
-    //            glfwSetWindowShouldClose(window, GL_TRUE);
-    //            break;
-    //        case GLFW_KEY_W:
-    //            camera.cameraMatrix() = glm::translate(
-    //                camera.cameraMatrix(), glm::vec3(0.0, 0.0, -1.0));
-    //            break;
-    //        case GLFW_KEY_S:
-    //            camera.cameraMatrix() = glm::translate(
-    //                camera.cameraMatrix(), glm::vec3(0.0, 0.0, 1.0));
-    //            break;
-    //        case GLFW_KEY_A:
-    //            camera.cameraMatrix() = glm::translate(
-    //                camera.cameraMatrix(), glm::vec3(-1.0, 0.0, 0.0));
-    //            break;
-    //        case GLFW_KEY_D:
-    //            camera.cameraMatrix() = glm::translate(
-    //                camera.cameraMatrix(), glm::vec3(1.0, 0.0, 0.0));
-    //            break;
-    //        case GLFW_KEY_I:
-    //            camera.pitch(0.1);
-    //            break;
-    //    }
     ImGui::KeyCallback(window, key, scancode, action, mods);
 }
 void charCallback(GLFWwindow* window, unsigned int c)
@@ -161,7 +134,7 @@ const std::vector<const char *> deviceExtensions = {
     //"VK_KHR_ray_tracing"
 };
 
-static std::unique_ptr<Geometry> s_pQuadGeometry = nullptr;
+Geometry* g_pQuadGeometry = nullptr;
 static std::unique_ptr<Geometry> s_pObjGeometry = nullptr;
 static std::unique_ptr<Geometry> s_pMesh = nullptr;
 ///////////////////////////////////////////
@@ -429,7 +402,7 @@ void createCommandBuffers()
     pGBufferPass->recordCommandBuffer(s_pObjGeometry->getPrimitives());
 
     pFinalPass->RecordOnce(
-        *s_pQuadGeometry,
+        *g_pQuadGeometry,
         GetRenderResourceManager()
             ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
             ->getView());
@@ -719,7 +692,7 @@ int main()
     // refactorying is required.
     {
         // Create the quad
-        s_pQuadGeometry = getQuad();
+        g_pQuadGeometry = GetQuad();
         //s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
         //s_pObjGeometry = loadObj("assets/cube.obj");
         //s_pMesh = loadGLTF("assets/mazda_mx-5/scene.gltf");
@@ -793,7 +766,6 @@ int main()
 
         GetMaterialManager()->destroyMaterials();
         s_pObjGeometry = nullptr;
-        s_pQuadGeometry = nullptr;
         GetGeometryManager()->Destroy();
         GetSamplerManager()->destroySamplers();
     }

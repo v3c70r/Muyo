@@ -82,6 +82,7 @@ public:
     RenderPassGBuffer();
     ~RenderPassGBuffer();
     void recordCommandBuffer(const PrimitiveList& primitives);
+    //void recordCommandBuffer(const std::vecotr<const Geometry*>& vpGeometries);
     void createFramebuffer();
     void destroyFramebuffer();
     void setGBufferImageViews(VkImageView positionView, VkImageView albedoView,
@@ -108,5 +109,5 @@ private:
 
     VkDescriptorSet mPerViewDescSet;
     VkDescriptorSet mMaterialDescSet;
-    std::unique_ptr<Geometry> mpQuad;
+    Geometry* mpQuad;
 };
