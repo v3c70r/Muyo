@@ -399,7 +399,8 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
 
 void createCommandBuffers()
 {
-    pGBufferPass->recordCommandBuffer(s_pObjGeometry->getPrimitives());
+    const std::vector<const Geometry*> vpGeometries = {s_pObjGeometry.get()};
+    pGBufferPass->recordCommandBuffer(vpGeometries);
 
     pFinalPass->RecordOnce(
         *g_pQuadGeometry,

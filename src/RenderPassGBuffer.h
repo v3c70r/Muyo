@@ -2,8 +2,8 @@
 #include <array>
 #include <memory>
 
-#include "RenderPass.h"
 #include "Geometry.h"
+#include "RenderPass.h"
 
 class RenderPassGBuffer : public RenderPass
 {
@@ -75,14 +75,13 @@ public:
         std::array<VkImageView, ATTACHMENTS_COUNT> aViews;
 
         LightingAttachments();
-
     };
-    using GBufferViews = std::array<VkImageView, LightingAttachments::GBUFFER_ATTACHMENTS_COUNT>;
+    using GBufferViews =
+        std::array<VkImageView, LightingAttachments::GBUFFER_ATTACHMENTS_COUNT>;
 
     RenderPassGBuffer();
     ~RenderPassGBuffer();
-    void recordCommandBuffer(const PrimitiveList& primitives);
-    //void recordCommandBuffer(const std::vecotr<const Geometry*>& vpGeometries);
+    void recordCommandBuffer(const std::vector<const Geometry*>& vpGeometries);
     void createFramebuffer();
     void destroyFramebuffer();
     void setGBufferImageViews(VkImageView positionView, VkImageView albedoView,

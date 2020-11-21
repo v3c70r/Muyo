@@ -19,6 +19,11 @@ struct PerViewData
     glm::mat4 normalObjectToView = glm::mat4(1.0);
 };
 
+struct PerGeometryData
+{
+    glm::mat4 model = glm::mat4(1.0);
+};
+
 template <class T>
 class UniformBuffer : public IRenderResource
 {
