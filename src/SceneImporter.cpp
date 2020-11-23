@@ -1,65 +1,79 @@
 #include "SceneImporter.h"
 
 #include <tiny_gltf.h>
+
 #include <cassert>
 #include <functional>
-#include "Geometry.h"
-#include "SceneImporter.h"
 #include <glm/gtc/quaternion.hpp>
 
-std::vector<Scene> GLTFImporter::ImportScene(const std::string& sSceneFile)
+#include "Geometry.h"
+#include "Material.h"
+#include "SceneImporter.h"
+
+std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
 {
-    tinygltf::TinyGLTF loader;
-    tinygltf::Model model;
-    std::string err, warn;
-    bool ret =
-        loader.LoadASCIIFromFile(&model, &err, &warn, sSceneFile.c_str());
-    assert(ret);
-
     std::vector<Scene> res;
-    res.resize(model.scenes.size());
-    for (size_t i = 0; i < model.scenes.size(); i++)
+    m_sceneFile = std::filesystem::path(sSceneFile);
+    if (std::filesystem::exists(sSceneFile))
     {
-        tinygltf::Scene& tinyScene = model.scenes[i];
-        SceneNode* pSceneRoot = res[i].GetRoot();
-        // For each root node in scene
-        for (int nNodeIdx : tinyScene.nodes)
+        tinygltf::TinyGLTF loader;
+        tinygltf::Model model;
+        std::string err, warn;
+        bool ret =
+            loader.LoadASCIIFromFile(&model, &err, &warn, sSceneFile.c_str());
+        assert(ret);
+
+        res.resize(model.scenes.size());
+        for (size_t i = 0; i < model.scenes.size(); i++)
         {
-            tinygltf::Node node = model.nodes[nNodeIdx];
-            SceneNode* pSceneNode = new SceneNode(node.name);
+            tinygltf::Scene &tinyScene = model.scenes[i];
+            SceneNode *pSceneRoot = res[i].GetRoot();
+            // For each root node in scene
+            for (int nNodeIdx : tinyScene.nodes)
+            {
+                tinygltf::Node node = model.nodes[nNodeIdx];
+                SceneNode *pSceneNode = new SceneNode(node.name);
 
-            std::function<void(SceneNode &, const tinygltf::Node &)> CopyGLTFNodeRecursive = [&](SceneNode &sceneNode, const tinygltf::Node &gltfNode) {
-                for (int nNodeIdx : gltfNode.children)
-                {
-                    const tinygltf::Node &node = model.nodes[nNodeIdx];
-                    SceneNode *pSceneNode = nullptr;
-                    if (node.mesh != -1)
-                    {
-                        // Has mesh
-                        const tinygltf::Mesh mesh = model.meshes[node.mesh];
-                        pSceneNode = new GeometrySceneNode;
-                        CopyGLTFNode(sceneNode, gltfNode);
-                        ConstructGeometryNode(static_cast<GeometrySceneNode&>(*pSceneNode), mesh, model);
-                    }
-                    else
-                    {
-                        pSceneNode = new SceneNode;
-                        CopyGLTFNode(sceneNode, gltfNode);
-                    }
+                std::function<void(SceneNode &, const tinygltf::Node &)>
+                    CopyGLTFNodeRecursive =
+                        [&](SceneNode &sceneNode,
+                            const tinygltf::Node &gltfNode) {
+                            for (int nNodeIdx : gltfNode.children)
+                            {
+                                const tinygltf::Node &node =
+                                    model.nodes[nNodeIdx];
+                                SceneNode *pSceneNode = nullptr;
+                                if (node.mesh != -1)
+                                {
+                                    const tinygltf::Mesh mesh =
+                                        model.meshes[node.mesh];
+                                    pSceneNode = new GeometrySceneNode;
+                                    CopyGLTFNode(sceneNode, gltfNode);
+                                    ConstructGeometryNode(
+                                        static_cast<GeometrySceneNode &>(
+                                            *pSceneNode),
+                                        mesh, model);
+                                }
+                                else
+                                {
+                                    pSceneNode = new SceneNode;
+                                    CopyGLTFNode(sceneNode, gltfNode);
+                                }
 
-                    CopyGLTFNodeRecursive(*pSceneNode, node);
-                    sceneNode.AppendChild(pSceneNode);
-                }
-            };
-            CopyGLTFNodeRecursive(*pSceneNode, node);
-            pSceneRoot->AppendChild(pSceneNode);
+                                CopyGLTFNodeRecursive(*pSceneNode, node);
+                                sceneNode.AppendChild(pSceneNode);
+                            }
+                        };
+                CopyGLTFNodeRecursive(*pSceneNode, node);
+                pSceneRoot->AppendChild(pSceneNode);
+            }
         }
     }
     return res;
 }
 
-void GLTFImporter::CopyGLTFNode(SceneNode& sceneNode,
-                                const tinygltf::Node& gltfNode)
+void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
+                                const tinygltf::Node &gltfNode)
 {
     sceneNode.SetName(gltfNode.name);
 
@@ -97,7 +111,9 @@ void GLTFImporter::CopyGLTFNode(SceneNode& sceneNode,
     }
 }
 
-void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tinygltf::Mesh &mesh, const tinygltf::Model &model)
+void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
+                                         const tinygltf::Mesh &mesh,
+                                         const tinygltf::Model &model)
 {
     std::vector<std::unique_ptr<Primitive>> vPrimitives;
     for (const auto &primitive : mesh.primitives)
@@ -118,10 +134,15 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
             // confirm we use the standard format
             assert(bufferView.byteStride == 12);
-            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+            assert(buffer.data.size() >=
+                   bufferView.byteOffset + accessor.byteOffset +
+                       bufferView.byteStride * accessor.count);
 
             vPositions.resize(accessor.count);
-            memcpy(vPositions.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
+            memcpy(vPositions.data(),
+                   buffer.data.data() + bufferView.byteOffset +
+                       accessor.byteOffset,
+                   accessor.count * bufferView.byteStride);
         }
         // vNormals
         {
@@ -135,10 +156,15 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
             // confirm we use the standard format
             assert(bufferView.byteStride == 12);
-            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+            assert(buffer.data.size() >=
+                   bufferView.byteOffset + accessor.byteOffset +
+                       bufferView.byteStride * accessor.count);
 
             vNormals.resize(accessor.count);
-            memcpy(vNormals.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
+            memcpy(vNormals.data(),
+                   buffer.data.data() + bufferView.byteOffset +
+                       accessor.byteOffset,
+                   accessor.count * bufferView.byteStride);
         }
         // vUVs
         {
@@ -153,9 +179,14 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
 
             // confirm we use the standard format
             assert(bufferView.byteStride == 8);
-            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + bufferView.byteStride * accessor.count);
+            assert(buffer.data.size() >=
+                   bufferView.byteOffset + accessor.byteOffset +
+                       bufferView.byteStride * accessor.count);
             vUVs.resize(accessor.count);
-            memcpy(vUVs.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * bufferView.byteStride);
+            memcpy(vUVs.data(),
+                   buffer.data.data() + bufferView.byteOffset +
+                       accessor.byteOffset,
+                   accessor.count * bufferView.byteStride);
         }
 
         assert(vUVs.size() == vPositions.size());
@@ -175,17 +206,119 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
         // Indices
         std::vector<Index> vIndices;
         {
-            const auto &accessor =
-                model.accessors.at(primitive.indices);
+            const auto &accessor = model.accessors.at(primitive.indices);
             const auto &bufferView = model.bufferViews[accessor.bufferView];
             const auto &buffer = model.buffers[bufferView.buffer];
-            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
+            assert(accessor.componentType ==
+                   TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
             vIndices.resize(accessor.count);
-            memcpy(vIndices.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset, accessor.count * sizeof(Index));
+            memcpy(vIndices.data(),
+                   buffer.data.data() + bufferView.byteOffset +
+                       accessor.byteOffset,
+                   accessor.count * sizeof(Index));
         }
-        vPrimitives.emplace_back(std::make_unique<Primitive>(vVertices, vIndices));
+        vPrimitives.emplace_back(
+            std::make_unique<Primitive>(vVertices, vIndices));
+
+        //  =========Material
+        const tinygltf::Material &gltfMaterial =
+            model.materials[primitive.material];
+
+        // TODO: Get texture manager so we don't load used textures.
+        if (GetMaterialManager()->m_mMaterials.find(gltfMaterial.name) ==
+            GetMaterialManager()->m_mMaterials.end())
+        {
+            GetMaterialManager()->m_mMaterials[gltfMaterial.name] =
+                std::make_unique<Material>();
+            Material *pMaterial =
+                GetMaterialManager()->m_mMaterials.at(gltfMaterial.name).get();
+            const std::filesystem::path sceneDir = m_sceneFile.parent_path();
+
+            // Load material textures
+
+            // Albedo
+            const tinygltf::Texture &albedoTexture =
+                model.textures[gltfMaterial.pbrMetallicRoughness
+                                   .baseColorTexture.index];
+
+            std::string sAlbedoTexPath =
+                "assets/Materials/plasticpattern1-ue/"
+                "plasticpattern1-albedo.png";
+            std::string sAlbedoTexName = "defaultAlbedo";
+            if (albedoTexture.source >= 0)
+            {
+                sAlbedoTexPath =
+                    (sceneDir / model.images[albedoTexture.source].uri)
+                        .u8string();
+                sAlbedoTexName = model.images[albedoTexture.source].name;
+            }
+
+            // Metalness
+            const tinygltf::Texture &metalnessTextrue =
+                model.textures[gltfMaterial.pbrMetallicRoughness
+                                   .metallicRoughnessTexture.index];
+            std::string sMetalnessTexPath =
+                "assets/Materials/plasticpattern1-ue/"
+                "plasticpattern1-metalness.png";
+            std::string sMetalnessTexName = "defaultMetalness";
+            if (metalnessTextrue.source >= 0)
+            {
+                sMetalnessTexPath =
+                    (sceneDir / model.images[metalnessTextrue.source].uri)
+                        .u8string();
+                sMetalnessTexName = model.images[metalnessTextrue.source].name;
+            }
+
+            // Normal
+            const tinygltf::Texture &normalTexture =
+                model.textures[gltfMaterial.normalTexture.index];
+            std::string sNormalTexPath =
+                "assets/Materials/plasticpattern1-ue/"
+                "plasticpattern1-normal2b.png";
+            std::string sNormalTexName = "defaultNormal";
+            if (normalTexture.source >= 0)
+            {
+                sNormalTexPath =
+                    (sceneDir / model.images[normalTexture.source].uri)
+                        .u8string();
+                sNormalTexName = model.images[normalTexture.source].name;
+            }
+
+            // Roughness
+            std::string sRoughnessTexPath =
+                "assets/Materials/plasticpattern1-ue/"
+                "plasticpattern1-roughness2.png";
+            std::string sRoughnessTexName = "defaultRoughness";
+            if (metalnessTextrue.source >= 0)
+            {
+                sRoughnessTexPath =
+                    (sceneDir / model.images[metalnessTextrue.source].uri)
+                        .u8string();
+                sRoughnessTexName = model.images[metalnessTextrue.source].name;
+            }
+
+            // Occulution
+            const tinygltf::Texture &occlusionTexture =
+                model.textures[gltfMaterial.occlusionTexture.index];
+            std::string sOcclusionTexPath = "assets/Materials/white5x5.png";
+            std::string sOcclusionTexName = "defaultOcclusion";
+            if (occlusionTexture.source >= 0)
+            {
+                sOcclusionTexPath =
+                    (sceneDir / model.images[occlusionTexture.source].uri)
+                        .u8string();
+                sOcclusionTexName = model.images[occlusionTexture.source].name;
+            }
+
+            pMaterial->loadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
+            pMaterial->loadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
+            pMaterial->loadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
+            pMaterial->loadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
+            pMaterial->loadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
+            vPrimitives.back()->SetMaterial(pMaterial);
+        }
     }
-    Geometry* pGeometry = new Geometry(vPrimitives);
+    Geometry *pGeometry = new Geometry(vPrimitives);
     GetGeometryManager()->vpGeometries.emplace_back(pGeometry);
     geomNode.SetGeometry(pGeometry);
 }

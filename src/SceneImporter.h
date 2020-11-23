@@ -2,6 +2,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include "Scene.h"
 
 namespace tinygltf
@@ -31,5 +32,7 @@ private:
     void CopyGLTFNodeIterative(SceneNode&, const tinygltf::Node& gltfNode,
                                const std::vector<tinygltf::Node>& vNodes);
     void ConstructGeometryNode(GeometrySceneNode &geomNode, const tinygltf::Mesh &mesh, const tinygltf::Model &model);
+private:
+    std::filesystem::path m_sceneFile;
 };
 

@@ -34,10 +34,11 @@ class Scene
 {
 public:
     SceneNode* GetRoot() { return m_pRoot.get(); }
-    const SceneNode* GetRoot() const { return m_pRoot.get(); }
+    //const SceneNode* GetRoot() const { return m_pRoot.get(); }
+    const std::unique_ptr<SceneNode>& GetRoot() const { return m_pRoot; }
+    std::vector<const SceneNode*> FlattenTree() const;
     std::string ConstructDebugString() const;
 protected:
-    void ConstructDebugStringRecursive(const SceneNode* node, int layer, std::stringstream &ss) const;
     std::unique_ptr<SceneNode> m_pRoot = std::make_unique<SceneNode>();
 };
 

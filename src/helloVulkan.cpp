@@ -135,8 +135,8 @@ const std::vector<const char *> deviceExtensions = {
 };
 
 Geometry* g_pQuadGeometry = nullptr;
-static std::unique_ptr<Geometry> s_pObjGeometry = nullptr;
-static std::unique_ptr<Geometry> s_pMesh = nullptr;
+std::vector<Scene> g_vScenes;
+
 ///////////////////////////////////////////
 
 void recreateSwapChain(); // fwd declaration
@@ -399,7 +399,15 @@ bool mIsDeviceSuitable(VkPhysicalDevice device)
 
 void createCommandBuffers()
 {
-    const std::vector<const Geometry*> vpGeometries = {s_pObjGeometry.get()};
+    const std::vector<const SceneNode *> vpSceneNodes =
+        g_vScenes[0].FlattenTree();
+    std::vector<const Geometry *> vpGeometries;
+    vpGeometries.reserve(vpSceneNodes.size());
+    for (const SceneNode *pNode : vpSceneNodes)
+    {
+        vpGeometries.push_back(
+            static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+    }
     pGBufferPass->recordCommandBuffer(vpGeometries);
 
     pFinalPass->RecordOnce(
@@ -694,13 +702,9 @@ int main()
     {
         // Create the quad
         g_pQuadGeometry = GetQuad();
-        //s_pObjGeometry = loadObj("assets/sphere.obj", glm::scale(glm::vec3(0.05)));
-        //s_pObjGeometry = loadObj("assets/cube.obj");
-        //s_pMesh = loadGLTF("assets/mazda_mx-5/scene.gltf");
-        s_pObjGeometry = loadGLTF("assets/mazda_mx-5/scene.gltf");
         GLTFImporter importer;
-        std::vector<Scene> vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
-        for (const auto &scene : vScenes)
+        g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
+        for (const auto &scene : g_vScenes)
         {
             std::cout<<scene.ConstructDebugString()<<std::endl;
         }
@@ -714,26 +718,26 @@ int main()
         GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
             Material::TEX_ALBEDO,
             "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-albedo.png");
+            "plasticpattern1-albedo.png", "defaultAlbedo");
 
         GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
             Material::TEX_METALNESS,
             "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-metalness.png");
+            "plasticpattern1-metalness.png", "defaultMetalness");
 
         GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
             Material::TEX_NORMAL,
             "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-normal2b.png");
+            "plasticpattern1-normal2b.png", "defaultNormal");
 
         GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
             Material::TEX_ROUGHNESS,
             "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-roughness2.png");
+            "plasticpattern1-roughness2.png", "defaultRoughness");
 
         GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
             Material::TEX_AO,
-            "assets/Materials/white5x5.png");
+            "assets/Materials/white5x5.png", "defaultOcclusion");
 
         createCommandBuffers();
         createSemaphores();
@@ -765,10 +769,11 @@ int main()
         assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
         std::cout << "Device finished" << std::endl;
 
+        // Destroy managers
         GetMaterialManager()->destroyMaterials();
-        s_pObjGeometry = nullptr;
         GetGeometryManager()->Destroy();
         GetSamplerManager()->destroySamplers();
+        GetTextureManager()->Destroy();
     }
     ImGui::Shutdown();
     cleanup();

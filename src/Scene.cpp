@@ -25,3 +25,21 @@ std::string Scene::ConstructDebugString() const
     }
     return ss.str();
 }
+
+std::vector<const SceneNode*> Scene::FlattenTree() const
+{
+    std::vector<const SceneNode*> vNodes;
+    std::function<void(const std::unique_ptr<SceneNode>&)>
+        FlattenTreeRecursive = [&](const std::unique_ptr<SceneNode>& pNode) {
+            if (dynamic_cast<GeometrySceneNode*>(pNode.get()))
+            {
+                vNodes.push_back(pNode.get());
+            }
+            for (const auto& pChild : pNode->GetChildren())
+            {
+                FlattenTreeRecursive(pChild);
+            }
+        };
+    FlattenTreeRecursive(GetRoot());
+    return vNodes;
+}

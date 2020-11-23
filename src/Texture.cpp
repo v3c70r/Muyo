@@ -1,6 +1,13 @@
 #include "Texture.h"
 #include "../thirdparty/stb/stb_image.h"
 
+static TextureManager s_textureManager;
+
+TextureManager *GetTextureManager()
+{
+    return &s_textureManager;
+}
+
 Texture::Texture() : m_textureSampler(VK_NULL_HANDLE) {}
 
 Texture::~Texture()

@@ -21,21 +21,33 @@ public:
         TEX_COUNT
     };
     using PBRViews = std::array<VkImageView, TEX_COUNT>;
-    void loadTexture(TextureTypes type, const std::string& path)
+    void loadTexture(TextureTypes type, const std::string& path, const std::string& name)
     {
-        m_aTextures[type].LoadImage(path);
-        m_aTextures[type].setName(m_aNames[type]);
+        const auto it = GetTextureManager()->m_vpTextures.find(name);
+        if (it == GetTextureManager()->m_vpTextures.end())
+        {
+            GetTextureManager()->m_vpTextures[name] = std::make_unique<Texture>();
+            GetTextureManager()->m_vpTextures[name]->LoadImage(path);
+            GetTextureManager()->m_vpTextures[name]->setName(name);
+            m_apTextures[type] = GetTextureManager()->m_vpTextures[name].get();
+        }
+        else
+        {
+            m_apTextures[type] = it->second.get();
+        }
     }
     VkImageView getImageView(TextureTypes type) const
     {
-        return m_aTextures[type].getView();
+        return m_apTextures[type]->getView();
     }
 
 private:
-    std::array<Texture, TEX_COUNT> m_aTextures;
+    std::array<Texture*, TEX_COUNT> m_apTextures;
     const std::array<std::string, TEX_COUNT> m_aNames = {
         "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO"};
 };
+
+// TODO: Allocate textuer at material level so we don't exhaust descriptor count
 
 class MaterialManager
 {

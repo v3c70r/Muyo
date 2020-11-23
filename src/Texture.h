@@ -4,6 +4,8 @@
 #include "RenderResource.h"
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <memory>
 #include "Buffer.h"
 #include "VkRenderDevice.h"
 #include "VkMemoryAllocator.h"
@@ -201,3 +203,11 @@ private:
 
     VkSampler m_textureSampler;
 };
+
+class TextureManager
+{
+public:
+    std::unordered_map<std::string, std::unique_ptr<Texture>> m_vpTextures;
+    void Destroy() { m_vpTextures.clear(); }
+};
+TextureManager *GetTextureManager();
