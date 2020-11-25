@@ -237,51 +237,54 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             // Load material textures
 
             // Albedo
-            const tinygltf::Texture &albedoTexture =
-                model.textures[gltfMaterial.pbrMetallicRoughness
-                                   .baseColorTexture.index];
-
             std::string sAlbedoTexPath =
                 "assets/Materials/plasticpattern1-ue/"
                 "plasticpattern1-albedo.png";
             std::string sAlbedoTexName = "defaultAlbedo";
-            if (albedoTexture.source >= 0)
+            if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index != -1)
             {
+                const tinygltf::Texture &albedoTexture =
+                    model.textures[gltfMaterial.pbrMetallicRoughness
+                                       .baseColorTexture.index];
+
                 sAlbedoTexPath =
                     (sceneDir / model.images[albedoTexture.source].uri)
-                        .u8string();
-                sAlbedoTexName = model.images[albedoTexture.source].name;
+                        .string();
+                sAlbedoTexName = model.images[albedoTexture.source].uri;
+                //sAlbedoTexName = model.images[albedoTexture.source].name;
             }
 
             // Metalness
-            const tinygltf::Texture &metalnessTextrue =
-                model.textures[gltfMaterial.pbrMetallicRoughness
-                                   .metallicRoughnessTexture.index];
             std::string sMetalnessTexPath =
                 "assets/Materials/plasticpattern1-ue/"
                 "plasticpattern1-metalness.png";
             std::string sMetalnessTexName = "defaultMetalness";
-            if (metalnessTextrue.source >= 0)
+            if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index != -1)
             {
+                const tinygltf::Texture &metalnessTextrue =
+                    model.textures[gltfMaterial.pbrMetallicRoughness
+                                       .metallicRoughnessTexture.index];
                 sMetalnessTexPath =
-                    (sceneDir / model.images[metalnessTextrue.source].uri)
-                        .u8string();
-                sMetalnessTexName = model.images[metalnessTextrue.source].name;
+                    (sceneDir / model.images[metalnessTextrue.source].uri).string();
+
+                sMetalnessTexName = model.images[metalnessTextrue.source].uri;
+                //sMetalnessTexName = model.images[metalnessTextrue.source].name;
             }
 
             // Normal
-            const tinygltf::Texture &normalTexture =
-                model.textures[gltfMaterial.normalTexture.index];
             std::string sNormalTexPath =
                 "assets/Materials/plasticpattern1-ue/"
                 "plasticpattern1-normal2b.png";
             std::string sNormalTexName = "defaultNormal";
-            if (normalTexture.source >= 0)
+            if (gltfMaterial.normalTexture.index != -1)
             {
+            const tinygltf::Texture &normalTexture =
+                model.textures[gltfMaterial.normalTexture.index];
                 sNormalTexPath =
                     (sceneDir / model.images[normalTexture.source].uri)
-                        .u8string();
-                sNormalTexName = model.images[normalTexture.source].name;
+                        .string();
+                sNormalTexName = model.images[normalTexture.source].uri;
+                //sNormalTexName = model.images[normalTexture.source].name;
             }
 
             // Roughness
@@ -289,25 +292,31 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 "assets/Materials/plasticpattern1-ue/"
                 "plasticpattern1-roughness2.png";
             std::string sRoughnessTexName = "defaultRoughness";
-            if (metalnessTextrue.source >= 0)
+            if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index != -1)
             {
+
+                const tinygltf::Texture &metalnessTextrue =
+                    model.textures[gltfMaterial.pbrMetallicRoughness
+                                       .metallicRoughnessTexture.index];
                 sRoughnessTexPath =
                     (sceneDir / model.images[metalnessTextrue.source].uri)
-                        .u8string();
-                sRoughnessTexName = model.images[metalnessTextrue.source].name;
+                        .string();
+                sRoughnessTexName = model.images[metalnessTextrue.source].uri;
+                //sRoughnessTexName = model.images[metalnessTextrue.source].name;
             }
 
             // Occulution
-            const tinygltf::Texture &occlusionTexture =
-                model.textures[gltfMaterial.occlusionTexture.index];
             std::string sOcclusionTexPath = "assets/Materials/white5x5.png";
             std::string sOcclusionTexName = "defaultOcclusion";
-            if (occlusionTexture.source >= 0)
+            if (gltfMaterial.occlusionTexture.index != -1)
             {
+                const tinygltf::Texture &occlusionTexture =
+                    model.textures[gltfMaterial.occlusionTexture.index];
                 sOcclusionTexPath =
                     (sceneDir / model.images[occlusionTexture.source].uri)
-                        .u8string();
-                sOcclusionTexName = model.images[occlusionTexture.source].name;
+                        .string();
+                sOcclusionTexName = model.images[occlusionTexture.source].uri;
+                //sOcclusionTexName = model.images[occlusionTexture.source].name;
             }
 
             pMaterial->loadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
@@ -315,6 +324,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             pMaterial->loadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
             pMaterial->loadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
             pMaterial->loadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
+            pMaterial->AllocateDescriptorSet();
+            assert(pMaterial->GetDescriptorSet() != VK_NULL_HANDLE);
             vPrimitives.back()->SetMaterial(pMaterial);
         }
     }

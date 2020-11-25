@@ -40,11 +40,14 @@ public:
     {
         return m_apTextures[type]->getView();
     }
+    VkDescriptorSet GetDescriptorSet() const;
+    void AllocateDescriptorSet();
 
 private:
     std::array<Texture*, TEX_COUNT> m_apTextures;
     const std::array<std::string, TEX_COUNT> m_aNames = {
         "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO"};
+    VkDescriptorSet m_descriptorSet;
 };
 
 // TODO: Allocate textuer at material level so we don't exhaust descriptor count
