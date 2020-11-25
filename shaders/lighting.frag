@@ -84,19 +84,19 @@ layout (set = 0, binding = 0) uniform UniformBufferObject {
     mat4 normalObjectToView;
 } ubo;
 
-layout(set = 1, binding = 0) uniform sampler2D inGBuffers[GBUFFER_COUNT];
+layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inGBuffers[GBUFFER_COUNT];
 layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
 
 void main() {
     // GBuffer info
-    const vec3 vWorldPos = texture(inGBuffers[GBUFFER_POS_AO], texCoords).xyz;
+    const vec3 vWorldPos = subpassLoad(inGBuffers[GBUFFER_POS_AO]).xyz;
     const vec3 vViewPos = (ubo.view * vec4(vWorldPos, 1.0)).xyz;
-    const float fAO = texture(inGBuffers[GBUFFER_POS_AO], texCoords).w;
-    const vec3 vAlbedo = texture(inGBuffers[GBUFFER_ALBEDO_TRANSMITTANCE], texCoords).xyz;
-    const vec3 vWorldNormal = texture(inGBuffers[GBUFFER_NORMAL_ROUGHNESS], texCoords).xyz;
+    const float fAO = subpassLoad(inGBuffers[GBUFFER_POS_AO]).w;
+    const vec3 vAlbedo = subpassLoad(inGBuffers[GBUFFER_ALBEDO_TRANSMITTANCE]).xyz;
+    const vec3 vWorldNormal = subpassLoad(inGBuffers[GBUFFER_NORMAL_ROUGHNESS]).xyz;
     const vec3 vFaceNormal = normalize((ubo.objectToView * vec4(vWorldNormal, 0.0)).xyz);
-    const float fRoughness = texture(inGBuffers[GBUFFER_NORMAL_ROUGHNESS], texCoords).w;
-    const float fMetallic = texture(inGBuffers[GBUFFER_METALNESS_TRANSLUCENCY], texCoords).r;
+    const float fRoughness = subpassLoad(inGBuffers[GBUFFER_NORMAL_ROUGHNESS]).w;
+    const float fMetallic = subpassLoad(inGBuffers[GBUFFER_METALNESS_TRANSLUCENCY]).r;
     //TODO: Read transmittence and translucency if necessary
 
     vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetallic);

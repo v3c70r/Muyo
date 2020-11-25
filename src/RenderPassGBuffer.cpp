@@ -255,7 +255,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                 }
             }
         }
-       vkCmdNextSubpass(mCommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdNextSubpass(mCommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
         {
             // Create gbuffer render target views
             GBufferViews vGBufferRTViews = {
