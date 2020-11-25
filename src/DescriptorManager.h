@@ -11,13 +11,13 @@
 
 enum DescriptorLayoutType
 {
-    DESCRIPTOR_LAYOUT_LIGHTING,        // TODO: Remove this
-    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,  // A single sampler descriptor set layout
-                                       // at binding 0
-    DESCRIPTOR_LAYOUT_PER_VIEW_DATA,   // A layout contains mvp matrices at
-                                       // binding 0
-    DESCRIPTOR_LAYOUT_MATERIALS,  // A sampler array contains material textures
-    DESCRIPTOR_LAYOUT_GBUFFER,    // Layouts contains output of GBuffer
+    DESCRIPTOR_LAYOUT_LIGHTING,       // TODO: Remove this
+    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER, // A single sampler descriptor set layout
+                                      // at binding 0
+    DESCRIPTOR_LAYOUT_PER_VIEW_DATA,  // A layout contains mvp matrices at
+                                      // binding 0
+    DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
+    DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_COUNT,
 };
 class DescriptorManager
@@ -29,27 +29,26 @@ public:
     void destroyDescriptorSetLayouts();
 
     VkDescriptorSet allocateLightingDescriptorSet(
-        const UniformBuffer<PerViewData>& perViewData, VkImageView position,
-        VkImageView albedo, VkImageView normal, VkImageView uv);  // Deprecating
+        const UniformBuffer<PerViewData> &perViewData, VkImageView position,
+        VkImageView albedo, VkImageView normal, VkImageView uv); // Deprecating
 
     VkDescriptorSet allocateGBufferDescriptorSet(
-        const RenderPassGBuffer::GBufferViews& gbufferViews);
+        const RenderPassGBuffer::GBufferViews &gbufferViews);
     VkDescriptorSet allocateGBufferDescriptorSet();
     static void updateGBufferDescriptorSet(
         VkDescriptorSet descriptorSet,
-        const RenderPassGBuffer::GBufferViews& gbufferViews);
+        const RenderPassGBuffer::GBufferViews &gbufferViews);
 
     VkDescriptorSet allocateSingleSamplerDescriptorSet(VkImageView textureView);
 
-
     VkDescriptorSet allocatePerviewDataDescriptorSet(
-        const UniformBuffer<PerViewData>& perViewData);
+        const UniformBuffer<PerViewData> &perViewData);
 
     VkDescriptorSet allocateMaterialDescriptorSet();
     VkDescriptorSet allocateMaterialDescriptorSet(
-        const Material::PBRViews& pbrViews);
+        const Material::PBRViews &pbrViews);
     static void updateMaterialDescriptorSet(VkDescriptorSet descriptorSet,
-                                            const Material::PBRViews& pbrViews);
+                                            const Material::PBRViews &pbrViews);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {
@@ -83,6 +82,17 @@ private:
         return samplerLayoutBinding;
     }
 
+    static VkDescriptorSetLayoutBinding GetInputAttachmentBinding(
+        uint32_t binding, uint32_t numAttachments = 1)
+    {
+        VkDescriptorSetLayoutBinding descSetBinding;
+        descSetBinding.binding = binding;
+        descSetBinding.descriptorCount = numAttachments;
+        descSetBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        descSetBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        return descSetBinding;
+    }
+
     static VkDescriptorSetLayoutBinding getSamplerBinding(uint32_t binding)
     {
         return getSamplerArrayBinding(binding, 1);
@@ -106,4 +116,4 @@ private:
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, DESCRIPTOR_COUNT_EACH_TYPE},
         {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, DESCRIPTOR_COUNT_EACH_TYPE}};
 };
-DescriptorManager* GetDescriptorManager();
+DescriptorManager *GetDescriptorManager();
