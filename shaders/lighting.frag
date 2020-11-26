@@ -84,19 +84,22 @@ layout (set = 0, binding = 0) uniform UniformBufferObject {
     mat4 normalObjectToView;
 } ubo;
 
-layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inGBuffers[GBUFFER_COUNT];
+layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inGBuffer_POS_AO;
+layout(input_attachment_index = 1, set = 1, binding = 1) uniform subpassInput inGBuffer_ALBEDO_TRANSMITTANCE;
+layout(input_attachment_index = 2, set = 1, binding = 2) uniform subpassInput inGBuffer_NORMAL_ROUGHNESS;
+layout(input_attachment_index = 3, set = 1, binding = 3) uniform subpassInput inGBuffer_MATELNESS_TRANSLUCENCY;
 layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
 
 void main() {
     // GBuffer info
-    const vec3 vWorldPos = subpassLoad(inGBuffers[GBUFFER_POS_AO]).xyz;
+    const vec3 vWorldPos = subpassLoad(inGBuffer_POS_AO).xyz;
     const vec3 vViewPos = (ubo.view * vec4(vWorldPos, 1.0)).xyz;
-    const float fAO = subpassLoad(inGBuffers[GBUFFER_POS_AO]).w;
-    const vec3 vAlbedo = subpassLoad(inGBuffers[GBUFFER_ALBEDO_TRANSMITTANCE]).xyz;
-    const vec3 vWorldNormal = subpassLoad(inGBuffers[GBUFFER_NORMAL_ROUGHNESS]).xyz;
+    const float fAO = subpassLoad(inGBuffer_POS_AO).w;
+    const vec3 vAlbedo = subpassLoad(inGBuffer_ALBEDO_TRANSMITTANCE).xyz;
+    const vec3 vWorldNormal = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).xyz;
     const vec3 vFaceNormal = normalize((ubo.objectToView * vec4(vWorldNormal, 0.0)).xyz);
-    const float fRoughness = subpassLoad(inGBuffers[GBUFFER_NORMAL_ROUGHNESS]).w;
-    const float fMetallic = subpassLoad(inGBuffers[GBUFFER_METALNESS_TRANSLUCENCY]).r;
+    const float fRoughness = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).w;
+    const float fMetallic = subpassLoad(inGBuffer_MATELNESS_TRANSLUCENCY).r;
     //TODO: Read transmittence and translucency if necessary
 
     vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetallic);
@@ -145,6 +148,5 @@ void main() {
 
     outColor = vec4(vColor, 1.0);
     //outColor = vec4(vWorldNormal, 1.0);
-    //outColor = texture(inGBuffers[GBUFFER_POS_AO], texCoords);
     outColor.a = 1.0;
 }

@@ -131,10 +131,11 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
-        std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            GetInputAttachmentBinding(
-                0, RenderPassGBuffer::LightingAttachments::
-                       GBUFFER_ATTACHMENTS_COUNT)};  // GBuffer textures
+        std::array<VkDescriptorSetLayoutBinding, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> bindings = {
+            GetInputAttachmentBinding(0, 1),
+            GetInputAttachmentBinding(1, 1),
+            GetInputAttachmentBinding(2, 1),
+            GetInputAttachmentBinding(3, 1)};  // GBuffer textures
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -333,22 +334,25 @@ void DescriptorManager::updateGBufferDescriptorSet(
 {
     // prepare image descriptor
     std::array<VkDescriptorImageInfo, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> imageInfos;
-    VkWriteDescriptorSet writeDescriptorSet = {};
+    std::array<VkWriteDescriptorSet, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> writeDescriptorSets;
 
     for (uint32_t i = 0; i < RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT; i++)
     {
-        VkDescriptorImageInfo &imageInfo = imageInfos[i];
-        imageInfo = {GetSamplerManager()->getSampler(SAMPLER_1_MIPS), gbufferViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    }
-    writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writeDescriptorSet.dstSet = descriptorSet;
-    writeDescriptorSet.dstBinding = 0;
-    writeDescriptorSet.dstArrayElement = 0;
-    writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-    writeDescriptorSet.descriptorCount = static_cast<uint32_t>(imageInfos.size());
-    writeDescriptorSet.pImageInfo = imageInfos.data();
+        VkDescriptorImageInfo& imageInfo = imageInfos[i];
+        imageInfo = {GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+                     gbufferViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1, &writeDescriptorSet, 0, nullptr);
+        VkWriteDescriptorSet& writeDescriptorSet = writeDescriptorSets[i];
+        writeDescriptorSet = {};
+        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet = descriptorSet;
+        writeDescriptorSet.dstBinding = i;
+        writeDescriptorSet.dstArrayElement = 0;
+        writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+        writeDescriptorSet.descriptorCount = 1;
+        writeDescriptorSet.pImageInfo = &imageInfo;
+    }
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
 VkDescriptorSet DescriptorManager::allocateSingleSamplerDescriptorSet(
