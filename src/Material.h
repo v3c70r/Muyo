@@ -57,8 +57,10 @@ class MaterialManager
 public:
     void destroyMaterials() { m_mMaterials.clear(); }
     std::unordered_map<std::string, std::unique_ptr<Material>> m_mMaterials;
-
+    void CreateDefaultMaterial();
+    const Material* GetDefaultMaterial() {return m_mMaterials[sDefaultName].get();}
 private:
+    const std::string sDefaultName = "default";
 };
 
 MaterialManager* GetMaterialManager();

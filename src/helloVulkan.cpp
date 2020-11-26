@@ -714,30 +714,7 @@ int main()
                 "perView");
 
         // Load materials
-        GetMaterialManager()->m_mMaterials["plasticpattern"] = std::make_unique<Material>();
-        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
-            Material::TEX_ALBEDO,
-            "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-albedo.png", "defaultAlbedo");
-
-        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
-            Material::TEX_METALNESS,
-            "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-metalness.png", "defaultMetalness");
-
-        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
-            Material::TEX_NORMAL,
-            "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-normal2b.png", "defaultNormal");
-
-        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
-            Material::TEX_ROUGHNESS,
-            "assets/Materials/plasticpattern1-ue/"
-            "plasticpattern1-roughness2.png", "defaultRoughness");
-
-        GetMaterialManager()->m_mMaterials["plasticpattern"]->loadTexture(
-            Material::TEX_AO,
-            "assets/Materials/white5x5.png", "defaultOcclusion");
+        GetMaterialManager()->CreateDefaultMaterial();
 
         createCommandBuffers();
         createSemaphores();

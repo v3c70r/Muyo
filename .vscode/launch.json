@@ -8,41 +8,27 @@
             "name": "vulkanTutorial",
             "type": "cppdbg",
             "request": "launch",
-            //"program": "${command:cmake.launchTargetPath}",
+            "program": "${command:cmake.launchTargetPath}",
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/build",
-            "program": "${workspaceFolder}/build/helloVulkan",
             "externalConsole": false,
             "linux": {
-                "environment": [
+                "setupCommands": [
                     {
-                        "name": "VK_LAYER_PATH",
-                        "value": "/home/qgu/tools/vulkan/1.2.135.0/x86_64/etc/vulkan/explicit_layer.d"
+                        "description": "Enable pretty-printing for gdb",
+                        "text": "-enable-pretty-printing",
+                        "ignoreFailures": true
                     },
                     {
-                        "name": "LD_LIBRARY_PATH",
-                        "value": "/home/qgu/tools/vulkan/1.2.135.0/x86_64/lib"
-                    },
+                        "description": "Auto load symbols when loading an .so file",
+                        "text": "set auto-solib-add",
+                        "ignoreFailures": false
+                    }
                 ],
                 "MIkode": "gdb"
             },
             "osx": {
-                "environment": [
-                    {
-                        "name": "VK_LAYER_PATH",
-                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/etc/vulkan/explicit_layer.d"
-                    },
-                    {
-                        "name": "LD_LIBRARY_PATH",
-                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/lib"
-                    },
-                    {
-                        "name": "VK_ICD_FILENAMES",
-                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/etc/vulkan/icd.d/MoltenVK_icd.json"
-                    }
-                ],
                 "MIMode": "lldb",
-                "program": "${workspaceFolder}/build/helloVulkan",
             },
             "windows": {
                 "program": "${command:cmake.launchTargetPath}",

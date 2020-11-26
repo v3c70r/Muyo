@@ -191,13 +191,6 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
         const Material* pDefaultMaterial =
             GetMaterialManager()->m_mMaterials["plasticpattern"].get();
 
-        Material::PBRViews vDefaultMaterialViews = {
-            pDefaultMaterial->getImageView(Material::TEX_ALBEDO),
-            pDefaultMaterial->getImageView(Material::TEX_NORMAL),
-            pDefaultMaterial->getImageView(Material::TEX_METALNESS),
-            pDefaultMaterial->getImageView(Material::TEX_ROUGHNESS),
-            pDefaultMaterial->getImageView(Material::TEX_AO),
-        };
         {
             // Handle Geometires
             for (const Geometry* pGeometry : vpGeometries)
@@ -207,51 +200,30 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                 // transformation
                 for (const auto& pPrimitive : pGeometry->getPrimitives())
                 {
-                    // get the material for the primitive
-                    //if (const Material* pPrimitiveMaterial = pPrimitive->GetMaterial())
-                    //{
-                    //    const Material::PBRViews vPrimitiveMaterialViews = {
-                    //        pPrimitiveMaterial->getImageView(
-                    //            Material::TEX_ALBEDO),
-                    //        pPrimitiveMaterial->getImageView(
-                    //            Material::TEX_NORMAL),
-                    //        pPrimitiveMaterial->getImageView(
-                    //            Material::TEX_METALNESS),
-                    //        pPrimitiveMaterial->getImageView(
-                    //            Material::TEX_ROUGHNESS),
-                    //        pPrimitiveMaterial->getImageView(Material::TEX_AO),
-                    //    };
-
-                    //    GetDescriptorManager()->updateMaterialDescriptorSet(
-                    //        materialDescSet, vPrimitiveMaterialViews);
-                    //}
-
+                    VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
                     if (pPrimitive->GetMaterial() != nullptr)
                     {
-                        VkDescriptorSet materialDescSet = pPrimitive->GetMaterial()->GetDescriptorSet();
-                        GetDescriptorManager()->allocateMaterialDescriptorSet(
-                            vDefaultMaterialViews);
-
-                        std::vector<VkDescriptorSet> vGBufferDescSets = {perViewSets,
-                                                                         materialDescSet};
-
-                        VkDeviceSize offset = 0;
-                        VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
-                        VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
-                        uint32_t nIndexCount = pPrimitive->getIndexCount();
-                        vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
-                                               &offset);
-                        vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
-                                             VK_INDEX_TYPE_UINT32);
-                        vkCmdBindPipeline(mCommandBuffer,
-                                          VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                          mGBufferPipeline);
-                        vkCmdBindDescriptorSets(
-                            mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
-                            vGBufferDescSets.data(), 0, nullptr);
-                        vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+                        materialDescSet = pPrimitive->GetMaterial()->GetDescriptorSet();
                     }
+
+                    std::vector<VkDescriptorSet> vGBufferDescSets = {perViewSets,
+                                                                     materialDescSet};
+                    VkDeviceSize offset = 0;
+                    VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
+                    VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
+                    uint32_t nIndexCount = pPrimitive->getIndexCount();
+                    vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
+                                           &offset);
+                    vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
+                                         VK_INDEX_TYPE_UINT32);
+                    vkCmdBindPipeline(mCommandBuffer,
+                                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      mGBufferPipeline);
+                    vkCmdBindDescriptorSets(
+                        mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
+                        vGBufferDescSets.data(), 0, nullptr);
+                    vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
                 }
             }
         }
