@@ -119,7 +119,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     for (const auto &primitive : mesh.primitives)
     {
         std::vector<glm::vec3> vPositions;
-        std::vector<glm::vec3> vUVs;
+        std::vector<glm::vec2> vUVs;
         std::vector<glm::vec3> vNormals;
 
         // vPositions
@@ -224,7 +224,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         const tinygltf::Material &gltfMaterial =
             model.materials[primitive.material];
 
-        // TODO: Get texture manager so we don't load used textures.
         if (GetMaterialManager()->m_mMaterials.find(gltfMaterial.name) ==
             GetMaterialManager()->m_mMaterials.end())
         {
@@ -243,6 +242,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::string sAlbedoTexName = "defaultAlbedo";
             if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index != -1)
             {
+                assert(gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord == 0);
                 const tinygltf::Texture &albedoTexture =
                     model.textures[gltfMaterial.pbrMetallicRoughness
                                        .baseColorTexture.index];
@@ -251,7 +251,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                     (sceneDir / model.images[albedoTexture.source].uri)
                         .string();
                 sAlbedoTexName = model.images[albedoTexture.source].uri;
-                //sAlbedoTexName = model.images[albedoTexture.source].name;
             }
 
             // Metalness
@@ -268,7 +267,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                     (sceneDir / model.images[metalnessTextrue.source].uri).string();
 
                 sMetalnessTexName = model.images[metalnessTextrue.source].uri;
-                //sMetalnessTexName = model.images[metalnessTextrue.source].name;
             }
 
             // Normal
@@ -284,7 +282,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                     (sceneDir / model.images[normalTexture.source].uri)
                         .string();
                 sNormalTexName = model.images[normalTexture.source].uri;
-                //sNormalTexName = model.images[normalTexture.source].name;
             }
 
             // Roughness
@@ -302,7 +299,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                     (sceneDir / model.images[metalnessTextrue.source].uri)
                         .string();
                 sRoughnessTexName = model.images[metalnessTextrue.source].uri;
-                //sRoughnessTexName = model.images[metalnessTextrue.source].name;
             }
 
             // Occulution
@@ -320,8 +316,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             }
 
             pMaterial->loadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
-            pMaterial->loadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
             pMaterial->loadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
+            pMaterial->loadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
             pMaterial->loadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
             pMaterial->loadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
             pMaterial->AllocateDescriptorSet();
