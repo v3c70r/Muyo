@@ -307,11 +307,21 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 //sOcclusionTexName = model.images[occlusionTexture.source].name;
             }
 
+            // PBR factors
+            Material::PBRFactors pbrFactors = {
+                glm::vec4((float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
+                          (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3]),
+                (float)gltfMaterial.pbrMetallicRoughness.metallicFactor,
+                (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,
+                0.0f, 0.0f};
+
             pMaterial->loadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
             pMaterial->loadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
             pMaterial->loadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
             pMaterial->loadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
             pMaterial->loadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
+            pMaterial->SetMaterialParameterFactors(pbrFactors, gltfMaterial.name);
+
             pMaterial->AllocateDescriptorSet();
             assert(pMaterial->GetDescriptorSet() != VK_NULL_HANDLE);
             vPrimitives.back()->SetMaterial(pMaterial);

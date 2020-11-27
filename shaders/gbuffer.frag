@@ -28,6 +28,12 @@ layout (set = 0, binding = 0) uniform UniformBufferObject {
     mat4 normalObjectToView;
 } ubo;
 layout(set = 1, binding = 0) uniform sampler2D texPBR[TEX_COUNT];
+layout(set = 1, binding = 1) uniform PBRFactors {
+    vec4 vBaseColorFactors;
+    float fRoughness;
+    float fMetalness;
+    float padding0; float padding1;
+} factors;
 
 void main() {
 
@@ -37,15 +43,15 @@ void main() {
     // Populate GBuffer
     outPositionAO = inWorldPos;
     outPositionAO.w = texture(texPBR[TEX_AO], inTexCoord).r;
-    outAlbedoTransmittance.xyz = texture(texPBR[TEX_ALBEDO], inTexCoord).xyz;
+    outAlbedoTransmittance.xyz = texture(texPBR[TEX_ALBEDO], inTexCoord).xyz * factors.vBaseColorFactors.xyz;
     outAlbedoTransmittance.w = 1.0; // Transmittance
 
     const float fRoughness =
-        texture(texPBR[TEX_ROUGHNESS], inTexCoord).r;
+        texture(texPBR[TEX_ROUGHNESS], inTexCoord).r * factors.fRoughness;
     outNormalRoughness =
         vec4(vWorldNormal, fRoughness);
 
     // Probably need a specular map (Reflection map);
     outMatelnessTranslucency =
-        vec4(texture(texPBR[TEX_METALNESS], inTexCoord).r, 1.0, 0.0, 0.0);
+        vec4(texture(texPBR[TEX_METALNESS], inTexCoord).r * factors.fMetalness, 1.0, 0.0, 0.0);
 }

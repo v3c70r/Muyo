@@ -8,9 +8,11 @@
 #include <glm/glm.hpp>
 
 #include "Texture.h"
+#include "UniformBuffer.h"
 
 class Material
 {
+
 public:
     enum TextureTypes
     {
@@ -21,35 +23,8 @@ public:
         TEX_AO,
         TEX_COUNT
     };
-    using PBRViews = std::array<VkImageView, TEX_COUNT>;
-    void loadTexture(TextureTypes type, const std::string& path, const std::string& name)
-    {
-        const auto it = GetTextureManager()->m_vpTextures.find(name);
-        if (it == GetTextureManager()->m_vpTextures.end())
-        {
-            GetTextureManager()->m_vpTextures[name] = std::make_unique<Texture>();
-            GetTextureManager()->m_vpTextures[name]->LoadImage(path);
-            GetTextureManager()->m_vpTextures[name]->setName(name);
-            m_apTextures[type] = GetTextureManager()->m_vpTextures[name].get();
-        }
-        else
-        {
-            m_apTextures[type] = it->second.get();
-        }
-    }
-    VkImageView getImageView(TextureTypes type) const
-    {
-        return m_apTextures[type]->getView();
-    }
-    VkDescriptorSet GetDescriptorSet() const;
-    void AllocateDescriptorSet();
 
-private:
-    std::array<Texture*, TEX_COUNT> m_apTextures;
-    const std::array<std::string, TEX_COUNT> m_aNames = {
-        "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO"};
-    VkDescriptorSet m_descriptorSet;
-    struct MaterialParameters
+    struct PBRFactors
     {
         glm::vec4 m_vBaseColorFactor;
         float m_fMetalicFactor = 1.0;
@@ -58,9 +33,43 @@ private:
         float m_fPadding0 = 0.0;
         float m_fPadding1 = 0.0;
     };
-};
+    struct MaterialParameters
+    {
+        std::array<Texture *, TEX_COUNT> m_apTextures;
+        UniformBuffer<PBRFactors> *m_pFactors = nullptr;
+    };
 
-// TODO: Allocate textuer at material level so we don't exhaust descriptor count
+public:
+    void loadTexture(TextureTypes type, const std::string& path, const std::string& name)
+    {
+        const auto it = GetTextureManager()->m_vpTextures.find(name);
+        if (it == GetTextureManager()->m_vpTextures.end())
+        {
+            GetTextureManager()->m_vpTextures[name] = std::make_unique<Texture>();
+            GetTextureManager()->m_vpTextures[name]->LoadImage(path);
+            GetTextureManager()->m_vpTextures[name]->setName(name);
+            m_materialParameters.m_apTextures[type] = GetTextureManager()->m_vpTextures[name].get();
+        }
+        else
+        {
+            m_materialParameters.m_apTextures[type] = it->second.get();
+        }
+    }
+    VkImageView getImageView(TextureTypes type) const
+    {
+        return m_materialParameters.m_apTextures[type]->getView();
+    }
+    void SetMaterialParameterFactors(const PBRFactors &factors, const std::string &sMaterialName);
+
+    VkDescriptorSet GetDescriptorSet() const;
+    void AllocateDescriptorSet();
+
+private:
+    MaterialParameters m_materialParameters;
+    const std::array<std::string, TEX_COUNT> m_aNames = {
+        "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO"};
+    VkDescriptorSet m_descriptorSet;
+};
 
 class MaterialManager
 {

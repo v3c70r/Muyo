@@ -137,7 +137,7 @@ void main() {
     vec3 kS = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
     vec3 kD = 1.0 - kS;
     vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz * 0.03;
-    vec3 vDiffuse = irradiance * vAlbedo;
+    vec3 vDiffuse = vAlbedo;
     vec3 vAmbient = (kD * vDiffuse) * fAO;
 
     vec3 vColor = vLo + vAmbient;

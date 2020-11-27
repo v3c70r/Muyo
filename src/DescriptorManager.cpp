@@ -37,8 +37,8 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-            getPerViewDataBinding(0),      // Pre view data
-            getSamplerArrayBinding(1, 4),  // gbuffers
+            GetUniformBufferBinding(0),      // Pre view data
+            GetSamplerArrayBinding(1, 4),  // gbuffers
         };
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -61,7 +61,7 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            getSamplerBinding(0),
+            GetSamplerBinding(0),
         };
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -85,7 +85,7 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            getPerViewDataBinding(0)};
+            GetUniformBufferBinding(0)};
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -107,9 +107,10 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
-        std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            getSamplerArrayBinding(
-                0, Material::TEX_COUNT)};  // PBR material textures
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
+            GetSamplerArrayBinding(0, Material::TEX_COUNT),
+            GetUniformBufferBinding(1, VK_SHADER_STAGE_FRAGMENT_BIT)
+        }; // PBR material
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -180,53 +181,62 @@ VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet()
     return descriptorSet;
 }
 
-VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet(
-    const Material::PBRViews& textureViews)
+VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet(const Material::MaterialParameters& materialParameters)
 {
     VkDescriptorSet descSet = allocateMaterialDescriptorSet();
-    updateMaterialDescriptorSet(descSet, textureViews);
+    updateMaterialDescriptorSet(descSet, materialParameters);
     return descSet;
 }
 
-void DescriptorManager::updateMaterialDescriptorSet(
-    VkDescriptorSet descriptorSet, const Material::PBRViews& textureViews)
+void DescriptorManager::updateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters)
 {
-    assert(textureViews.size() == Material::TEX_COUNT);
+    assert(materialParameters.m_apTextures.size() == Material::TEX_COUNT);
 
-    // prepare image descriptor
-    std::array<VkDescriptorImageInfo, Material::TEX_COUNT> imageInfos = {
-        // albedo
-        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-        textureViews.at(Material::TEX_ALBEDO),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        // normal
-        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-        textureViews.at(Material::TEX_NORMAL),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        // metalness
-        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-        textureViews.at(Material::TEX_METALNESS),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        // roughness
-        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-        textureViews.at(Material::TEX_ROUGHNESS),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        // AO
-        GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-        textureViews.at(Material::TEX_AO),
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-    };
+    // prepare image array info for descriptor
+    std::array<VkDescriptorImageInfo, Material::TEX_COUNT> imageInfos = {};
+    for (size_t i = 0; i < Material::TEX_COUNT; i++)
+    {
+        imageInfos[i] = {
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+            materialParameters.m_apTextures[i]->getView(),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+    }
 
-    VkWriteDescriptorSet descriptorWrite = {};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = descriptorSet;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = static_cast<uint32_t>(imageInfos.size());
-    descriptorWrite.pImageInfo = imageInfos.data();
+    // Two writes, one for PBR texture array, another for PBR factors
+    std::array<VkWriteDescriptorSet, 2> aWriteDescriptorSets = {};
+    {
+        // Material sampler views
+        VkWriteDescriptorSet &writeDescriptorSet = aWriteDescriptorSets[0];
+        writeDescriptorSet = {};
+        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet = descriptorSet;
+        writeDescriptorSet.dstBinding = 0;
+        writeDescriptorSet.dstArrayElement = 0;
+        writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writeDescriptorSet.descriptorCount = static_cast<uint32_t>(imageInfos.size());
+        writeDescriptorSet.pImageInfo = imageInfos.data();
+    }
 
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1, &descriptorWrite,
+    // Material parameters
+    VkDescriptorBufferInfo bufferInfo = {};
+    bufferInfo.buffer = materialParameters.m_pFactors->buffer();
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(Material::PBRFactors);
+    {
+
+        VkWriteDescriptorSet &writeDescriptorSet = aWriteDescriptorSets[1];
+        writeDescriptorSet = {};
+        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet = descriptorSet;
+        writeDescriptorSet.dstBinding = 1;
+        writeDescriptorSet.dstArrayElement = 0;
+        writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writeDescriptorSet.descriptorCount = 1;
+        writeDescriptorSet.pBufferInfo = &bufferInfo;
+    }
+
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(aWriteDescriptorSets.size()), aWriteDescriptorSets.data(),
                            0, nullptr);
 }
 

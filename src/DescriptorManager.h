@@ -44,11 +44,10 @@ public:
     VkDescriptorSet allocatePerviewDataDescriptorSet(
         const UniformBuffer<PerViewData> &perViewData);
 
+    // Material Descriptor Set
     VkDescriptorSet allocateMaterialDescriptorSet();
-    VkDescriptorSet allocateMaterialDescriptorSet(
-        const Material::PBRViews &pbrViews);
-    static void updateMaterialDescriptorSet(VkDescriptorSet descriptorSet,
-                                            const Material::PBRViews &pbrViews);
+    VkDescriptorSet allocateMaterialDescriptorSet(const Material::MaterialParameters &materialParameters);
+    static void updateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {
@@ -56,20 +55,18 @@ public:
     }
 
 private:
-    static VkDescriptorSetLayoutBinding getPerViewDataBinding(uint32_t binding)
+    static VkDescriptorSetLayoutBinding GetUniformBufferBinding(uint32_t binding, VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
     {
         VkDescriptorSetLayoutBinding uboLayoutBinding = {};
         uboLayoutBinding.binding = binding;
         uboLayoutBinding.descriptorCount = 1;
         uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uboLayoutBinding.pImmutableSamplers = nullptr;
-        uboLayoutBinding.stageFlags =
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
+        uboLayoutBinding.stageFlags = stages;
         return uboLayoutBinding;
     }
 
-    static VkDescriptorSetLayoutBinding getSamplerArrayBinding(
+    static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(
         uint32_t binding, uint32_t numSamplers)
     {
         VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
@@ -93,9 +90,9 @@ private:
         return descSetBinding;
     }
 
-    static VkDescriptorSetLayoutBinding getSamplerBinding(uint32_t binding)
+    static VkDescriptorSetLayoutBinding GetSamplerBinding(uint32_t binding)
     {
-        return getSamplerArrayBinding(binding, 1);
+        return GetSamplerArrayBinding(binding, 1);
     }
 
     std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT>

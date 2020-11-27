@@ -1,37 +1,35 @@
 #include "Material.h"
 
 #include "DescriptorManager.h"
+#include "RenderResourceManager.h"
 static MaterialManager s_materialManager;
 
+// Material Manager
 void MaterialManager::CreateDefaultMaterial()
 {
     if (m_mMaterials.find(sDefaultName) == m_mMaterials.end())
     {
-        // Load materials
-        GetMaterialManager()->m_mMaterials[sDefaultName] =
-            std::make_unique<Material>();
-        GetMaterialManager()->m_mMaterials[sDefaultName]->loadTexture(
-            Material::TEX_ALBEDO, "assets/Materials/white5x5.png",
-            "defaultAlbedo");
+        GetMaterialManager()->m_mMaterials[sDefaultName] = std::make_unique<Material>();
+        Material* pMaterial = GetMaterialManager()->m_mMaterials[sDefaultName].get();
 
-        GetMaterialManager()->m_mMaterials[sDefaultName]->loadTexture(
-            Material::TEX_METALNESS, "assets/Materials/white5x5.png",
-            "defaultMetalness");
+        // Load PBR textures
+        pMaterial->loadTexture( Material::TEX_ALBEDO, "assets/Materials/white5x5.png", "defaultAlbedo"); 
+        pMaterial->loadTexture( Material::TEX_METALNESS, "assets/Materials/white5x5.png", "defaultMetalness"); 
+        pMaterial->loadTexture( Material::TEX_NORMAL, "assets/Materials/white5x5.png", "defaultNormal"); 
+        pMaterial->loadTexture( Material::TEX_ROUGHNESS, "assets/Materials/white5x5.png", "defaultRoughness");
+        pMaterial->loadTexture( Material::TEX_AO, "assets/Materials/white5x5.png", "defaultOcclusion");
 
-        GetMaterialManager()->m_mMaterials[sDefaultName]->loadTexture(
-            Material::TEX_NORMAL, "assets/Materials/white5x5.png",
-            "defaultNormal");
-
-        GetMaterialManager()->m_mMaterials[sDefaultName]->loadTexture(
-            Material::TEX_ROUGHNESS, "assets/Materials/white5x5.png",
-            "defaultRoughness");
-
-        GetMaterialManager()->m_mMaterials[sDefaultName]->loadTexture(
-            Material::TEX_AO, "assets/Materials/white5x5.png",
-            "defaultOcclusion");
-        GetMaterialManager()
-            ->m_mMaterials[sDefaultName]
-            ->AllocateDescriptorSet();
+        // Load PBR Factors
+        Material::PBRFactors pbrFactors = 
+        {
+            glm::vec4(1.0, 1.0, 1.0, 1.0), // Base colro factor
+            0.0,    // Metalness
+            1.0,    // Roughness
+            0.0, 0.0    // Padding
+        };
+        pMaterial->SetMaterialParameterFactors(pbrFactors, sDefaultName);
+        
+        pMaterial->AllocateDescriptorSet();
     }
 }
 MaterialManager *GetMaterialManager()
@@ -39,22 +37,18 @@ MaterialManager *GetMaterialManager()
     return &s_materialManager;
 }
 
+void Material::SetMaterialParameterFactors(const PBRFactors &factors, const std::string &sMaterialName)
+{
+    auto* pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PBRFactors>(sMaterialName);
+    pUniformBuffer->setData(factors);
+    m_materialParameters.m_pFactors = pUniformBuffer;
+}
+
 void Material::AllocateDescriptorSet()
 {
     if (m_descriptorSet == VK_NULL_HANDLE)
     {
-        const Material::PBRViews vPrimitiveMaterialViews = {
-            getImageView(
-                Material::TEX_ALBEDO),
-            getImageView(
-                Material::TEX_NORMAL),
-            getImageView(
-                Material::TEX_METALNESS),
-            getImageView(
-                Material::TEX_ROUGHNESS),
-            getImageView(Material::TEX_AO),
-        };
-        m_descriptorSet = GetDescriptorManager()->allocateMaterialDescriptorSet(vPrimitiveMaterialViews);
+        m_descriptorSet = GetDescriptorManager()->allocateMaterialDescriptorSet(m_materialParameters);
     }
 }
 
