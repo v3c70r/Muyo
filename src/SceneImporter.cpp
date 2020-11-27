@@ -236,9 +236,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             // Load material textures
 
             // Albedo
-            std::string sAlbedoTexPath =
-                "assets/Materials/plasticpattern1-ue/"
-                "plasticpattern1-albedo.png";
+            std::string sAlbedoTexPath = "assets/Materials/white5x5.png";
             std::string sAlbedoTexName = "defaultAlbedo";
             if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index != -1)
             {
@@ -254,9 +252,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             }
 
             // Metalness
-            std::string sMetalnessTexPath =
-                "assets/Materials/plasticpattern1-ue/"
-                "plasticpattern1-metalness.png";
+            std::string sMetalnessTexPath = "assets/Materials/white5x5.png";
             std::string sMetalnessTexName = "defaultMetalness";
             if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index != -1)
             {
@@ -270,9 +266,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             }
 
             // Normal
-            std::string sNormalTexPath =
-                "assets/Materials/plasticpattern1-ue/"
-                "plasticpattern1-normal2b.png";
+            std::string sNormalTexPath = "assets/Materials/black5x5.png";
             std::string sNormalTexName = "defaultNormal";
             if (gltfMaterial.normalTexture.index != -1)
             {
@@ -285,9 +279,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             }
 
             // Roughness
-            std::string sRoughnessTexPath =
-                "assets/Materials/plasticpattern1-ue/"
-                "plasticpattern1-roughness2.png";
+            std::string sRoughnessTexPath = "assets/Materials/white5x5.png";
             std::string sRoughnessTexName = "defaultRoughness";
             if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index != -1)
             {

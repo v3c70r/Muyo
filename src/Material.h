@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <glm/glm.hpp>
 
 #include "Texture.h"
 
@@ -48,6 +49,15 @@ private:
     const std::array<std::string, TEX_COUNT> m_aNames = {
         "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO"};
     VkDescriptorSet m_descriptorSet;
+    struct MaterialParameters
+    {
+        glm::vec4 m_vBaseColorFactor;
+        float m_fMetalicFactor = 1.0;
+        float m_fRoughnessFactor = 1.0;
+
+        float m_fPadding0 = 0.0;
+        float m_fPadding1 = 0.0;
+    };
 };
 
 // TODO: Allocate textuer at material level so we don't exhaust descriptor count
