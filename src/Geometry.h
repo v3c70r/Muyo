@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "MeshVertex.h"
+#include "UniformBuffer.h"
 #include "VertexBuffer.h"
 class Material;
 class Primitive
@@ -33,14 +34,13 @@ public:
         return m_nIndexCount;
     }
 
-    void SetMaterial(Material *pMaterial) { m_pMaterial = pMaterial; }
-    const Material *GetMaterial() const { return m_pMaterial; }
+    void SetMaterial(Material* pMaterial) { m_pMaterial = pMaterial; }
+    const Material* GetMaterial() const { return m_pMaterial; }
 
 private:
     VertexBuffer m_vertexBuffer;
     IndexBuffer m_indexBuffer;
     uint32_t m_nIndexCount;
-    glm::mat4 m_mLocalTrans = glm::mat4(1.0);
     Material* m_pMaterial = nullptr;
 };
 
@@ -70,10 +70,14 @@ public:
     {
         return m_vPrimitives;
     }
+    void SetObjectToWorld(const glm::mat4 &mObjectToWorld)
+    {
+        m_mObjectToWorld->setData(mObjectToWorld);
+    }
 
 private:
     std::vector<std::unique_ptr<Primitive>> m_vPrimitives;
-    glm::mat4 m_mModel = glm::mat4(1.0);
+    UniformBuffer<glm::mat4>* m_mObjectToWorld = nullptr;
 };
 
 class GeometryManager

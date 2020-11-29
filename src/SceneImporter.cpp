@@ -270,8 +270,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::string sNormalTexName = "defaultNormal";
             if (gltfMaterial.normalTexture.index != -1)
             {
-            const tinygltf::Texture &normalTexture =
-                model.textures[gltfMaterial.normalTexture.index];
+                const tinygltf::Texture &normalTexture =
+                    model.textures[gltfMaterial.normalTexture.index];
                 sNormalTexPath =
                     (sceneDir / model.images[normalTexture.source].uri)
                         .string();
@@ -283,7 +283,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::string sRoughnessTexName = "defaultRoughness";
             if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index != -1)
             {
-
                 const tinygltf::Texture &metalnessTextrue =
                     model.textures[gltfMaterial.pbrMetallicRoughness
                                        .metallicRoughnessTexture.index];

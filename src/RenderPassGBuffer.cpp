@@ -187,10 +187,6 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
         VkDescriptorSet perViewSets =
             GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
 
-        // Allocate material descriptor set with default materials
-        const Material* pDefaultMaterial =
-            GetMaterialManager()->m_mMaterials["plasticpattern"].get();
-
         {
             // Handle Geometires
             for (const Geometry* pGeometry : vpGeometries)

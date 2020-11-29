@@ -18,6 +18,10 @@ public:
     {
         m_mTransformation = mMat;
     }
+    const glm::mat4& GetMatrix() const
+    {
+        return m_mTransformation;
+    }
     virtual void AppendChild(SceneNode*);
     const std::vector<std::unique_ptr<SceneNode>>& GetChildren() const
     {
