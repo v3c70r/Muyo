@@ -20,6 +20,7 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_COUNT,
 };
+
 class DescriptorManager
 {
 public:
@@ -52,6 +53,13 @@ public:
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {
         return m_aDescriptorSetLayouts[type];
+    }
+
+    // Function template to allocate single type uniform buffer descriptor set
+    template <class T>
+    VkDescriptorSet AllocateUniformBufferDescriptorSet(const Uniformbuffer<T> &uniformBuffer, uint32_t binding)
+    {
+        return VK_NULL_HANDLE;
     }
 
 private:
