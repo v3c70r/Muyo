@@ -9,6 +9,7 @@
 #include "Geometry.h"
 #include "Material.h"
 #include "SceneImporter.h"
+#include "RenderResourceManager.h"
 
 std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
 {
@@ -49,10 +50,9 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                                         model.meshes[node.mesh];
                                     pSceneNode = new GeometrySceneNode;
                                     CopyGLTFNode(sceneNode, gltfNode);
-                                    ConstructGeometryNode(
-                                        static_cast<GeometrySceneNode &>(
-                                            *pSceneNode),
-                                        mesh, model);
+                                    ConstructGeometryNode(static_cast<GeometrySceneNode &>(
+                                                              *pSceneNode),
+                                                          mesh, model);
                                 }
                                 else
                                 {
@@ -327,6 +327,10 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         }
     }
     Geometry *pGeometry = new Geometry(vPrimitives);
+    // Setup world transformation uniform buffer object
+    auto *worldMatBuffer = GetRenderResourceManager()->getUniformBuffer<glm::mat4>(geomNode.GetName());
+    pGeometry->SetWorldMatrixUniformBuffer(worldMatBuffer);
+    pGeometry->SetWorldMatrix(glm::mat4(1.0));
     GetGeometryManager()->vpGeometries.emplace_back(pGeometry);
     geomNode.SetGeometry(pGeometry);
 }

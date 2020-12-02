@@ -12,7 +12,7 @@ layout (set = 0, binding = 0) uniform UniformBufferObject {
 } ubo;
 
 // TODO: Eliminate small ubo? 
-layout (set = 1, binding = 0) uniform WorldMatrix {
+layout (set = 2, binding = 0) uniform WorldMatrix {
     mat4 mWorldMatrix;
 } worldMatrix;
 

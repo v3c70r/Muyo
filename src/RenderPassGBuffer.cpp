@@ -201,9 +201,13 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                     {
                         materialDescSet = pPrimitive->GetMaterial()->GetDescriptorSet();
                     }
+                    const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
+                    assert(worldMatrixBuffer != nullptr && "Buffer must be valid");
+                    VkDescriptorSet worldMatrixDescSet = GetDescriptorManager()->AllocateUniformBufferDescriptorSet(*worldMatrixBuffer, 0);
 
                     std::vector<VkDescriptorSet> vGBufferDescSets = {perViewSets,
-                                                                     materialDescSet};
+                                                                     materialDescSet,
+                                                                     worldMatrixDescSet};
                     VkDeviceSize offset = 0;
                     VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
                     VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
@@ -331,7 +335,10 @@ void RenderPassGBuffer::createPipelines()
             GetDescriptorManager()->getDescriptorLayout(
                 DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
             GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_MATERIALS)};
+                DESCRIPTOR_LAYOUT_MATERIALS),
+            GetDescriptorManager()->getDescriptorLayout(
+                DESCRIPTOR_LAYOUT_PER_OBJ_DATA)
+        };
 
         std::vector<VkPushConstantRange> pushConstants;
 

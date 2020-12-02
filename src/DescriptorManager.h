@@ -16,6 +16,7 @@ enum DescriptorLayoutType
                                       // at binding 0
     DESCRIPTOR_LAYOUT_PER_VIEW_DATA,  // A layout contains mvp matrices at
                                       // binding 0
+    DESCRIPTOR_LAYOUT_PER_OBJ_DATA,   // Per object data layout
     DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
     DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_COUNT,
@@ -57,9 +58,42 @@ public:
 
     // Function template to allocate single type uniform buffer descriptor set
     template <class T>
-    VkDescriptorSet AllocateUniformBufferDescriptorSet(const Uniformbuffer<T> &uniformBuffer, uint32_t binding)
+    VkDescriptorSet AllocateUniformBufferDescriptorSet(const UniformBuffer<T> &uniformBuffer, uint32_t nBinding)
     {
-        return VK_NULL_HANDLE;
+        VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+        // Create descriptor sets
+        VkDescriptorSetAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorPool = m_descriptorPool;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.pSetLayouts =
+            &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA];
+
+        assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                        &descriptorSet) == VK_SUCCESS);
+
+        // Bind uniform buffer to descriptor
+        {
+            VkDescriptorBufferInfo bufferInfo = {};
+            bufferInfo.buffer = uniformBuffer.buffer();
+            bufferInfo.offset = 0;
+            bufferInfo.range = sizeof(T);
+            std::array<VkWriteDescriptorSet, 1> descriptorWrites = {};
+
+            descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[0].dstSet = descriptorSet;
+            descriptorWrites[0].dstBinding = nBinding;
+            descriptorWrites[0].dstArrayElement = 0;
+            descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptorWrites[0].descriptorCount = 1;
+            descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+            vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
+                                   static_cast<uint32_t>(descriptorWrites.size()),
+                                   descriptorWrites.data(), 0, nullptr);
+        }
+
+        return descriptorSet;
     }
 
 private:

@@ -70,14 +70,25 @@ public:
     {
         return m_vPrimitives;
     }
-    void SetObjectToWorld(const glm::mat4 &mObjectToWorld)
+    void SetWorldMatrix(const glm::mat4 &mObjectToWorld)
     {
-        m_mObjectToWorld->setData(mObjectToWorld);
+        assert(m_mWorldMatrix != nullptr);
+        m_mWorldMatrix->setData(mObjectToWorld);
+    }
+
+    const UniformBuffer<glm::mat4>* GetWorldMatrixBuffer() const
+    {
+        return m_mWorldMatrix;
+    }
+
+    void SetWorldMatrixUniformBuffer(UniformBuffer<glm::mat4>* pWorldMatBuffer)
+    {
+        m_mWorldMatrix = pWorldMatBuffer;
     }
 
 private:
     std::vector<std::unique_ptr<Primitive>> m_vPrimitives;
-    UniformBuffer<glm::mat4>* m_mObjectToWorld = nullptr;
+    UniformBuffer<glm::mat4>* m_mWorldMatrix = nullptr;
 };
 
 class GeometryManager
