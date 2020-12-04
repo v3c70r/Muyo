@@ -12,9 +12,6 @@
 #include "SceneImporter.h"
 #include "RenderResourceManager.h"
 
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/string_cast.hpp>
-
 std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
 {
     std::vector<Scene> res;
@@ -77,7 +74,8 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
 {
     sceneNode.SetName(gltfNode.name);
 
-    // Use material if it ever need this 
+    // Use matrix if it has transformation matrix
+    // Oterwise read translation, rotation and scaling to construct the matrix
     if (gltfNode.matrix.size() != 0)
     {
         glm::mat4 mMat(1.0);
