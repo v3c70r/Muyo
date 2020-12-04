@@ -46,12 +46,9 @@ void main() {
     outAlbedoTransmittance.xyz = texture(texPBR[TEX_ALBEDO], inTexCoord).xyz * factors.vBaseColorFactors.xyz;
     outAlbedoTransmittance.w = 1.0; // Transmittance
 
-    const float fRoughness =
-        texture(texPBR[TEX_ROUGHNESS], inTexCoord).r * factors.fRoughness;
-    outNormalRoughness =
-        vec4(vWorldNormal, fRoughness);
+    const float fRoughness = texture(texPBR[TEX_ROUGHNESS], inTexCoord).g * factors.fRoughness;
+    outNormalRoughness = vec4(vWorldNormal, fRoughness);
 
     // Probably need a specular map (Reflection map);
-    outMatelnessTranslucency =
-        vec4(texture(texPBR[TEX_METALNESS], inTexCoord).r * factors.fMetalness, 1.0, 0.0, 0.0);
+    outMatelnessTranslucency = vec4(texture(texPBR[TEX_METALNESS], inTexCoord).r * factors.fMetalness, 1.0, 0.0, 0.0);
 }

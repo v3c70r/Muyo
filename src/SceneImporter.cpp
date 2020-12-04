@@ -93,9 +93,9 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
         glm::vec3 vT(0.0f);
         if (gltfNode.translation.size() > 0)
         {
-            vT.x = (float)gltfNode.translation[1];
-            vT.y = (float)gltfNode.translation[2];
-            vT.z = (float)gltfNode.translation[3];
+            vT.x = (float)gltfNode.translation[0];
+            vT.y = (float)gltfNode.translation[1];
+            vT.z = (float)gltfNode.translation[2];
         }
 
         glm::quat qR(1.0, 0.0, 0.0, 0.0);
