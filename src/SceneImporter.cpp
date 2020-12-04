@@ -5,11 +5,15 @@
 #include <cassert>
 #include <functional>
 #include <glm/gtc/quaternion.hpp>
+#include <sstream> // std::stringstream
 
 #include "Geometry.h"
 #include "Material.h"
 #include "SceneImporter.h"
 #include "RenderResourceManager.h"
+
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
 
 std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
 {
@@ -41,18 +45,14 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                             const tinygltf::Node &gltfNode) {
                             for (int nNodeIdx : gltfNode.children)
                             {
-                                const tinygltf::Node &node =
-                                    model.nodes[nNodeIdx];
+                                const tinygltf::Node &node = model.nodes[nNodeIdx];
                                 SceneNode *pSceneNode = nullptr;
                                 if (node.mesh != -1)
                                 {
-                                    const tinygltf::Mesh mesh =
-                                        model.meshes[node.mesh];
+                                    const tinygltf::Mesh mesh = model.meshes[node.mesh];
                                     pSceneNode = new GeometrySceneNode;
                                     CopyGLTFNode(sceneNode, gltfNode);
-                                    ConstructGeometryNode(static_cast<GeometrySceneNode &>(
-                                                              *pSceneNode),
-                                                          mesh, model);
+                                    ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
                                 }
                                 else
                                 {
@@ -77,6 +77,20 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
 {
     sceneNode.SetName(gltfNode.name);
 
+    // Use material if it ever need this 
+    if (gltfNode.matrix.size() != 0)
+    {
+        glm::mat4 mMat(1.0);
+        for (int i = 0; i < 4; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                mMat[i][j] = static_cast<float>(gltfNode.matrix[i * 4 + j]);
+            }
+        }
+        sceneNode.SetMatrix(mMat);
+    }
+    else
     {
         glm::vec3 vT(0.0f);
         if (gltfNode.translation.size() > 0)
@@ -86,7 +100,7 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
             vT.z = (float)gltfNode.translation[3];
         }
 
-        glm::quat qR;
+        glm::quat qR(1.0, 0.0, 0.0, 0.0);
         if (gltfNode.rotation.size() > 0)
         {
             qR.x = (float)gltfNode.rotation[0];
@@ -103,10 +117,12 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
             vS.x = (float)gltfNode.scale[2];
         }
 
-        glm::mat4 mMat;
+        glm::mat4 mMat(1.0);
         glm::translate(mMat, vT);
-        mMat = mMat * glm::mat4_cast(qR);
+        glm::mat4 mR = glm::mat4_cast(qR);
+        mMat = mMat * mR;
         glm::scale(mMat, vS);
+        assert(Scene::IsMat4Valid(mMat));
         sceneNode.SetMatrix(mMat);
     }
 }
@@ -328,7 +344,10 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     }
     Geometry *pGeometry = new Geometry(vPrimitives);
     // Setup world transformation uniform buffer object
-    auto *worldMatBuffer = GetRenderResourceManager()->getUniformBuffer<glm::mat4>(geomNode.GetName());
+    // Use pointer address as string
+    std::stringstream ss;
+    ss << static_cast<void*>(pGeometry);
+    auto *worldMatBuffer = GetRenderResourceManager()->getUniformBuffer<glm::mat4>(ss.str());
     pGeometry->SetWorldMatrixUniformBuffer(worldMatBuffer);
     pGeometry->SetWorldMatrix(glm::mat4(1.0));
     GetGeometryManager()->vpGeometries.emplace_back(pGeometry);
