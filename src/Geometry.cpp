@@ -72,7 +72,7 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
                  {normal.x, normal.y, normal.z},
                  {objInfo.attrib.texcoords[2 * meshIdx.texcoord_index],
                   objInfo.attrib.texcoords[2 * meshIdx.texcoord_index + 1],
-                  0}}));
+                  0,0}}));
         }
         std::vector<Index> indices;
         indices.reserve(objInfo.shapes[i].mesh.indices.size());
@@ -89,10 +89,10 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
 Geometry* GetQuad()
 {
     static const std::vector<Vertex> VERTICES = {
-        {{-1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 0.0f, 0.0f}},
-        {{1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 0.0f, 0.0f}},
-        {{1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 1.0f, 1.0f}},
-        {{-1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 1.0f, 1.0f}}};
+        {{-1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 1.0f, 1.0f, 0.0f}},
+        {{-1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 1.0f, 1.0f, 0.0f}}};
 
     static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
     Geometry* pGeometry = new Geometry(std::make_unique<Primitive>(VERTICES, INDICES));

@@ -26,11 +26,10 @@ public:
 
     struct PBRFactors
     {
-        glm::vec4 m_vBaseColorFactor;
+        float m_aBaseColorFactor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float m_fMetalicFactor = 1.0;
         float m_fRoughnessFactor = 1.0;
-
-        float m_fPadding0 = 0.0;
+        uint32_t m_aUVIndices[TEX_COUNT] = {0, 0, 0, 0, 0};
         float m_fPadding1 = 0.0;
     };
     struct MaterialParameters

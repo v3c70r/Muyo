@@ -133,7 +133,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     for (const auto &primitive : mesh.primitives)
     {
         std::vector<glm::vec3> vPositions;
-        std::vector<glm::vec2> vUVs;
+        std::vector<glm::vec2> vUV0s;
+        std::vector<glm::vec2> vUV1s;
         std::vector<glm::vec3> vNormals;
 
         // vPositions
@@ -180,7 +181,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                        accessor.byteOffset,
                    accessor.count * bufferView.byteStride);
         }
-        // vUVs
+        // vUV0s
         {
             const std::string sAttribkey = "TEXCOORD_0";
             const auto &accessor =
@@ -196,16 +197,46 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             assert(buffer.data.size() >=
                    bufferView.byteOffset + accessor.byteOffset +
                        bufferView.byteStride * accessor.count);
-            vUVs.resize(accessor.count);
-            memcpy(vUVs.data(),
+            vUV0s.resize(accessor.count);
+            memcpy(vUV0s.data(),
                    buffer.data.data() + bufferView.byteOffset +
                        accessor.byteOffset,
                    accessor.count * bufferView.byteStride);
         }
+        // vUV1s
+        {
+            const std::string sAttribkey = "TEXCOORD_1";
+            if (primitive.attributes.find(sAttribkey) != primitive.attributes.end())
+            {
+                const auto &accessor =
+                    model.accessors.at(primitive.attributes.at(sAttribkey));
+                const auto &bufferView = model.bufferViews[accessor.bufferView];
+                const auto &buffer = model.buffers[bufferView.buffer];
 
-        assert(vUVs.size() == vPositions.size());
+                assert(accessor.type == TINYGLTF_TYPE_VEC2);
+                assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+
+                // confirm we use the standard format
+                assert(bufferView.byteStride == 8);
+                assert(buffer.data.size() >=
+                       bufferView.byteOffset + accessor.byteOffset +
+                           bufferView.byteStride * accessor.count);
+                vUV1s.resize(accessor.count);
+                memcpy(vUV1s.data(),
+                       buffer.data.data() + bufferView.byteOffset +
+                           accessor.byteOffset,
+                       accessor.count * bufferView.byteStride);
+            }
+            else
+            {
+                // Use UV0 as UV1 if UV1 doesn't exist
+                vUV1s = vUV0s;
+            }
+        }
+
+        assert(vUV0s.size() == vPositions.size());
         assert(vNormals.size() == vPositions.size());
-        std::vector<Vertex> vVertices(vUVs.size());
+        std::vector<Vertex> vVertices(vUV0s.size());
         for (size_t i = 0; i < vVertices.size(); i++)
         {
             Vertex &vertex = vVertices[i];
@@ -214,7 +245,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 vertex.pos = pos;
                 glm::vec4 normal(vNormals[i], 1.0);
                 vertex.normal = normal;
-                vertex.textureCoord = {vUVs[i].x, vUVs[i].y, 0.0};
+                vertex.textureCoord = {vUV0s[i].x, vUV0s[i].y, vUV1s[i].x, vUV1s[i].y};
             }
         }
         // Indices
@@ -249,12 +280,15 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
 
             // Load material textures
 
+            std::array<uint32_t, Material::TEX_COUNT> aUVIndices;
+            std::fill(aUVIndices.begin(), aUVIndices.end(), 0);
+
             // Albedo
             std::string sAlbedoTexPath = "assets/Materials/white5x5.png";
             std::string sAlbedoTexName = "defaultAlbedo";
             if (gltfMaterial.pbrMetallicRoughness.baseColorTexture.index != -1)
             {
-                assert(gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord == 0);
+                aUVIndices[Material::TEX_ALBEDO] = gltfMaterial.pbrMetallicRoughness.baseColorTexture.texCoord;
                 const tinygltf::Texture &albedoTexture =
                     model.textures[gltfMaterial.pbrMetallicRoughness
                                        .baseColorTexture.index];
@@ -270,6 +304,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::string sMetalnessTexName = "defaultMetalness";
             if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index != -1)
             {
+                aUVIndices[Material::TEX_METALNESS] = gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.texCoord;
                 const tinygltf::Texture &metalnessTextrue =
                     model.textures[gltfMaterial.pbrMetallicRoughness
                                        .metallicRoughnessTexture.index];
@@ -284,6 +319,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::string sNormalTexName = "defaultNormal";
             if (gltfMaterial.normalTexture.index != -1)
             {
+                aUVIndices[Material::TEX_NORMAL] = gltfMaterial.normalTexture.texCoord;
                 const tinygltf::Texture &normalTexture =
                     model.textures[gltfMaterial.normalTexture.index];
                 sNormalTexPath =
@@ -297,6 +333,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::string sRoughnessTexName = "defaultRoughness";
             if (gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index != -1)
             {
+                aUVIndices[Material::TEX_ROUGHNESS] = gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.texCoord;
                 const tinygltf::Texture &metalnessTextrue =
                     model.textures[gltfMaterial.pbrMetallicRoughness
                                        .metallicRoughnessTexture.index];
@@ -311,6 +348,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::string sOcclusionTexName = "defaultOcclusion";
             if (gltfMaterial.occlusionTexture.index != -1)
             {
+                aUVIndices[Material::TEX_AO] = gltfMaterial.occlusionTexture.texCoord;
                 const tinygltf::Texture &occlusionTexture =
                     model.textures[gltfMaterial.occlusionTexture.index];
                 sOcclusionTexPath =
@@ -322,11 +360,13 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
 
             // PBR factors
             Material::PBRFactors pbrFactors = {
-                glm::vec4((float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
-                          (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3]),
-                (float)gltfMaterial.pbrMetallicRoughness.metallicFactor,
-                (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,
-                0.0f, 0.0f};
+                    (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
+                    (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3], // Base Color
+                (float)gltfMaterial.pbrMetallicRoughness.metallicFactor,                                                                       // Metallic
+                (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,                                                                      // Roughness
+                aUVIndices[0], aUVIndices[1],                                                                                                  // UVs
+                aUVIndices[2], aUVIndices[3],
+                aUVIndices[4], 0.0f};
 
             pMaterial->loadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
             pMaterial->loadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);

@@ -7,7 +7,7 @@ using Index = uint32_t;
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 normal;
-    glm::vec3 textureCoord;
+    glm::vec4 textureCoord;
     static VkVertexInputBindingDescription getBindingDescription()
     {
         VkVertexInputBindingDescription desc = {};
@@ -34,7 +34,7 @@ struct Vertex {
 
         attribDesc[2].location = 2;
         attribDesc[2].binding = 0;
-        attribDesc[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attribDesc[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
         attribDesc[2].offset = offsetof(Vertex, textureCoord);
         return attribDesc;
     }

@@ -3,9 +3,10 @@
 
 
 
-layout(location = 0) in vec2 inTexCoord;
-layout(location = 1) in vec4 inWorldPos;
-layout(location = 2) in vec4 inWorldNormal;
+layout(location = 0) in vec2 inTexCoords0;
+layout(location = 1) in vec2 inTexCoords1;
+layout(location = 2) in vec4 inWorldPos;
+layout(location = 3) in vec4 inWorldNormal;
 
 layout(location = 0) out vec4 outPositionAO;
 layout(location = 1) out vec4 outAlbedoTransmittance;
@@ -32,23 +33,27 @@ layout(set = 1, binding = 1) uniform PBRFactors {
     vec4 vBaseColorFactors;
     float fRoughness;
     float fMetalness;
-    float padding0; float padding1;
+    uint UVIndices[TEX_COUNT];
+    float padding0;
 } factors;
 
 void main() {
 
-    vec3 vTextureNormal = texture(texPBR[TEX_NORMAL], inTexCoord).xyz;
+    vec2 inTexCoords[2];
+    inTexCoords[0] = inTexCoords0;
+    inTexCoords[1] = inTexCoords0;
+    vec3 vTextureNormal = texture(texPBR[TEX_NORMAL], inTexCoords[factors.UVIndices[TEX_NORMAL]]).xyz;
     vec3 vWorldNormal = normalize(inWorldNormal.xyz + vTextureNormal);
 
     // Populate GBuffer
     outPositionAO = inWorldPos;
-    outPositionAO.w = texture(texPBR[TEX_AO], inTexCoord).r;
-    outAlbedoTransmittance.xyz = texture(texPBR[TEX_ALBEDO], inTexCoord).xyz * factors.vBaseColorFactors.xyz;
+    outPositionAO.w = texture(texPBR[TEX_AO], inTexCoords[factors.UVIndices[TEX_AO]]).r;
+    outAlbedoTransmittance.xyz = texture(texPBR[TEX_ALBEDO], inTexCoords[factors.UVIndices[TEX_ALBEDO]]).xyz * factors.vBaseColorFactors.xyz;
     outAlbedoTransmittance.w = 1.0; // Transmittance
 
-    const float fRoughness = texture(texPBR[TEX_ROUGHNESS], inTexCoord).g * factors.fRoughness;
+    const float fRoughness = texture(texPBR[TEX_ROUGHNESS], inTexCoords[factors.UVIndices[TEX_ROUGHNESS]]).g * factors.fRoughness;
     outNormalRoughness = vec4(vWorldNormal, fRoughness);
 
     // Probably need a specular map (Reflection map);
-    outMatelnessTranslucency = vec4(texture(texPBR[TEX_METALNESS], inTexCoord).r * factors.fMetalness, 1.0, 0.0, 0.0);
+    outMatelnessTranslucency = vec4(texture(texPBR[TEX_METALNESS], inTexCoords[factors.UVIndices[TEX_METALNESS]]).r * factors.fMetalness, 1.0, 0.0, 0.0);
 }

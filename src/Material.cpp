@@ -20,15 +20,9 @@ void MaterialManager::CreateDefaultMaterial()
         pMaterial->loadTexture( Material::TEX_AO, "assets/Materials/white5x5.png", "defaultOcclusion");
 
         // Load PBR Factors
-        Material::PBRFactors pbrFactors = 
-        {
-            glm::vec4(1.0, 1.0, 1.0, 1.0), // Base colro factor
-            0.0,    // Metalness
-            1.0,    // Roughness
-            0.0, 0.0    // Padding
-        };
+        Material::PBRFactors pbrFactors;
         pMaterial->SetMaterialParameterFactors(pbrFactors, sDefaultName);
-        
+
         pMaterial->AllocateDescriptorSet();
     }
 }
