@@ -207,7 +207,7 @@ void RenderPassFinal::RecordOnce(const Geometry& quadGeometry, VkImageView input
     for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
         VkCommandBuffer curCmdBuf =
-            GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
+            GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};

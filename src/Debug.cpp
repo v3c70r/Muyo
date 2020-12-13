@@ -44,15 +44,20 @@ static std::vector<const char*> s_validationLayers{
     //"VK_LAYER_GOOGLE_threading"
 };
 
-const std::vector<const char*>& getValidationLayerNames()
+const std::vector<const char*>& GetValidationLayerNames()
 {
     return s_validationLayers;
 }
 
 static const char* VALIDATE_EXTENSION = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-const char* getValidationExtensionName()
+const char* GetValidationExtensionName()
 {
     return VALIDATE_EXTENSION;
+}
+
+const char* GetValidationLayerName()
+{
+    return "VK_LAYER_KHRONOS_validation";
 }
 
 static VkBool32 debugCallback(
@@ -116,7 +121,7 @@ void destroyDebugUtilsMessenger(VkInstance instance,
     }
 }
 
-void DebugUtilsMessenger::initialize()
+void DebugUtilsMessenger::Initialize(const VkInstance &instance)
 {
     VkDebugUtilsMessengerCreateInfoEXT createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -135,14 +140,14 @@ void DebugUtilsMessenger::initialize()
     createInfo.pfnUserCallback = debugCallback;
 
     assert(createDebugUtilsMessenger(
-               GetRenderDevice()->GetInstance(), &createInfo, nullptr,
+               instance, &createInfo, nullptr,
                &m_debugUtilsMessenger) == VK_SUCCESS);
 }
 
-void DebugUtilsMessenger::uninitialize()
+void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
 {
 
-    destroyDebugUtilsMessenger(GetRenderDevice()->GetInstance(), m_debugUtilsMessenger, nullptr);
+    destroyDebugUtilsMessenger(instance, m_debugUtilsMessenger, nullptr);
 }
 
 // Debug Utils markers

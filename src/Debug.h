@@ -7,15 +7,16 @@
 class DebugUtilsMessenger
 {
 public:
-    void initialize();
-    void uninitialize();
+    void Initialize(const VkInstance& instance);
+    void Uninitialize(const VkInstance& instance);
 private:
     VkDebugUtilsMessengerEXT m_debugUtilsMessenger = VK_NULL_HANDLE;
 };
 
-const std::vector<const char*>& getValidationLayerNames();
+const std::vector<const char*>& GetValidationLayerNames();
 
-const char* getValidationExtensionName();
+const char* GetValidationExtensionName();
+const char* GetValidationLayerName();
 
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
                                  const char* sName);

@@ -190,7 +190,7 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
         VkCommandBuffer& curCmdBuf = m_vCommandBuffers[nSwapchainBufferIndex];
         if (curCmdBuf == VK_NULL_HANDLE)
         {
-            curCmdBuf = GetRenderDevice()->allocateReusablePrimaryCommandbuffer();
+            curCmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
             // No need to free it as it will be destroyed with the pool
         }
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);

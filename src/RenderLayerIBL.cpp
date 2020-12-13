@@ -300,7 +300,7 @@ void RenderLayerIBL::recordCommandBuffer()
     cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     cmdBeginInfo.pInheritanceInfo = nullptr;
-    m_commandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
+    m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
 

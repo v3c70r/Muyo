@@ -3,75 +3,78 @@
 #include <vector>
 #include <array>
 #include <memory>
+#include <cstring>  // strcmp
+
+
 
 class RenderResourceManager;
 class VkRenderDevice
 {
 public:
-    void Initialize(const std::vector<const char*>& layers,
-                    const std::vector<const char*>& extensions);
-    void Unintialize();
+    virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers = std::vector<const char*>());
 
-    void createLogicalDevice(const std::vector<const char*>& layers,
-                             const std::vector<const char*>& extensions,
-                             VkSurfaceKHR surface);
+    virtual void Unintialize();
 
+    virtual void CreateDevice(
+        const std::vector<const char*>& extensions,
+        const std::vector<const char*>& layers,
+        VkSurfaceKHR surface);
 
-    void destroyLogicalDevice();
-    void createCommandPools();
-    void destroyCommandPools();
-    VkDevice& GetDevice() { return mDevice; }
-    VkPhysicalDevice& GetPhysicalDevice() { return mPhysicalDevice; }
-    VkQueue& GetGraphicsQueue() { return mGraphicsQueue; }
-    VkQueue& GetImmediateQueue() { return mGraphicsQueue;} // TODO: Handle copy queue
-    VkQueue& GetPresentQueue() { return mPresentQueue; }
-    VkInstance& GetInstance() { return mInstance; }
-    int GetGraphicsQueueFamilyIndex() const { return mGraphicsQueueFamilyIndex; }
-    int GetPresentQueueFamilyIndex() const { return mPresentQueueFamilyIndex; }
+    void DestroyDevice();
+    void CreateCommandPools();
+    void DestroyCommandPools();
+    VkDevice& GetDevice() { return m_device; }
+    VkPhysicalDevice& GetPhysicalDevice() { return m_physicalDevice; }
+    VkQueue& GetGraphicsQueue() { return m_graphicsQueue; }
+    VkQueue& GetImmediateQueue() { return m_graphicsQueue;} // TODO: Handle copy queue
+    VkQueue& GetPresentQueue() { return m_presentQueue; }
+    VkInstance& GetInstance() { return m_instance; }
+    int GetGraphicsQueueFamilyIndex() const { return m_graphicsQueueFamilyIndex; }
+    int GetPresentQueueFamilyIndex() const { return m_presentQueueFamilyIndex; }
 
-    void SetDevice(VkDevice device) { mDevice = device; }
+    void SetDevice(VkDevice device) { m_device = device; }
     void SetPhysicalDevice(VkPhysicalDevice physicalDevice)
     {
-        mPhysicalDevice = physicalDevice;
+        m_physicalDevice = physicalDevice;
     }
     void SetGraphicsQueue(VkQueue graphicsQueue, int queueFamilyIndex)
     {
-        mGraphicsQueue = graphicsQueue;
-        mGraphicsQueueFamilyIndex = queueFamilyIndex;
+        m_graphicsQueue = graphicsQueue;
+        m_graphicsQueueFamilyIndex = queueFamilyIndex;
     }
 
     void SetPresentQueue(VkQueue presentQueue, int queueFamilyIndex)
     {
-        mPresentQueue = presentQueue;
-        mPresentQueueFamilyIndex = queueFamilyIndex;
+        m_presentQueue = presentQueue;
+        m_presentQueueFamilyIndex = queueFamilyIndex;
     }
 
     // TODO: Add compute queue if needed
 
     void SetInstance(VkInstance instance)
     {
-        mInstance = instance;
+        m_instance = instance;
     }
 
     // Command buffer allocations
-    VkCommandBuffer allocateStaticPrimaryCommandbuffer();
+    VkCommandBuffer AllocateStaticPrimaryCommandbuffer();
 
-    void freeStaticPrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
+    void FreeStaticPrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
 
-    VkCommandBuffer allocateReusablePrimaryCommandbuffer();
-    void freeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
+    VkCommandBuffer AllocateReusablePrimaryCommandbuffer();
+    void FreeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
 
-    VkCommandBuffer allocateSecondaryCommandBuffer();
-    void freeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer);
+    VkCommandBuffer AllocateSecondaryCommandBuffer();
+    void FreeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer);
 
-    VkCommandBuffer allocateImmediateCommandBuffer();
-    void freeImmediateCommandBuffer(VkCommandBuffer& commandBuffer);
+    VkCommandBuffer AllocateImmediateCommandBuffer();
+    void FreeImmediateCommandBuffer(VkCommandBuffer& commandBuffer);
 
     // Comamnd buffer executions
     template <typename Func>
-    void executeImmediateCommand(Func fImmediateGPUTask)
+    void ExecuteImmediateCommand(Func fImmediateGPUTask)
     {
-        VkCommandBuffer immediateCmdBuf = allocateImmediateCommandBuffer();
+        VkCommandBuffer immediateCmdBuf = AllocateImmediateCommandBuffer();
 
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -87,18 +90,18 @@ public:
         vkQueueSubmit(GetImmediateQueue(), 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(GetImmediateQueue());  // wait for it to finish
 
-        freeImmediateCommandBuffer(immediateCmdBuf);
+        FreeImmediateCommandBuffer(immediateCmdBuf);
     }
 
-    void executeCommandbuffer(VkCommandBuffer commandBuffer)
+    void ExecuteCommandbuffer(VkCommandBuffer commandBuffer)
     {
     }
 
     // Helper functions
-    VkSampler createSampler();
+    VkSampler CreateSampler();
 
-    VkExtent2D getViewportSize() const { return mViewportSize; }
-    void setViewportSize(VkExtent2D vp) { mViewportSize = vp; }
+    VkExtent2D GetViewportSize() const { return m_viewportSize; }
+    void SetViewportSize(VkExtent2D vp) { m_viewportSize = vp; }
 
 private: // Private structures
     enum CommandPools
@@ -108,28 +111,86 @@ private: // Private structures
         PER_FRAME_CMD_POOL,
         NUM_CMD_POOLS
     };
-private: // helper functions to create render device
-    void createPhysicalDevice();
-    VkCommandBuffer allocatePrimaryCommandbuffer(CommandPools pool);
-    void freePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);
 
-private:// Members
-    VkDevice mDevice = VK_NULL_HANDLE;
-    VkPhysicalDevice mPhysicalDevice = VK_NULL_HANDLE;
-    VkQueue mGraphicsQueue = VK_NULL_HANDLE;
-    VkQueue mPresentQueue = VK_NULL_HANDLE;
-    VkInstance mInstance = VK_NULL_HANDLE;
+    struct HWInfo
+    {
+        uint32_t m_uVersion = 0;
+        std::vector<VkLayerProperties> m_vSupportedLayers;
+        std::vector<VkExtensionProperties> m_vSupportedExtensions;
+        HWInfo()
+        {
+            vkEnumerateInstanceVersion(&m_uVersion);
+            uint32_t uLayerCount = 0;
 
-    std::array<VkCommandPool, NUM_CMD_POOLS> maCommandPools = {VK_NULL_HANDLE,
+            vkEnumerateInstanceLayerProperties(&uLayerCount, nullptr);
+            m_vSupportedLayers.resize(uLayerCount);
+            vkEnumerateInstanceLayerProperties(&uLayerCount, m_vSupportedLayers.data());
+
+            uint32_t uExtensionCount = 0;
+            vkEnumerateInstanceExtensionProperties(nullptr, &uExtensionCount, nullptr);
+            m_vSupportedExtensions.resize(uExtensionCount);
+            vkEnumerateInstanceExtensionProperties(nullptr, &uExtensionCount, m_vSupportedExtensions.data());
+        }
+
+        bool IsExtensionSupported(const char* sExtensionName)
+        {
+            for (const auto& extensionProperty : m_vSupportedExtensions)
+            {
+                if (strcmp(extensionProperty.extensionName, sExtensionName))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool IsLayerSupported(const char* sLayerName)
+        {
+            for (const auto& layerProperty : m_vSupportedLayers)
+            {
+                if (strcmp(layerProperty.layerName, sLayerName))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    };
+
+private:  // helper functions to create render device
+    void PickPhysicalDevice();
+    VkCommandBuffer AllocatePrimaryCommandbuffer(CommandPools pool);
+    void FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);
+
+private:  // Members
+    VkDevice m_device = VK_NULL_HANDLE;
+    VkQueue m_graphicsQueue = VK_NULL_HANDLE;
+    VkQueue m_presentQueue = VK_NULL_HANDLE;
+    VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+
+    std::array<VkCommandPool, NUM_CMD_POOLS> m_aCommandPools = {VK_NULL_HANDLE,
                                                                VK_NULL_HANDLE};
 
-    int mGraphicsQueueFamilyIndex = -1;
-    int mPresentQueueFamilyIndex = -1;
-    int mComputeQueueFamilyIndex = -1;
-    bool mbIsValidationEnabled = false;
-    std::vector<const char*> mLayers;
-    std::vector<const char*> mExtensions;
-    VkExtent2D mViewportSize;
+    int m_graphicsQueueFamilyIndex = -1;
+    int m_presentQueueFamilyIndex = -1;
+    int m_computeQueueFamilyIndex = -1;
+    bool m_bIsValidationEnabled = false;
+    std::vector<const char*> m_vLayers;
+    VkExtent2D m_viewportSize;
+protected:
+    VkInstance m_instance = VK_NULL_HANDLE;
+};
+
+// Debug device
+#include "Debug.h"
+class VkDebugRenderDevice : public VkRenderDevice
+{
+    virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
+    virtual void Unintialize() override;
+    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, VkSurfaceKHR surface) override;
+
+private:
+    DebugUtilsMessenger m_debugMessenger;
 };
 
 VkRenderDevice* GetRenderDevice();

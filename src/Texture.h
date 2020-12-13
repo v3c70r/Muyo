@@ -121,7 +121,7 @@ public:
             throw std::invalid_argument("unsupported layout transition!");
         }
 
-        GetRenderDevice()->executeImmediateCommand(
+        GetRenderDevice()->ExecuteImmediateCommand(
             [&](VkCommandBuffer commandBuffer) {
                 vkCmdPipelineBarrier(commandBuffer, sourceStage,
                                      /*srcStage*/ destinationStage, /*dstStage*/
@@ -144,7 +144,7 @@ private:
         region.imageOffset = {0, 0, 0};
         region.imageExtent = {width, height, 1};
 
-        GetRenderDevice()->executeImmediateCommand(
+        GetRenderDevice()->ExecuteImmediateCommand(
             [&](VkCommandBuffer commandBuffer) {
                 vkCmdCopyBufferToImage(commandBuffer, buffer, image,
                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,

@@ -55,7 +55,7 @@ void MemoryBuffer::setData(const void* data, size_t size)
         GetMemoryAllocator()->UnmapBuffer(stagingAllocation);
 
         // Submit the copy immedietly
-        GetRenderDevice()->executeImmediateCommand(
+        GetRenderDevice()->ExecuteImmediateCommand(
             [&](VkCommandBuffer commandBuffer) {
                 VkBufferCopy copyRegion = {};
                 copyRegion.size = size;

@@ -50,8 +50,6 @@ const int HEIGHT = 600;
 
 static bool s_resizeWanted = true;
 
-static bool s_isValidationEnabled = true;
-
 static GLFWwindow *s_pWindow = nullptr;
 
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
@@ -143,22 +141,12 @@ void recreateSwapChain(); // fwd declaration
 static void onWindowResize(GLFWwindow *pWindow, int width, int height)
 {
     s_arcball.resize(glm::vec2((float)width, (float)height));
-    GetRenderDevice()->setViewportSize(VkExtent2D(
+    GetRenderDevice()->SetViewportSize(VkExtent2D(
         {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}));
     recreateSwapChain();
 }
 
-// Query extensions
-std::vector<VkExtensionProperties> getSupportedExtensions()
-{
-    uint32_t extensionCount = 0;
-    std::vector<VkExtensionProperties> supportedExtensions;
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-    supportedExtensions.resize(extensionCount);
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
-                                           supportedExtensions.data());
-    return supportedExtensions;
-}
+
 
 bool areExtensionsSupportedByPhysicalDevice(
     const std::vector<const char *> extensionNames, VkPhysicalDevice phyDevice)
@@ -177,7 +165,7 @@ bool areExtensionsSupportedByPhysicalDevice(
 }
 
 // Query Layers
-std::vector<VkLayerProperties> getSupportedLayers()
+std::vector<VkLayerProperties> GetSupportedLayers()
 {
     uint32_t layerCount = 0;
     std::vector<VkLayerProperties> supportedLayers;
@@ -197,7 +185,7 @@ std::vector<VkLayerProperties> getSupportedLayers()
 
 bool isLayerSupported(const char *layerName)
 {
-    std::vector<VkLayerProperties> supportedLayers = getSupportedLayers();
+    std::vector<VkLayerProperties> supportedLayers = GetSupportedLayers();
     for (const auto &layer : supportedLayers)
     {
         if (strcmp(layer.layerName, layerName) == 0)
@@ -234,169 +222,35 @@ void initWindow()
     glfwSetCharCallback(s_pWindow, ImGui::CharCallback);
 }
 
-std::vector<const char *> getRequiredExtensions()
+std::vector<const char *> GetRequiredInstanceExtensions()
 {
-    // get glfw extensiIons
-
-    std::vector<const char *> extensions;
+    std::vector<const char *> vExtensions;
     uint32_t glfwExtensionCount = 0;
     const char **glfwExtensions;
 
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
     for (uint32_t i = 0; i < glfwExtensionCount; i++)
-        extensions.push_back(glfwExtensions[i]);
-
-    // Add validation layer extensions to required list
-    if (s_isValidationEnabled)
-        extensions.push_back(getValidationExtensionName());
-
+    {
+        vExtensions.push_back(glfwExtensions[i]);
+    }
     // This exteinsion is required by logical device's multiview extension
-    extensions.push_back("VK_KHR_get_physical_device_properties2");
-
-    return extensions;
+    vExtensions.push_back("VK_KHR_get_physical_device_properties2");
+    return vExtensions;
 }
 
-void createInstance()
+std::vector<const char *> GetRequiredDeviceExtensions()
 {
-    if (s_isValidationEnabled && !areLayersSupported(getValidationLayerNames()))
-        throw std::runtime_error("Validation layer is not supported");
-
-    std::vector<const char *> extensions = getRequiredExtensions();
-    std::cout << "Required extensions" << std::endl;
-    for (const auto &ext : extensions)
-        std::cout << ext << std::endl;
-
-    std::cout << "Supported exts" << std::endl;
-    std::vector<VkExtensionProperties> supportedExts = getSupportedExtensions();
-    for (const auto &ext : supportedExts)
-        std::cout << ext.extensionName << std::endl;
-
-    if (s_isValidationEnabled)
-    {
-        GetRenderDevice()->Initialize(getValidationLayerNames(), extensions);
-    }
-    else
-    {
-        std::vector<const char *> dummy;
-        GetRenderDevice()->Initialize(dummy, extensions);
-    }
-
-    if (!areLayersSupported(getValidationLayerNames()))
-    {
-        throw std::runtime_error("Layers are not fully supported");
-    }
+    std::vector<const char *> vDeviceExtensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        //#ifndef __APPLE__
+        VK_KHR_MULTIVIEW_EXTENSION_NAME,
+        //#endif
+    };
+    return vDeviceExtensions;
 }
+
 // swap chain details
-struct SwapChainSupportDetails
-{
-    VkSurfaceCapabilitiesKHR capabilities;
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentModes;
-};
-
-SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice phyDevice)
-{
-    SwapChainSupportDetails details;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phyDevice, s_pSwapchain->getSurface(),
-                                              &details.capabilities);
-
-    uint32_t formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(phyDevice, s_pSwapchain->getSurface(), &formatCount,
-                                         nullptr);
-    assert(formatCount > 0);
-    details.formats.resize(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(phyDevice, s_pSwapchain->getSurface(), &formatCount,
-                                         details.formats.data());
-
-    uint32_t presentCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(phyDevice, s_pSwapchain->getSurface(),
-                                              &presentCount, nullptr);
-    assert(presentCount > 0);
-    details.presentModes.resize(presentCount);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        phyDevice, s_pSwapchain->getSurface(), &presentCount, details.presentModes.data());
-
-    return details;
-}
-
-// Hardware devices
-struct QueueFamilyIndice
-{
-    int graphicsFamily = -1;
-    int presentFamily = -1;
-    bool isComplete() { return graphicsFamily >= 0 && presentFamily >= 0; }
-};
-
-QueueFamilyIndice mFindQueueFamily(VkPhysicalDevice device)
-{
-    QueueFamilyIndice indices;
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
-                                             nullptr);
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
-                                             queueFamilies.data());
-
-    int i = 0;
-    for (const auto &queueFamily : queueFamilies)
-    {
-        // Check for graphics support
-        if (queueFamily.queueCount > 0 &&
-            queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            indices.graphicsFamily = i;
-
-        // Check for presentation support ( they can be in the same queeu
-        // family)
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, s_pSwapchain->getSurface(),
-                                             &presentSupport);
-
-        if (queueFamily.queueCount > 0 && presentSupport)
-            indices.presentFamily = i;
-
-        if (indices.isComplete())
-            break;
-        i++;
-    }
-    return indices;
-}
-
-bool mIsDeviceSuitable(VkPhysicalDevice device)
-{
-    // A pysical device has properties and features
-
-    // check for device properties
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(device, &deviceProperties);
-    // #todo: add checkers
-
-    // Check for device features
-    VkPhysicalDeviceFeatures deviceFeatures;
-    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
-    // #todo: add checkers
-
-    // check for extension support
-    bool extensionsSupported =
-        areExtensionsSupportedByPhysicalDevice(deviceExtensions, device);
-
-    // Check for swap chain adequate
-    bool swapChainAdequate = false;
-    if (extensionsSupported)
-    {
-        SwapChainSupportDetails swapChainSupport =
-            querySwapChainSupport(device);
-        swapChainAdequate = !swapChainSupport.formats.empty() &&
-                            !swapChainSupport.presentModes.empty();
-    }
-
-    // Check for queue family capabilities
-    QueueFamilyIndice indices = mFindQueueFamily(device);
-
-    return indices.isComplete() && extensionsSupported && swapChainAdequate;
-}
-
-
 void createCommandBuffers()
 {
     const std::vector<const SceneNode *> vpSceneNodes =
@@ -505,17 +359,13 @@ void cleanup()
     for (auto &fence : s_waitFences)
         vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
 
-    GetRenderDevice()->destroyCommandPools();
+    GetRenderDevice()->DestroyCommandPools();
     GetRenderResourceManager()->Unintialize();
     GetMemoryAllocator()->Unintialize();
     s_pSwapchain->destroySurface();
     s_pSwapchain = nullptr;
     delete s_pSwapchain;
-    GetRenderDevice()->destroyLogicalDevice();
-    if (s_isValidationEnabled)
-    {
-        s_debugMessenger.uninitialize();
-    }
+    GetRenderDevice()->DestroyDevice();
     GetRenderDevice()->Unintialize();
     glfwDestroyWindow(s_pWindow);
     glfwTerminate();
@@ -634,39 +484,28 @@ int main()
 {
     // Load mesh into memory
     initWindow();
-    createInstance();
+    // Create Instace
+    std::vector<const char *> extensions = GetRequiredInstanceExtensions();
+    GetRenderDevice()->Initialize(extensions);
+
+    // Create swapchain
     s_pSwapchain = new GLFWSwapchain(s_pWindow);
     s_pSwapchain->createSurface();
 
-    std::vector<const char *> vLogicalDeviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-//#ifndef __APPLE__
-        VK_KHR_MULTIVIEW_EXTENSION_NAME,
-//#endif
-    };
-    if (s_isValidationEnabled)
-    {
-        s_debugMessenger.initialize();
-        GetRenderDevice()->createLogicalDevice(getValidationLayerNames(),
-                                               vLogicalDeviceExtensions,
-                                               s_pSwapchain->getSurface());
-    }
-    else
-    {
-        std::vector<const char *> dummy;
-        GetRenderDevice()->createLogicalDevice(dummy,
-                                               vLogicalDeviceExtensions,
-                                               s_pSwapchain->getSurface());
-    }
+    GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
+                                    std::vector<const char *>(),    // Layers
+                                    s_pSwapchain->getSurface());    // Swapchain surface
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
     s_pSwapchain->createSwapchain(
         {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
         VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
 
-    GetRenderDevice()->setViewportSize(s_pSwapchain->getSwapchainExtent());
+    GetRenderDevice()->SetViewportSize(s_pSwapchain->getSwapchainExtent());
 
-    GetRenderDevice()->createCommandPools();
+    GetRenderDevice()->CreateCommandPools();
+
+    // Initialize managers
     GetDescriptorManager()->createDescriptorPool();
     GetDescriptorManager()->createDescriptorSetLayouts();
     GetSamplerManager()->createSamplers();
@@ -677,6 +516,7 @@ int main()
             VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
                         s_pSwapchain->getSwapchainExtent().height}));
 
+    // arrange render passes
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
     pFinalPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
@@ -685,7 +525,6 @@ int main()
     pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pIBLPass = std::make_unique<RenderLayerIBL>();
-
 
     pGBufferPass = std::make_unique<RenderPassGBuffer>();
     pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
@@ -706,7 +545,7 @@ int main()
         g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         for (const auto &scene : g_vScenes)
         {
-            std::cout<<scene.ConstructDebugString()<<std::endl;
+            std::cout << scene.ConstructDebugString() << std::endl;
         }
 
         s_pUniformBuffer =
@@ -731,7 +570,7 @@ int main()
             updateUniformBuffer(s_pUniformBuffer);
 
             uint32_t nImageIndex = beginFrame();
- 
+
             pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
             pUIPass->updateBuffers(nImageIndex);
 

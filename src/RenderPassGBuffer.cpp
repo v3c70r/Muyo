@@ -160,7 +160,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
 
     assert(mCommandBuffer == VK_NULL_HANDLE &&
            "Command buffer has been created");
-    mCommandBuffer = GetRenderDevice()->allocateStaticPrimaryCommandbuffer();
+    mCommandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
     {
         SCOPED_MARKER(mCommandBuffer, "Opaque Lighting Pass");

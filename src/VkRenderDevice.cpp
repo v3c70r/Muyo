@@ -1,16 +1,36 @@
 #include "VkRenderDevice.h"
-#include "RenderResourceManager.h"
-#include "Debug.h"
+
 #include <cassert>
 
+#include "Debug.h"
+#include "RenderResourceManager.h"
+
+#define DEBUG_DEVICE
+#ifdef DEBUG_DEVICE
+static VkDebugRenderDevice renderDevice;
+#else
 static VkRenderDevice renderDevice;
+#endif
 
-VkRenderDevice* GetRenderDevice() { return &renderDevice; }
-
-void VkRenderDevice::Initialize(const std::vector<const char*>& layers,
-                                const std::vector<const char*>& extensions)
+VkRenderDevice* GetRenderDevice()
 {
-    mExtensions = extensions;
+    return &renderDevice;
+}
+
+void VkRenderDevice::Initialize(
+    const std::vector<const char*>& vExtensionNames,
+    const std::vector<const char*>& vLayerNames)
+{
+    HWInfo info;
+    for (const auto& slayerName : vLayerNames)
+    {
+        assert(info.IsLayerSupported(slayerName));
+    }
+    for (const auto& sInstanceExtensionName : vExtensionNames)
+    {
+        assert(info.IsExtensionSupported(sInstanceExtensionName));
+    }
+
     // Create instance
     // set physical device
     // Populate application info structure
@@ -25,17 +45,19 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& layers,
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledExtensionCount = extensions.size();
-    createInfo.ppEnabledExtensionNames = extensions.data();
+    createInfo.enabledExtensionCount = vExtensionNames.size();
+    createInfo.ppEnabledExtensionNames = vExtensionNames.data();
 
-    createInfo.enabledLayerCount = layers.size();
-    createInfo.ppEnabledLayerNames = layers.data();
+    createInfo.enabledLayerCount = vLayerNames.size();
+    createInfo.ppEnabledLayerNames = vLayerNames.data();
 
-    assert(vkCreateInstance(&createInfo, nullptr, &mInstance) == VK_SUCCESS);
-    createPhysicalDevice();
+    assert(vkCreateInstance(&createInfo, nullptr, &m_instance) == VK_SUCCESS);
+
+    // Enumerate physical device supports these extensions and layers
+    PickPhysicalDevice();
 }
 
-void VkRenderDevice::createPhysicalDevice()
+void VkRenderDevice::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
@@ -43,14 +65,13 @@ void VkRenderDevice::createPhysicalDevice()
     //assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
-    mPhysicalDevice = devices[0];
+    m_physicalDevice = devices[0];
 }
 
-void VkRenderDevice::createLogicalDevice(
+void VkRenderDevice::CreateDevice(
+    const std::vector<const char*>& vDeviceExtensions,
     const std::vector<const char*>& layers,
-    const std::vector<const char*>& extensions,
-    VkSurfaceKHR surface
-    )
+    VkSurfaceKHR surface)   // For checking queue familiy compatibility with the swapchain surface
 {
     // Query queue family support
     struct QueueFamilyIndice
@@ -62,12 +83,13 @@ void VkRenderDevice::createLogicalDevice(
     // Find supported queue
     QueueFamilyIndice indices;
     uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(mPhysicalDevice, &queueFamilyCount,
+    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount,
                                              nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(mPhysicalDevice, &queueFamilyCount,
+    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount,
                                              queueFamilies.data());
 
+    // TODO: Find the first queue family support both graphics and presentation
     int i = 0;
     for (const auto& queueFamily : queueFamilies)
     {
@@ -79,7 +101,7 @@ void VkRenderDevice::createLogicalDevice(
         // Check for presentation support ( they can be in the same queeu
         // family)
         VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(mPhysicalDevice, i, surface,
+        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, surface,
                                              &presentSupport);
 
         if (queueFamily.queueCount > 0 && presentSupport)
@@ -91,7 +113,7 @@ void VkRenderDevice::createLogicalDevice(
 
     // TODO: Handle queue family indices and add them to the device creation info
 
-    int queueFamilyIndex = 0;       //TODO: Enumerate proper queue family for different usages
+    int queueFamilyIndex = 0;  //TODO: Enumerate proper queue family for different usages
     float queuePriority = 1.0f;
     // Create a queue for each of the family
     VkDeviceQueueCreateInfo queueCreateInfo = {};
@@ -111,14 +133,14 @@ void VkRenderDevice::createLogicalDevice(
 
     createInfo.pEnabledFeatures = &deviceFeatures;
 
-    createInfo.enabledExtensionCount = extensions.size();
-    createInfo.ppEnabledExtensionNames = extensions.data();
+    createInfo.enabledExtensionCount = vDeviceExtensions.size();
+    createInfo.ppEnabledExtensionNames = vDeviceExtensions.data();
 
     createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
     createInfo.ppEnabledLayerNames = layers.data();
 
     assert(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo,
-                          nullptr, &mDevice) == VK_SUCCESS);
+                          nullptr, &m_device) == VK_SUCCESS);
 
     {
         VkQueue graphicsQueue = VK_NULL_HANDLE;
@@ -131,17 +153,17 @@ void VkRenderDevice::createLogicalDevice(
         SetGraphicsQueue(graphicsQueue, queueFamilyIndex);
         SetPresentQueue(presentQueue, queueFamilyIndex);
 
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics Queue");
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present Queue");
     }
 }
 
-void VkRenderDevice::destroyLogicalDevice()
+void VkRenderDevice::DestroyDevice()
 {
-    vkDestroyDevice(mDevice, nullptr);
-    mDevice = VK_NULL_HANDLE;
+    vkDestroyDevice(m_device, nullptr);
+    m_device = VK_NULL_HANDLE;
 }
 
-void VkRenderDevice::createCommandPools()
+void VkRenderDevice::CreateCommandPools()
 {
     VkCommandPoolCreateInfo commandPoolInfo = {};
     commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -151,27 +173,27 @@ void VkRenderDevice::createCommandPools()
         commandPoolInfo.flags = 0;
         assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(),
                                    &commandPoolInfo, nullptr,
-                                   &maCommandPools[MAIN_CMD_POOL]) == VK_SUCCESS);
+                                   &m_aCommandPools[MAIN_CMD_POOL]) == VK_SUCCESS);
     }
     // transient pool
     {
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
         assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(),
                                    &commandPoolInfo, nullptr,
-                                   &maCommandPools[IMMEDIATE_CMD_POOL]) == VK_SUCCESS);
+                                   &m_aCommandPools[IMMEDIATE_CMD_POOL]) == VK_SUCCESS);
     }
     // Reusable pool
     {
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(),
                                    &commandPoolInfo, nullptr,
-                                   &maCommandPools[PER_FRAME_CMD_POOL]) == VK_SUCCESS);
+                                   &m_aCommandPools[PER_FRAME_CMD_POOL]) == VK_SUCCESS);
     }
 }
 
-void VkRenderDevice::destroyCommandPools()
+void VkRenderDevice::DestroyCommandPools()
 {
-    for (auto& cmdPool : maCommandPools)
+    for (auto& cmdPool : m_aCommandPools)
     {
         vkDestroyCommandPool(GetRenderDevice()->GetDevice(), cmdPool, nullptr);
     }
@@ -179,106 +201,131 @@ void VkRenderDevice::destroyCommandPools()
 
 void VkRenderDevice::Unintialize()
 {
-    vkDestroyInstance(mInstance, nullptr);
+    vkDestroyInstance(m_instance, nullptr);
 }
 
-VkCommandBuffer VkRenderDevice::allocateStaticPrimaryCommandbuffer()
+VkCommandBuffer VkRenderDevice::AllocateStaticPrimaryCommandbuffer()
 {
-    return allocatePrimaryCommandbuffer(MAIN_CMD_POOL);
+    return AllocatePrimaryCommandbuffer(MAIN_CMD_POOL);
 }
 
-void VkRenderDevice::freeStaticPrimaryCommandbuffer(VkCommandBuffer& commandBuffer)
+void VkRenderDevice::FreeStaticPrimaryCommandbuffer(VkCommandBuffer& commandBuffer)
 {
-    freePrimaryCommandbuffer(commandBuffer, MAIN_CMD_POOL);
+    FreePrimaryCommandbuffer(commandBuffer, MAIN_CMD_POOL);
 }
 
-VkCommandBuffer VkRenderDevice::allocateReusablePrimaryCommandbuffer()
+VkCommandBuffer VkRenderDevice::AllocateReusablePrimaryCommandbuffer()
 {
-    return allocatePrimaryCommandbuffer(PER_FRAME_CMD_POOL);
+    return AllocatePrimaryCommandbuffer(PER_FRAME_CMD_POOL);
 }
 
-void VkRenderDevice::freeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer)
+void VkRenderDevice::FreeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer)
 {
-    freePrimaryCommandbuffer(commandBuffer, PER_FRAME_CMD_POOL);
+    FreePrimaryCommandbuffer(commandBuffer, PER_FRAME_CMD_POOL);
 }
 
-VkCommandBuffer VkRenderDevice::allocateImmediateCommandBuffer()
+VkCommandBuffer VkRenderDevice::AllocateImmediateCommandBuffer()
 {
-    return allocatePrimaryCommandbuffer(IMMEDIATE_CMD_POOL);
+    return AllocatePrimaryCommandbuffer(IMMEDIATE_CMD_POOL);
 }
 
-void VkRenderDevice::freeImmediateCommandBuffer(VkCommandBuffer& commandBuffer)
+void VkRenderDevice::FreeImmediateCommandBuffer(VkCommandBuffer& commandBuffer)
 {
-    freePrimaryCommandbuffer(commandBuffer, IMMEDIATE_CMD_POOL);
+    FreePrimaryCommandbuffer(commandBuffer, IMMEDIATE_CMD_POOL);
 }
 
-
-VkCommandBuffer VkRenderDevice::allocateSecondaryCommandBuffer()
+VkCommandBuffer VkRenderDevice::AllocateSecondaryCommandBuffer()
 {
     // TODO: Implement this
     return VkCommandBuffer();
 }
-void VkRenderDevice::freeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer)
+void VkRenderDevice::FreeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer)
 {
-    vkFreeCommandBuffers(mDevice, maCommandPools[MAIN_CMD_POOL], 1,
+    vkFreeCommandBuffers(m_device, m_aCommandPools[MAIN_CMD_POOL], 1,
                          &commandBuffer);
 }
 
-
 // Helper functions
-VkSampler VkRenderDevice::createSampler()
+VkSampler VkRenderDevice::CreateSampler()
 {
-       VkSamplerCreateInfo samplerInfo = {};
-        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        samplerInfo.magFilter = VK_FILTER_LINEAR;
-        samplerInfo.minFilter = VK_FILTER_LINEAR;
+    VkSamplerCreateInfo samplerInfo = {};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
 
-        // Wrapping
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    // Wrapping
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 
-        // Anistropic filter
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 1;
+    // Anistropic filter
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1;
 
-        samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-        // Choose of [0, width] or [0, 1]
-        samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    // Choose of [0, width] or [0, 1]
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
 
-        // Used for percentage-closer filter for shadow
-        samplerInfo.compareEnable = VK_FALSE;
-        samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    // Used for percentage-closer filter for shadow
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
 
-        // mipmaps
-        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        samplerInfo.mipLodBias = 0.0f;
-        samplerInfo.minLod = 0.0f;
-        samplerInfo.maxLod = 0.0f;
+    // mipmaps
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
 
-        VkSampler sampler = VK_NULL_HANDLE;
-        assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
-                               nullptr, &sampler) == VK_SUCCESS);
-        return sampler;
+    VkSampler sampler = VK_NULL_HANDLE;
+    assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
+                           nullptr, &sampler) == VK_SUCCESS);
+    return sampler;
 }
 
-  
-VkCommandBuffer VkRenderDevice::allocatePrimaryCommandbuffer(CommandPools pool)
+VkCommandBuffer VkRenderDevice::AllocatePrimaryCommandbuffer(CommandPools pool)
 {
     VkCommandBuffer commandBuffer;
     VkCommandBufferAllocateInfo cmdAllocInfo = {};
     cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    cmdAllocInfo.commandPool = maCommandPools[pool];
+    cmdAllocInfo.commandPool = m_aCommandPools[pool];
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdAllocInfo.commandBufferCount = 1;
-    assert(vkAllocateCommandBuffers(mDevice, &cmdAllocInfo, &commandBuffer) ==
+    assert(vkAllocateCommandBuffers(m_device, &cmdAllocInfo, &commandBuffer) ==
            VK_SUCCESS);
     return commandBuffer;
 }
 
-void VkRenderDevice::freePrimaryCommandbuffer(VkCommandBuffer& commandBuffer,
+void VkRenderDevice::FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer,
                                               CommandPools pool)
 {
-    vkFreeCommandBuffers(mDevice, maCommandPools[pool], 1, &commandBuffer);
+    vkFreeCommandBuffers(m_device, m_aCommandPools[pool], 1, &commandBuffer);
 }
 
+void VkDebugRenderDevice::Initialize(
+    const std::vector<const char*>& vExtensionNames,
+    const std::vector<const char*>& vLayerNames)
+{
+    // Append debug extension and layer names to the device
+    std::vector<const char*> vDebugExtNames = vExtensionNames;
+    vDebugExtNames.push_back(GetValidationExtensionName());
+
+    std::vector<const char*> vDebugLayerNames = vLayerNames;
+    vDebugLayerNames.push_back(GetValidationLayerName());
+
+    VkRenderDevice::Initialize(vDebugExtNames, vDebugLayerNames);
+    m_debugMessenger.Initialize(m_instance);
+}
+
+void VkDebugRenderDevice::Unintialize()
+{
+    m_debugMessenger.Uninitialize(m_instance);
+    VkRenderDevice::Unintialize();
+}
+
+void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, VkSurfaceKHR surface)
+{
+    std::vector<const char*> vDebugLayerNames = vLayerNames;
+    vDebugLayerNames.push_back(GetValidationLayerName());
+    VkRenderDevice::CreateDevice(
+        vExtensionNames, vLayerNames, surface);
+}
