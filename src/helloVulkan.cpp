@@ -147,66 +147,6 @@ static void onWindowResize(GLFWwindow *pWindow, int width, int height)
 }
 
 
-
-bool areExtensionsSupportedByPhysicalDevice(
-    const std::vector<const char *> extensionNames, VkPhysicalDevice phyDevice)
-{
-    uint32_t extCount;
-    vkEnumerateDeviceExtensionProperties(phyDevice, nullptr, &extCount,
-                                         nullptr);
-    std::vector<VkExtensionProperties> exts(extCount);
-    vkEnumerateDeviceExtensionProperties(phyDevice, nullptr, &extCount,
-                                         exts.data());
-    std::set<std::string> requiredExts(deviceExtensions.begin(),
-                                       deviceExtensions.end());
-    for (const auto &ext : exts)
-        requiredExts.erase(ext.extensionName);
-    return requiredExts.empty();
-}
-
-// Query Layers
-std::vector<VkLayerProperties> GetSupportedLayers()
-{
-    uint32_t layerCount = 0;
-    std::vector<VkLayerProperties> supportedLayers;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-    supportedLayers.resize(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, supportedLayers.data());
-    std::cout << "Supported Layers ==== \n";
-
-    for (auto &supportedLayer : supportedLayers)
-    {
-        std::cout << supportedLayer.description << std::endl;
-    }
-    std::cout << "Supported Layers ^^^ \n";
-
-    return supportedLayers;
-}
-
-bool isLayerSupported(const char *layerName)
-{
-    std::vector<VkLayerProperties> supportedLayers = GetSupportedLayers();
-    for (const auto &layer : supportedLayers)
-    {
-        if (strcmp(layer.layerName, layerName) == 0)
-            return true;
-    }
-    return false;
-}
-
-bool areLayersSupported(const std::vector<const char *> layerNames)
-{
-    for (const auto &layerName : layerNames)
-    {
-        if (!isLayerSupported(layerName))
-        {
-            std::cout << layerName << std::endl;
-            return false;
-        }
-    }
-    return true;
-}
-
 void initWindow()
 {
     glfwInit();

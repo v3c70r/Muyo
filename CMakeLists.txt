@@ -127,6 +127,7 @@ add_executable( helloVulkan
     src/RenderLayerIBL.cpp
     src/SceneImporter.cpp
     src/Scene.cpp
+    src/RenderPassManager.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} vma stb tinygltf tinyobj)

@@ -1,13 +1,20 @@
 #pragma once
+#include <memory>
+#include <array>
+class RenderPass;
+enum RenderPassNames
+{
+    RENDERPASS_GBUFFER,
+    RENDERPASS_IBL,
+    RENDERPASS_UI,
+    RENDERPASS_FINAL,
 
-#include <vulkan/vulkan.h>
-// WIP, experimenting render passes
-
+    RENDERPASS_COUNT
+};
 class RenderPassManager
 {
-};
-
-struct RenderPass
-{
-    static VkRenderPass s_renderPass;
+    void Initialize();
+    void OnResize();
+private:
+    std::array<std::unique_ptr<RenderPass>, RENDERPASS_COUNT> m_vpRenderPasses;
 };
