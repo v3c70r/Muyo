@@ -6,7 +6,7 @@
 #include "Texture.h"
 #include "UniformBuffer.h"
 
-class RenderLayerIBL
+class RenderLayerIBL : public RenderPass
 {
     struct IBLPassResource
     {
