@@ -40,6 +40,7 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
     aAttachmentDesc[GBUFFER_DEPTH].format = VK_FORMAT_D32_SFLOAT;
     aAttachmentDesc[GBUFFER_DEPTH].finalLayout =
         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 }
 
 RenderPassGBuffer::RenderPassGBuffer()
@@ -92,10 +93,12 @@ RenderPassGBuffer::RenderPassGBuffer()
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
 
-    assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
-                              nullptr, &m_renderPass) == VK_SUCCESS);
 
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass),
+    m_vRenderPasses.resize(1, VK_NULL_HANDLE);
+    assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
+                              nullptr, &m_vRenderPasses.back()) == VK_SUCCESS);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_vRenderPasses.back()),
                             VK_OBJECT_TYPE_RENDER_PASS, "Opaque Lighting");
 
     mpQuad = GetQuad();
@@ -105,7 +108,7 @@ RenderPassGBuffer::RenderPassGBuffer()
 RenderPassGBuffer::~RenderPassGBuffer()
 {
     destroyFramebuffer();
-    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
+    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_vRenderPasses.back(), nullptr);
 
     // Destroy pipelines and pipeline layouts
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), mGBufferPipeline,
@@ -134,7 +137,7 @@ void RenderPassGBuffer::setGBufferImageViews(
         uvView,       lightingOutput, depthView};
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = m_renderPass;
+    framebufferInfo.renderPass = m_vRenderPasses.back();
     framebufferInfo.attachmentCount = static_cast<uint32_t>(views.size());
     framebufferInfo.pAttachments = views.data();
     framebufferInfo.width = nWidth;
@@ -172,7 +175,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
 
         VkRenderPassBeginInfo renderPassBeginInfo =
             rpbiBuilder.setRenderArea(mRenderArea)
-            .setRenderPass(m_renderPass)
+            .setRenderPass(m_vRenderPasses.back())
             .setFramebuffer(mFramebuffer)
             .setClearValues(vClearValeus)
             .build();
@@ -372,7 +375,7 @@ void RenderPassGBuffer::createPipelines()
                 .setColorBlending(blendBuilder.build())
                 .setPipelineLayout(mGBufferPipelineLayout)
                 .setDepthStencil(depthStencilBuilder.build())
-                .setRenderPass(m_renderPass)
+                .setRenderPass(m_vRenderPasses.back())
                 .setSubpassIndex(0)
                 .build(GetRenderDevice()->GetDevice());
 
@@ -430,7 +433,7 @@ void RenderPassGBuffer::createPipelines()
                 .setColorBlending(blendBuilder.build())
                 .setPipelineLayout(mLightingPipelineLayout)
                 .setDepthStencil(depthStencilBuilder.build())
-                .setRenderPass(m_renderPass)
+                .setRenderPass(m_vRenderPasses.back())
                 .setSubpassIndex(1)
                 .build(GetRenderDevice()->GetDevice());
 

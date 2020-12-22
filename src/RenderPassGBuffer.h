@@ -90,12 +90,10 @@ public:
                               uint32_t nWidth, uint32_t nHeight);
     void createGBufferViews(VkExtent2D size);
     void removeGBufferViews();
-    VkCommandBuffer GetCommandBuffer() { return mCommandBuffer; }
     void createPipelines();
 
 private:
-private:
-    VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
+    //VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
     LightingAttachments mAttachments;
     VkFramebuffer mFramebuffer = VK_NULL_HANDLE;
     VkExtent2D mRenderArea = {0, 0};

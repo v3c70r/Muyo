@@ -38,6 +38,7 @@
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 #include "SceneImporter.h"
+#include "RenderPassManager.h"
 
 // TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
@@ -119,7 +120,6 @@ static DebugUtilsMessenger s_debugMessenger;
 
 GLFWSwapchain *s_pSwapchain = nullptr;
 
-static UniformBuffer<PerViewData> *s_pUniformBuffer = nullptr;
 
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
@@ -285,10 +285,12 @@ void recreateSwapChain()
 void cleanup()
 {
     cleanupSwapChain();
+
     pFinalPass = nullptr;
     pUIPass = nullptr;
     pGBufferPass = nullptr;
     pIBLPass = nullptr;
+
     GetDescriptorManager()->destroyDescriptorSetLayouts();
     GetDescriptorManager()->destroyDescriptorPool();
 
@@ -456,12 +458,14 @@ int main()
             VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
                         s_pSwapchain->getSwapchainExtent().height}));
 
+    GetRenderPassManager()->Initialize(s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height, s_pSwapchain->getImageFormat());
+    GetRenderPassManager()->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView());
+
     // arrange render passes
     pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
     pFinalPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
-    pUIPass = std::make_unique<RenderPassUI>(
-        s_pSwapchain->getImageFormat(), s_pSwapchain->getImageViews().size());
+    pUIPass = std::make_unique<RenderPassUI>(s_pSwapchain->getImageFormat());
     pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
 
     pIBLPass = std::make_unique<RenderLayerIBL>();
@@ -488,7 +492,7 @@ int main()
             std::cout << scene.ConstructDebugString() << std::endl;
         }
 
-        s_pUniformBuffer =
+        UniformBuffer<PerViewData> *pUniformBuffer =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>(
                 "perView");
 
@@ -507,7 +511,7 @@ int main()
             {
                 s_resizeWanted = false;
             }
-            updateUniformBuffer(s_pUniformBuffer);
+            updateUniformBuffer(pUniformBuffer);
 
             uint32_t nImageIndex = beginFrame();
 
@@ -532,6 +536,7 @@ int main()
         GetTextureManager()->Destroy();
     }
     ImGui::Shutdown();
+    GetRenderPassManager()->Unintialize();
     cleanup();
     return 0;
 }

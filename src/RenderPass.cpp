@@ -1,10 +1,12 @@
 #include "RenderPass.h"
 
 #include "Debug.h"
-#include "Geometry.h"
-#include "VkRenderDevice.h"
 #include "DescriptorManager.h"
+#include "Geometry.h"
 #include "PipelineStateBuilder.h"
+#include "RenderResourceManager.h"
+#include "VkRenderDevice.h"
+
 RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
                                  bool bClearAttachments)
 {
@@ -89,15 +91,18 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
 
+    m_vRenderPasses.resize(1, VK_NULL_HANDLE);
+    VkRenderPass* pRenderPss = &(m_vRenderPasses.back());
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
-                              nullptr, &m_renderPass) == VK_SUCCESS);
+                              nullptr, pRenderPss) == VK_SUCCESS);
 }
-
 
 RenderPassFinal::~RenderPassFinal()
 {
     destroyFramebuffers();
-    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
+    VkRenderPass& renderPass = (m_vRenderPasses.back());
+    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderPass, nullptr);
+    m_vRenderPasses.clear();
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
 }
@@ -115,7 +120,7 @@ void RenderPassFinal::setSwapchainImageViews(
 
         VkFramebufferCreateInfo framebufferInfo = {};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = m_renderPass;
+        framebufferInfo.renderPass = m_vRenderPasses.back();
         framebufferInfo.attachmentCount =
             static_cast<uint32_t>(attachmentViews.size());
         framebufferInfo.pAttachments = attachmentViews.data();
@@ -182,7 +187,7 @@ void RenderPassFinal::setupPipeline()
             .setColorBlending(blendBuilder.build())
             .setPipelineLayout(m_pipelineLayout)
             .setDepthStencil(depthStencilBuilder.build())
-            .setRenderPass(m_renderPass)
+            .setRenderPass(m_vRenderPasses.back())
             .build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
@@ -194,10 +199,19 @@ void RenderPassFinal::setupPipeline()
         VK_OBJECT_TYPE_PIPELINE, "Final Pass");
 }
 
-void RenderPassFinal::RecordOnce(const Geometry& quadGeometry, VkImageView inputView)
+void RecordCommandBuffers()
 {
-    VkDescriptorSet descSet =
-        GetDescriptorManager()->allocateSingleSamplerDescriptorSet(inputView);
+    
+}
+
+void RenderPassFinal::RecordCommandBuffers()
+{
+    VkImageView imgView = GetRenderResourceManager()
+                              ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
+                              ->getView();
+    Geometry* pQuad = GetQuad();
+
+    VkDescriptorSet descSet = GetDescriptorManager()->allocateSingleSamplerDescriptorSet(imgView);
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -212,7 +226,7 @@ void RenderPassFinal::RecordOnce(const Geometry& quadGeometry, VkImageView input
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.renderPass = m_renderPass;
+        renderPassBeginInfo.renderPass = m_vRenderPasses.back();
         renderPassBeginInfo.framebuffer = m_vFramebuffers[i];
 
         renderPassBeginInfo.renderArea.offset = {0, 0};
@@ -227,7 +241,7 @@ void RenderPassFinal::RecordOnce(const Geometry& quadGeometry, VkImageView input
         vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        for (const auto& prim : quadGeometry.getPrimitives())
+        for (const auto& prim : pQuad->getPrimitives())
         {
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();

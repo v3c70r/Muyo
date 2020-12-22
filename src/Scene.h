@@ -40,7 +40,7 @@ public:
     SceneNode* GetRoot() { return m_pRoot.get(); }
     //const SceneNode* GetRoot() const { return m_pRoot.get(); }
     const std::unique_ptr<SceneNode>& GetRoot() const { return m_pRoot; }
-    std::vector<const SceneNode*> FlattenTree() const;
+    const std::vector<const SceneNode*>& FlattenTree();
     std::string ConstructDebugString() const;
 
     static bool IsMat4Valid(const glm::mat4 &mat)
@@ -61,6 +61,8 @@ public:
 
 protected:
     std::unique_ptr<SceneNode> m_pRoot = std::make_unique<SceneNode>();
+    std::vector<const SceneNode*> m_vpFlattenedNodes;
+    bool m_bIsTreeDirty = true;
 };
 
 class Geometry;

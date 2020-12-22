@@ -3,16 +3,16 @@
 #include <cassert>
 #include <limits>
 
-void Swapchain::createSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
+void Swapchain::CreateSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
                                 const VkPresentModeKHR& presentMode,
                                 uint32_t numBuffers)
 {
     if (m_surface == VK_NULL_HANDLE)
     {
-        createSurface();
+        CreateSurface();
     }
 
-    SwapchainSupportDetails swapchainSupport = querySwapchainSupport();
+    SwapchainSupportDetails swapchainSupport = QuerySwapchainSupport();
     m_swapchainExtent = swapchainSupport.capabilities.currentExtent;
 
     m_swapchainFormat = surfaceFormat;
@@ -83,7 +83,7 @@ void Swapchain::createSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
     }
 }
 
-void Swapchain::destroySwapchain()
+void Swapchain::DestroySwapchain()
 {
     // Wait for all swapchain images are consumed ?? Is it safe?
     vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
@@ -99,7 +99,7 @@ void Swapchain::destroySwapchain()
     m_swapchainImages.clear();
 }
 
-uint32_t Swapchain::getNextImage(VkSemaphore& semaphore)
+uint32_t Swapchain::GetNextImage(VkSemaphore& semaphore)
 {
     uint32_t imageIndex;
    vkAcquireNextImageKHR(
@@ -108,7 +108,7 @@ uint32_t Swapchain::getNextImage(VkSemaphore& semaphore)
    return imageIndex;
 }
 
-Swapchain::SwapchainSupportDetails Swapchain::querySwapchainSupport()
+Swapchain::SwapchainSupportDetails Swapchain::QuerySwapchainSupport()
 {
     Swapchain::SwapchainSupportDetails details;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface,

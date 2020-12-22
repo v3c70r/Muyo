@@ -12,15 +12,12 @@ class RenderPass
 {
 public:
     virtual ~RenderPass() {}
-    VkRenderPass GetPass() { return m_renderPass; }
-
+    virtual VkRenderPass GetPass(size_t idx = 0) const { return m_vRenderPasses[idx]; }
+    virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const { return m_vCommandBuffers[idx]; }
+    virtual void RecordCommandBuffers() = 0;
 protected:
-    VkRenderPass m_renderPass = VK_NULL_HANDLE;
-};
-
-// Render pass that outputs to swapchain
-class RenderPassToSwapchain : public RenderPass
-{
+    std::vector<VkCommandBuffer> m_vCommandBuffers;
+    std::vector<VkRenderPass> m_vRenderPasses;
 };
 
 // The pass render to swap chain
@@ -32,24 +29,22 @@ public:
     virtual void setSwapchainImageViews(std::vector<VkImageView>& vImageViews,
                                         VkImageView depthImageView,
                                         uint32_t nWidth, uint32_t nHeight);
-    void RecordOnce(const Geometry& quadGeometry, VkImageView inputView);
+
+    void RecordCommandBuffers() override;
 
     // Getters
-    VkRenderPass& GetRenderPass() { return m_renderPass; }
     VkFramebuffer& GetFramebuffer(size_t idx)
     {
         assert(idx < m_vFramebuffers.size());
         return m_vFramebuffers[idx];
     }
-    VkCommandBuffer& GetCommandBuffer(size_t idx)
+    VkCommandBuffer GetCommandBuffer(size_t idx) const override
     {
         assert(idx < m_vFramebuffers.size());
         return m_vCommandBuffers[idx];
     }
 
 protected:
-    std::vector<VkCommandBuffer>
-        m_vCommandBuffers;  // Each command buffer draw to one frame buffer
     std::vector<VkFramebuffer>
         m_vFramebuffers;  // Each framebuffer bind to a swapchain image
     VkExtent2D mRenderArea = {0, 0};

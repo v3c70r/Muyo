@@ -9,19 +9,19 @@ class Swapchain
 {
 public:
     virtual ~Swapchain() {}
-    void createSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
+    void CreateSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
                          const VkPresentModeKHR& presentMode,
                          uint32_t numBuffers = 2);
 
-    void destroySwapchain();
-    virtual void createSurface() = 0;
-    virtual void destroySurface() = 0;
-    VkExtent2D getSwapchainExtent() const { return m_swapchainExtent; }
-    VkSurfaceKHR getSurface() const { return m_surface; }
-    std::vector<VkImageView>& getImageViews() { return m_swapchainImageViews; }
-    VkFormat getImageFormat() const {return m_swapchainFormat.format;}
-    uint32_t getNextImage(VkSemaphore& semaphore);
-    VkSwapchainKHR& getSwapChain() { return m_swapchain; }
+    void DestroySwapchain();
+    virtual void CreateSurface() = 0;
+    virtual void DestroySurface() = 0;
+    VkExtent2D GetSwapchainExtent() const { return m_swapchainExtent; }
+    VkSurfaceKHR GetSurface() const { return m_surface; }
+    std::vector<VkImageView>& GetImageViews() { return m_swapchainImageViews; }
+    VkFormat GetImageFormat() const {return m_swapchainFormat.format;}
+    uint32_t GetNextImage(VkSemaphore& semaphore);
+    VkSwapchainKHR& GetSwapChain() { return m_swapchain; }
 
 protected:
     struct SwapchainSupportDetails
@@ -31,7 +31,7 @@ protected:
         std::vector<VkPresentModeKHR> presentModes;
     };
 
-    SwapchainSupportDetails querySwapchainSupport();
+    SwapchainSupportDetails QuerySwapchainSupport();
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;

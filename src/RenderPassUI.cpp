@@ -34,11 +34,16 @@ void ImGuiResource::destroyResources()
     pTexture = nullptr;
 }
 
-RenderPassUI::RenderPassUI(VkFormat swapChainFormat, uint32_t numSwapchainBuffers)
+RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
     : RenderPassFinal(swapChainFormat, false)
 {
     ImGui::CreateContext();
-    m_uiResources.createResources(m_renderPass, numSwapchainBuffers);
+}
+
+void RenderPassUI::setSwapchainImageViews(std::vector<VkImageView>& vImageViews, VkImageView depthImageView, uint32_t nWidth, uint32_t nHeight)
+{
+    m_uiResources.createResources(m_renderPass, vImageViews.size());
+    RenderPassFinal::setSwapchainImageViews(vImageViews, depthImageView, nWidth, nHeight);
 }
 
 RenderPassUI::~RenderPassUI()

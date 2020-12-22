@@ -1,7 +1,10 @@
 #include "Scene.h"
-#include "Geometry.h"
+
 #include <imgui.h>
+
 #include <functional>
+
+#include "Geometry.h"
 
 void SceneNode::AppendChild(SceneNode *node)
 {
@@ -27,25 +30,29 @@ std::string Scene::ConstructDebugString() const
     return ss.str();
 }
 
-std::vector<const SceneNode *> Scene::FlattenTree() const
+const std::vector<const SceneNode *> &Scene::FlattenTree()
 {
-    std::vector<const SceneNode *> vNodes;
-    std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &)>
-        FlattenTreeRecursive = [&](const std::unique_ptr<SceneNode> &pNode,
-                                   const glm::mat4 &mCurrentTrans) {
-            glm::mat4 mWorldMatrix = mCurrentTrans * pNode->GetMatrix();
-            assert(IsMat4Valid(mWorldMatrix));
-            if (GeometrySceneNode *pGeometryNode = dynamic_cast<GeometrySceneNode *>(pNode.get()))
-            {
-                vNodes.push_back(pNode.get());
-                Geometry *pGeometry = pGeometryNode->GetGeometry();
-                pGeometry->SetWorldMatrix(mWorldMatrix);
-            }
-            for (const auto &pChild : pNode->GetChildren())
-            {
-                FlattenTreeRecursive(pChild, mWorldMatrix);
-            }
-        };
-    FlattenTreeRecursive(GetRoot(), GetRoot()->GetMatrix());
-    return vNodes;
+    if (m_bIsTreeDirty)
+    {
+        m_vpFlattenedNodes.clear();
+        std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &, std::vector<const SceneNode*>&)>
+            FlattenTreeRecursive = [&](const std::unique_ptr<SceneNode> &pNode,
+                                       const glm::mat4 &mCurrentTrans, std::vector<const SceneNode*>& vFlattenedTree) {
+                glm::mat4 mWorldMatrix = mCurrentTrans * pNode->GetMatrix();
+                assert(IsMat4Valid(mWorldMatrix));
+                if (GeometrySceneNode *pGeometryNode = dynamic_cast<GeometrySceneNode *>(pNode.get()))
+                {
+                    vFlattenedTree.push_back(pNode.get());
+                    Geometry *pGeometry = pGeometryNode->GetGeometry();
+                    pGeometry->SetWorldMatrix(mWorldMatrix);
+                }
+                for (const auto &pChild : pNode->GetChildren())
+                {
+                    FlattenTreeRecursive(pChild, mWorldMatrix, vFlattenedTree);
+                }
+            };
+        FlattenTreeRecursive(m_pRoot, m_pRoot->GetMatrix(), m_vpFlattenedNodes);
+        m_bIsTreeDirty = false;
+    }
+    return m_vpFlattenedNodes;
 }

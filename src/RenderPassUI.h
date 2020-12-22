@@ -42,13 +42,16 @@ struct ImGuiResource
 class RenderPassUI : public RenderPassFinal
 {
 public:
-    RenderPassUI(VkFormat swapChainFormat, uint32_t numSwapchainBuffers);
+    RenderPassUI(VkFormat swapChainFormat);
     void recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx);
     ~RenderPassUI() override;
 
     // ImGui Related functions
     void newFrame(VkExtent2D screenExtent);
     void updateBuffers(uint32_t nSwapchainBufferIndex);
+    virtual void setSwapchainImageViews(std::vector<VkImageView>& vImageViews,
+                                        VkImageView depthImageView,
+                                        uint32_t nWidth, uint32_t nHeight) override;
 protected:
     void setupPipeline() override;
 

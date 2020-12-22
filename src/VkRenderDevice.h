@@ -8,6 +8,7 @@
 
 
 class RenderResourceManager;
+class Swapchain;
 class VkRenderDevice
 {
 public:
@@ -176,6 +177,7 @@ private:  // Members
     int m_computeQueueFamilyIndex = -1;
     bool m_bIsValidationEnabled = false;
     std::vector<const char*> m_vLayers;
+    std::unique_ptr<Swapchain> m_pSwapchain = nullptr;
     VkExtent2D m_viewportSize;
 protected:
     VkInstance m_instance = VK_NULL_HANDLE;

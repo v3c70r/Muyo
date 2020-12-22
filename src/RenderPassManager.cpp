@@ -4,6 +4,14 @@
 #include "RenderPass.h"
 #include "RenderPassUI.h"
 #include "RenderLayerIBL.h"
+#include "RenderResourceManager.h"
+
+static RenderPassManager renderPassManager;
+
+RenderPassManager* GetRenderPassManager()
+{
+    return &renderPassManager;
+}
 
 void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, VkFormat swapchainFormat)
 {
@@ -33,4 +41,44 @@ void RenderPassManager::SetSwapchainImageViews(std::vector<VkImageView> &vImageV
 }
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
 {
+}
+
+void RenderPassManager::Unintialize()
+{
+    for (auto &pPass : m_vpRenderPasses)
+    {
+        pPass = nullptr;
+    }
+}
+
+void RenderPassManager::RecordCmdBuffers(const std::vector<const Geometry*>& vpGeometries)
+{
+    RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+    pGBufferPass->recordCommandBuffer(vpGeometries);
+
+    RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
+    Geometry *pQuadGeometry = GetQuad();
+    pFinalPass->RecordOnce(*pQuadGeometry,
+                           GetRenderResourceManager()
+                               ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
+                               ->getView());
+}
+
+std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgIdx)
+{
+    RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer*>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+    std::vector<VkCommandBuffer> vCmdBufs;
+    for (const auto& pass : m_vpRenderPasses)
+    {
+        vCmdBufs.push_back(pass->GetCommandBuffer());
+    }
+    if (m_bIsIrradianceGenerated)
+    {
+        vCmdBufs = {// TODO: Disable IBL submitting for every frame
+                      // pIBLPass->GetCommandBuffer(),
+                      pGBufferPass->GetCommandBuffer(),
+                      pFinalPass->GetCommandBuffer(uImgIdx),
+                      pUIPass->GetCommandBuffer(uImgIdx)};
+    }
+    return vCmdBufs;
 }

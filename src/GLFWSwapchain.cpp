@@ -5,13 +5,13 @@
 #include <cassert>
 
 
-void GLFWSwapchain::createSurface()
+void GLFWSwapchain::CreateSurface()
 {
     assert(glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), m_pWindow,
                                    nullptr, &m_surface) == VK_SUCCESS);
 }
 
-void GLFWSwapchain::destroySurface()
+void GLFWSwapchain::DestroySurface()
 {
     vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), m_surface, nullptr);
 }
