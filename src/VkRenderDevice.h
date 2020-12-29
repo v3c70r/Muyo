@@ -4,6 +4,7 @@
 #include <array>
 #include <memory>
 #include <cstring>  // strcmp
+#include "Swapchain.h"
 
 
 
@@ -18,10 +19,12 @@ public:
 
     virtual void CreateDevice(
         const std::vector<const char*>& extensions,
-        const std::vector<const char*>& layers,
-        VkSurfaceKHR surface);
+        const std::vector<const char*>& layers);
 
     void DestroyDevice();
+
+    void CreateSwapchain(const VkSurfaceKHR& swapchainSurface);
+    void DestroySwapchain();
     void CreateCommandPools();
     void DestroyCommandPools();
     VkDevice& GetDevice() { return m_device; }
@@ -104,6 +107,12 @@ public:
     VkExtent2D GetViewportSize() const { return m_viewportSize; }
     void SetViewportSize(VkExtent2D vp) { m_viewportSize = vp; }
 
+    Swapchain* GetSwapchain() { return m_pSwapchain.get(); }
+
+    void BeginFrame();
+    void Present();
+    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers);
+
 private: // Private structures
     enum CommandPools
     {
@@ -158,6 +167,10 @@ private: // Private structures
         }
     };
 
+    const VkSurfaceFormatKHR& SWAPCHAIN_FORMAT = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    const VkPresentModeKHR& PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
+    static const uint32_t NUM_BUFFERS = 2;
+
 private:  // helper functions to create render device
     void PickPhysicalDevice();
     VkCommandBuffer AllocatePrimaryCommandbuffer(CommandPools pool);
@@ -177,8 +190,15 @@ private:  // Members
     int m_computeQueueFamilyIndex = -1;
     bool m_bIsValidationEnabled = false;
     std::vector<const char*> m_vLayers;
-    std::unique_ptr<Swapchain> m_pSwapchain = nullptr;
+
     VkExtent2D m_viewportSize;
+
+    // Presentation related members
+    std::unique_ptr<Swapchain> m_pSwapchain = nullptr;
+    VkSemaphore m_imageAvailableSemaphore = VK_NULL_HANDLE;   // Semaphores to notify the frame when the current image is ready
+    VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
+    std::array<VkFence, NUM_BUFFERS> m_aGPUExecutionFence;
+    uint32_t m_uImageIdx2Present = 0;
 protected:
     VkInstance m_instance = VK_NULL_HANDLE;
 };
@@ -189,7 +209,7 @@ class VkDebugRenderDevice : public VkRenderDevice
 {
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
     virtual void Unintialize() override;
-    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, VkSurfaceKHR surface) override;
+    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
 
 private:
     DebugUtilsMessenger m_debugMessenger;

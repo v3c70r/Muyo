@@ -93,7 +93,6 @@ public:
     void createPipelines();
 
 private:
-    //VkCommandBuffer mCommandBuffer = VK_NULL_HANDLE;
     LightingAttachments mAttachments;
     VkFramebuffer mFramebuffer = VK_NULL_HANDLE;
     VkExtent2D mRenderArea = {0, 0};

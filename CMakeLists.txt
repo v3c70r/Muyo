@@ -115,7 +115,6 @@ add_executable( helloVulkan
     src/RenderPass.cpp
     src/RenderPassGBuffer.cpp
     src/Swapchain.cpp
-    src/GLFWSwapchain.cpp
     src/RenderTargetResource.cpp
     src/RenderResourceManager.cpp
     src/RenderPassUI.cpp

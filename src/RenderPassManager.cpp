@@ -1,10 +1,10 @@
 #include <cassert>
 #include "RenderPassManager.h"
-#include "RenderPassGBuffer.h"
+#include "RenderResourceManager.h"
 #include "RenderPass.h"
+#include "RenderPassGBuffer.h"
 #include "RenderPassUI.h"
 #include "RenderLayerIBL.h"
-#include "RenderResourceManager.h"
 
 static RenderPassManager renderPassManager;
 
@@ -58,10 +58,10 @@ void RenderPassManager::RecordCmdBuffers(const std::vector<const Geometry*>& vpG
 
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     Geometry *pQuadGeometry = GetQuad();
-    pFinalPass->RecordOnce(*pQuadGeometry,
-                           GetRenderResourceManager()
-                               ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
-                               ->getView());
+    //pFinalPass->RecordOnce(*pQuadGeometry,
+    //                       GetRenderResourceManager()
+    //                           ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
+    //                           ->getView());
 }
 
 std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgIdx)
@@ -74,11 +74,11 @@ std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgI
     }
     if (m_bIsIrradianceGenerated)
     {
-        vCmdBufs = {// TODO: Disable IBL submitting for every frame
-                      // pIBLPass->GetCommandBuffer(),
-                      pGBufferPass->GetCommandBuffer(),
-                      pFinalPass->GetCommandBuffer(uImgIdx),
-                      pUIPass->GetCommandBuffer(uImgIdx)};
+        //vCmdBufs = {// TODO: Disable IBL submitting for every frame
+        //              // pIBLPass->GetCommandBuffer(),
+        //              pGBufferPass->GetCommandBuffer(),
+        //              pFinalPass->GetCommandBuffer(uImgIdx),
+        //              pUIPass->GetCommandBuffer(uImgIdx)};
     }
     return vCmdBufs;
 }

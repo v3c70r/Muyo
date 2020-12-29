@@ -42,7 +42,7 @@ RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
 
 void RenderPassUI::setSwapchainImageViews(std::vector<VkImageView>& vImageViews, VkImageView depthImageView, uint32_t nWidth, uint32_t nHeight)
 {
-    m_uiResources.createResources(m_renderPass, vImageViews.size());
+    m_uiResources.createResources(m_vRenderPasses.back(), vImageViews.size());
     RenderPassFinal::setSwapchainImageViews(vImageViews, depthImageView, nWidth, nHeight);
 }
 
@@ -104,7 +104,7 @@ void RenderPassUI::setupPipeline()
                      .setColorBlending(blendBuilder.build())
                      .setPipelineLayout(m_pipelineLayout)
                      .setDepthStencil(depthStencilBuilder.build())
-                     .setRenderPass(m_renderPass)
+                     .setRenderPass(m_vRenderPasses.back())
                      .setDynamicStates(dynamicStateEnables)
                      .setSubpassIndex(0)
                      .build(GetRenderDevice()->GetDevice());
@@ -202,7 +202,7 @@ void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.renderPass = m_renderPass;
+        renderPassBeginInfo.renderPass = m_vRenderPasses.back();
         renderPassBeginInfo.framebuffer = m_vFramebuffers[nSwapchainBufferIndex];
 
         renderPassBeginInfo.renderArea.offset = {0, 0};

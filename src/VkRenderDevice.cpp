@@ -53,6 +53,8 @@ void VkRenderDevice::Initialize(
 
     assert(vkCreateInstance(&createInfo, nullptr, &m_instance) == VK_SUCCESS);
 
+    // Create
+
     // Enumerate physical device supports these extensions and layers
     PickPhysicalDevice();
 }
@@ -70,8 +72,7 @@ void VkRenderDevice::PickPhysicalDevice()
 
 void VkRenderDevice::CreateDevice(
     const std::vector<const char*>& vDeviceExtensions,
-    const std::vector<const char*>& layers,
-    VkSurfaceKHR surface)   // For checking queue familiy compatibility with the swapchain surface
+    const std::vector<const char*>& layers)
 {
     // Query queue family support
     struct QueueFamilyIndice
@@ -101,7 +102,7 @@ void VkRenderDevice::CreateDevice(
         // Check for presentation support ( they can be in the same queeu
         // family)
         VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, surface,
+        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, m_pSwapchain->GetSurface(),
                                              &presentSupport);
 
         if (queueFamily.queueCount > 0 && presentSupport)
@@ -145,9 +146,9 @@ void VkRenderDevice::CreateDevice(
     {
         VkQueue graphicsQueue = VK_NULL_HANDLE;
         VkQueue presentQueue = VK_NULL_HANDLE;
-        vkGetDeviceQueue(GetRenderDevice()->GetDevice(), queueFamilyIndex,
+        vkGetDeviceQueue(m_device, queueFamilyIndex,
                          0, &graphicsQueue);
-        vkGetDeviceQueue(GetRenderDevice()->GetDevice(), queueFamilyIndex,
+        vkGetDeviceQueue(m_device, queueFamilyIndex,
                          0, &presentQueue);
 
         SetGraphicsQueue(graphicsQueue, queueFamilyIndex);
@@ -163,6 +164,36 @@ void VkRenderDevice::DestroyDevice()
     m_device = VK_NULL_HANDLE;
 }
 
+void VkRenderDevice::CreateSwapchain(const VkSurfaceKHR& swapchainSurface)
+{
+    assert(m_pSwapchain == nullptr);
+    m_pSwapchain = std::make_unique<Swapchain>();
+    m_pSwapchain->CreateSwapchain(swapchainSurface,
+                                  SWAPCHAIN_FORMAT,
+                                  PRESENT_MODE,
+                                  NUM_BUFFERS);
+
+    // Create semaphores on presentation and graphics queues
+    VkSemaphoreCreateInfo semaphoreInfo = {};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    assert(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_imageAvailableSemaphore) == VK_SUCCESS);
+    assert(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphore) == VK_SUCCESS);
+
+    // Create a fence to wait for GPU execution for each swapchain image
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    for (auto &fence : m_aGPUExecutionFence)
+    {
+        assert(vkCreateFence(m_device, &fenceInfo, nullptr, &fence) == VK_SUCCESS);
+    }
+}
+
+void VkRenderDevice::DestroySwapchain()
+{
+    m_pSwapchain = nullptr;
+}
+
 void VkRenderDevice::CreateCommandPools()
 {
     VkCommandPoolCreateInfo commandPoolInfo = {};
@@ -171,21 +202,21 @@ void VkRenderDevice::CreateCommandPools()
     // Static comamand pools
     {
         commandPoolInfo.flags = 0;
-        assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(),
+        assert(vkCreateCommandPool(m_device,
                                    &commandPoolInfo, nullptr,
                                    &m_aCommandPools[MAIN_CMD_POOL]) == VK_SUCCESS);
     }
     // transient pool
     {
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-        assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(),
+        assert(vkCreateCommandPool(m_device,
                                    &commandPoolInfo, nullptr,
                                    &m_aCommandPools[IMMEDIATE_CMD_POOL]) == VK_SUCCESS);
     }
     // Reusable pool
     {
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        assert(vkCreateCommandPool(GetRenderDevice()->GetDevice(),
+        assert(vkCreateCommandPool(m_device,
                                    &commandPoolInfo, nullptr,
                                    &m_aCommandPools[PER_FRAME_CMD_POOL]) == VK_SUCCESS);
     }
@@ -195,7 +226,7 @@ void VkRenderDevice::DestroyCommandPools()
 {
     for (auto& cmdPool : m_aCommandPools)
     {
-        vkDestroyCommandPool(GetRenderDevice()->GetDevice(), cmdPool, nullptr);
+        vkDestroyCommandPool(m_device, cmdPool, nullptr);
     }
 }
 
@@ -277,7 +308,7 @@ VkSampler VkRenderDevice::CreateSampler()
     samplerInfo.maxLod = 0.0f;
 
     VkSampler sampler = VK_NULL_HANDLE;
-    assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
+    assert(vkCreateSampler(m_device, &samplerInfo,
                            nullptr, &sampler) == VK_SUCCESS);
     return sampler;
 }
@@ -301,6 +332,53 @@ void VkRenderDevice::FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer,
     vkFreeCommandBuffers(m_device, m_aCommandPools[pool], 1, &commandBuffer);
 }
 
+void VkRenderDevice::BeginFrame()
+{
+    m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailableSemaphore);
+
+    // Wait for previous command renders to current swaphchain image to finish
+    vkWaitForFences(m_device, 1, &m_aGPUExecutionFence[m_uImageIdx2Present], VK_TRUE, std::numeric_limits<uint64_t>::max());
+    vkResetFences(m_device, 1, &m_aGPUExecutionFence[m_uImageIdx2Present]);
+}
+
+void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers)
+{
+    VkPipelineStageFlags stageFlag =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // only color attachment waits for the semaphore
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = &m_imageAvailableSemaphore;
+    submitInfo.pWaitDstStageMask = &stageFlag;
+
+    submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
+    submitInfo.pCommandBuffers = vCmdBuffers.data();
+
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &m_renderFinishedSemaphore;
+
+    assert(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo,
+                         m_aGPUExecutionFence[m_uImageIdx2Present]) == VK_SUCCESS);
+}
+
+void VkRenderDevice::Present()
+{
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &m_renderFinishedSemaphore;
+
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &(m_pSwapchain->GetSwapChain());
+    presentInfo.pImageIndices = &m_uImageIdx2Present;
+
+    presentInfo.pResults = nullptr;
+
+    vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
+}
+
+// Debug device 
+//
 void VkDebugRenderDevice::Initialize(
     const std::vector<const char*>& vExtensionNames,
     const std::vector<const char*>& vLayerNames)
@@ -316,16 +394,18 @@ void VkDebugRenderDevice::Initialize(
     m_debugMessenger.Initialize(m_instance);
 }
 
+
+
 void VkDebugRenderDevice::Unintialize()
 {
     m_debugMessenger.Uninitialize(m_instance);
     VkRenderDevice::Unintialize();
 }
 
-void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, VkSurfaceKHR surface)
+void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames)
 {
     std::vector<const char*> vDebugLayerNames = vLayerNames;
     vDebugLayerNames.push_back(GetValidationLayerName());
     VkRenderDevice::CreateDevice(
-        vExtensionNames, vLayerNames, surface);
+        vExtensionNames, vLayerNames);
 }

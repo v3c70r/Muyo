@@ -14,7 +14,7 @@ public:
     virtual ~RenderPass() {}
     virtual VkRenderPass GetPass(size_t idx = 0) const { return m_vRenderPasses[idx]; }
     virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const { return m_vCommandBuffers[idx]; }
-    virtual void RecordCommandBuffers() = 0;
+    //virtual void RecordCommandBuffers() = 0;
 protected:
     std::vector<VkCommandBuffer> m_vCommandBuffers;
     std::vector<VkRenderPass> m_vRenderPasses;
@@ -30,7 +30,7 @@ public:
                                         VkImageView depthImageView,
                                         uint32_t nWidth, uint32_t nHeight);
 
-    void RecordCommandBuffers() override;
+    virtual void RecordCommandBuffers();
 
     // Getters
     VkFramebuffer& GetFramebuffer(size_t idx)

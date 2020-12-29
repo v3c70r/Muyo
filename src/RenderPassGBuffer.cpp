@@ -161,9 +161,10 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    assert(mCommandBuffer == VK_NULL_HANDLE &&
-           "Command buffer has been created");
-    mCommandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
+    //assert(mCommandBuffer == VK_NULL_HANDLE &&
+    //       "Command buffer has been created");
+
+    VkCommandBuffer mCommandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
     {
         SCOPED_MARKER(mCommandBuffer, "Opaque Lighting Pass");
@@ -285,6 +286,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
     vkEndCommandBuffer(mCommandBuffer);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "OpaqueLighting");
+    m_vCommandBuffers.push_back(mCommandBuffer);
 }
 
 void RenderPassGBuffer::createGBufferViews(VkExtent2D size)

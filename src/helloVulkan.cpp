@@ -20,7 +20,6 @@
 #include "Camera.h"
 #include "Debug.h"
 #include "DescriptorManager.h"
-#include "GLFWSwapchain.h"
 #include "Geometry.h"
 #include "ImGuiGlfwControl.h"
 #include "Material.h"
@@ -39,6 +38,7 @@
 #include "VkRenderDevice.h"
 #include "SceneImporter.h"
 #include "RenderPassManager.h"
+#include "Swapchain.h"
 
 // TODO: Move them to renderpass manager
 std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
@@ -118,9 +118,6 @@ static const uint32_t NUM_BUFFERS = 3;
 
 static DebugUtilsMessenger s_debugMessenger;
 
-GLFWSwapchain *s_pSwapchain = nullptr;
-
-
 // sync
 static std::vector<VkSemaphore> s_imageAvailableSemaphores;
 static std::vector<VkSemaphore> s_renderFinishedSemaphores;
@@ -143,7 +140,7 @@ static void onWindowResize(GLFWwindow *pWindow, int width, int height)
     s_arcball.resize(glm::vec2((float)width, (float)height));
     GetRenderDevice()->SetViewportSize(VkExtent2D(
         {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}));
-    recreateSwapChain();
+    //recreateSwapChain();
 }
 
 
@@ -193,38 +190,38 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 // swap chain details
 void createCommandBuffers()
 {
-    const std::vector<const SceneNode *> vpSceneNodes =
-        g_vScenes[0].FlattenTree();
-    std::vector<const Geometry *> vpGeometries;
-    vpGeometries.reserve(vpSceneNodes.size());
-    for (const SceneNode *pNode : vpSceneNodes)
-    {
-        vpGeometries.push_back(
-            static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
-    }
-    pGBufferPass->recordCommandBuffer(vpGeometries);
-
-    pFinalPass->RecordOnce(
-        *g_pQuadGeometry,
-        GetRenderResourceManager()
-            ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
-            ->getView());
+//    const std::vector<const SceneNode *> vpSceneNodes =
+//        g_vScenes[0].FlattenTree();
+//    std::vector<const Geometry *> vpGeometries;
+//    vpGeometries.reserve(vpSceneNodes.size());
+//    for (const SceneNode *pNode : vpSceneNodes)
+//    {
+//        vpGeometries.push_back(
+//            static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+//    }
+//    pGBufferPass->recordCommandBuffer(vpGeometries);
+//
+//    pFinalPass->RecordOnce(
+//        *g_pQuadGeometry,
+//        GetRenderResourceManager()
+//            ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
+//            ->getView());
 }
 
-void createSemaphores()
-{
-    VkSemaphoreCreateInfo semaphoreInfo = {};
-    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    s_imageAvailableSemaphores.resize(NUM_BUFFERS);
-    s_renderFinishedSemaphores.resize(NUM_BUFFERS);
-    for (size_t i = 0; i < NUM_BUFFERS; i++)
-    {
-        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
-                                 &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
-        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
-                                 &s_renderFinishedSemaphores[i]) == VK_SUCCESS);
-    }
-}
+//void createSemaphores()
+//{
+//    VkSemaphoreCreateInfo semaphoreInfo = {};
+//    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+//    s_imageAvailableSemaphores.resize(NUM_BUFFERS);
+//    s_renderFinishedSemaphores.resize(NUM_BUFFERS);
+//    for (size_t i = 0; i < NUM_BUFFERS; i++)
+//    {
+//        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
+//                                 &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
+//        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
+//                                 &s_renderFinishedSemaphores[i]) == VK_SUCCESS);
+//    }
+//}
 
 void createFences()
 {
@@ -240,51 +237,53 @@ void createFences()
 }
 
 
-void cleanupSwapChain()
-{
-    s_pSwapchain->destroySwapchain();
-}
+//void cleanupSwapChain()
+//{
+//    s_pSwapchain->destroySwapchain();
+//}
 
-void recreateSwapChain()
-{
-    int width, height;
-    glfwGetWindowSize(s_pWindow, &width, &height);
-    if (width == 0 || height == 0)
-        return;
-
-    vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
-
-    cleanupSwapChain();
-
-    s_pSwapchain->createSwapchain(
-        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-        VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
-
-    GetRenderResourceManager()->removeResource("depthTarget");
-
-    RenderTarget *pDepthResource = GetRenderResourceManager()->getDepthTarget(
-        "depthTarget", VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
-                                   s_pSwapchain->getSwapchainExtent().height}));
-
-    pFinalPass->setSwapchainImageViews(
-        s_pSwapchain->getImageViews(), pDepthResource->getView(),
-        s_pSwapchain->getSwapchainExtent().width,
-        s_pSwapchain->getSwapchainExtent().height);
-
-    pUIPass->setSwapchainImageViews(
-        s_pSwapchain->getImageViews(), pDepthResource->getView(),
-        s_pSwapchain->getSwapchainExtent().width,
-        s_pSwapchain->getSwapchainExtent().height);
-
-    pGBufferPass->removeGBufferViews();
-    pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
-
-    createCommandBuffers();
-}
+//void recreateSwapChain()
+//{
+//    int width, height;
+//    glfwGetWindowSize(s_pWindow, &width, &height);
+//    if (width == 0 || height == 0)
+//        return;
+//
+//    vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
+//
+//    cleanupSwapChain();
+//
+//    assert(glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), m_pWindow,
+//                                   nullptr, &m_surface) == VK_SUCCESS);
+//    s_pSwapchain->createSwapchain(
+//        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+//        VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
+//
+//    GetRenderResourceManager()->removeResource("depthTarget");
+//
+//    RenderTarget *pDepthResource = GetRenderResourceManager()->getDepthTarget(
+//        "depthTarget", VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
+//                                   s_pSwapchain->getSwapchainExtent().height}));
+//
+//    pFinalPass->setSwapchainImageViews(
+//        s_pSwapchain->getImageViews(), pDepthResource->getView(),
+//        s_pSwapchain->getSwapchainExtent().width,
+//        s_pSwapchain->getSwapchainExtent().height);
+//
+//    pUIPass->setSwapchainImageViews(
+//        s_pSwapchain->getImageViews(), pDepthResource->getView(),
+//        s_pSwapchain->getSwapchainExtent().width,
+//        s_pSwapchain->getSwapchainExtent().height);
+//
+//    pGBufferPass->removeGBufferViews();
+//    pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
+//
+//    createCommandBuffers();
+//}
 
 void cleanup()
 {
-    cleanupSwapChain();
+    //cleanupSwapChain();
 
     pFinalPass = nullptr;
     pUIPass = nullptr;
@@ -304,96 +303,88 @@ void cleanup()
     GetRenderDevice()->DestroyCommandPools();
     GetRenderResourceManager()->Unintialize();
     GetMemoryAllocator()->Unintialize();
-    s_pSwapchain->destroySurface();
-    s_pSwapchain = nullptr;
-    delete s_pSwapchain;
     GetRenderDevice()->DestroyDevice();
     GetRenderDevice()->Unintialize();
     glfwDestroyWindow(s_pWindow);
     glfwTerminate();
 }
 
-uint32_t beginFrame()
-{
-    // Begin new frame and get the frame id
-    uint32_t nIamgeIndex = s_pSwapchain->getNextImage(s_imageAvailableSemaphores[0]);
-
-
-    vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex], VK_TRUE,
-                    std::numeric_limits<uint64_t>::max());
-    vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex]);
-    return nIamgeIndex;
-}
+//uint32_t beginFrame()
+//{
+//    // Begin new frame and get the frame id
+//    uint32_t nIamgeIndex = GetRenderDevice()->GetSwapchain()->getNextImage(s_imageAvailableSemaphores[0]);
+//
+//
+//    vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex], VK_TRUE,
+//                    std::numeric_limits<uint64_t>::max());
+//    vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex]);
+//    return nIamgeIndex;
+//}
 
 static bool bIrradianceMapGenerated = false;
-void present(uint32_t nIamgeIndex)
-{
-    // Record command buffers
-    pUIPass->recordCommandBuffer(s_pSwapchain->getSwapchainExtent(), nIamgeIndex);
-
-    // submit command buffer
-    VkPipelineStageFlags stageFlag =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // only color attachment
-                                                        // waits for the
-                                                        // semaphore
-
-    std::vector<VkCommandBuffer> cmdBuffers;
-    if (bIrradianceMapGenerated)
-    {
-        cmdBuffers = {// TODO: Disable IBL submitting for every frame
-                      // pIBLPass->GetCommandBuffer(),
-                      pGBufferPass->GetCommandBuffer(),
-                      pFinalPass->GetCommandBuffer(nIamgeIndex),
-                      pUIPass->GetCommandBuffer(nIamgeIndex)};
-    }
-    else
-    {
-        cmdBuffers = {
-            // TODO: Disable IBL submitting for every frame
-            pIBLPass->GetCommandBuffer(), pGBufferPass->GetCommandBuffer(),
-            pFinalPass->GetCommandBuffer(nIamgeIndex),
-            pUIPass->GetCommandBuffer(nIamgeIndex)};
-        bIrradianceMapGenerated = true;
-    }
-
-    // Filter out null cmd buffers
-    std::vector<VkCommandBuffer> vCmdBuffers;
-    for (auto& cmdBuf : cmdBuffers)
-    {
-        if (cmdBuf != VK_NULL_HANDLE)
-        {
-            vCmdBuffers.push_back(cmdBuf);
-        }
-    }
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &s_imageAvailableSemaphores[0];
-    submitInfo.pWaitDstStageMask = &stageFlag;
-
-    submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
-    submitInfo.pCommandBuffers = vCmdBuffers.data();
-
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
-
-    assert(vkQueueSubmit(GetRenderDevice()->GetGraphicsQueue(), 1, &submitInfo,
-                         s_waitFences[nIamgeIndex]) == VK_SUCCESS);
-
-    // Present swap chain
-    VkPresentInfoKHR presentInfo = {};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &s_renderFinishedSemaphores[0];
-
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &(s_pSwapchain->getSwapChain());
-    presentInfo.pImageIndices = &nIamgeIndex;
-
-    presentInfo.pResults = nullptr;
-
-    vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
-}
+//void present(uint32_t nIamgeIndex)
+//{
+//    // Record command buffers
+//    VkExtent2D ext = {WIDTH, HEIGHT};
+//    pUIPass->recordCommandBuffer(ext, nIamgeIndex);
+//
+//    std::vector<VkCommandBuffer> cmdBuffers;
+//    if (bIrradianceMapGenerated)
+//    {
+//        cmdBuffers = {// TODO: Disable IBL submitting for every frame
+//                      // pIBLPass->GetCommandBuffer(),
+//                      pGBufferPass->GetCommandBuffer(),
+//                      pFinalPass->GetCommandBuffer(nIamgeIndex),
+//                      pUIPass->GetCommandBuffer(nIamgeIndex)};
+//    }
+//    else
+//    {
+//        cmdBuffers = {
+//            // TODO: Disable IBL submitting for every frame
+//            pIBLPass->GetCommandBuffer(), pGBufferPass->GetCommandBuffer(),
+//            pFinalPass->GetCommandBuffer(nIamgeIndex),
+//            pUIPass->GetCommandBuffer(nIamgeIndex)};
+//        bIrradianceMapGenerated = true;
+//    }
+//
+//    // Filter out null cmd buffers
+//    std::vector<VkCommandBuffer> vCmdBuffers;
+//    for (auto& cmdBuf : cmdBuffers)
+//    {
+//        if (cmdBuf != VK_NULL_HANDLE)
+//        {
+//            vCmdBuffers.push_back(cmdBuf);
+//        }
+//    }
+//    //VkSubmitInfo submitInfo = {};
+//    //submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+//    //submitInfo.waitSemaphoreCount = 1;
+//    //submitInfo.pWaitSemaphores = &s_imageAvailableSemaphores[0];
+//    //submitInfo.pWaitDstStageMask = &stageFlag;
+//
+//    //submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
+//    //submitInfo.pCommandBuffers = vCmdBuffers.data();
+//
+//    //submitInfo.signalSemaphoreCount = 1;
+//    //submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
+//
+//    //assert(vkQueueSubmit(GetRenderDevice()->GetGraphicsQueue(), 1, &submitInfo,
+//    //                     s_waitFences[nIamgeIndex]) == VK_SUCCESS);
+//
+//    // Present swap chain
+//    //VkPresentInfoKHR presentInfo = {};
+//    //presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+//    //presentInfo.waitSemaphoreCount = 1;
+//    //presentInfo.pWaitSemaphores = &s_renderFinishedSemaphores[0];
+//
+//    //presentInfo.swapchainCount = 1;
+//    //presentInfo.pSwapchains = &(s_pSwapchain->getSwapChain());
+//    //presentInfo.pImageIndices = &nIamgeIndex;
+//
+//    //presentInfo.pResults = nullptr;
+//
+//    //vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
+//}
 
 void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 {
@@ -431,19 +422,15 @@ int main()
     GetRenderDevice()->Initialize(extensions);
 
     // Create swapchain
-    s_pSwapchain = new GLFWSwapchain(s_pWindow);
-    s_pSwapchain->createSurface();
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
 
+    glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, NULL, &surface);
+    GetRenderDevice()->CreateSwapchain(surface);
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
-                                    std::vector<const char *>(),    // Layers
-                                    s_pSwapchain->getSurface());    // Swapchain surface
+                                    std::vector<const char *>());   // Layers
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
-    s_pSwapchain->createSwapchain(
-        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-        VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
-
-    GetRenderDevice()->SetViewportSize(s_pSwapchain->getSwapchainExtent());
+    GetRenderDevice()->SetViewportSize(VkExtent2D{WIDTH, HEIGHT});
 
     GetRenderDevice()->CreateCommandPools();
 
@@ -452,27 +439,30 @@ int main()
     GetDescriptorManager()->createDescriptorSetLayouts();
     GetSamplerManager()->createSamplers();
 
+    VkExtent2D vpExtent = {WIDTH, HEIGHT};
+
+    // Can it be in gbuffer depth?
     RenderTarget *pDepthResource =
         GetRenderResourceManager()->getDepthTarget(
             "depthTarget",
-            VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
-                        s_pSwapchain->getSwapchainExtent().height}));
+            vpExtent);
 
-    GetRenderPassManager()->Initialize(s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height, s_pSwapchain->getImageFormat());
-    GetRenderPassManager()->SetSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView());
+    Swapchain* pSwapchian = GetRenderDevice()->GetSwapchain();
+    GetRenderPassManager()->Initialize(vpExtent.width, vpExtent.height, pSwapchian->GetImageFormat());
+    GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
 
     // arrange render passes
-    pFinalPass = std::make_unique<RenderPassFinal>(s_pSwapchain->getImageFormat());
-    pFinalPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    //pFinalPass = std::make_unique<RenderPassFinal>(pSwapchian->getImageFormat());
+    //pFinalPass->setSwapchainImageViews(pSwapchian->getImageViews(), pDepthResource->getView(), pSwapchian->getSwapchainExtent().width, pSwapchian->getSwapchainExtent().height);
 
-    pUIPass = std::make_unique<RenderPassUI>(s_pSwapchain->getImageFormat());
-    pUIPass->setSwapchainImageViews(s_pSwapchain->getImageViews(), pDepthResource->getView(), s_pSwapchain->getSwapchainExtent().width, s_pSwapchain->getSwapchainExtent().height);
+    //pUIPass = std::make_unique<RenderPassUI>(pSwapchian->getImageFormat());
+    //pUIPass->setSwapchainImageViews(pSwapchian->getImageViews(), pDepthResource->getView(), pSwapchian->getSwapchainExtent().width, pSwapchian->getSwapchainExtent().height);
 
-    pIBLPass = std::make_unique<RenderLayerIBL>();
+    //pIBLPass = std::make_unique<RenderLayerIBL>();
 
-    pGBufferPass = std::make_unique<RenderPassGBuffer>();
-    pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
-    pGBufferPass->createPipelines();
+    //pGBufferPass = std::make_unique<RenderPassGBuffer>();
+    //pGBufferPass->createGBufferViews(pSwapchian->getSwapchainExtent());
+    //pGBufferPass->createPipelines();
 
     ImGui::Init(s_pWindow);
 
@@ -500,7 +490,7 @@ int main()
         GetMaterialManager()->CreateDefaultMaterial();
 
         createCommandBuffers();
-        createSemaphores();
+        //createSemaphores();
         createFences();
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
@@ -513,13 +503,18 @@ int main()
             }
             updateUniformBuffer(pUniformBuffer);
 
-            uint32_t nImageIndex = beginFrame();
+            //uint32_t nImageIndex = beginFrame();
 
-            pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
-            pUIPass->updateBuffers(nImageIndex);
+            //pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
+            //pUIPass->updateBuffers(nImageIndex);
 
-            ImGui::Render();
-            present(nImageIndex);
+            ImGui::Render();    // Create IMGUI command buffer
+
+            GetRenderDevice()->BeginFrame();
+            // TODO: Submit commands
+
+            GetRenderDevice()->Present();
+            //present(nImageIndex);
             ImGui::UpdateMousePosAndButtons();
             ImGui::UpdateMouseCursor();
             ImGui::UpdateGamepads();

@@ -3,13 +3,22 @@
 #include <cassert>
 #include <limits>
 
-void Swapchain::CreateSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
-                                const VkPresentModeKHR& presentMode,
-                                uint32_t numBuffers)
+Swapchain::~Swapchain()
+{
+    if (m_surface != VK_NULL_HANDLE)
+    {
+        vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), m_surface, nullptr);
+    }
+}
+void Swapchain::CreateSwapchain(
+    const VkSurfaceKHR& surface,
+    const VkSurfaceFormatKHR& surfaceFormat,
+    const VkPresentModeKHR& presentMode,
+    uint32_t numBuffers)
 {
     if (m_surface == VK_NULL_HANDLE)
     {
-        CreateSurface();
+        m_surface = surface;
     }
 
     SwapchainSupportDetails swapchainSupport = QuerySwapchainSupport();
@@ -102,10 +111,10 @@ void Swapchain::DestroySwapchain()
 uint32_t Swapchain::GetNextImage(VkSemaphore& semaphore)
 {
     uint32_t imageIndex;
-   vkAcquireNextImageKHR(
+    vkAcquireNextImageKHR(
         GetRenderDevice()->GetDevice(), m_swapchain, std::numeric_limits<uint64_t>::max(),
         semaphore, VK_NULL_HANDLE, &imageIndex);
-   return imageIndex;
+    return imageIndex;
 }
 
 Swapchain::SwapchainSupportDetails Swapchain::QuerySwapchainSupport()
@@ -132,5 +141,4 @@ Swapchain::SwapchainSupportDetails Swapchain::QuerySwapchainSupport()
 
     return details;
 }
-
 

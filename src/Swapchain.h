@@ -8,14 +8,14 @@
 class Swapchain
 {
 public:
-    virtual ~Swapchain() {}
-    void CreateSwapchain(const VkSurfaceFormatKHR& surfaceFormat,
-                         const VkPresentModeKHR& presentMode,
-                         uint32_t numBuffers = 2);
+    virtual ~Swapchain();
+    void CreateSwapchain(
+        const VkSurfaceKHR& surface,
+        const VkSurfaceFormatKHR& surfaceFormat,
+        const VkPresentModeKHR& presentMode,
+        uint32_t numBuffers = 2);
 
     void DestroySwapchain();
-    virtual void CreateSurface() = 0;
-    virtual void DestroySurface() = 0;
     VkExtent2D GetSwapchainExtent() const { return m_swapchainExtent; }
     VkSurfaceKHR GetSurface() const { return m_surface; }
     std::vector<VkImageView>& GetImageViews() { return m_swapchainImageViews; }
@@ -23,7 +23,7 @@ public:
     uint32_t GetNextImage(VkSemaphore& semaphore);
     VkSwapchainKHR& GetSwapChain() { return m_swapchain; }
 
-protected:
+private:
     struct SwapchainSupportDetails
     {
         VkSurfaceCapabilitiesKHR capabilities;
