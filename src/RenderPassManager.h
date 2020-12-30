@@ -9,10 +9,11 @@ class RenderPass;
 class Geometry;
 enum RenderPassNames
 {
+    // Order matters
     RENDERPASS_IBL,
     RENDERPASS_GBUFFER,
-    RENDERPASS_UI,
     RENDERPASS_FINAL,
+    RENDERPASS_UI,
 
     RENDERPASS_COUNT
 };

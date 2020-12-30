@@ -179,6 +179,8 @@ void VkRenderDevice::CreateSwapchain(const VkSurfaceKHR& swapchainSurface)
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     assert(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_imageAvailableSemaphore) == VK_SUCCESS);
     assert(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphore) == VK_SUCCESS);
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_imageAvailableSemaphore), VK_OBJECT_TYPE_SEMAPHORE, "SwapchianImageAvailable");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderFinishedSemaphore), VK_OBJECT_TYPE_SEMAPHORE, "RenderFinished");
 
     // Create a fence to wait for GPU execution for each swapchain image
     VkFenceCreateInfo fenceInfo = {};
@@ -187,13 +189,38 @@ void VkRenderDevice::CreateSwapchain(const VkSurfaceKHR& swapchainSurface)
     for (auto &fence : m_aGPUExecutionFence)
     {
         assert(vkCreateFence(m_device, &fenceInfo, nullptr, &fence) == VK_SUCCESS);
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(fence), VK_OBJECT_TYPE_FENCE, "renderFinished");
     }
 }
 
 void VkRenderDevice::DestroySwapchain()
 {
+    // Destroy fences and semaphores
+    vkDestroySemaphore(m_device, m_imageAvailableSemaphore, nullptr);
+    vkDestroySemaphore(m_device, m_renderFinishedSemaphore, nullptr);
+
+    for (auto &fence: m_aGPUExecutionFence)
+    {
+        vkDestroyFence(m_device, fence, nullptr);
+    }
+
+    m_pSwapchain->DestroySwapchain();
     m_pSwapchain = nullptr;
 }
+void VkRenderDevice::SetViewportSize(VkExtent2D viewport)
+ { 
+     if (viewport.width != m_viewportSize.width || viewport.height != m_viewportSize.height)
+     {
+         m_viewportSize = viewport;
+         // recreate swapchain with the same surface
+         VkSurfaceKHR surface = m_pSwapchain->GetSurface();
+         m_pSwapchain->DestroySwapchain();
+         m_pSwapchain->CreateSwapchain(surface,
+                                       SWAPCHAIN_FORMAT,
+                                       PRESENT_MODE,
+                                       NUM_BUFFERS);
+     }
+ }
 
 void VkRenderDevice::CreateCommandPools()
 {

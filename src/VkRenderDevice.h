@@ -107,7 +107,7 @@ public:
     VkSampler CreateSampler();
 
     VkExtent2D GetViewportSize() const { return m_viewportSize; }
-    void SetViewportSize(VkExtent2D vp) { m_viewportSize = vp; }
+    void SetViewportSize(VkExtent2D vp);
 
     Swapchain* GetSwapchain() { return m_pSwapchain.get(); }
 

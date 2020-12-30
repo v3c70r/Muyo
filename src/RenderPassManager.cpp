@@ -63,27 +63,27 @@ void RenderPassManager::RecordStaticCmdBuffers(const std::vector<const Geometry*
 void RenderPassManager::RecordDynamicCmdBuffers(uint32_t nFrameIdx, VkExtent2D vpExtent)
 {
     RenderPassUI* pUIPass = static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get());
+    pUIPass->newFrame(vpExtent);
+    pUIPass->updateBuffers(nFrameIdx);
     pUIPass->recordCommandBuffer(vpExtent, nFrameIdx);
 }
 
 std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgIdx)
 {
     std::vector<VkCommandBuffer> vCmdBufs;
-    for (const auto& pass : m_vpRenderPasses)
+    for (size_t i = 0; i < RENDERPASS_COUNT; i++)
     {
+        if (m_bIsIrradianceGenerated && i == RENDERPASS_IBL)
+        {
+            continue;
+        }
+        auto &pass = m_vpRenderPasses[i];
         VkCommandBuffer cmdBuf = pass->GetCommandBuffer(uImgIdx);
         if (cmdBuf != VK_NULL_HANDLE)
         {
             vCmdBufs.push_back(cmdBuf);
         }
-    }
-    if (m_bIsIrradianceGenerated)
-    {
-        //vCmdBufs = {// TODO: Disable IBL submitting for every frame
-        //              // pIBLPass->GetCommandBuffer(),
-        //              pGBufferPass->GetCommandBuffer(),
-        //              pFinalPass->GetCommandBuffer(uImgIdx),
-        //              pUIPass->GetCommandBuffer(uImgIdx)};
+        m_bIsIrradianceGenerated = true;
     }
     return vCmdBufs;
 }

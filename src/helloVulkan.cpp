@@ -40,19 +40,11 @@
 #include "RenderPassManager.h"
 #include "Swapchain.h"
 
-// TODO: Move them to renderpass manager
-std::unique_ptr<RenderPassFinal> pFinalPass = nullptr;
-std::unique_ptr<RenderPassGBuffer> pGBufferPass = nullptr;
-std::unique_ptr<RenderPassUI> pUIPass = nullptr;
-std::unique_ptr<RenderLayerIBL> pIBLPass = nullptr;
+const int WIDTH = 1024;
+const int HEIGHT = 768;
 
-const int WIDTH = 800;
-const int HEIGHT = 600;
-
-static bool s_resizeWanted = true;
-
+static bool s_bResizeWanted = false;
 static GLFWwindow *s_pWindow = nullptr;
-
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                           (float)WIDTH / (float)HEIGHT, 0.1f,
                                           10.0f),
@@ -118,11 +110,6 @@ static const uint32_t NUM_BUFFERS = 3;
 
 static DebugUtilsMessenger s_debugMessenger;
 
-// sync
-//static std::vector<VkSemaphore> s_imageAvailableSemaphores;
-//static std::vector<VkSemaphore> s_renderFinishedSemaphores;
-//static std::vector<VkFence> s_waitFences;
-
 // PHYSICAL Device extensions
 const std::vector<const char *> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -134,23 +121,20 @@ std::vector<Scene> g_vScenes;
 
 ///////////////////////////////////////////
 
-void recreateSwapChain(); // fwd declaration
 static void onWindowResize(GLFWwindow *pWindow, int width, int height)
 {
     s_arcball.resize(glm::vec2((float)width, (float)height));
-    GetRenderDevice()->SetViewportSize(VkExtent2D(
-        {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}));
-    //recreateSwapChain();
+    s_bResizeWanted = true;
 }
 
 
-void initWindow()
+void InitGLFW()
 {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     s_pWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-    glfwSetWindowSizeCallback(s_pWindow, onWindowResize);
+    //glfwSetWindowSizeCallback(s_pWindow, onWindowResize);
     glfwSetKeyCallback(s_pWindow, onKeyStroke);
     glfwSetMouseButtonCallback(s_pWindow, mouseCallback);
     glfwSetCursorPosCallback(s_pWindow, mouseCursorCallback);
@@ -187,82 +171,12 @@ std::vector<const char *> GetRequiredDeviceExtensions()
     return vDeviceExtensions;
 }
 
-// swap chain details
-void createCommandBuffers()
-{
-
-//    pGBufferPass->recordCommandBuffer(vpGeometries);
-//
-//    pFinalPass->RecordOnce(
-//        *g_pQuadGeometry,
-//        GetRenderResourceManager()
-//            ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
-//            ->getView());
-}
-
-//void cleanupSwapChain()
-//{
-//    s_pSwapchain->destroySwapchain();
-//}
-
-//void recreateSwapChain()
-//{
-//    int width, height;
-//    glfwGetWindowSize(s_pWindow, &width, &height);
-//    if (width == 0 || height == 0)
-//        return;
-//
-//    vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
-//
-//    cleanupSwapChain();
-//
-//    assert(glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), m_pWindow,
-//                                   nullptr, &m_surface) == VK_SUCCESS);
-//    s_pSwapchain->createSwapchain(
-//        {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
-//        VK_PRESENT_MODE_FIFO_KHR, NUM_BUFFERS);
-//
-//    GetRenderResourceManager()->removeResource("depthTarget");
-//
-//    RenderTarget *pDepthResource = GetRenderResourceManager()->getDepthTarget(
-//        "depthTarget", VkExtent2D({s_pSwapchain->getSwapchainExtent().width,
-//                                   s_pSwapchain->getSwapchainExtent().height}));
-//
-//    pFinalPass->setSwapchainImageViews(
-//        s_pSwapchain->getImageViews(), pDepthResource->getView(),
-//        s_pSwapchain->getSwapchainExtent().width,
-//        s_pSwapchain->getSwapchainExtent().height);
-//
-//    pUIPass->setSwapchainImageViews(
-//        s_pSwapchain->getImageViews(), pDepthResource->getView(),
-//        s_pSwapchain->getSwapchainExtent().width,
-//        s_pSwapchain->getSwapchainExtent().height);
-//
-//    pGBufferPass->removeGBufferViews();
-//    pGBufferPass->createGBufferViews(s_pSwapchain->getSwapchainExtent());
-//
-//    createCommandBuffers();
-//}
-
 void cleanup()
 {
-    //cleanupSwapChain();
-
-    pFinalPass = nullptr;
-    pUIPass = nullptr;
-    pGBufferPass = nullptr;
-    pIBLPass = nullptr;
-
     GetDescriptorManager()->destroyDescriptorSetLayouts();
     GetDescriptorManager()->destroyDescriptorPool();
 
-    //for (auto &somaphore : s_imageAvailableSemaphores)
-    //    vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
-    //for (auto &somaphore : s_renderFinishedSemaphores)
-    //    vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
-    //for (auto &fence : s_waitFences)
-    //    vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
-
+    GetRenderDevice()->DestroySwapchain();
     GetRenderDevice()->DestroyCommandPools();
     GetRenderResourceManager()->Unintialize();
     GetMemoryAllocator()->Unintialize();
@@ -304,7 +218,7 @@ void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 int main()
 {
     // Load mesh into memory
-    initWindow();
+    InitGLFW();
     // Create Instace
     std::vector<const char *> extensions = GetRequiredInstanceExtensions();
     GetRenderDevice()->Initialize(extensions);
@@ -328,6 +242,7 @@ int main()
     // Initialize managers
     GetDescriptorManager()->createDescriptorPool();
     GetDescriptorManager()->createDescriptorSetLayouts();
+
     GetSamplerManager()->createSamplers();
 
     VkExtent2D vpExtent = {WIDTH, HEIGHT};
@@ -342,37 +257,18 @@ int main()
     GetRenderPassManager()->Initialize(vpExtent.width, vpExtent.height, pSwapchian->GetImageFormat());
     GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
 
-    // arrange render passes
-    //pFinalPass = std::make_unique<RenderPassFinal>(pSwapchian->getImageFormat());
-    //pFinalPass->setSwapchainImageViews(pSwapchian->getImageViews(), pDepthResource->getView(), pSwapchian->getSwapchainExtent().width, pSwapchian->getSwapchainExtent().height);
-
-    //pUIPass = std::make_unique<RenderPassUI>(pSwapchian->getImageFormat());
-    //pUIPass->setSwapchainImageViews(pSwapchian->getImageViews(), pDepthResource->getView(), pSwapchian->getSwapchainExtent().width, pSwapchian->getSwapchainExtent().height);
-
-    //pIBLPass = std::make_unique<RenderLayerIBL>();
-
-    //pGBufferPass = std::make_unique<RenderPassGBuffer>();
-    //pGBufferPass->createGBufferViews(pSwapchian->getSwapchainExtent());
-    //pGBufferPass->createPipelines();
-
     ImGui::Init(s_pWindow);
 
-    // Create memory allocator
-
-    // A bunch of news and deletes happend in the following block
-    // They have to be created and destroyed in a certain order
-    // Looking for a way to convert them to smart pointers, otherwise a major
-    // refactorying is required.
     {
-        // Create the quad
-        //g_pQuadGeometry = GetQuad();
+        // Load scene
         GLTFImporter importer;
         g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
-        for (const auto &scene : g_vScenes)
-        {
-            std::cout << scene.ConstructDebugString() << std::endl;
-        }
+        //for (const auto &scene : g_vScenes)
+        //{
+        //    std::cout << scene.ConstructDebugString() << std::endl;
+        //}
 
+        // Create perview constant buffer
         UniformBuffer<PerViewData> *pUniformBuffer =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>(
                 "perView");
@@ -380,6 +276,7 @@ int main()
         // Load materials
         GetMaterialManager()->CreateDefaultMaterial();
 
+        // Record static command buffer
         {
             const std::vector<const SceneNode *> vpSceneNodes =
                 g_vScenes[0].FlattenTree();
@@ -392,28 +289,30 @@ int main()
             }
             GetRenderPassManager()->RecordStaticCmdBuffers(vpGeometries);
         }
-        //createSemaphores();
-        //createFences();
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
         {
             glfwPollEvents();
 
-            if (s_resizeWanted)
-            {
-                s_resizeWanted = false;
-            }
             updateUniformBuffer(pUniformBuffer);
 
-            //uint32_t nImageIndex = beginFrame();
-
-            //pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
-            //pUIPass->updateBuffers(nImageIndex);
-
-            //ImGui::Render();    // Create IMGUI command buffer
-
             GetRenderDevice()->BeginFrame();
-            // TODO: Submit commands
+
+            // Handle resizing
+            {
+                // TODO: Resizing doesn't work properly, need to investigate
+                int width, height;
+                glfwGetWindowSize(s_pWindow, &width, &height);
+                VkExtent2D currentVp = GetRenderDevice()->GetViewportSize();
+                if (width != (int)currentVp.width || height != (int)currentVp.height)
+                {
+                    VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
+                    GetRenderDevice()->SetViewportSize(vp);
+                    //GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
+                    s_bResizeWanted = false;
+                    continue;
+                }
+            }
             uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
             VkExtent2D vpExt = {WIDTH, HEIGHT};
             GetRenderPassManager()->RecordDynamicCmdBuffers(uFrameIdx, vpExt);
