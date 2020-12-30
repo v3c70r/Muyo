@@ -9,8 +9,8 @@ class RenderPass;
 class Geometry;
 enum RenderPassNames
 {
-    RENDERPASS_GBUFFER,
     RENDERPASS_IBL,
+    RENDERPASS_GBUFFER,
     RENDERPASS_UI,
     RENDERPASS_FINAL,
 
