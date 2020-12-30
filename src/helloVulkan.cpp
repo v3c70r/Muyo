@@ -119,9 +119,9 @@ static const uint32_t NUM_BUFFERS = 3;
 static DebugUtilsMessenger s_debugMessenger;
 
 // sync
-static std::vector<VkSemaphore> s_imageAvailableSemaphores;
-static std::vector<VkSemaphore> s_renderFinishedSemaphores;
-static std::vector<VkFence> s_waitFences;
+//static std::vector<VkSemaphore> s_imageAvailableSemaphores;
+//static std::vector<VkSemaphore> s_renderFinishedSemaphores;
+//static std::vector<VkFence> s_waitFences;
 
 // PHYSICAL Device extensions
 const std::vector<const char *> deviceExtensions = {
@@ -129,7 +129,7 @@ const std::vector<const char *> deviceExtensions = {
     //"VK_KHR_ray_tracing"
 };
 
-Geometry* g_pQuadGeometry = nullptr;
+//Geometry* g_pQuadGeometry = nullptr;
 std::vector<Scene> g_vScenes;
 
 ///////////////////////////////////////////
@@ -190,15 +190,7 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 // swap chain details
 void createCommandBuffers()
 {
-//    const std::vector<const SceneNode *> vpSceneNodes =
-//        g_vScenes[0].FlattenTree();
-//    std::vector<const Geometry *> vpGeometries;
-//    vpGeometries.reserve(vpSceneNodes.size());
-//    for (const SceneNode *pNode : vpSceneNodes)
-//    {
-//        vpGeometries.push_back(
-//            static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
-//    }
+
 //    pGBufferPass->recordCommandBuffer(vpGeometries);
 //
 //    pFinalPass->RecordOnce(
@@ -207,35 +199,6 @@ void createCommandBuffers()
 //            ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
 //            ->getView());
 }
-
-//void createSemaphores()
-//{
-//    VkSemaphoreCreateInfo semaphoreInfo = {};
-//    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-//    s_imageAvailableSemaphores.resize(NUM_BUFFERS);
-//    s_renderFinishedSemaphores.resize(NUM_BUFFERS);
-//    for (size_t i = 0; i < NUM_BUFFERS; i++)
-//    {
-//        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
-//                                 &s_imageAvailableSemaphores[i]) == VK_SUCCESS);
-//        assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr,
-//                                 &s_renderFinishedSemaphores[i]) == VK_SUCCESS);
-//    }
-//}
-
-void createFences()
-{
-    VkFenceCreateInfo fenceInfo = {};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    s_waitFences.resize(NUM_BUFFERS);
-    for (auto &fence : s_waitFences)
-    {
-        assert(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence) ==
-               VK_SUCCESS);
-    }
-}
-
 
 //void cleanupSwapChain()
 //{
@@ -293,12 +256,12 @@ void cleanup()
     GetDescriptorManager()->destroyDescriptorSetLayouts();
     GetDescriptorManager()->destroyDescriptorPool();
 
-    for (auto &somaphore : s_imageAvailableSemaphores)
-        vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
-    for (auto &somaphore : s_renderFinishedSemaphores)
-        vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
-    for (auto &fence : s_waitFences)
-        vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
+    //for (auto &somaphore : s_imageAvailableSemaphores)
+    //    vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
+    //for (auto &somaphore : s_renderFinishedSemaphores)
+    //    vkDestroySemaphore(GetRenderDevice()->GetDevice(), somaphore, nullptr);
+    //for (auto &fence : s_waitFences)
+    //    vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
 
     GetRenderDevice()->DestroyCommandPools();
     GetRenderResourceManager()->Unintialize();
@@ -309,82 +272,7 @@ void cleanup()
     glfwTerminate();
 }
 
-//uint32_t beginFrame()
-//{
-//    // Begin new frame and get the frame id
-//    uint32_t nIamgeIndex = GetRenderDevice()->GetSwapchain()->getNextImage(s_imageAvailableSemaphores[0]);
-//
-//
-//    vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex], VK_TRUE,
-//                    std::numeric_limits<uint64_t>::max());
-//    vkResetFences(GetRenderDevice()->GetDevice(), 1, &s_waitFences[nIamgeIndex]);
-//    return nIamgeIndex;
-//}
-
 static bool bIrradianceMapGenerated = false;
-//void present(uint32_t nIamgeIndex)
-//{
-//    // Record command buffers
-//    VkExtent2D ext = {WIDTH, HEIGHT};
-//    pUIPass->recordCommandBuffer(ext, nIamgeIndex);
-//
-//    std::vector<VkCommandBuffer> cmdBuffers;
-//    if (bIrradianceMapGenerated)
-//    {
-//        cmdBuffers = {// TODO: Disable IBL submitting for every frame
-//                      // pIBLPass->GetCommandBuffer(),
-//                      pGBufferPass->GetCommandBuffer(),
-//                      pFinalPass->GetCommandBuffer(nIamgeIndex),
-//                      pUIPass->GetCommandBuffer(nIamgeIndex)};
-//    }
-//    else
-//    {
-//        cmdBuffers = {
-//            // TODO: Disable IBL submitting for every frame
-//            pIBLPass->GetCommandBuffer(), pGBufferPass->GetCommandBuffer(),
-//            pFinalPass->GetCommandBuffer(nIamgeIndex),
-//            pUIPass->GetCommandBuffer(nIamgeIndex)};
-//        bIrradianceMapGenerated = true;
-//    }
-//
-//    // Filter out null cmd buffers
-//    std::vector<VkCommandBuffer> vCmdBuffers;
-//    for (auto& cmdBuf : cmdBuffers)
-//    {
-//        if (cmdBuf != VK_NULL_HANDLE)
-//        {
-//            vCmdBuffers.push_back(cmdBuf);
-//        }
-//    }
-//    //VkSubmitInfo submitInfo = {};
-//    //submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-//    //submitInfo.waitSemaphoreCount = 1;
-//    //submitInfo.pWaitSemaphores = &s_imageAvailableSemaphores[0];
-//    //submitInfo.pWaitDstStageMask = &stageFlag;
-//
-//    //submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
-//    //submitInfo.pCommandBuffers = vCmdBuffers.data();
-//
-//    //submitInfo.signalSemaphoreCount = 1;
-//    //submitInfo.pSignalSemaphores = &s_renderFinishedSemaphores[0];
-//
-//    //assert(vkQueueSubmit(GetRenderDevice()->GetGraphicsQueue(), 1, &submitInfo,
-//    //                     s_waitFences[nIamgeIndex]) == VK_SUCCESS);
-//
-//    // Present swap chain
-//    //VkPresentInfoKHR presentInfo = {};
-//    //presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-//    //presentInfo.waitSemaphoreCount = 1;
-//    //presentInfo.pWaitSemaphores = &s_renderFinishedSemaphores[0];
-//
-//    //presentInfo.swapchainCount = 1;
-//    //presentInfo.pSwapchains = &(s_pSwapchain->getSwapChain());
-//    //presentInfo.pImageIndices = &nIamgeIndex;
-//
-//    //presentInfo.pResults = nullptr;
-//
-//    //vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
-//}
 
 void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 {
@@ -425,9 +313,12 @@ int main()
     VkSurfaceKHR surface = VK_NULL_HANDLE;
 
     glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, NULL, &surface);
-    GetRenderDevice()->CreateSwapchain(surface);
+
+    // Create device
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
-                                    std::vector<const char *>());   // Layers
+                                    std::vector<const char *>(),    // Layers
+                                    surface);
+    GetRenderDevice()->CreateSwapchain(surface);
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
     GetRenderDevice()->SetViewportSize(VkExtent2D{WIDTH, HEIGHT});
@@ -474,7 +365,7 @@ int main()
     // refactorying is required.
     {
         // Create the quad
-        g_pQuadGeometry = GetQuad();
+        //g_pQuadGeometry = GetQuad();
         GLTFImporter importer;
         g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         for (const auto &scene : g_vScenes)
@@ -489,9 +380,20 @@ int main()
         // Load materials
         GetMaterialManager()->CreateDefaultMaterial();
 
-        createCommandBuffers();
+        {
+            const std::vector<const SceneNode *> vpSceneNodes =
+                g_vScenes[0].FlattenTree();
+            std::vector<const Geometry *> vpGeometries;
+            vpGeometries.reserve(vpSceneNodes.size());
+            for (const SceneNode *pNode : vpSceneNodes)
+            {
+                vpGeometries.push_back(
+                    static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+            }
+            GetRenderPassManager()->RecordStaticCmdBuffers(vpGeometries);
+        }
         //createSemaphores();
-        createFences();
+        //createFences();
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
         {
@@ -508,13 +410,18 @@ int main()
             //pUIPass->newFrame(s_pSwapchain->getSwapchainExtent());
             //pUIPass->updateBuffers(nImageIndex);
 
-            ImGui::Render();    // Create IMGUI command buffer
+            //ImGui::Render();    // Create IMGUI command buffer
 
             GetRenderDevice()->BeginFrame();
             // TODO: Submit commands
+            uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
+            VkExtent2D vpExt = {WIDTH, HEIGHT};
+            GetRenderPassManager()->RecordDynamicCmdBuffers(uFrameIdx, vpExt);
+
+            std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
+            GetRenderDevice()->SubmitCommandBuffers(vCmdBufs);
 
             GetRenderDevice()->Present();
-            //present(nImageIndex);
             ImGui::UpdateMousePosAndButtons();
             ImGui::UpdateMouseCursor();
             ImGui::UpdateGamepads();

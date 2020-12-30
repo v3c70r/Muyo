@@ -19,7 +19,9 @@ public:
 
     virtual void CreateDevice(
         const std::vector<const char*>& extensions,
-        const std::vector<const char*>& layers);
+        const std::vector<const char*>& layers,
+        const VkSurfaceKHR& surface
+        );
 
     void DestroyDevice();
 
@@ -112,6 +114,7 @@ public:
     void BeginFrame();
     void Present();
     void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers);
+    uint32_t GetFrameIdx() const {return m_uImageIdx2Present;}
 
 private: // Private structures
     enum CommandPools
@@ -167,9 +170,14 @@ private: // Private structures
         }
     };
 
-    const VkSurfaceFormatKHR& SWAPCHAIN_FORMAT = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-    const VkPresentModeKHR& PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
+    const VkSurfaceFormatKHR SWAPCHAIN_FORMAT = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+    const VkPresentModeKHR PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
+
+#ifdef __APPLE__
     static const uint32_t NUM_BUFFERS = 2;
+#else
+    static const uint32_t NUM_BUFFERS = 3;
+#endif
 
 private:  // helper functions to create render device
     void PickPhysicalDevice();
@@ -209,7 +217,7 @@ class VkDebugRenderDevice : public VkRenderDevice
 {
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
     virtual void Unintialize() override;
-    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
+    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, const VkSurfaceKHR& surface) override;
 
 private:
     DebugUtilsMessenger m_debugMessenger;

@@ -96,11 +96,13 @@ class GeometryManager
 public:
     std::vector<std::unique_ptr<Geometry>> vpGeometries;
     void Destroy() { vpGeometries.clear(); }
+    Geometry* GetQuad();
+private:
+    int m_nQuadIdx = -1;  // Quad geometry idx
+
 };
 
 GeometryManager* GetGeometryManager();
-
-Geometry* GetQuad();
 
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));
 

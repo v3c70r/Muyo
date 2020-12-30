@@ -23,7 +23,8 @@ public:
     void SetSwapchainImageViews(std::vector<VkImageView> &vImageViews, VkImageView depthImageView);
     void OnResize(uint32_t uWidth, uint32_t uHeight);
     void Unintialize();
-    void RecordCmdBuffers(const std::vector<const Geometry*>& vpGeometries);
+    void RecordStaticCmdBuffers(const std::vector<const Geometry*>& vpGeometries);
+    void RecordDynamicCmdBuffers(uint32_t uFrameIdx, VkExtent2D vpExtent);
     std::vector<VkCommandBuffer> GetCommandBuffers(uint32_t uImgIdx);
 
 private:

@@ -209,7 +209,7 @@ void RenderPassFinal::RecordCommandBuffers()
     VkImageView imgView = GetRenderResourceManager()
                               ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
                               ->getView();
-    Geometry* pQuad = GetQuad();
+    Geometry* pQuad = GetGeometryManager()->GetQuad();
 
     VkDescriptorSet descSet = GetDescriptorManager()->allocateSingleSamplerDescriptorSet(imgView);
     VkCommandBufferBeginInfo beginInfo = {};

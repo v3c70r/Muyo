@@ -92,6 +92,8 @@ public:
     void removeGBufferViews();
     void createPipelines();
 
+    VkCommandBuffer GetCommandBuffer(size_t idx) const override { return m_vCommandBuffers[0]; }
+
 private:
     LightingAttachments mAttachments;
     VkFramebuffer mFramebuffer = VK_NULL_HANDLE;

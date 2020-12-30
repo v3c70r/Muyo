@@ -8,6 +8,24 @@ GeometryManager *GetGeometryManager()
 {
     return &s_geometryManager;
 }
+
+Geometry* GeometryManager::GetQuad()
+{
+    if (m_nQuadIdx == -1)
+    {
+        static const std::vector<Vertex> VERTICES = {
+            {{-1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 0.0f, 0.0f, 0.0f}},
+            {{1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 0.0f, 0.0f, 0.0f}},
+            {{1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 1.0f, 1.0f, 0.0f}},
+            {{-1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 1.0f, 1.0f, 0.0f}}};
+
+        static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
+        Geometry *pGeometry = new Geometry(std::make_unique<Primitive>(VERTICES, INDICES));
+        m_nQuadIdx = vpGeometries.size();
+        vpGeometries.emplace_back(pGeometry);
+    }
+    return vpGeometries[m_nQuadIdx].get();
+}
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation)
 {
     struct TinyObjInfo
@@ -86,19 +104,6 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
     return std::make_unique<Geometry>(primitives);
 }
 
-Geometry* GetQuad()
-{
-    static const std::vector<Vertex> VERTICES = {
-        {{-1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 0.0f, 0.0f, 0.0f}},
-        {{1.0f, -1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 0.0f, 0.0f, 0.0f}},
-        {{1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {1.0f, 1.0f, 1.0f, 0.0f}},
-        {{-1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 1.0f, 1.0f, 0.0f}}};
-
-    static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
-    Geometry* pGeometry = new Geometry(std::make_unique<Primitive>(VERTICES, INDICES));
-    GetGeometryManager()->vpGeometries.emplace_back(pGeometry);
-    return pGeometry;
-}
 
 std::unique_ptr<Geometry> getSkybox()
 {

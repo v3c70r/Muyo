@@ -72,7 +72,8 @@ void VkRenderDevice::PickPhysicalDevice()
 
 void VkRenderDevice::CreateDevice(
     const std::vector<const char*>& vDeviceExtensions,
-    const std::vector<const char*>& layers)
+    const std::vector<const char*>& layers,
+    const VkSurfaceKHR& surface)    // surface for compatibility check
 {
     // Query queue family support
     struct QueueFamilyIndice
@@ -90,7 +91,7 @@ void VkRenderDevice::CreateDevice(
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount,
                                              queueFamilies.data());
 
-    // TODO: Find the first queue family support both graphics and presentation
+    // Find the first queue family support both graphics and presentation
     int i = 0;
     for (const auto& queueFamily : queueFamilies)
     {
@@ -102,7 +103,7 @@ void VkRenderDevice::CreateDevice(
         // Check for presentation support ( they can be in the same queeu
         // family)
         VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, m_pSwapchain->GetSurface(),
+        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, surface,
                                              &presentSupport);
 
         if (queueFamily.queueCount > 0 && presentSupport)
@@ -112,7 +113,7 @@ void VkRenderDevice::CreateDevice(
         i++;
     }
 
-    // TODO: Handle queue family indices and add them to the device creation info
+    // Handle queue family indices and add them to the device creation info
 
     int queueFamilyIndex = 0;  //TODO: Enumerate proper queue family for different usages
     float queuePriority = 1.0f;
@@ -402,10 +403,10 @@ void VkDebugRenderDevice::Unintialize()
     VkRenderDevice::Unintialize();
 }
 
-void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames)
+void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, const VkSurfaceKHR& surface)
 {
     std::vector<const char*> vDebugLayerNames = vLayerNames;
     vDebugLayerNames.push_back(GetValidationLayerName());
     VkRenderDevice::CreateDevice(
-        vExtensionNames, vLayerNames);
+        vExtensionNames, vLayerNames, surface);
 }

@@ -13,7 +13,7 @@ class RenderPass
 public:
     virtual ~RenderPass() {}
     virtual VkRenderPass GetPass(size_t idx = 0) const { return m_vRenderPasses[idx]; }
-    virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const { return m_vCommandBuffers[idx]; }
+    virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const  = 0;
     //virtual void RecordCommandBuffers() = 0;
 protected:
     std::vector<VkCommandBuffer> m_vCommandBuffers;
@@ -38,7 +38,7 @@ public:
         assert(idx < m_vFramebuffers.size());
         return m_vFramebuffers[idx];
     }
-    VkCommandBuffer GetCommandBuffer(size_t idx) const override
+    virtual VkCommandBuffer GetCommandBuffer(size_t idx) const override
     {
         assert(idx < m_vFramebuffers.size());
         return m_vCommandBuffers[idx];

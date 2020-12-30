@@ -101,7 +101,7 @@ RenderPassGBuffer::RenderPassGBuffer()
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_vRenderPasses.back()),
                             VK_OBJECT_TYPE_RENDER_PASS, "Opaque Lighting");
 
-    mpQuad = GetQuad();
+    mpQuad = GetGeometryManager()->GetQuad();
 
 }
 

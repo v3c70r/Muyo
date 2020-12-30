@@ -17,7 +17,7 @@ public:
     ~RenderLayerIBL();
     void destroyFramebuffer();
 
-    VkCommandBuffer GetCommandBuffer() const
+    VkCommandBuffer GetCommandBuffer(size_t idx) const override
     {
         return m_commandBuffer;
     }

@@ -51,26 +51,31 @@ void RenderPassManager::Unintialize()
     }
 }
 
-void RenderPassManager::RecordCmdBuffers(const std::vector<const Geometry*>& vpGeometries)
+void RenderPassManager::RecordStaticCmdBuffers(const std::vector<const Geometry*>& vpGeometries)
 {
     RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
     pGBufferPass->recordCommandBuffer(vpGeometries);
 
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
-    Geometry *pQuadGeometry = GetQuad();
-    //pFinalPass->RecordOnce(*pQuadGeometry,
-    //                       GetRenderResourceManager()
-    //                           ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
-    //                           ->getView());
+    pFinalPass->RecordCommandBuffers();
+}
+
+void RenderPassManager::RecordDynamicCmdBuffers(uint32_t nFrameIdx, VkExtent2D vpExtent)
+{
+    RenderPassUI* pUIPass = static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get());
+    pUIPass->recordCommandBuffer(vpExtent, nFrameIdx);
 }
 
 std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgIdx)
 {
-    RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer*>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
     std::vector<VkCommandBuffer> vCmdBufs;
     for (const auto& pass : m_vpRenderPasses)
     {
-        vCmdBufs.push_back(pass->GetCommandBuffer());
+        VkCommandBuffer cmdBuf = pass->GetCommandBuffer(uImgIdx);
+        if (cmdBuf != VK_NULL_HANDLE)
+        {
+            vCmdBufs.push_back(cmdBuf);
+        }
     }
     if (m_bIsIrradianceGenerated)
     {
