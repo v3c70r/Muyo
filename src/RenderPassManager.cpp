@@ -1,4 +1,5 @@
 #include <cassert>
+#include "Scene.h"
 #include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "RenderPass.h"
@@ -51,9 +52,17 @@ void RenderPassManager::Unintialize()
     }
 }
 
-void RenderPassManager::RecordStaticCmdBuffers(const std::vector<const Geometry*>& vpGeometries)
+void RenderPassManager::RecordStaticCmdBuffers(const DrawLists& drawLists)
 {
     RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+    const std::vector<const SceneNode*>& opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
+    std::vector<const Geometry*> vpGeometries;
+    vpGeometries.reserve(opaqueDrawList.size());
+    for (const SceneNode *pNode : opaqueDrawList)
+    {
+        vpGeometries.push_back(
+            static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+    }
     pGBufferPass->recordCommandBuffer(vpGeometries);
 
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());

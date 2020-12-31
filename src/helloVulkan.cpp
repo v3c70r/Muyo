@@ -278,18 +278,7 @@ int main()
         GetMaterialManager()->CreateDefaultMaterial();
 
         // Record static command buffer
-        {
-            const std::vector<const SceneNode *> vpSceneNodes =
-                g_vScenes[0].GatherDrawLists().m_aDrawLists[DrawLists::DL_OPAUE];
-            std::vector<const Geometry *> vpGeometries;
-            vpGeometries.reserve(vpSceneNodes.size());
-            for (const SceneNode *pNode : vpSceneNodes)
-            {
-                vpGeometries.push_back(
-                    static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
-            }
-            GetRenderPassManager()->RecordStaticCmdBuffers(vpGeometries);
-        }
+        GetRenderPassManager()->RecordStaticCmdBuffers(g_vScenes[0].GatherDrawLists());
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
         {

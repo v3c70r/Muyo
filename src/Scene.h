@@ -43,7 +43,7 @@ public:
     enum Lists
     {
         DL_TRANSPARENT,
-        DL_OPAUE,
+        DL_OPAQUE,
         DL_COUNT
     };
     std::array<std::vector<const SceneNode*>, DL_COUNT> m_aDrawLists;

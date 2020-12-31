@@ -51,7 +51,7 @@ const DrawLists &Scene::GatherDrawLists()
                     }
                     else
                     {
-                        drawLists.m_aDrawLists[DrawLists::DL_OPAUE].push_back(pNode.get());
+                        drawLists.m_aDrawLists[DrawLists::DL_OPAQUE].push_back(pNode.get());
                     }
                     Geometry *pGeometry = pGeometryNode->GetGeometry();
                     pGeometry->SetWorldMatrix(mWorldMatrix);

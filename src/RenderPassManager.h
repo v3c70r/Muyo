@@ -6,7 +6,7 @@
 #include <vector>
 
 class RenderPass;
-class Geometry;
+class DrawLists;
 enum RenderPassNames
 {
     // Order matters
@@ -24,7 +24,7 @@ public:
     void SetSwapchainImageViews(std::vector<VkImageView> &vImageViews, VkImageView depthImageView);
     void OnResize(uint32_t uWidth, uint32_t uHeight);
     void Unintialize();
-    void RecordStaticCmdBuffers(const std::vector<const Geometry*>& vpGeometries);
+    void RecordStaticCmdBuffers(const DrawLists& drawLists);
     void RecordDynamicCmdBuffers(uint32_t uFrameIdx, VkExtent2D vpExtent);
     std::vector<VkCommandBuffer> GetCommandBuffers(uint32_t uImgIdx);
 
