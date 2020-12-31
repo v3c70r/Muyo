@@ -110,12 +110,6 @@ static const uint32_t NUM_BUFFERS = 3;
 
 static DebugUtilsMessenger s_debugMessenger;
 
-// PHYSICAL Device extensions
-const std::vector<const char *> deviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-    //"VK_KHR_ray_tracing"
-};
-
 //Geometry* g_pQuadGeometry = nullptr;
 std::vector<Scene> g_vScenes;
 
@@ -164,9 +158,16 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 {
     std::vector<const char *> vDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        //#ifndef __APPLE__
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
-        //#endif
+
+        // Ray tracing extensions
+        // VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        // VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+        // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        // VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+        // VK_KHR_SPIRV_1_4_EXTENSION_NAME,
+        // VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
     };
     return vDeviceExtensions;
 }
