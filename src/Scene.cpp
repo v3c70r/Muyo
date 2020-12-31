@@ -30,29 +30,39 @@ std::string Scene::ConstructDebugString() const
     return ss.str();
 }
 
-const std::vector<const SceneNode *> &Scene::FlattenTree()
+const DrawLists &Scene::GatherDrawLists()
 {
-    if (m_bIsTreeDirty)
+    if (m_bAreDrawListsDirty)
     {
-        m_vpFlattenedNodes.clear();
-        std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &, std::vector<const SceneNode*>&)>
+        for (auto& dl : m_drawLists.m_aDrawLists)
+        {
+            dl.clear();
+        }
+        std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &, DrawLists&)>
             FlattenTreeRecursive = [&](const std::unique_ptr<SceneNode> &pNode,
-                                       const glm::mat4 &mCurrentTrans, std::vector<const SceneNode*>& vFlattenedTree) {
+                                       const glm::mat4 &mCurrentTrans, DrawLists& drawLists) {
                 glm::mat4 mWorldMatrix = mCurrentTrans * pNode->GetMatrix();
                 assert(IsMat4Valid(mWorldMatrix));
                 if (GeometrySceneNode *pGeometryNode = dynamic_cast<GeometrySceneNode *>(pNode.get()))
                 {
-                    vFlattenedTree.push_back(pNode.get());
+                    if (pGeometryNode->IsTransparent())
+                    {
+                        drawLists.m_aDrawLists[DrawLists::DL_TRANSPARENT].push_back(pNode.get());
+                    }
+                    else
+                    {
+                        drawLists.m_aDrawLists[DrawLists::DL_OPAUE].push_back(pNode.get());
+                    }
                     Geometry *pGeometry = pGeometryNode->GetGeometry();
                     pGeometry->SetWorldMatrix(mWorldMatrix);
                 }
                 for (const auto &pChild : pNode->GetChildren())
                 {
-                    FlattenTreeRecursive(pChild, mWorldMatrix, vFlattenedTree);
+                    FlattenTreeRecursive(pChild, mWorldMatrix, drawLists);
                 }
             };
-        FlattenTreeRecursive(m_pRoot, m_pRoot->GetMatrix(), m_vpFlattenedNodes);
-        m_bIsTreeDirty = false;
+        FlattenTreeRecursive(m_pRoot, m_pRoot->GetMatrix(), m_drawLists);
+        m_bAreDrawListsDirty = false;
     }
-    return m_vpFlattenedNodes;
+    return m_drawLists;
 }

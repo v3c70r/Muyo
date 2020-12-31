@@ -5,6 +5,8 @@
 #include <string>
 #include <sstream>
 
+static const uint32_t TRANSPARENT_FLAG = 1;
+
 class SceneNode
 {
 public:
@@ -32,15 +34,27 @@ protected:
     std::string m_sName;
     std::vector<std::unique_ptr<SceneNode>> m_vpChildren;
     glm::mat4 m_mTransformation = glm::mat4(1.0);
+    uint32_t m_uFlag = 0;
 };
 
+struct DrawLists
+{
+public:
+    enum Lists
+    {
+        DL_TRANSPARENT,
+        DL_OPAUE,
+        DL_COUNT
+    };
+    std::array<std::vector<const SceneNode*>, DL_COUNT> m_aDrawLists;
+};
 class Scene
 {
 public:
     SceneNode* GetRoot() { return m_pRoot.get(); }
     //const SceneNode* GetRoot() const { return m_pRoot.get(); }
     const std::unique_ptr<SceneNode>& GetRoot() const { return m_pRoot; }
-    const std::vector<const SceneNode*>& FlattenTree();
+    const DrawLists& GatherDrawLists();
     std::string ConstructDebugString() const;
 
     static bool IsMat4Valid(const glm::mat4 &mat)
@@ -61,14 +75,17 @@ public:
 
 protected:
     std::unique_ptr<SceneNode> m_pRoot = std::make_unique<SceneNode>();
-    std::vector<const SceneNode*> m_vpFlattenedNodes;
-    bool m_bIsTreeDirty = true;
+    //std::vector<const SceneNode*> m_vpFlattenedNodes;
+    DrawLists m_drawLists;
+    bool m_bAreDrawListsDirty = true;
 };
 
 class Geometry;
 class GeometrySceneNode : public SceneNode
 {
 public:
+    void SetTransparent() {m_uFlag |= TRANSPARENT_FLAG;}
+    bool IsTransparent() const { return m_uFlag & TRANSPARENT_FLAG; }
     void SetGeometry(Geometry* pGeometry)
     {
         m_pGeometry = pGeometry;

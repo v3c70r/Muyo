@@ -75,7 +75,6 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
     sceneNode.SetName(gltfNode.name);
 
     // Use matrix if it has transformation matrix
-    // Oterwise read translation, rotation and scaling to construct the matrix
     if (gltfNode.matrix.size() != 0)
     {
         glm::mat4 mMat(1.0);
@@ -88,6 +87,7 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
         }
         sceneNode.SetMatrix(mMat);
     }
+    // Oterwise read translation, rotation and scaling to construct the matrix
     else
     {
         glm::vec3 vT(0.0f);
@@ -130,6 +130,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                                          const tinygltf::Model &model)
 {
     std::vector<std::unique_ptr<Primitive>> vPrimitives;
+    bool bIsMeshTransparent =false;
     for (const auto &primitive : mesh.primitives)
     {
         std::vector<glm::vec3> vPositions;
@@ -266,16 +267,13 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             std::make_unique<Primitive>(vVertices, vIndices));
 
         //  =========Material
-        const tinygltf::Material &gltfMaterial =
-            model.materials[primitive.material];
-
-        if (GetMaterialManager()->m_mMaterials.find(gltfMaterial.name) ==
-            GetMaterialManager()->m_mMaterials.end())
+        const tinygltf::Material &gltfMaterial = model.materials[primitive.material];
+        auto materialIter = GetMaterialManager()->m_mMaterials.find(gltfMaterial.name);
+        Material* pMaterial = nullptr;
+        if (materialIter == GetMaterialManager()->m_mMaterials.end())
         {
-            GetMaterialManager()->m_mMaterials[gltfMaterial.name] =
-                std::make_unique<Material>();
-            Material *pMaterial =
-                GetMaterialManager()->m_mMaterials.at(gltfMaterial.name).get();
+            GetMaterialManager()->m_mMaterials[gltfMaterial.name] = std::make_unique<Material>();
+            pMaterial = GetMaterialManager()->m_mMaterials.at(gltfMaterial.name).get();
             const std::filesystem::path sceneDir = m_sceneFile.parent_path();
 
             // Load material textures
@@ -377,7 +375,20 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
 
             pMaterial->AllocateDescriptorSet();
             assert(pMaterial->GetDescriptorSet() != VK_NULL_HANDLE);
-            vPrimitives.back()->SetMaterial(pMaterial);
+            if (gltfMaterial.alphaMode != "OPAQUE")
+            {
+                pMaterial->SetTransparent();
+            }
+        }
+        else
+        {
+            pMaterial = materialIter->second.get();
+        }
+
+        vPrimitives.back()->SetMaterial(pMaterial);
+        if (pMaterial->IsTransparent())
+        {
+            bIsMeshTransparent = true;
         }
     }
     Geometry *pGeometry = new Geometry(vPrimitives);
@@ -390,4 +401,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     pGeometry->SetWorldMatrix(glm::mat4(1.0));
     GetGeometryManager()->vpGeometries.emplace_back(pGeometry);
     geomNode.SetGeometry(pGeometry);
+    if (bIsMeshTransparent)
+    {
+        geomNode.SetTransparent();
+    }
 }

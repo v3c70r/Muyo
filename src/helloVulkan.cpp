@@ -280,7 +280,7 @@ int main()
         // Record static command buffer
         {
             const std::vector<const SceneNode *> vpSceneNodes =
-                g_vScenes[0].FlattenTree();
+                g_vScenes[0].GatherDrawLists().m_aDrawLists[DrawLists::DL_OPAUE];
             std::vector<const Geometry *> vpGeometries;
             vpGeometries.reserve(vpSceneNodes.size());
             for (const SceneNode *pNode : vpSceneNodes)
