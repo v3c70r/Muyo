@@ -6,6 +6,7 @@
 #include "RenderPassGBuffer.h"
 #include "RenderPassUI.h"
 #include "RenderLayerIBL.h"
+#include "RenderPassTransparent.h"
 
 static RenderPassManager renderPassManager;
 
@@ -32,6 +33,8 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, VkFormat s
     m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(swapchainFormat);
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
+    // Transparent pass
+    m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>();
 }
 
 void RenderPassManager::SetSwapchainImageViews(std::vector<VkImageView> &vImageViews, VkImageView depthImageView)

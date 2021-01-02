@@ -12,6 +12,7 @@ enum RenderPassNames
     // Order matters
     RENDERPASS_IBL,
     RENDERPASS_GBUFFER,
+    RENDERPASS_TRANSPARENT,
     RENDERPASS_FINAL,
     RENDERPASS_UI,
 
