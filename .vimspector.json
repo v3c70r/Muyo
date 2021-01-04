@@ -9,21 +9,24 @@
                 "program": "${workspaceRoot}/build/helloVulkan",
                 "cwd": "${workspaceFolder}/build",
                 "externalConsole": false,
-                "environment": [
-                    {
-                        "name": "VK_LAYER_PATH",
-                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/etc/vulkan/explicit_layer.d"
-                    },
-                    {
-                        "name": "LD_LIBRARY_PATH",
-                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/lib"
-                    },
-                    {
-                        "name": "VK_ICD_FILENAMES",
-                        "value": "/Users/qgu/tools/vulkansdk-macos-1.2.131.1/macOS/etc/vulkan/icd.d/MoltenVK_icd.json"
-                    }
-                ],
-                "MIMode": "lldb"
+                "linux": {
+                    "setupCommands": [
+                        {
+                            "description": "Enable pretty-printing for gdb",
+                            "text": "-enable-pretty-printing",
+                            "ignoreFailures": true
+                        },
+                        {
+                            "description": "Auto load symbols when loading an .so file",
+                            "text": "set auto-solib-add",
+                            "ignoreFailures": false
+                        }
+                    ],
+                    "MIkode": "gdb"
+                },
+                "osx": {
+                    "MIMode": "lldb"
+                }
             }
         },
         "helloVulkan: Attach": {

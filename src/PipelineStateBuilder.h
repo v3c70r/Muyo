@@ -202,6 +202,11 @@ public:
         m_info.frontFace = frontFace;
         return *this;
     }
+    RasterizationStateCIBuilder& setCullMode(VkCullModeFlags uCullMode)
+    {
+        m_info.cullMode = uCullMode;
+        return *this;
+    }
     // TODO: Add more builders if necessary
 };
 
@@ -257,11 +262,9 @@ private:
                 VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                 VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
             defaultBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-            defaultBlendState.dstColorBlendFactor =
-                VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            defaultBlendState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             defaultBlendState.colorBlendOp = VK_BLEND_OP_ADD;
-            defaultBlendState.srcAlphaBlendFactor =
-                VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            defaultBlendState.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
             defaultBlendState.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
             defaultBlendState.alphaBlendOp = VK_BLEND_OP_ADD;
         }

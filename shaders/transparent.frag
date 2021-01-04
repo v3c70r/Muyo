@@ -1,5 +1,25 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
+#include "brdf.h"
+#include "material.h"
+
+// Light informations
+const int LIGHT_COUNT = 4;
+const int USED_LIGHT_COUNT = 4;
+const vec3 lightPositions[LIGHT_COUNT] = vec3[]( vec3(1.0, 1.0, 0.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(1.0, 1.0, 0.0)
+);
+const vec3 lightColors[LIGHT_COUNT] = vec3[](
+    vec3(1.0, 1.0, 1.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(0.0, 0.0, 1.0),
+    vec3(1.0, 1.0, 0.0)
+);
+//===============
+
 // GBuffer texture indices
 layout(location = 0) in vec2 inTexCoords0;
 layout(location = 1) in vec2 inTexCoords1;
@@ -18,26 +38,6 @@ layout (set = 0, binding = 0) uniform UniformBufferObject {
     mat4 normalObjectToView;
 } ubo;
 
-// Materials
-const uint TEX_ALBEDO = 0;
-const uint TEX_NORMAL = 1;
-const uint TEX_METALNESS = 2;
-const uint TEX_ROUGHNESS = 3;
-const uint TEX_AO = 4;
-const uint TEX_COUNT = 5;
-layout(set = 1, binding = 0) uniform sampler2D texPBR[TEX_COUNT];
-layout(set = 1, binding = 1) uniform PBRFactors {
-    vec4 vBaseColorFactors;
-    float fRoughness;
-    float fMetalness;
-    uint UVIndices0;
-    uint UVIndices1;
-    uint UVIndices2;
-    uint UVIndices3;
-    uint UVIndices4;
-    float padding0;
-} factors;
-
 void main()
 {
     vec2 inTexCoords[2];
@@ -53,9 +53,32 @@ void main()
     vec3 vTextureNormal = texture(texPBR[TEX_NORMAL], inTexCoords[UVIndices[TEX_NORMAL]]).xyz;
     vec3 vWorldNormal = normalize(inWorldNormal.xyz + vTextureNormal);
 
-    vec4 baseColor = texture(texPBR[TEX_ALBEDO], inTexCoords[UVIndices[TEX_ALBEDO]]) * factors.vBaseColorFactors;
+    const vec4 baseColor = texture(texPBR[TEX_ALBEDO], inTexCoords[UVIndices[TEX_ALBEDO]]) * factors.vBaseColorFactors;
+    const float fMetallic = texture(texPBR[TEX_METALNESS], inTexCoords[UVIndices[TEX_METALNESS]]).r * factors.fMetalness;
+    const float fRoughness = texture(texPBR[TEX_ROUGHNESS], inTexCoords[UVIndices[TEX_ROUGHNESS]]).g * factors.fRoughness;
 
+    vec3 vLo = vec3(0.0);
+    const vec3 vViewPos = (ubo.view * inWorldPos).xyz;
+    const vec3 vNormal = (ubo.objectToView * vec4(vWorldNormal, 0.0)).xyz;
+    for(int i = 0; i < USED_LIGHT_COUNT; ++i)
+    {
+        vLo += ComputeDirectLighting(
+                lightPositions[i],
+                lightColors[i],
+                vViewPos,
+                vNormal,
+                baseColor.xyz,
+                fMetallic,
+                fRoughness);
+        //ComputeDirectLighting(
+        //        vec3(0.0, 0.0, 0.0),
+        //        vec3(0.0, 0.0, 0.0),
+        //        vec3(0.0, 0.0, 0.0),
+        //        vec3(0.0, 0.0, 0.0),
+        //        vec3(0.0, 0.0, 0.0),
+        //        1.0f, 1.0f);
+    }
 
-    outColor = baseColor;
+    outColor = vec4(vLo, baseColor.a);
 }
 

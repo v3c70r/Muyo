@@ -28,7 +28,7 @@
                 "MIkode": "gdb"
             },
             "osx": {
-                "MIMode": "lldb",
+                "MIMode": "lldb"
             },
             "windows": {
                 "program": "${command:cmake.launchTargetPath}",

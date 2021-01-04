@@ -151,6 +151,7 @@ void RenderPassTransparent::CreatePipeline()
 
     InputAssemblyStateCIBuilder iaBuilder;
     RasterizationStateCIBuilder rsBuilder;
+    rsBuilder.setCullMode(VK_CULL_MODE_NONE);
     MultisampleStateCIBuilder msBuilder;
     BlendStateCIBuilder blendBuilder;
     blendBuilder.setAttachments(1);

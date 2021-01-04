@@ -379,6 +379,9 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             {
                 pMaterial->SetTransparent();
             }
+            if (gltfMaterial.doubleSided)
+            {
+            }
         }
         else
         {
