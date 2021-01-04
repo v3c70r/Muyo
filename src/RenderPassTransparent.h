@@ -6,9 +6,10 @@ class RenderPassTransparent : public RenderPass
 public:
     RenderPassTransparent();
     virtual ~RenderPassTransparent() override;
-    VkCommandBuffer GetCommandBuffer(size_t) const override { return VK_NULL_HANDLE; }
-    void RecordCommandBuffers();
+    VkCommandBuffer GetCommandBuffer(size_t) const override { return m_vCommandBuffers[0]; }
+    void RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries);
     void CreatePipeline();
+    void DestroyPipeline();
     void CreateFramebuffer(uint32_t uWidth, uint32_t uHeight);
     void DestroyFramebuffer();
 private:

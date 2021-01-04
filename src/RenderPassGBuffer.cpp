@@ -33,13 +33,12 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
 
     aAttachmentDesc[LIGHTING_OUTPUT] = desc;
     aAttachmentDesc[LIGHTING_OUTPUT].format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    aAttachmentDesc[LIGHTING_OUTPUT].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    aAttachmentDesc[LIGHTING_OUTPUT].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     // Depth target
     aAttachmentDesc[GBUFFER_DEPTH] = desc;
     aAttachmentDesc[GBUFFER_DEPTH].format = VK_FORMAT_D32_SFLOAT;
-    aAttachmentDesc[GBUFFER_DEPTH].finalLayout =
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    aAttachmentDesc[GBUFFER_DEPTH].finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
 
 }
 
@@ -67,7 +66,7 @@ RenderPassGBuffer::RenderPassGBuffer()
             mAttachments.aLightingColorAttachmentRef.size();
         subpass.pColorAttachments =
             mAttachments.aLightingColorAttachmentRef.data();
-        subpass.pDepthStencilAttachment = &mAttachments.m_depthAttachment;
+        subpass.pDepthStencilAttachment = nullptr;
         subpass.inputAttachmentCount =
             static_cast<uint32_t>(mAttachments.aLightingInputRef.size());
         subpass.pInputAttachments = mAttachments.aLightingInputRef.data();
@@ -421,6 +420,7 @@ void RenderPassGBuffer::createPipelines()
         BlendStateCIBuilder blendBuilder;
         blendBuilder.setAttachments(1);
         DepthStencilCIBuilder depthStencilBuilder;
+        depthStencilBuilder.setDepthTestEnabled(false).setDepthWriteEnabled(false);
 
         PipelineStateBuilder builder;
 

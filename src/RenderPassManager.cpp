@@ -42,6 +42,8 @@ void RenderPassManager::SetSwapchainImageViews(std::vector<VkImageView> &vImageV
     assert(m_uWidth != 0 && m_uHeight != 0);
     static_cast<RenderPassFinal*>(m_vpRenderPasses[RENDERPASS_FINAL].get())->setSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
     static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get())->setSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
+    static_cast<RenderPassTransparent*>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
+    static_cast<RenderPassTransparent*>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
 }
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
 {
@@ -57,16 +59,30 @@ void RenderPassManager::Unintialize()
 
 void RenderPassManager::RecordStaticCmdBuffers(const DrawLists& drawLists)
 {
-    RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
-    const std::vector<const SceneNode*>& opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
-    std::vector<const Geometry*> vpGeometries;
-    vpGeometries.reserve(opaqueDrawList.size());
-    for (const SceneNode *pNode : opaqueDrawList)
     {
-        vpGeometries.push_back(
-            static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+        RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+        const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
+        std::vector<const Geometry *> vpGeometries;
+        vpGeometries.reserve(opaqueDrawList.size());
+        for (const SceneNode *pNode : opaqueDrawList)
+        {
+            vpGeometries.push_back(
+                static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+        }
+        pGBufferPass->recordCommandBuffer(vpGeometries);
     }
-    pGBufferPass->recordCommandBuffer(vpGeometries);
+    {
+        RenderPassTransparent *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
+        const std::vector<const SceneNode *> &transparentDrawList = drawLists.m_aDrawLists[DrawLists::DL_TRANSPARENT];
+        std::vector<const Geometry *> vpGeometries;
+        vpGeometries.reserve(transparentDrawList.size());
+        for (const SceneNode *pNode : transparentDrawList)
+        {
+            vpGeometries.push_back(
+                static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+        }
+        pTransparentPass->RecordCommandBuffers(vpGeometries);
+    }
 
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->RecordCommandBuffers();
