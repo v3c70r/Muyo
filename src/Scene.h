@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <string>
 #include <sstream>
+#include <array>
 
 static const uint32_t TRANSPARENT_FLAG = 1;
 

@@ -6,7 +6,7 @@
 #include <vector>
 
 class RenderPass;
-class DrawLists;
+struct DrawLists;
 enum RenderPassNames
 {
     // Order matters
