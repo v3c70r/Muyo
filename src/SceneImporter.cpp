@@ -377,6 +377,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             assert(pMaterial->GetDescriptorSet() != VK_NULL_HANDLE);
             if (gltfMaterial.alphaMode != "OPAQUE")
             {
+                assert(gltfMaterial.alphaMode == "BLEND" && "Unsupported alpha mode");
                 pMaterial->SetTransparent();
             }
             if (gltfMaterial.doubleSided)

@@ -70,13 +70,6 @@ void main()
                 baseColor.xyz,
                 fMetallic,
                 fRoughness);
-        //ComputeDirectLighting(
-        //        vec3(0.0, 0.0, 0.0),
-        //        vec3(0.0, 0.0, 0.0),
-        //        vec3(0.0, 0.0, 0.0),
-        //        vec3(0.0, 0.0, 0.0),
-        //        vec3(0.0, 0.0, 0.0),
-        //        1.0f, 1.0f);
     }
 
     outColor = vec4(vLo, baseColor.a);
