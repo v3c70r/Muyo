@@ -13,6 +13,7 @@ enum RenderPassNames
     RENDERPASS_IBL,
     RENDERPASS_GBUFFER,
     RENDERPASS_TRANSPARENT,
+    RENDERPASS_SKYBOX,
     RENDERPASS_FINAL,
     RENDERPASS_UI,
 
@@ -30,7 +31,7 @@ public:
     std::vector<VkCommandBuffer> GetCommandBuffers(uint32_t uImgIdx);
 
 private:
-    std::array<std::unique_ptr<RenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr};
+    std::array<std::unique_ptr<RenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     uint32_t m_uWidth = 0;
     uint32_t m_uHeight = 0;
     bool m_bIsIrradianceGenerated = false;

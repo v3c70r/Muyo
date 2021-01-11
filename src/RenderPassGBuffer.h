@@ -107,5 +107,4 @@ private:
 
     VkDescriptorSet mPerViewDescSet;
     VkDescriptorSet mMaterialDescSet;
-    Geometry* mpQuad;
 };

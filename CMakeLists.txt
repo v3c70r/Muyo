@@ -118,6 +118,7 @@ add_executable( helloVulkan
     src/RenderTargetResource.cpp
     src/RenderResourceManager.cpp
     src/RenderPassUI.cpp
+    src/RenderPassSkybox.cpp
     src/DescriptorManager.cpp
     src/SamplerManager.cpp
     src/Debug.cpp

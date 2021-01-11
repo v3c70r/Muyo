@@ -7,6 +7,7 @@
 #include "RenderPassUI.h"
 #include "RenderLayerIBL.h"
 #include "RenderPassTransparent.h"
+#include "RenderPassSkybox.h"
 
 static RenderPassManager renderPassManager;
 
@@ -35,6 +36,8 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, VkFormat s
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
     // Transparent pass
     m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>();
+    // Skybox pass
+    m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>();
 }
 
 void RenderPassManager::SetSwapchainImageViews(std::vector<VkImageView> &vImageViews, VkImageView depthImageView)
@@ -44,6 +47,8 @@ void RenderPassManager::SetSwapchainImageViews(std::vector<VkImageView> &vImageV
     static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get())->setSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
     static_cast<RenderPassTransparent*>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
     static_cast<RenderPassTransparent*>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
+    static_cast<RenderPassSkybox*>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreateFramebuffer(m_uWidth, m_uHeight);
+    static_cast<RenderPassSkybox*>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreatePipeline();
 }
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
 {
@@ -84,8 +89,11 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists& drawLists)
         pTransparentPass->RecordCommandBuffers(vpGeometries);
     }
 
+    RenderPassSkybox *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
+    pSkybox->RecordCommandBuffers();
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->RecordCommandBuffers();
+
 }
 
 void RenderPassManager::RecordDynamicCmdBuffers(uint32_t nFrameIdx, VkExtent2D vpExtent)

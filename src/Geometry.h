@@ -97,8 +97,10 @@ public:
     std::vector<std::unique_ptr<Geometry>> vpGeometries;
     void Destroy() { vpGeometries.clear(); }
     Geometry* GetQuad();
+    Geometry* GetCube();
 private:
     int m_nQuadIdx = -1;  // Quad geometry idx
+    int m_nCubeIdx = -1;  // Cube geometry idx
 
 };
 

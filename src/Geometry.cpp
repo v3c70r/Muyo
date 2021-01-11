@@ -26,6 +26,17 @@ Geometry* GeometryManager::GetQuad()
     }
     return vpGeometries[m_nQuadIdx].get();
 }
+
+Geometry* GeometryManager::GetCube()
+{
+    if (m_nCubeIdx == -1)
+    {
+        m_nCubeIdx = vpGeometries.size();
+        vpGeometries.push_back(loadObj("assets/cube.obj"));
+    }
+    return vpGeometries[m_nCubeIdx].get();
+}
+
 std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation)
 {
     struct TinyObjInfo

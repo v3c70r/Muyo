@@ -100,8 +100,6 @@ RenderPassGBuffer::RenderPassGBuffer()
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_vRenderPasses.back()),
                             VK_OBJECT_TYPE_RENDER_PASS, "Opaque Lighting");
 
-    mpQuad = GetGeometryManager()->GetQuad();
-
 }
 
 RenderPassGBuffer::~RenderPassGBuffer()
@@ -262,7 +260,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                                          VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                         ->getView())};
             SCOPED_MARKER(mCommandBuffer, "Lighting Pass");
-            const Primitive* prim = mpQuad->getPrimitives().at(0).get();
+            const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
             VkBuffer indexBuffer = prim->getIndexDeviceBuffer();

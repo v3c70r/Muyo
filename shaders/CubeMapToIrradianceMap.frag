@@ -9,7 +9,7 @@ layout(set = 1, binding = 0) uniform samplerCube environmentMap;
 void main()
 {
     // the sample direction equals the hemisphere's orientation
-const float PI = 3.14159265359;
+    const float PI = 3.14159265359;
     vec3 normal = normalize(localPos);
 
     vec3 irradiance = vec3(0.0);
