@@ -7,7 +7,7 @@ public:
     void SetCubemap();
     RenderPassSkybox();
     ~RenderPassSkybox() override;
-    VkCommandBuffer GetCommandBuffer(size_t idx = 0) const override { return VK_NULL_HANDLE; }
+    VkCommandBuffer GetCommandBuffer(size_t idx = 0) const override;
     void CreateFramebuffer(uint32_t uWidth, uint32_t uHeight);
     void CreatePipeline();
     void RecordCommandBuffers();

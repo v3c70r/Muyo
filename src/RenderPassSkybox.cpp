@@ -28,7 +28,6 @@ void RenderPassSkybox::CreateRenderPass()
     attachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     attachmentDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     attachmentDesc.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-    attachmentDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference colorAttachment = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 
@@ -119,15 +118,13 @@ void RenderPassSkybox::CreatePipeline()
         GetDescriptorManager()->getDescriptorLayout(
             DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
         GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_MATERIALS),
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_PER_OBJ_DATA)};
+            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
     std::vector<VkPushConstantRange> pushConstants;
 
     m_pipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
 
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Transparent");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Skybox");
 
     //TODO : Write a shader for transparent pass
     VkShaderModule vertShdr =
@@ -212,8 +209,13 @@ void RenderPassSkybox::RecordCommandBuffers()
         const UniformBuffer<PerViewData>* perView =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
-        VkDescriptorSet perViewSets =
-            GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
+        std::vector<VkDescriptorSet> vDescSets = {
+            GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView),
+            GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
+                GetRenderResourceManager()
+                    ->getColorTarget("irr_cube_map", {0, 0},
+                                     VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                    ->getView())};
 
         {
             // Draw skybox cube
@@ -231,8 +233,8 @@ void RenderPassSkybox::RecordCommandBuffers()
                               m_pipeline);
             vkCmdBindDescriptorSets(
                 mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_pipelineLayout, 0, 1,
-                &perViewSets, 0, nullptr);
+                m_pipelineLayout, 0, (uint32_t)vDescSets.size(),
+                vDescSets.data(), 0, nullptr);
             vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
         }
         vkCmdEndRenderPass(mCommandBuffer);
@@ -241,4 +243,9 @@ void RenderPassSkybox::RecordCommandBuffers()
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "Skybox");
     m_vCommandBuffers.push_back(mCommandBuffer);
+}
+
+VkCommandBuffer RenderPassSkybox::GetCommandBuffer(size_t idx) const
+{
+    return m_vCommandBuffers.back();
 }
