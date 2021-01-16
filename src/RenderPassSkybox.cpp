@@ -18,25 +18,41 @@ RenderPassSkybox::~RenderPassSkybox()
 
 void RenderPassSkybox::CreateRenderPass()
 {
-    // Output to my lighting output
-    VkAttachmentDescription attachmentDesc = {};
-    attachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
-    attachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-    attachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    attachmentDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    attachmentDesc.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    std::array<VkAttachmentDescription, 2> attDescs;
+    {
+        VkAttachmentDescription& attDesc = attDescs[0];
+        attDesc = {};
+        attDesc.samples = VK_SAMPLE_COUNT_1_BIT;
+        attDesc.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        attDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attDesc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        attDesc.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+    }
+    {
+        VkAttachmentDescription& attDesc = attDescs[1];
+        attDesc = {};
+        attDesc.samples = VK_SAMPLE_COUNT_1_BIT;
+        attDesc.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        attDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attDesc.initialLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
+        attDesc.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
+        attDesc.format = VK_FORMAT_D32_SFLOAT;
+    }
 
     VkAttachmentReference colorAttachment = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthAttachment = {1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
 
    // Subpass
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachment;
-    subpass.pDepthStencilAttachment = nullptr;
+    subpass.pDepthStencilAttachment = &depthAttachment;
 
    // Subpass dependency
     VkSubpassDependency subpassDep = {};
@@ -55,8 +71,8 @@ void RenderPassSkybox::CreateRenderPass()
     renderPassInfo.pDependencies = &subpassDep;
 
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &attachmentDesc;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attDescs.size());
+    renderPassInfo.pAttachments = attDescs.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
@@ -85,12 +101,16 @@ void RenderPassSkybox::DestroyRenderPass()
 void RenderPassSkybox::CreateFramebuffer(uint32_t uWidth, uint32_t uHeight)
 {
     VkExtent2D vp = {uWidth, uHeight};
-    VkImageView view = GetRenderResourceManager()->getColorTarget("LIGHTING_OUTPUT", vp)->getView();
+
+    std::array<VkImageView, 2> views = {
+        GetRenderResourceManager()->getColorTarget("LIGHTING_OUTPUT", vp)->getView(),
+        GetRenderResourceManager()->getDepthTarget("GBUFFER_DEPTH", vp)->getView()};
+
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.renderPass = m_vRenderPasses.back();
-    framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &view;
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(views.size());
+    framebufferInfo.pAttachments = views.data();
     framebufferInfo.width = uWidth;
     framebufferInfo.height = uHeight;
     framebufferInfo.layers = 1;
@@ -213,7 +233,7 @@ void RenderPassSkybox::RecordCommandBuffers()
             GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView),
             GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
                 GetRenderResourceManager()
-                    ->getColorTarget("irr_cube_map", {0, 0},
+                    ->getColorTarget("env_cube_map", {0, 0},
                                      VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                     ->getView())};
 

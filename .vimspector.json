@@ -28,16 +28,6 @@
                     "MIMode": "lldb"
                 }
             }
-        },
-        "helloVulkan: Attach": {
-            "adapter": "vscode-cpptools",
-            "configuration": {
-                "name": "helloVulkan: Attach",
-                "type": "cppdbg",
-                "request": "attach",
-                "program": "${workspaceRoot}/build/helloVulkan",
-                "MIMode": "lldb"
-            }
         }
     }
 }

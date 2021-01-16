@@ -17,5 +17,6 @@ layout (location = 0) out vec3 vTexCoord;
 void main()
 {
     vTexCoord = vInPos;
-    gl_Position = ubo.proj * ubo.view * vec4(vInPos, 1.0);
+    vec4 vPos = ubo.proj * mat4(mat3(ubo.view)) * vec4(vInPos, 1.0);
+    gl_Position = vPos.xyww;
 }  

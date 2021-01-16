@@ -8,5 +8,6 @@ layout(set = 1, binding = 0) uniform samplerCube environmentMap;
 
 void main()
 {
-    vOutColor = texture(environmentMap, vTexCoords);
+    vOutColor = texture(environmentMap, vTexCoords) * 1.0;
+    gl_FragDepth = 1.0f - 0.000001f;
 }
