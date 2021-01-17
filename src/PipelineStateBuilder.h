@@ -313,7 +313,7 @@ public:
             VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         m_info.depthTestEnable = true;
         m_info.depthWriteEnable = true;
-        m_info.depthCompareOp = VK_COMPARE_OP_LESS;
+        m_info.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         // depth clamp?
         m_info.depthBoundsTestEnable = VK_FALSE;
         m_info.front = {};

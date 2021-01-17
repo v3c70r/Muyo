@@ -5,7 +5,7 @@
 
 // Light informations
 const int LIGHT_COUNT = 4;
-const int USED_LIGHT_COUNT = 4;
+const int USED_LIGHT_COUNT = 1;
 const vec3 lightPositions[LIGHT_COUNT] = vec3[](
     vec3(1.0, 1.0, 0.0),
     vec3(0.0, 1.0, 0.0),
@@ -83,7 +83,7 @@ void main() {
     vec3 vDiffuse = vAlbedo * irradiance * 0.1;
     vec3 vAmbient = (kD * vDiffuse) * fAO;
 
-    vec3 vColor = vLo;// + vAmbient;
+    vec3 vColor = vLo + vAmbient * 100.0;
 
     // Gamma correction
     vColor = vColor / (vColor + vec3(1.0));

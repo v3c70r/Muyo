@@ -233,7 +233,7 @@ void RenderPassSkybox::RecordCommandBuffers()
             GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView),
             GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
                 GetRenderResourceManager()
-                    ->getColorTarget("env_cube_map", {0, 0},
+                    ->getColorTarget("irr_cube_map", {0, 0},
                                      VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                     ->getView())};
 

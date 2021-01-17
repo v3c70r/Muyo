@@ -36,7 +36,7 @@ void main()
         }
     }
 
-    outColor = vec4(irradiance, 1.0);
+    outColor = vec4(irradiance / nrSamples, 1.0);
 
     //vec3 envColor = texture(environmentMap, localPos).rgb;
 
