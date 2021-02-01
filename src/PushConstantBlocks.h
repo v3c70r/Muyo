@@ -11,11 +11,10 @@ struct UIPushConstBlock
     glm::vec2 scale;
     glm::vec2 translate;
 };
-struct IrradianceMapPushConstBlock
+
+struct PrefilteredPushConstantBlock
 {
-    glm::mat4 mMvp;
-    float deltaPhi = (2.0f * float(M_PI)) / 180.0f;
-    float deltaTheta = (0.5f * float(M_PI)) / 64.0f;
+    float fRoughness;
 };
 
 template <class T>

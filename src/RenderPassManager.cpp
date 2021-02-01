@@ -119,7 +119,7 @@ std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgI
         {
             vCmdBufs.push_back(cmdBuf);
         }
-        m_bIsIrradianceGenerated = true;
+        m_bIsIrradianceGenerated = false;
     }
     return vCmdBufs;
 }

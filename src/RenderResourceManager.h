@@ -70,6 +70,11 @@ public:
         return getRenderTarget(name, true, extent, format, numMips, numLayers);
     }
 
+    RenderTarget* getColorTarget(const std::string name)
+    {
+        return static_cast<RenderTarget*>(m_mResources[name].get());
+    }
+
     void removeResource(const std::string name)
     {
         if (auto it = m_mResources.find(name); it != m_mResources.end())
