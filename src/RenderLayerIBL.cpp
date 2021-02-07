@@ -37,6 +37,10 @@ void RenderLayerIBL::setupRenderPass()
         attDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         attDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attDesc.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        if (passIdx == RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP)
+        {
+            attDesc.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        }
 
         VkAttachmentReference ref = {0,
                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
@@ -89,9 +93,8 @@ void RenderLayerIBL::setupFramebuffer()
                              TEX_FORMAT, 1, 6)
             ->getView(),
         GetRenderResourceManager()
-            ->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES)
+            ->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
             ->getView()};
-
 
     // Create framebuffers
     for (uint32_t passIdx = 0; passIdx < RENDERPASS_COUNT; passIdx++)
@@ -366,6 +369,7 @@ void RenderLayerIBL::setupDescriptorSets()
 
 void RenderLayerIBL::recordCommandBuffer()
 {
+    SCOPED_MARKER(m_commandBuffer, "Generate IBL info");
     // Get skybox vertex data
     m_pSkybox = getSkybox();
     PrimitiveListConstRef primitives = m_pSkybox->getPrimitives();
@@ -472,10 +476,9 @@ void RenderLayerIBL::recordCommandBuffer()
         vkCmdEndRenderPass(m_commandBuffer);
     }
     // Compute prefiltered irradiance map
-    VkImage prefilteredImage =
-        GetRenderResourceManager()->getColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES)->getImage();
-    VkImage prefilteredImageTmp =
-        GetRenderResourceManager()->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES)->getImage();
+    VkImage prefilteredImage = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_DST_BIT)->getImage();
+    GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
+    VkImage prefilteredImageTmp = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)->getImage();
 
     {
         SCOPED_MARKER(m_commandBuffer, "Computed Prefiltered cubemap");
@@ -502,7 +505,15 @@ void RenderLayerIBL::recordCommandBuffer()
             pushConstantBlock.fRoughness = (float)uMip / (float)(NUM_PREFILTERED_CUBEMAP_MIP - 1);
             vkCmdPushConstants(m_commandBuffer, m_prefilteredCubemapPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrefilteredPushConstantBlock), &pushConstantBlock);
 
-            // TODO: Set dynamic render area
+            // Set dynamic viewport and scissor
+            VkViewport viewport = {
+                0.0, 0.0, (float)uMipWidth, (float)uMipHeight,
+                0.0, 1.0};
+            vkCmdSetViewport(m_commandBuffer, 0, 1, &viewport);
+
+            VkRect2D scissor = {0, 0, uMipWidth, uMipHeight};
+            vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
+
             vkCmdBindDescriptorSets(
                 m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_prefilteredCubemapPipelineLayout, 0, 2, sets.data(), 0, NULL);
@@ -514,8 +525,7 @@ void RenderLayerIBL::recordCommandBuffer()
             vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
 
             vkCmdEndRenderPass(m_commandBuffer);
-            // TODO: Add barrier on tmp buffer
-            // TODO: Copy it to the prefiltered mip
+
             VkImageCopy copyRegion{};
 
             copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;

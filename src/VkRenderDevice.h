@@ -25,6 +25,14 @@ public:
 
     void DestroyDevice();
 
+    void TransitImageLayout(
+        VkCommandBuffer commandBuffer,
+        VkImage image,
+        VkImageLayout oldLayout,
+        VkImageLayout newLayout,
+        uint32_t nMipCount = 1,
+        uint32_t nLayerCount = 1);
+
     void CreateSwapchain(const VkSurfaceKHR& swapchainSurface);
     void DestroySwapchain();
     void CreateCommandPools();

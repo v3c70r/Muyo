@@ -47,9 +47,12 @@ public:
             &imageInfo, memoryUsage, m_image, m_allocation);
     }
 
+    // TODO: Move this barrier out of the function
     static void sTransitionImageLayout(VkImage image,
                                        VkImageLayout oldLayout,
-                                       VkImageLayout newLayout)
+                                       VkImageLayout newLayout,
+                                       uint32_t nMipCount = 1,
+                                       uint32_t nLayerCount = 1)
     {
         VkPipelineStageFlags sourceStage;
         VkPipelineStageFlags destinationStage;
@@ -70,9 +73,9 @@ public:
             barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         }
         barrier.subresourceRange.baseMipLevel = 0;
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.levelCount = nMipCount;
         barrier.subresourceRange.baseArrayLayer = 0;
-        barrier.subresourceRange.layerCount = 1;
+        barrier.subresourceRange.layerCount = nLayerCount;
 
         // UNDEFINED -> DST
         if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&

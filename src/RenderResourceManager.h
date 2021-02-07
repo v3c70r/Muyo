@@ -20,16 +20,18 @@ public:
 
     RenderTarget* getRenderTarget(const std::string name, bool bColorTarget,
                                   VkExtent2D extent, VkFormat format,
-                                  uint32_t numMips = 1, uint32_t numLayers = 1)
+                                  uint32_t numMips = 1, uint32_t numLayers = 1,
+                                  VkImageUsageFlags nAdditionalUsageFlags = 0)
     {
         if (m_mResources.find(name) == m_mResources.end())
         {
+            VkImageUsageFlags nUsageFlags = nAdditionalUsageFlags;
             m_mResources[name] = std::make_unique<RenderTarget>(
                 format,
-                bColorTarget ? (VkImageUsageFlagBits)(
-                                   VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                   VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)
-                             : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                nUsageFlags |
+                    (bColorTarget ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                        VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
+                                  : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT),
                 extent.width, extent.height, numMips, numLayers);
 
             setDebugUtilsObjectName(
@@ -64,10 +66,12 @@ public:
 
     RenderTarget* getColorTarget(
         const std::string name, VkExtent2D extent,
-        VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t numMips = 1,
-        uint32_t numLayers = 1)
+        VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, 
+        uint32_t numMips = 1,
+        uint32_t numLayers = 1,
+        VkImageUsageFlags nAdditionalUsageFlags = 0)
     {
-        return getRenderTarget(name, true, extent, format, numMips, numLayers);
+        return getRenderTarget(name, true, extent, format, numMips, numLayers, nAdditionalUsageFlags);
     }
 
     RenderTarget* getColorTarget(const std::string name)
