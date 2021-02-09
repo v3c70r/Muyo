@@ -30,6 +30,10 @@ void RenderLayerIBL::setupRenderPass()
         VkAttachmentDescription &attDesc = attachments[passIdx];
         attDesc = {};
         attDesc.format = TEX_FORMAT;
+        if (passIdx == RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT)
+        {
+            attDesc.format = VK_FORMAT_R32G32_SFLOAT;
+        }
         attDesc.samples = VK_SAMPLE_COUNT_1_BIT;
         attDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         attDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -42,8 +46,7 @@ void RenderLayerIBL::setupRenderPass()
             attDesc.finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         }
 
-        VkAttachmentReference ref = {0,
-                                     VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        VkAttachmentReference ref = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
         // Subpass
         VkSubpassDescription subpass = {};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -69,7 +72,10 @@ void RenderLayerIBL::setupRenderPass()
         renderPassInfo.pSubpasses = &subpass;
         renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = &subpassDep;
-        renderPassInfo.pNext = &multiViewCI;
+        if (passIdx != RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT)
+        {
+            renderPassInfo.pNext = &multiViewCI;
+        }
 
         assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(),
                                   &renderPassInfo, nullptr,
@@ -94,6 +100,9 @@ void RenderLayerIBL::setupFramebuffer()
             ->getView(),
         GetRenderResourceManager()
             ->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            ->getView(),
+        GetRenderResourceManager()
+            ->getColorTarget("specular_brdf_lut", {SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
             ->getView()};
 
     // Create framebuffers
@@ -296,8 +305,7 @@ void RenderLayerIBL::setupPipeline()
         // DS
         DepthStencilCIBuilder depthStencilBuilder;
         depthStencilBuilder.setDepthTestEnabled(false)
-            .setDepthWriteEnabled(false)
-            .setDepthCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+            .setDepthWriteEnabled(false);
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {
@@ -320,8 +328,8 @@ void RenderLayerIBL::setupPipeline()
             ReadSpv("shaders/CubeMapToIrradianceMap.vert.spv"));
         VkShaderModule fragShdr = CreateShaderModule(
             ReadSpv("shaders/GeneratePrefilteredCubemap.frag.spv"));
-        PipelineStateBuilder builder;
 
+        PipelineStateBuilder builder;
         m_prefilteredCubemapPipeline =
             builder.setShaderModules({vertShdr, fragShdr})
                 .setVertextInfo({Vertex::getBindingDescription()},
@@ -345,7 +353,73 @@ void RenderLayerIBL::setupPipeline()
         // Set debug name for the pipeline
         setDebugUtilsObjectName(
             reinterpret_cast<uint64_t>(m_prefilteredCubemapPipeline),
-            VK_OBJECT_TYPE_PIPELINE, "CubeMapToIrradianceMap");
+            VK_OBJECT_TYPE_PIPELINE, "prefiltered cube map");
+    }
+
+    // 4. Specular BRDF lookup 
+    {
+        // Viewport
+        ViewportBuilder vpBuilder;
+        VkViewport viewport =
+            vpBuilder.setWH(SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM).build();
+
+        // Scissor
+        VkRect2D scissorRect;
+        scissorRect.offset = {0, 0};
+        scissorRect.extent = {SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM};
+
+        // Input assembly
+        InputAssemblyStateCIBuilder iaBuilder;
+        // Rasterizer
+        RasterizationStateCIBuilder rasterizerBuilder;
+        rasterizerBuilder.setFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        // MSAA
+        MultisampleStateCIBuilder msBuilder;
+        // Blend
+        BlendStateCIBuilder blendStateBuilder;
+        blendStateBuilder.setAttachments(1);
+        // DS
+        DepthStencilCIBuilder depthStencilBuilder;
+        depthStencilBuilder.setDepthTestEnabled(false)
+            .setDepthWriteEnabled(false);
+
+        // Pipeline layout
+        std::vector<VkDescriptorSetLayout> descLayouts = {};
+
+        std::vector<VkPushConstantRange> pushConstants;
+
+        m_specularBrdfLutPipelineLayout =
+            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+
+        VkShaderModule vertShdr = CreateShaderModule(
+            ReadSpv("shaders/lighting.vert.spv"));
+        VkShaderModule fragShdr = CreateShaderModule(
+            ReadSpv("shaders/GenerateSpecularBrdfLut.frag.spv"));
+        PipelineStateBuilder builder;
+
+        m_specularBrdfLutPipeline =
+            builder.setShaderModules({vertShdr, fragShdr})
+                .setVertextInfo({UIVertex::getBindingDescription()},
+                                UIVertex::getAttributeDescriptions())
+                .setAssembly(iaBuilder.build())
+                .setViewport(viewport, scissorRect)
+                .setRasterizer(rasterizerBuilder.build())
+                .setMSAA(msBuilder.build())
+                .setColorBlending(blendStateBuilder.build())
+                .setPipelineLayout(m_specularBrdfLutPipelineLayout)
+                .setDepthStencil(depthStencilBuilder.build())
+                .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_IRR_CUBEMAP])
+                .build(GetRenderDevice()->GetDevice());
+
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
+                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
+                              nullptr);
+
+        // Set debug name for the pipeline
+        setDebugUtilsObjectName(
+            reinterpret_cast<uint64_t>(m_prefilteredCubemapPipeline),
+            VK_OBJECT_TYPE_PIPELINE, "specular brdf lut");
     }
 }
 
@@ -369,7 +443,6 @@ void RenderLayerIBL::setupDescriptorSets()
 
 void RenderLayerIBL::recordCommandBuffer()
 {
-    SCOPED_MARKER(m_commandBuffer, "Generate IBL info");
     // Get skybox vertex data
     m_pSkybox = getSkybox();
     PrimitiveListConstRef primitives = m_pSkybox->getPrimitives();
@@ -387,6 +460,7 @@ void RenderLayerIBL::recordCommandBuffer()
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
 
+    SCOPED_MARKER(m_commandBuffer, "Generate IBL info");
     VkDeviceSize offsets[1] = {0};
 
     // prepare render pass
@@ -579,9 +653,12 @@ RenderLayerIBL::~RenderLayerIBL()
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_envCubeMapPipelineLayout, nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_irrCubeMapPipelineLayout, nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_prefilteredCubemapPipelineLayout, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_specularBrdfLutPipelineLayout, nullptr);
+
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_envCubeMapPipeline, nullptr);
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_irrCubeMapPipeline, nullptr);
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_prefilteredCubemapPipeline, nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_specularBrdfLutPipeline, nullptr);
 }
 
 
