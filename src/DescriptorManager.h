@@ -19,6 +19,7 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_PER_OBJ_DATA,   // Per object data layout
     DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
     DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
+    DESCRIPTOR_LAYOUT_IBL,        // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_COUNT,
 };
 
@@ -30,26 +31,42 @@ public:
     void createDescriptorSetLayouts();
     void destroyDescriptorSetLayouts();
 
-    VkDescriptorSet allocateLightingDescriptorSet(
+    VkDescriptorSet AllocateLightingDescriptorSet(
         const UniformBuffer<PerViewData> &perViewData, VkImageView position,
         VkImageView albedo, VkImageView normal, VkImageView uv); // Deprecating
 
-    VkDescriptorSet allocateGBufferDescriptorSet(
+    VkDescriptorSet AllocateGBufferDescriptorSet(
         const RenderPassGBuffer::GBufferViews &gbufferViews);
-    VkDescriptorSet allocateGBufferDescriptorSet();
+    VkDescriptorSet AllocateGBufferDescriptorSet();
     static void updateGBufferDescriptorSet(
         VkDescriptorSet descriptorSet,
         const RenderPassGBuffer::GBufferViews &gbufferViews);
 
-    VkDescriptorSet allocateSingleSamplerDescriptorSet(VkImageView textureView);
+    VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
 
-    VkDescriptorSet allocatePerviewDataDescriptorSet(
+    VkDescriptorSet AllocatePerviewDataDescriptorSet(
         const UniformBuffer<PerViewData> &perViewData);
 
     // Material Descriptor Set
-    VkDescriptorSet allocateMaterialDescriptorSet();
-    VkDescriptorSet allocateMaterialDescriptorSet(const Material::MaterialParameters &materialParameters);
-    static void updateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters);
+    VkDescriptorSet AllocateMaterialDescriptorSet();
+    VkDescriptorSet AllocateMaterialDescriptorSet(const Material::MaterialParameters &materialParameters);
+    static void UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters);
+
+    // IBL descriptor set
+    VkDescriptorSet AllocateIBLDescriptorSet();
+    VkDescriptorSet AllocateIBLDescriptorSet(
+            VkImageView irradianceMap,
+            VkImageView prefilteredEnvMap,
+            VkImageView specularBrdfLutMap
+            );
+
+    void UpdateIBLDescriptorSet(
+            VkDescriptorSet& descriptorSet,
+            VkImageView irradianceMap,
+            VkImageView prefilteredEnvMap,
+            VkImageView specularBrdfLutMap
+            );
+
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {

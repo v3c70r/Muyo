@@ -227,7 +227,7 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
             GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
         VkDescriptorSet perViewSets =
-            GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
+            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView);
 
         {
             // Handle Geometires

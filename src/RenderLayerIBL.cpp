@@ -372,16 +372,14 @@ void RenderLayerIBL::setupPipeline()
         InputAssemblyStateCIBuilder iaBuilder;
         // Rasterizer
         RasterizationStateCIBuilder rasterizerBuilder;
-        rasterizerBuilder.setFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
         // MSAA
         MultisampleStateCIBuilder msBuilder;
         // Blend
         BlendStateCIBuilder blendStateBuilder;
-        blendStateBuilder.setAttachments(1);
+        blendStateBuilder.setAttachments(1, false);
         // DS
         DepthStencilCIBuilder depthStencilBuilder;
-        depthStencilBuilder.setDepthTestEnabled(false)
-            .setDepthWriteEnabled(false);
+        depthStencilBuilder.setDepthTestEnabled(false) .setDepthWriteEnabled(false);
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {};
@@ -399,8 +397,8 @@ void RenderLayerIBL::setupPipeline()
 
         m_specularBrdfLutPipeline =
             builder.setShaderModules({vertShdr, fragShdr})
-                .setVertextInfo({UIVertex::getBindingDescription()},
-                                UIVertex::getAttributeDescriptions())
+                .setVertextInfo({Vertex::getBindingDescription()},
+                                Vertex::getAttributeDescriptions())
                 .setAssembly(iaBuilder.build())
                 .setViewport(viewport, scissorRect)
                 .setRasterizer(rasterizerBuilder.build())
@@ -408,7 +406,7 @@ void RenderLayerIBL::setupPipeline()
                 .setColorBlending(blendStateBuilder.build())
                 .setPipelineLayout(m_specularBrdfLutPipelineLayout)
                 .setDepthStencil(depthStencilBuilder.build())
-                .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_IRR_CUBEMAP])
+                .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT])
                 .build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
@@ -427,17 +425,17 @@ void RenderLayerIBL::setupDescriptorSets()
 {
     // Per veiw data
     m_perViewDataDescriptorSet =
-        GetDescriptorManager()->allocatePerviewDataDescriptorSet(
+        GetDescriptorManager()->AllocatePerviewDataDescriptorSet(
             m_uniformBuffer);
 
     // Environment map sampler descriptor set
     VkImageView envMapView =
         GetRenderResourceManager()->getTexture("EnvMap", "assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr")->getView();
     m_envMapDescriptorSet =
-        GetDescriptorManager()->allocateSingleSamplerDescriptorSet(envMapView);
+        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(envMapView);
 
     // Environment cube map descriptor set
-    m_irrMapDescriptorSet = GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
+    m_irrMapDescriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
         GetRenderResourceManager() ->getColorTarget("env_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM}, TEX_FORMAT, 1, 6) ->getView());
 }
 
@@ -628,6 +626,35 @@ void RenderLayerIBL::recordCommandBuffer()
                 &copyRegion);
         }
     }
+    {
+        SCOPED_MARKER(m_commandBuffer, "Computed specular brdf lut");
+
+        vkCmdBeginRenderPass(m_commandBuffer,
+                             &aRenderpassBeginInfos[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT],
+                             VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
+        vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
+
+        const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
+        VkDeviceSize offset = 0;
+        VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
+        VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
+        uint32_t nIndexCount = prim->getIndexCount();
+
+        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
+                               &offset);
+        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          m_specularBrdfLutPipeline);
+        //vkCmdBindDescriptorSets(
+        //    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        //    mLightingPipelineLayout, 0, lightingDescSets.size(),
+        //    lightingDescSets.data(), 0, nullptr);
+        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+        vkCmdEndRenderPass(m_commandBuffer);
+    }
+
     vkEndCommandBuffer(m_commandBuffer);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");

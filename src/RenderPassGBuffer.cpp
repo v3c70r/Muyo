@@ -186,7 +186,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
             GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
         VkDescriptorSet perViewSets =
-            GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView);
+            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView);
 
         {
             // Handle Geometires
@@ -252,12 +252,19 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
 
             std::vector<VkDescriptorSet> lightingDescSets = {
                 perViewSets,
-                GetDescriptorManager()->allocateGBufferDescriptorSet(
+                // GBuffer descriptor sets
+                GetDescriptorManager()->AllocateGBufferDescriptorSet(
                     vGBufferRTViews),
-                GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
+                // IBL descriptor sets
+                GetDescriptorManager()->AllocateIBLDescriptorSet(
                     GetRenderResourceManager()
-                        ->getColorTarget("irr_cube_map", {0, 0},
-                                         VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                        ->getColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                        ->getView(),
+                    GetRenderResourceManager()
+                        ->getColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                        ->getView(),
+                    GetRenderResourceManager()
+                        ->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
                         ->getView())};
             SCOPED_MARKER(mCommandBuffer, "Lighting Pass");
             const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
@@ -396,7 +403,7 @@ void RenderPassGBuffer::createPipelines()
             GetDescriptorManager()->getDescriptorLayout(
                 DESCRIPTOR_LAYOUT_GBUFFER),  // GBuffer textures
             GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)  // Irradiance map
+                DESCRIPTOR_LAYOUT_IBL)  // Irradiance map
         };
 
         std::vector<VkPushConstantRange> pushConstants;
@@ -416,7 +423,7 @@ void RenderPassGBuffer::createPipelines()
         RasterizationStateCIBuilder rsBuilder;
         MultisampleStateCIBuilder msBuilder;
         BlendStateCIBuilder blendBuilder;
-        blendBuilder.setAttachments(1);
+        blendBuilder.setAttachments(1, false);
         DepthStencilCIBuilder depthStencilBuilder;
         depthStencilBuilder.setDepthTestEnabled(false).setDepthWriteEnabled(false);
 

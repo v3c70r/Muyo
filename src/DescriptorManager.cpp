@@ -174,6 +174,31 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 "GBuffer");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_GBUFFER] = layout;
     }
+
+    // IBL layout
+    {
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
+            GetSamplerBinding(0),    // Irradiance map
+            GetSamplerBinding(1),    // prefiltered environment 
+            GetSamplerBinding(2)};   // specular brdf lut
+
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "IBL");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IBL] = layout;
+    }
 }
 
 void DescriptorManager::destroyDescriptorSetLayouts()
@@ -185,7 +210,7 @@ void DescriptorManager::destroyDescriptorSetLayouts()
     }
 }
 
-VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet()
+VkDescriptorSet DescriptorManager::AllocateMaterialDescriptorSet()
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     // Create descriptor sets
@@ -204,14 +229,14 @@ VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet()
     return descriptorSet;
 }
 
-VkDescriptorSet DescriptorManager::allocateMaterialDescriptorSet(const Material::MaterialParameters& materialParameters)
+VkDescriptorSet DescriptorManager::AllocateMaterialDescriptorSet(const Material::MaterialParameters& materialParameters)
 {
-    VkDescriptorSet descSet = allocateMaterialDescriptorSet();
-    updateMaterialDescriptorSet(descSet, materialParameters);
+    VkDescriptorSet descSet = AllocateMaterialDescriptorSet();
+    UpdateMaterialDescriptorSet(descSet, materialParameters);
     return descSet;
 }
 
-void DescriptorManager::updateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters)
+void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters)
 {
     assert(materialParameters.m_apTextures.size() == Material::TEX_COUNT);
 
@@ -263,7 +288,7 @@ void DescriptorManager::updateMaterialDescriptorSet(VkDescriptorSet descriptorSe
                            0, nullptr);
 }
 
-VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
+VkDescriptorSet DescriptorManager::AllocateLightingDescriptorSet(
     const UniformBuffer<PerViewData>& perViewData, VkImageView position,
     VkImageView albedo, VkImageView normal, VkImageView uv)
 {
@@ -333,7 +358,7 @@ VkDescriptorSet DescriptorManager::allocateLightingDescriptorSet(
     return descriptorSet;
 }
 
-VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet()
+VkDescriptorSet DescriptorManager::AllocateGBufferDescriptorSet()
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     // Create descriptor sets
@@ -352,10 +377,10 @@ VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet()
     return descriptorSet;
 }
 
-VkDescriptorSet DescriptorManager::allocateGBufferDescriptorSet(
+VkDescriptorSet DescriptorManager::AllocateGBufferDescriptorSet(
     const RenderPassGBuffer::GBufferViews& gbufferViews)
 {
-    VkDescriptorSet descriptorSet = allocateGBufferDescriptorSet();
+    VkDescriptorSet descriptorSet = AllocateGBufferDescriptorSet();
     updateGBufferDescriptorSet(descriptorSet, gbufferViews);
     return descriptorSet;
 }
@@ -388,7 +413,7 @@ void DescriptorManager::updateGBufferDescriptorSet(
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
-VkDescriptorSet DescriptorManager::allocateSingleSamplerDescriptorSet(
+VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
     VkImageView textureView)
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
@@ -420,8 +445,7 @@ VkDescriptorSet DescriptorManager::allocateSingleSamplerDescriptorSet(
         descriptorWrite.dstSet = descriptorSet;
         descriptorWrite.dstBinding = 0;
         descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pImageInfo = &imageInfo;
 
@@ -431,10 +455,67 @@ VkDescriptorSet DescriptorManager::allocateSingleSamplerDescriptorSet(
     return descriptorSet;
 }
 
-VkDescriptorSet DescriptorManager::allocatePerviewDataDescriptorSet(
+VkDescriptorSet DescriptorManager::AllocatePerviewDataDescriptorSet(
     const UniformBuffer<PerViewData>& perViewData)
 {
     return AllocateUniformBufferDescriptorSet(perViewData, 0);
+}
+
+VkDescriptorSet DescriptorManager::AllocateIBLDescriptorSet()
+{
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts =
+        &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IBL];
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) == VK_SUCCESS);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
+                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "IBL");
+
+    return descriptorSet;
+}
+VkDescriptorSet DescriptorManager::AllocateIBLDescriptorSet(
+    VkImageView irradianceMap,
+    VkImageView prefilteredEnvMap,
+    VkImageView specularBrdfLutMap)
+{
+    VkDescriptorSet descSet = AllocateIBLDescriptorSet();
+    UpdateIBLDescriptorSet(descSet, irradianceMap, prefilteredEnvMap, specularBrdfLutMap);
+    return descSet;
+}
+
+void DescriptorManager::UpdateIBLDescriptorSet(
+    VkDescriptorSet& descriptorSet,
+    VkImageView irradianceMap,
+    VkImageView prefilteredEnvMap,
+    VkImageView specularBrdfLutMap)
+{
+    // prepare image descriptor
+    std::array<VkImageView, 3> aIBLViews = {irradianceMap, prefilteredEnvMap, specularBrdfLutMap};
+    std::array<VkDescriptorImageInfo, 3> imageInfos;
+    std::array<VkWriteDescriptorSet, 3> writeDescriptorSets;
+
+    for (uint32_t i = 0; i < aIBLViews.size(); i++)
+    {
+        VkDescriptorImageInfo& imageInfo = imageInfos[i];
+        imageInfo = {GetSamplerManager()->getSampler(SAMPLER_1_MIPS), aIBLViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+        VkWriteDescriptorSet& writeDescriptorSet = writeDescriptorSets[i];
+        writeDescriptorSet = {};
+        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet = descriptorSet;
+        writeDescriptorSet.dstBinding = i;
+        writeDescriptorSet.dstArrayElement = 0;
+        writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writeDescriptorSet.descriptorCount = 1;
+        writeDescriptorSet.pImageInfo = &imageInfo;
+    }
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
 DescriptorManager* GetDescriptorManager() { return &descriptorManager; }

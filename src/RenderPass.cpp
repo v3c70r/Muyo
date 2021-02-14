@@ -211,7 +211,7 @@ void RenderPassFinal::RecordCommandBuffers()
                               ->getView();
     Geometry* pQuad = GetGeometryManager()->GetQuad();
 
-    VkDescriptorSet descSet = GetDescriptorManager()->allocateSingleSamplerDescriptorSet(imgView);
+    VkDescriptorSet descSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView);
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;

@@ -42,7 +42,7 @@ void Material::AllocateDescriptorSet()
 {
     if (m_descriptorSet == VK_NULL_HANDLE)
     {
-        m_descriptorSet = GetDescriptorManager()->allocateMaterialDescriptorSet(m_materialParameters);
+        m_descriptorSet = GetDescriptorManager()->AllocateMaterialDescriptorSet(m_materialParameters);
     }
 }
 

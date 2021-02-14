@@ -230,8 +230,8 @@ void RenderPassSkybox::RecordCommandBuffers()
             GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
         std::vector<VkDescriptorSet> vDescSets = {
-            GetDescriptorManager()->allocatePerviewDataDescriptorSet(*perView),
-            GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
+            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
+            GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
                 GetRenderResourceManager()
                     ->getColorTarget("irr_cube_map", {0, 0},
                                      VK_FORMAT_B8G8R8A8_UNORM, 1, 6)

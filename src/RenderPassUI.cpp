@@ -16,7 +16,7 @@ void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapc
     pTexture = std::make_unique<Texture>();
     pTexture->LoadPixels(fontData, texWidth, texHeight);
     // Allocate descriptor
-    descriptorSet = GetDescriptorManager()->allocateSingleSamplerDescriptorSet(
+    descriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
         pTexture->getView());
     GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER);
 
