@@ -261,7 +261,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                         ->getColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                         ->getView(),
                     GetRenderResourceManager()
-                        ->getColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                        ->getColorTarget("prefiltered_cubemap", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                         ->getView(),
                     GetRenderResourceManager()
                         ->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)

@@ -32,7 +32,7 @@ private:    // Methods
 private:
     const uint32_t ENV_CUBE_DIM = 128;
     const uint32_t IRR_CUBE_DIM = 32;
-    const uint32_t PREFILTERED_CUBE_DIM = 32;
+    const uint32_t PREFILTERED_CUBE_DIM = 512;
     const uint32_t SPECULAR_BRDF_LUT_DIM = 512;
     const uint32_t NUM_FACES = 6;
     const uint32_t NUM_IRR_CUBEMAP_MIP = (uint32_t)std::floor(std::log2(ENV_CUBE_DIM))+1;
