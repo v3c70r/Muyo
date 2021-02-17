@@ -625,6 +625,8 @@ void RenderLayerIBL::recordCommandBuffer()
                 1,
                 &copyRegion);
         }
+        // Prepare prefiltered map for shader usage
+        GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
     }
     {
         SCOPED_MARKER(m_commandBuffer, "Computed specular brdf lut");
