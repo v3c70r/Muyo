@@ -189,6 +189,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
             GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView);
 
         {
+            SCOPED_MARKER(mCommandBuffer, "GBuffer Pass");
             // Handle Geometires
             for (const Geometry* pGeometry : vpGeometries)
             {
@@ -230,6 +231,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
         }
         vkCmdNextSubpass(mCommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
         {
+            SCOPED_MARKER(mCommandBuffer, "Lighting Pass");
             // Create gbuffer render target views
             GBufferViews vGBufferRTViews = {
                 GetRenderResourceManager()
@@ -266,7 +268,6 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                     GetRenderResourceManager()
                         ->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
                         ->getView())};
-            SCOPED_MARKER(mCommandBuffer, "Lighting Pass");
             const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();

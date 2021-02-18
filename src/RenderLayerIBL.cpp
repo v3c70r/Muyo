@@ -458,7 +458,6 @@ void RenderLayerIBL::recordCommandBuffer()
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
 
-    SCOPED_MARKER(m_commandBuffer, "Generate IBL info");
     VkDeviceSize offsets[1] = {0};
 
     // prepare render pass
@@ -491,104 +490,53 @@ void RenderLayerIBL::recordCommandBuffer()
     // Begin recording
     vkBeginCommandBuffer(m_commandBuffer, &cmdBeginInfo);
     {
-
-
-        SCOPED_MARKER(m_commandBuffer, "First IBL pass");
-
-        vkCmdBeginRenderPass(m_commandBuffer,
-                             &aRenderpassBeginInfos[RENDERPASS_LOAD_ENV_MAP],
-                             VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_LOAD_ENV_MAP]);
-        vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_LOAD_ENV_MAP]);
-
-        std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
-                                               m_envMapDescriptorSet};
-
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          m_envCubeMapPipeline);
-
-        vkCmdBindDescriptorSets(
-            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_envCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
-
-        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, offsets);
-
-        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
-        vkCmdEndRenderPass(m_commandBuffer);
-    }
-    // Second subpass
-    {
-        SCOPED_MARKER(m_commandBuffer, "Second IBL pass");
-
-        vkCmdBeginRenderPass(m_commandBuffer,
-                             &aRenderpassBeginInfos[RENDERPASS_COMPUTE_IRR_CUBEMAP],
-                             VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdSetViewport(m_commandBuffer, 0, 1,
-                         &aViewports[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
-        vkCmdSetScissor(m_commandBuffer, 0, 1,
-                        &aScissors[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
-
-        std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
-                                               m_irrMapDescriptorSet};
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          m_irrCubeMapPipeline);
-
-        vkCmdBindDescriptorSets(
-            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_irrCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
-
-        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1,
-                               &vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
-
-        vkCmdEndRenderPass(m_commandBuffer);
-    }
-    // Compute prefiltered irradiance map
-    VkImage prefilteredImage = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_DST_BIT)->getImage();
-    GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
-    VkImage prefilteredImageTmp = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)->getImage();
-
-    {
-        SCOPED_MARKER(m_commandBuffer, "Computed Prefiltered cubemap");
-        for (uint32_t uMip = 0; uMip < NUM_PREFILTERED_CUBEMAP_MIP; uMip++)
+        SCOPED_MARKER(m_commandBuffer, "Generate IBL info");
         {
-            SCOPED_MARKER(m_commandBuffer, "Prefiltered cubemap mips");
-            unsigned int uMipWidth = PREFILTERED_CUBE_DIM * std::pow(0.5f, uMip);
-            unsigned int uMipHeight = PREFILTERED_CUBE_DIM * std::pow(0.5f, uMip);
+            SCOPED_MARKER(m_commandBuffer, "First IBL pass");
 
             vkCmdBeginRenderPass(m_commandBuffer,
-                                 &aRenderpassBeginInfos[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP],
+                                 &aRenderpassBeginInfos[RENDERPASS_LOAD_ENV_MAP],
+                                 VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_LOAD_ENV_MAP]);
+            vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_LOAD_ENV_MAP]);
+
+            std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
+                                                   m_envMapDescriptorSet};
+
+            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              m_envCubeMapPipeline);
+
+            vkCmdBindDescriptorSets(
+                m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_envCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+
+            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, offsets);
+
+            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                                 VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdEndRenderPass(m_commandBuffer);
+        }
+        // Second subpass
+        {
+            SCOPED_MARKER(m_commandBuffer, "Second IBL pass");
+
+            vkCmdBeginRenderPass(m_commandBuffer,
+                                 &aRenderpassBeginInfos[RENDERPASS_COMPUTE_IRR_CUBEMAP],
                                  VK_SUBPASS_CONTENTS_INLINE);
             vkCmdSetViewport(m_commandBuffer, 0, 1,
-                             &aViewports[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
+                             &aViewports[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
             vkCmdSetScissor(m_commandBuffer, 0, 1,
-                            &aScissors[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
+                            &aScissors[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
 
             std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
                                                    m_irrMapDescriptorSet};
             vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              m_prefilteredCubemapPipeline);
-
-            PrefilteredPushConstantBlock pushConstantBlock;
-            pushConstantBlock.fRoughness = (float)uMip / (float)(NUM_PREFILTERED_CUBEMAP_MIP - 1);
-            vkCmdPushConstants(m_commandBuffer, m_prefilteredCubemapPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrefilteredPushConstantBlock), &pushConstantBlock);
-
-            // Set dynamic viewport and scissor
-            VkViewport viewport = {
-                0.0, 0.0, (float)uMipWidth, (float)uMipHeight,
-                0.0, 1.0};
-            vkCmdSetViewport(m_commandBuffer, 0, 1, &viewport);
-
-            VkRect2D scissor = {0, 0, uMipWidth, uMipHeight};
-            vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
+                              m_irrCubeMapPipeline);
 
             vkCmdBindDescriptorSets(
                 m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_prefilteredCubemapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+                m_irrCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1,
                                    &vertexBuffer, offsets);
@@ -597,66 +545,117 @@ void RenderLayerIBL::recordCommandBuffer()
             vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
 
             vkCmdEndRenderPass(m_commandBuffer);
-
-            VkImageCopy copyRegion{};
-
-            copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            copyRegion.srcSubresource.baseArrayLayer = 0;
-            copyRegion.srcSubresource.mipLevel = 0;
-            copyRegion.srcSubresource.layerCount = NUM_FACES;
-            copyRegion.srcOffset = {0, 0, 0};
-
-            copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-            copyRegion.dstSubresource.baseArrayLayer = 0;
-            copyRegion.dstSubresource.mipLevel = uMip;
-            copyRegion.dstSubresource.layerCount = NUM_FACES;
-            copyRegion.dstOffset = {0, 0, 0};
-
-            copyRegion.extent.width = uMipWidth;
-            copyRegion.extent.height = uMipHeight;
-            copyRegion.extent.depth = 1;
-
-            vkCmdCopyImage(
-                m_commandBuffer,
-                prefilteredImageTmp,
-                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                prefilteredImage,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                1,
-                &copyRegion);
         }
-        // Prepare prefiltered map for shader usage
-        GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
+        // Compute prefiltered irradiance map
+        VkImage prefilteredImage = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_DST_BIT)->getImage();
+        GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
+        VkImage prefilteredImageTmp = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)->getImage();
+
+        {
+            SCOPED_MARKER(m_commandBuffer, "Computed Prefiltered cubemap");
+            for (uint32_t uMip = 0; uMip < NUM_PREFILTERED_CUBEMAP_MIP; uMip++)
+            {
+                SCOPED_MARKER(m_commandBuffer, "Prefiltered cubemap mips");
+                unsigned int uMipWidth = PREFILTERED_CUBE_DIM * std::pow(0.5f, uMip);
+                unsigned int uMipHeight = PREFILTERED_CUBE_DIM * std::pow(0.5f, uMip);
+
+                vkCmdBeginRenderPass(m_commandBuffer,
+                                     &aRenderpassBeginInfos[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP],
+                                     VK_SUBPASS_CONTENTS_INLINE);
+                vkCmdSetViewport(m_commandBuffer, 0, 1,
+                                 &aViewports[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
+                vkCmdSetScissor(m_commandBuffer, 0, 1,
+                                &aScissors[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
+
+                std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
+                                                       m_irrMapDescriptorSet};
+                vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  m_prefilteredCubemapPipeline);
+
+                PrefilteredPushConstantBlock pushConstantBlock;
+                pushConstantBlock.fRoughness = (float)uMip / (float)(NUM_PREFILTERED_CUBEMAP_MIP - 1);
+                vkCmdPushConstants(m_commandBuffer, m_prefilteredCubemapPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrefilteredPushConstantBlock), &pushConstantBlock);
+
+                // Set dynamic viewport and scissor
+                VkViewport viewport = {
+                    0.0, 0.0, (float)uMipWidth, (float)uMipHeight,
+                    0.0, 1.0};
+                vkCmdSetViewport(m_commandBuffer, 0, 1, &viewport);
+
+                VkRect2D scissor = {0, 0, uMipWidth, uMipHeight};
+                vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
+
+                vkCmdBindDescriptorSets(
+                    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_prefilteredCubemapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+
+                vkCmdBindVertexBuffers(m_commandBuffer, 0, 1,
+                                       &vertexBuffer, offsets);
+                vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                                     VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+
+                vkCmdEndRenderPass(m_commandBuffer);
+
+                VkImageCopy copyRegion{};
+
+                copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                copyRegion.srcSubresource.baseArrayLayer = 0;
+                copyRegion.srcSubresource.mipLevel = 0;
+                copyRegion.srcSubresource.layerCount = NUM_FACES;
+                copyRegion.srcOffset = {0, 0, 0};
+
+                copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                copyRegion.dstSubresource.baseArrayLayer = 0;
+                copyRegion.dstSubresource.mipLevel = uMip;
+                copyRegion.dstSubresource.layerCount = NUM_FACES;
+                copyRegion.dstOffset = {0, 0, 0};
+
+                copyRegion.extent.width = uMipWidth;
+                copyRegion.extent.height = uMipHeight;
+                copyRegion.extent.depth = 1;
+
+                vkCmdCopyImage(
+                    m_commandBuffer,
+                    prefilteredImageTmp,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    prefilteredImage,
+                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                    1,
+                    &copyRegion);
+            }
+            // Prepare prefiltered map for shader usage
+            GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
+        }
+        {
+            SCOPED_MARKER(m_commandBuffer, "Computed specular brdf lut");
+
+            vkCmdBeginRenderPass(m_commandBuffer,
+                                 &aRenderpassBeginInfos[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT],
+                                 VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
+            vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
+
+            const auto &prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
+            VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
+            uint32_t nIndexCount = prim->getIndexCount();
+
+            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
+                                   &offset);
+            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                                 VK_INDEX_TYPE_UINT32);
+            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              m_specularBrdfLutPipeline);
+            //vkCmdBindDescriptorSets(
+            //    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            //    mLightingPipelineLayout, 0, lightingDescSets.size(),
+            //    lightingDescSets.data(), 0, nullptr);
+            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdEndRenderPass(m_commandBuffer);
+        }
     }
-    {
-        SCOPED_MARKER(m_commandBuffer, "Computed specular brdf lut");
-
-        vkCmdBeginRenderPass(m_commandBuffer,
-                             &aRenderpassBeginInfos[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT],
-                             VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
-        vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
-
-        const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
-        VkDeviceSize offset = 0;
-        VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
-        VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
-        uint32_t nIndexCount = prim->getIndexCount();
-
-        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
-                               &offset);
-        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          m_specularBrdfLutPipeline);
-        //vkCmdBindDescriptorSets(
-        //    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        //    mLightingPipelineLayout, 0, lightingDescSets.size(),
-        //    lightingDescSets.data(), 0, nullptr);
-        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
-        vkCmdEndRenderPass(m_commandBuffer);
-    }
-
     vkEndCommandBuffer(m_commandBuffer);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
