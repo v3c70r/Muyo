@@ -37,30 +37,31 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                 SceneNode *pSceneNode = new SceneNode(node.name);
 
                 std::function<void(SceneNode &, const tinygltf::Node &)>
-                    CopyGLTFNodeRecursive =
-                        [&](SceneNode &sceneNode,
-                            const tinygltf::Node &gltfNode) {
-                            for (int nNodeIdx : gltfNode.children)
-                            {
-                                const tinygltf::Node &node = model.nodes[nNodeIdx];
-                                SceneNode *pSceneNode = nullptr;
-                                if (node.mesh != -1)
-                                {
-                                    const tinygltf::Mesh mesh = model.meshes[node.mesh];
-                                    pSceneNode = new GeometrySceneNode;
-                                    CopyGLTFNode(sceneNode, gltfNode);
-                                    ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
-                                }
-                                else
-                                {
-                                    pSceneNode = new SceneNode;
-                                    CopyGLTFNode(sceneNode, gltfNode);
-                                }
+                    CopyGLTFNodeRecursive = [&](SceneNode &sceneNode, const tinygltf::Node &gltfNode) {
+                        // Copy current node
+                        SceneNode *pSceneNode = nullptr;
+                        if (gltfNode.mesh != -1)
+                        {
+                            const tinygltf::Mesh mesh = model.meshes[gltfNode.mesh];
+                            pSceneNode = new GeometrySceneNode;
+                            CopyGLTFNode(sceneNode, gltfNode);
+                            ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
+                        }
+                        else
+                        {
+                            pSceneNode = new SceneNode;
+                            CopyGLTFNode(sceneNode, gltfNode);
+                        }
+                        assert(pSceneNode != nullptr);
+                        sceneNode.AppendChild(pSceneNode);
 
-                                CopyGLTFNodeRecursive(*pSceneNode, node);
-                                sceneNode.AppendChild(pSceneNode);
-                            }
-                        };
+                        // recursively copy children
+                        for (int nNodeIdx : gltfNode.children)
+                        {
+                            const tinygltf::Node &node = model.nodes[nNodeIdx];
+                            CopyGLTFNodeRecursive(*pSceneNode, node);
+                        }
+                    };
                 CopyGLTFNodeRecursive(*pSceneNode, node);
                 pSceneRoot->AppendChild(pSceneNode);
             }
@@ -149,16 +150,19 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             assert(accessor.type == TINYGLTF_TYPE_VEC3);
             assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
             // confirm we use the standard format
-            assert(bufferView.byteStride == 12);
+
+            // Hard code the buffer stride
+            size_t nByteStride = 12;
+            assert(bufferView.byteStride == 12 || bufferView.byteStride == 0);
             assert(buffer.data.size() >=
                    bufferView.byteOffset + accessor.byteOffset +
-                       bufferView.byteStride * accessor.count);
+                       nByteStride * accessor.count);
 
             vPositions.resize(accessor.count);
             memcpy(vPositions.data(),
                    buffer.data.data() + bufferView.byteOffset +
                        accessor.byteOffset,
-                   accessor.count * bufferView.byteStride);
+                   accessor.count * nByteStride);
         }
         // vNormals
         {
@@ -171,16 +175,17 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             assert(accessor.type == TINYGLTF_TYPE_VEC3);
             assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
             // confirm we use the standard format
-            assert(bufferView.byteStride == 12);
+            size_t nByteStride = 12;
+            assert(bufferView.byteStride == 12 || bufferView.byteStride == 0);
             assert(buffer.data.size() >=
                    bufferView.byteOffset + accessor.byteOffset +
-                       bufferView.byteStride * accessor.count);
+                       nByteStride * accessor.count);
 
             vNormals.resize(accessor.count);
             memcpy(vNormals.data(),
                    buffer.data.data() + bufferView.byteOffset +
                        accessor.byteOffset,
-                   accessor.count * bufferView.byteStride);
+                   accessor.count * nByteStride);
         }
         // vUV0s
         {
@@ -194,15 +199,16 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
 
             // confirm we use the standard format
-            assert(bufferView.byteStride == 8);
+            size_t nByteStride = 8;
+            assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
             assert(buffer.data.size() >=
                    bufferView.byteOffset + accessor.byteOffset +
-                       bufferView.byteStride * accessor.count);
+                       nByteStride * accessor.count);
             vUV0s.resize(accessor.count);
             memcpy(vUV0s.data(),
                    buffer.data.data() + bufferView.byteOffset +
                        accessor.byteOffset,
-                   accessor.count * bufferView.byteStride);
+                   accessor.count * nByteStride);
         }
         // vUV1s
         {
@@ -218,15 +224,16 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
 
                 // confirm we use the standard format
-                assert(bufferView.byteStride == 8);
+                size_t nByteStride = 8;
+                assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
                 assert(buffer.data.size() >=
                        bufferView.byteOffset + accessor.byteOffset +
-                           bufferView.byteStride * accessor.count);
+                           nByteStride * accessor.count);
                 vUV1s.resize(accessor.count);
                 memcpy(vUV1s.data(),
                        buffer.data.data() + bufferView.byteOffset +
                            accessor.byteOffset,
-                       accessor.count * bufferView.byteStride);
+                       accessor.count * nByteStride);
             }
             else
             {
