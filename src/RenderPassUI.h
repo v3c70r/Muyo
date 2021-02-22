@@ -4,6 +4,7 @@
 #include "RenderPass.h"
 #include "Texture.h"
 #include "VertexBuffer.h"
+#include "DebugUI.h"
 
 // Options and values to display/toggle from the UI
 struct UISettings
@@ -52,6 +53,12 @@ public:
     virtual void setSwapchainImageViews(std::vector<VkImageView>& vImageViews,
                                         VkImageView depthImageView,
                                         uint32_t nWidth, uint32_t nHeight) override;
+    template <class DebugPageType>
+    void RegisterDebugPage(const std::string& sName)
+    {
+        m_vpDebugPages.emplace_back(new DebugPageType(sName));
+    }
+
 protected:
     void setupPipeline() override;
 
@@ -62,4 +69,5 @@ private:
         glm::vec2 translate;
     };
     ImGuiResource m_uiResources;
+    std::vector<std::unique_ptr<IDebugUIPage>> m_vpDebugPages;
 };

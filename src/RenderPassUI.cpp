@@ -121,15 +121,13 @@ void RenderPassUI::newFrame(VkExtent2D screenExtent)
     ImGui::GetIO().DisplaySize =
         ImVec2(screenExtent.width, screenExtent.height);
     ImGui::NewFrame();
+    // Render registered pages
+    for (const auto& pDebugPage : m_vpDebugPages)
     {
-        ImGui::Begin("Debug Resources");
-        // TODO: Add /raw functions here
-        const auto& resourceMap = GetRenderResourceManager()->getResourceMap();
-        for (const auto& resMap : resourceMap)
+        if (pDebugPage->ShouldRender())
         {
-            ImGui::Text("%s", resMap.first.c_str());
+            pDebugPage->Render();
         }
-        ImGui::End();
     }
     ImGui::Render();
 }

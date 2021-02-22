@@ -30,39 +30,42 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
         {
             tinygltf::Scene &tinyScene = model.scenes[i];
             SceneNode *pSceneRoot = res[i].GetRoot();
+            res[i].SetName(tinyScene.name);
             // For each root node in scene
             for (int nNodeIdx : tinyScene.nodes)
             {
-                tinygltf::Node node = model.nodes[nNodeIdx];
-                SceneNode *pSceneNode = new SceneNode(node.name);
 
-                std::function<void(SceneNode &, const tinygltf::Node &)>
-                    CopyGLTFNodeRecursive = [&](SceneNode &sceneNode, const tinygltf::Node &gltfNode) {
+                std::function<void(SceneNode *, const tinygltf::Node &)>
+                    ConstructTreeFromGLTF = [&](SceneNode *pSceneNode, const tinygltf::Node &gltfNode) {
                         // Copy current node
-                        SceneNode *pSceneNode = nullptr;
                         if (gltfNode.mesh != -1)
                         {
                             const tinygltf::Mesh mesh = model.meshes[gltfNode.mesh];
                             pSceneNode = new GeometrySceneNode;
-                            CopyGLTFNode(sceneNode, gltfNode);
+                            CopyGLTFNode(*pSceneNode, gltfNode);
                             ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
                         }
                         else
                         {
                             pSceneNode = new SceneNode;
-                            CopyGLTFNode(sceneNode, gltfNode);
+                            CopyGLTFNode(*pSceneNode, gltfNode);
                         }
                         assert(pSceneNode != nullptr);
-                        sceneNode.AppendChild(pSceneNode);
 
                         // recursively copy children
                         for (int nNodeIdx : gltfNode.children)
                         {
+                            SceneNode* pChild = nullptr;
                             const tinygltf::Node &node = model.nodes[nNodeIdx];
-                            CopyGLTFNodeRecursive(*pSceneNode, node);
+                            ConstructTreeFromGLTF(pChild, node);
+                            pSceneNode->AppendChild(pChild);
                         }
                     };
-                CopyGLTFNodeRecursive(*pSceneNode, node);
+
+                SceneNode *pSceneNode = nullptr;
+                tinygltf::Node gltfRootNode = model.nodes[nNodeIdx];
+
+                ConstructTreeFromGLTF(pSceneNode, gltfRootNode);
                 pSceneRoot->AppendChild(pSceneNode);
             }
         }

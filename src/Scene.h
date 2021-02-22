@@ -52,6 +52,8 @@ public:
 class Scene
 {
 public:
+    Scene() : m_sName("sans_nom") {}
+    explicit Scene(const std::string& sName) : m_sName(sName) {}
     SceneNode* GetRoot() { return m_pRoot.get(); }
     //const SceneNode* GetRoot() const { return m_pRoot.get(); }
     const std::unique_ptr<SceneNode>& GetRoot() const { return m_pRoot; }
@@ -73,11 +75,13 @@ public:
             !glm::any(glm::isinf(mat[3]));
         return valid;
     }
+    void SetName(const std::string& sName) { m_sName = sName; }
+    const std::string& GetName() const { return m_sName; }
 
 protected:
     std::unique_ptr<SceneNode> m_pRoot = std::make_unique<SceneNode>();
-    //std::vector<const SceneNode*> m_vpFlattenedNodes;
     DrawLists m_drawLists;
+    std::string m_sName;
     bool m_bAreDrawListsDirty = true;
 };
 

@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(Muyo)
-
 # Set system env
 #if (NOT DEFINED VK_SDK_PATH)
 #    message(FATAL_ERROR "VK_SDK_PATH is not defined")
@@ -129,6 +128,8 @@ add_executable( helloVulkan
     src/Scene.cpp
     src/RenderPassManager.cpp
     src/RenderPassTransparent.cpp
+    src/DebugUI.cpp
+    src/SceneManager.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} vma stb tinygltf tinyobj)

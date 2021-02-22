@@ -8,6 +8,7 @@
 #include "RenderLayerIBL.h"
 #include "RenderPassTransparent.h"
 #include "RenderPassSkybox.h"
+#include "DebugUI.h"
 
 static RenderPassManager renderPassManager;
 
@@ -31,7 +32,14 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, VkFormat s
     // Final pass
     m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(swapchainFormat);
     // UI Pass
-    m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(swapchainFormat);
+    {
+        m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(swapchainFormat);
+        RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+        // Register debug ui pages
+        //pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
+        pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
+    }
+
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
     // Transparent pass

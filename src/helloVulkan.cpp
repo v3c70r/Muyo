@@ -38,6 +38,7 @@
 #include "VkRenderDevice.h"
 #include "SceneImporter.h"
 #include "RenderPassManager.h"
+#include "SceneManager.h"
 #include "Swapchain.h"
 
 const int WIDTH = 1024;
@@ -76,8 +77,14 @@ static void rotateArcballCallback(GLFWwindow *window, double xpos, double ypos)
 // GLFW mouse callback
 static void mouseCallback(GLFWwindow *window, int button, int action, int mods)
 {
-    clickArcballCallback(window, button, action, mods);
-    ImGui::MouseButtonCallback(window, button, action, mods);
+    if (ImGui::GetIO().WantCaptureMouse)
+    {
+        ImGui::MouseButtonCallback(window, button, action, mods);
+    }
+    else
+    {
+        clickArcballCallback(window, button, action, mods);
+    }
 }
 static void mouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
 {
@@ -87,15 +94,27 @@ static void mouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
 void scrollCallback(GLFWwindow* window, double xoffset,
                                    double yoffset)
 {
-    s_arcball.AddZoom(yoffset * -0.1f);
-    ImGui::ScrollCallback(window, xoffset, yoffset);
+    if (ImGui::GetIO().WantCaptureMouse)
+    {
+        ImGui::ScrollCallback(window, xoffset, yoffset);
+    }
+    else
+    {
+        s_arcball.AddZoom(yoffset * -0.1f);
+    }
 }
 // GLFW key callbacks
 static void onKeyStroke(GLFWwindow *window, int key, int scancode, int action,
                         int mods)
 {
-    std::cout << "Key pressed\n";
-    ImGui::KeyCallback(window, key, scancode, action, mods);
+    if (ImGui::GetIO().WantCaptureKeyboard)
+    {
+        ImGui::KeyCallback(window, key, scancode, action, mods);
+    }
+    else
+    {
+        std::cout << "Key captured by engine\n";
+    }
 }
 void charCallback(GLFWwindow* window, unsigned int c)
 {
@@ -111,7 +130,6 @@ static const uint32_t NUM_BUFFERS = 3;
 static DebugUtilsMessenger s_debugMessenger;
 
 //Geometry* g_pQuadGeometry = nullptr;
-std::vector<Scene> g_vScenes;
 
 ///////////////////////////////////////////
 
@@ -262,8 +280,10 @@ int main()
 
     {
         // Load scene
-        GLTFImporter importer;
-        g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
+        //GLTFImporter importer;
+        //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
+        GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+        //GetSceneManager()->LoadSceneFromFile("assets//sphereArray.gltf");
         //for (const auto &scene : g_vScenes)
         //{
         //    std::cout << scene.ConstructDebugString() << std::endl;
@@ -278,7 +298,7 @@ int main()
         GetMaterialManager()->CreateDefaultMaterial();
 
         // Record static command buffer
-        GetRenderPassManager()->RecordStaticCmdBuffers(g_vScenes[0].GatherDrawLists());
+        GetRenderPassManager()->RecordStaticCmdBuffers(GetSceneManager()->GatherDrawLists());
         // Mainloop
         while (!glfwWindowShouldClose(s_pWindow))
         {
