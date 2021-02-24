@@ -19,8 +19,6 @@ void RenderLayerIBL::setupRenderPass()
     multiViewCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
     multiViewCI.subpassCount = viewMasks.size();
     multiViewCI.pViewMasks = viewMasks.data();
-    //multiViewCI.correlationMaskCount = correlationMasks.size();
-    //multiViewCI.pCorrelationMasks = correlationMasks.data();
 
     // Create two render passes for equirectangle cube map and irradiance map
 

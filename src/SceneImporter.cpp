@@ -34,10 +34,10 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
             // For each root node in scene
             for (int nNodeIdx : tinyScene.nodes)
             {
-
-                std::function<void(SceneNode *, const tinygltf::Node &)>
-                    ConstructTreeFromGLTF = [&](SceneNode *pSceneNode, const tinygltf::Node &gltfNode) {
+                std::function<void(SceneNode **, const tinygltf::Node &)>
+                    ConstructTreeFromGLTF = [&](SceneNode **ppSceneNode, const tinygltf::Node &gltfNode) {
                         // Copy current node
+                        SceneNode *pSceneNode = nullptr;
                         if (gltfNode.mesh != -1)
                         {
                             const tinygltf::Mesh mesh = model.meshes[gltfNode.mesh];
@@ -57,15 +57,16 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         {
                             SceneNode* pChild = nullptr;
                             const tinygltf::Node &node = model.nodes[nNodeIdx];
-                            ConstructTreeFromGLTF(pChild, node);
+                            ConstructTreeFromGLTF(&(pChild), node);
                             pSceneNode->AppendChild(pChild);
                         }
+                        *ppSceneNode = pSceneNode;
                     };
 
                 SceneNode *pSceneNode = nullptr;
                 tinygltf::Node gltfRootNode = model.nodes[nNodeIdx];
 
-                ConstructTreeFromGLTF(pSceneNode, gltfRootNode);
+                ConstructTreeFromGLTF(&(pSceneNode), gltfRootNode);
                 pSceneRoot->AppendChild(pSceneNode);
             }
         }
