@@ -266,13 +266,29 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             const auto &accessor = model.accessors.at(primitive.indices);
             const auto &bufferView = model.bufferViews[accessor.bufferView];
             const auto &buffer = model.buffers[bufferView.buffer];
-            assert(accessor.componentType ==
-                   TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
+            // Convert indices to unsigned int
             vIndices.resize(accessor.count);
-            memcpy(vIndices.data(),
-                   buffer.data.data() + bufferView.byteOffset +
-                       accessor.byteOffset,
-                   accessor.count * sizeof(Index));
+            if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT)
+            {
+                memcpy(vIndices.data(),
+                       buffer.data.data() + bufferView.byteOffset +
+                           accessor.byteOffset,
+                       accessor.count * sizeof(Index));
+            }
+            else if (accessor.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT)
+            {
+                // Convert short index to index
+
+                unsigned short *pData = (unsigned short *)(buffer.data.data() + bufferView.byteOffset + accessor.byteOffset);
+                for (size_t i = 0; i < accessor.count; i++)
+                {
+                    vIndices[i] = (uint32_t)pData[i];
+                }
+            }
+            else
+            {
+                assert(false && "Unsupported type");
+            }
         }
         vPrimitives.emplace_back(
             std::make_unique<Primitive>(vVertices, vIndices));
