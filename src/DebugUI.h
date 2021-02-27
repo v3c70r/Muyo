@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 // ImGui Debug UI pages
+class SceneNode;
 class IDebugUIPage
 {
 public:
@@ -31,6 +32,20 @@ public:
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~SceneDebugPage() override{};
+private:
+    void DisplaySceneNodeInfo(const SceneNode& sceneNode) const;
 };
 
-
+// Home of all vertical tabs on the left side
+class VerticalTabsPage : IDebugUIPage
+{
+public:
+    VerticalTabsPage() : IDebugUIPage("Vertical Tabs") {}
+    explicit VerticalTabsPage(const std::string& sName) : IDebugUIPage(sName) {}
+    void Render() const override;
+    bool ShouldRender() const override { return true; }
+    ~VerticalTabsPage() override{};
+private:
+    // A list of tabs
+    uint32_t uCurrentSelection = 0;
+};
