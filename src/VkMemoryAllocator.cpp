@@ -9,6 +9,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice = pDevice->GetPhysicalDevice();
     allocatorInfo.device = pDevice->GetDevice();
+    allocatorInfo.instance = pDevice->GetInstance();
     m_pAllocator = std::make_unique<VmaAllocator>();
     vmaCreateAllocator(&allocatorInfo, m_pAllocator.get());
 }
