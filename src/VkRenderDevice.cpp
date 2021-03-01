@@ -28,7 +28,7 @@ void VkRenderDevice::Initialize(
     }
     for (const auto& sInstanceExtensionName : vExtensionNames)
     {
-        assert(info.IsExtensionSupported(sInstanceExtensionName));
+        assert(info.IsInstanceExtensionSupported(sInstanceExtensionName));
     }
 
     // Create instance
