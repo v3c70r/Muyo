@@ -5,6 +5,7 @@
 #include <cassert>
 #include <functional>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <sstream> // std::stringstream
 
 #include "Geometry.h"

@@ -124,6 +124,8 @@ public:
     void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers);
     uint32_t GetFrameIdx() const {return m_uImageIdx2Present;}
 
+    VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;
+
 private: // Private structures
     enum CommandPools
     {

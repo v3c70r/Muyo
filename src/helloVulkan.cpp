@@ -1,5 +1,8 @@
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
+#define ENABLE_RAY_TRACING
+
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
@@ -40,6 +43,10 @@
 #include "RenderPassManager.h"
 #include "SceneManager.h"
 #include "Swapchain.h"
+
+#ifdef ENABLE_RAY_TRACING
+#include "RayTracingUtils.h"
+#endif
 
 const int WIDTH = 1024;
 const int HEIGHT = 768;
@@ -178,14 +185,16 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
 
+#ifdef ENABLE_RAY_TRACING
         // Ray tracing extensions
-        // VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         // VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-        // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-        // VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        // VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
         // VK_KHR_SPIRV_1_4_EXTENSION_NAME,
         // VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
+#endif
     };
     return vDeviceExtensions;
 }
@@ -283,11 +292,16 @@ int main()
         //GLTFImporter importer;
         //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
-        //GetSceneManager()->LoadSceneFromFile("assets//sphereArray.gltf");
-        //for (const auto &scene : g_vScenes)
-        //{
-        //    std::cout << scene.ConstructDebugString() << std::endl;
-        //}
+
+#ifdef ENABLE_RAY_TRACING
+        {
+            // Test ray tracing
+            for (const auto &scenePair : GetSceneManager()->GetAllScenes())
+            {
+                BLASInput blas = ConstructBLASInput(scenePair.second);
+            }
+        }
+#endif
 
         // Create perview constant buffer
         UniformBuffer<PerViewData> *pUniformBuffer =

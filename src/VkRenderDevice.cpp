@@ -222,13 +222,33 @@ void VkRenderDevice::CreateDevice(
 
     VkPhysicalDeviceFeatures deviceFeatures = {};
 
+    // TODO: Enumerate features and chain them together to pass them into the physical device creation
+
+    // Enable buffer device address
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {};
+    bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    bufferDeviceAddressFeatures.bufferDeviceAddress = true;
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature = {};
+    VkPhysicalDeviceRayTracingFeatures rayTracingFeatures = {};
+    rayTracingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_FEATURES_KHR;
+    rayTracingFeatures.pNext = nullptr;
+
+
+
+    VkPhysicalDeviceFeatures2 deviceFeatures2 = {};
+    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures2.features = deviceFeatures;
+    deviceFeatures2.pNext = &bufferDeviceAddressFeatures;
+
     VkDeviceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.queueCreateInfoCount = 1;
 
-    createInfo.pEnabledFeatures = &deviceFeatures;
+    createInfo.pEnabledFeatures = nullptr;
+    createInfo.pNext = &deviceFeatures2;
 
     createInfo.enabledExtensionCount = vDeviceExtensions.size();
     createInfo.ppEnabledExtensionNames = vDeviceExtensions.data();
@@ -500,6 +520,16 @@ void VkRenderDevice::Present()
     vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
 }
 
+VkDeviceAddress VkRenderDevice::GetBufferDeviceAddress(VkBuffer buffer) const
+{
+    VkBufferDeviceAddressInfo addInfo = {};
+    addInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    addInfo.pNext = nullptr;
+    addInfo.buffer = buffer;
+    VkDeviceAddress deviceAddress = vkGetBufferDeviceAddress(m_device, &addInfo);
+    return deviceAddress;
+}
+
 // Debug device 
 //
 void VkDebugRenderDevice::Initialize(
@@ -532,3 +562,4 @@ void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensio
     VkRenderDevice::CreateDevice(
         vExtensionNames, vLayerNames, surface);
 }
+
