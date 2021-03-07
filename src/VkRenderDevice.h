@@ -7,7 +7,6 @@
 #include "Swapchain.h"
 
 
-
 class RenderResourceManager;
 class Swapchain;
 class VkRenderDevice
@@ -20,8 +19,9 @@ public:
     virtual void CreateDevice(
         const std::vector<const char*>& extensions,
         const std::vector<const char*>& layers,
-        const VkSurfaceKHR& surface
-        );
+        const VkSurfaceKHR& surface,
+        const std::vector<void*>& vpFeatures = {});
+
 
     void DestroyDevice();
 
@@ -138,8 +138,18 @@ private: // Private structures
     struct HWInfo
     {
         uint32_t m_uVersion = 0;
+
         std::vector<VkLayerProperties> m_vSupportedLayers;
-        std::vector<VkExtensionProperties> m_vSupportedExtensions;
+        std::vector<VkLayerProperties> m_vEnabledLayers;
+
+        std::vector<VkExtensionProperties> m_vSupportedInstanceExtensions;
+        //std::vector<VkExtensionProperties> m_vEnabledInstanceExtensions;
+
+        std::vector<VkExtensionProperties> m_vSupportedDeviceExtensions;
+        //std::vector<VkExtensionProperties> m_vEnabledDeviceExtensions;
+
+        // TODO: Handle layers
+
         HWInfo()
         {
             vkEnumerateInstanceVersion(&m_uVersion);
@@ -151,15 +161,15 @@ private: // Private structures
 
             uint32_t uExtensionCount = 0;
             vkEnumerateInstanceExtensionProperties(nullptr, &uExtensionCount, nullptr);
-            m_vSupportedExtensions.resize(uExtensionCount);
-            vkEnumerateInstanceExtensionProperties(nullptr, &uExtensionCount, m_vSupportedExtensions.data());
+            m_vSupportedInstanceExtensions.resize(uExtensionCount);
+            vkEnumerateInstanceExtensionProperties(nullptr, &uExtensionCount, m_vSupportedInstanceExtensions.data());
         }
 
-        bool IsExtensionSupported(const char* sExtensionName)
+        bool IsInstanceExtensionSupported(const char* sInstanceExtensionName)
         {
-            for (const auto& extensionProperty : m_vSupportedExtensions)
+            for (const auto& extensionProperty : m_vSupportedInstanceExtensions)
             {
-                if (strcmp(extensionProperty.extensionName, sExtensionName))
+                if (strcmp(extensionProperty.extensionName, sInstanceExtensionName))
                 {
                     return true;
                 }
@@ -227,7 +237,7 @@ class VkDebugRenderDevice : public VkRenderDevice
 {
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
     virtual void Unintialize() override;
-    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, const VkSurfaceKHR& surface) override;
+    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, const VkSurfaceKHR& surface, const std::vector<void*>& vpFeatures = {}) override;
 
 private:
     DebugUtilsMessenger m_debugMessenger;

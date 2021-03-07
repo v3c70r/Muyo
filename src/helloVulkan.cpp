@@ -248,8 +248,8 @@ int main()
     // Load mesh into memory
     InitGLFW();
     // Create Instace
-    std::vector<const char *> extensions = GetRequiredInstanceExtensions();
-    GetRenderDevice()->Initialize(extensions);
+    std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
+    GetRenderDevice()->Initialize(vInstanceExtensions);
 
     // Create swapchain
     VkSurfaceKHR surface = VK_NULL_HANDLE;
@@ -257,9 +257,13 @@ int main()
     glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, NULL, &surface);
 
     // Create device
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT};
+    std::vector<void*> features;
+    features.push_back(&bufferDeviceAddressFeatrues);
+
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
                                     std::vector<const char *>(),    // Layers
-                                    surface);
+                                    surface, features);
     GetRenderDevice()->CreateSwapchain(surface);
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());

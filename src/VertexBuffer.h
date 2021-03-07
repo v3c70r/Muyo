@@ -39,7 +39,7 @@ public:
                  std::string sBufferName = "vertex buffer")
         : MemoryBuffer(stagedUpload)
     {
-        m_bufferUsageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        m_bufferUsageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         m_sBufferName = sBufferName;
     }
 private:
@@ -52,7 +52,7 @@ public:
                  std::string sBufferName = "index buffer")
         : MemoryBuffer(stagedUpload)
     {
-        m_bufferUsageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        m_bufferUsageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         m_sBufferName = sBufferName;
     }
 };
