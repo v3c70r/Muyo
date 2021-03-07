@@ -130,7 +130,6 @@ add_executable( helloVulkan
     src/RenderPassTransparent.cpp
     src/DebugUI.cpp
     src/SceneManager.cpp
-    src/HWContext.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} vma stb tinygltf tinyobj)

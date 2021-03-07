@@ -5,8 +5,6 @@
 #include <memory>
 #include <cstring>  // strcmp
 #include "Swapchain.h"
-#include "HWContext.h"
-
 
 
 class RenderResourceManager;
