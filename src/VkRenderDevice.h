@@ -21,12 +21,9 @@ public:
     virtual void CreateDevice(
         const std::vector<const char*>& extensions,
         const std::vector<const char*>& layers,
-        const VkSurfaceKHR& surface
-        );
+        const VkSurfaceKHR& surface,
+        const std::vector<void*>& vpFeatures = {});
 
-    // TODO: implement these two
-    virtual void InitializeFromContext(const VulkanContext& context){}
-    virtual bool IsPresentationSupported(const VkSurfaceKHR& surface){}
 
     void DestroyDevice();
 
@@ -240,7 +237,7 @@ class VkDebugRenderDevice : public VkRenderDevice
 {
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
     virtual void Unintialize() override;
-    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, const VkSurfaceKHR& surface) override;
+    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, const VkSurfaceKHR& surface, const std::vector<void*>& vpFeatures = {}) override;
 
 private:
     DebugUtilsMessenger m_debugMessenger;

@@ -168,7 +168,8 @@ void VkRenderDevice::PickPhysicalDevice()
 void VkRenderDevice::CreateDevice(
     const std::vector<const char*>& vDeviceExtensions,
     const std::vector<const char*>& layers,
-    const VkSurfaceKHR& surface)    // surface for compatibility check
+    const VkSurfaceKHR& surface,
+    const std::vector<void*>& vpFeatures)    // surface for compatibility check
 {
     // Query queue family support
     struct QueueFamilyIndice
@@ -220,7 +221,34 @@ void VkRenderDevice::CreateDevice(
     queueCreateInfo.queueCount = 1;
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
-    VkPhysicalDeviceFeatures deviceFeatures = {};
+    struct ExtensionHeader  // Helper struct to link extensions together
+    {
+        VkStructureType sType;
+        void* pNext;
+    };
+
+    VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    if (!vpFeatures.empty())
+    {
+        // build up chain of all used extension features
+        for (size_t i = 0; i < vpFeatures.size(); i++)
+        {
+            auto* header = reinterpret_cast<ExtensionHeader*>(vpFeatures[i]);
+            header->pNext = i < vpFeatures.size() - 1 ? vpFeatures[i + 1] : nullptr;
+        }
+
+        //// append to the end of current feature2 struct
+        ExtensionHeader* lastCoreFeature = (ExtensionHeader*)&features2;
+        while (lastCoreFeature->pNext != nullptr)
+        {
+            lastCoreFeature = (ExtensionHeader*)lastCoreFeature->pNext;
+        }
+        lastCoreFeature->pNext = vpFeatures[0];
+
+        // query support
+        // This will qury support for the chain
+        vkGetPhysicalDeviceFeatures2(m_physicalDevice, &features2);
+    }
 
     VkDeviceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -228,7 +256,9 @@ void VkRenderDevice::CreateDevice(
     createInfo.pQueueCreateInfos = &queueCreateInfo;
     createInfo.queueCreateInfoCount = 1;
 
-    createInfo.pEnabledFeatures = &deviceFeatures;
+    createInfo.pEnabledFeatures = nullptr;
+    createInfo.pNext = &features2;
+
 
     createInfo.enabledExtensionCount = vDeviceExtensions.size();
     createInfo.ppEnabledExtensionNames = vDeviceExtensions.data();
@@ -525,10 +555,10 @@ void VkDebugRenderDevice::Unintialize()
     VkRenderDevice::Unintialize();
 }
 
-void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, const VkSurfaceKHR& surface)
+void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, const VkSurfaceKHR& surface, const std::vector<void*>& vpFeatures)
 {
     std::vector<const char*> vDebugLayerNames = vLayerNames;
     vDebugLayerNames.push_back(GetValidationLayerName());
     VkRenderDevice::CreateDevice(
-        vExtensionNames, vLayerNames, surface);
+        vExtensionNames, vLayerNames, surface, vpFeatures);
 }
