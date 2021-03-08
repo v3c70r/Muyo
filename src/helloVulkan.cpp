@@ -185,7 +185,6 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
 
-#ifdef ENABLE_RAY_TRACING
         // Ray tracing extensions
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         // VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
@@ -194,7 +193,6 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
         // VK_KHR_SPIRV_1_4_EXTENSION_NAME,
         // VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
-#endif
     };
     return vDeviceExtensions;
 }
@@ -297,15 +295,15 @@ int main()
         //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
-#ifdef ENABLE_RAY_TRACING
         {
             // Test ray tracing
+            std::vector<BLASInput> vBLASInputs;
             for (const auto &scenePair : GetSceneManager()->GetAllScenes())
             {
-                BLASInput blas = ConstructBLASInput(scenePair.second);
+                vBLASInputs.push_back(ConstructBLASInput(scenePair.second));
             }
+            BuildBLAS(vBLASInputs, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
         }
-#endif
 
         // Create perview constant buffer
         UniformBuffer<PerViewData> *pUniformBuffer =

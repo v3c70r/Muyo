@@ -1,8 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
 #include <vector>
-#define ENABLE_RAY_TRACING
-//#ifdef ENABLE_RAY_TRACINE
 struct BLASInput
 {
     std::vector<VkAccelerationStructureGeometryKHR> m_vGeometries;
@@ -10,5 +8,9 @@ struct BLASInput
 };
 
 class Scene;
+// Convert scene to BLASInput
 BLASInput ConstructBLASInput(const Scene& Scene);
-//#endif
+
+// Construct BLAS GPU structure
+void BuildBLAS(const std::vector<BLASInput>& vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
+

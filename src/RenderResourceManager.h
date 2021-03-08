@@ -7,6 +7,7 @@
 #include "RenderTargetResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
+#include "AccelerationStructureBuffer.h"
 
 class RenderResourceManager
 {
@@ -102,6 +103,21 @@ public:
                 VK_OBJECT_TYPE_BUFFER, name.c_str());
         }
         return static_cast<UniformBuffer<T>*>(m_mResources[name].get());
+    }
+
+    AccelerationStructureBuffer* GetAccelerationStructureBuffer(const std::string name, uint32_t size)
+    {
+        if (m_mResources.find(name) == m_mResources.end())
+        {
+            m_mResources[name] = std::make_unique<AccelerationStructureBuffer>(size);
+
+            setDebugUtilsObjectName(
+                reinterpret_cast<uint64_t>(
+                    static_cast<AccelerationStructureBuffer*>(m_mResources[name].get())->buffer()),
+                VK_OBJECT_TYPE_BUFFER, name.c_str());
+        }
+
+        return static_cast<AccelerationStructureBuffer*>(m_mResources[name].get());
     }
 
 protected:
