@@ -519,6 +519,18 @@ void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuff
                          m_aGPUExecutionFence[m_uImageIdx2Present]) == VK_SUCCESS);
 }
 
+void VkRenderDevice::SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers)
+{
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
+    submitInfo.pCommandBuffers = vCmdBuffers.data();
+
+    assert(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo, nullptr) ==
+           VK_SUCCESS);
+    assert(vkQueueWaitIdle(GetGraphicsQueue()) == VK_SUCCESS);
+}
+
 void VkRenderDevice::Present()
 {
     VkPresentInfoKHR presentInfo = {};

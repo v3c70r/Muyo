@@ -255,9 +255,20 @@ int main()
     glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, NULL, &surface);
 
     // Create device
-    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT};
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {};
+    bufferDeviceAddressFeatrues.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT;
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature = {};
+    rayTracingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
+    accStructFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+
     std::vector<void*> features;
     features.push_back(&bufferDeviceAddressFeatrues);
+    if (GetRenderDevice()->IsRayTracingSupported())
+    {
+        features.push_back(&rayTracingFeature);
+        features.push_back(&accStructFeature);
+    }
 
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
                                     std::vector<const char *>(),    // Layers
@@ -295,17 +306,8 @@ int main()
         //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
-        {
-            // Test ray tracing
-            std::vector<BLASInput> vBLASInputs;
-            for (const auto &scenePair : GetSceneManager()->GetAllScenes())
-            {
-                vBLASInputs.push_back(ConstructBLASInput(scenePair.second));
-            }
-            BuildBLAS(vBLASInputs, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
-        }
-
-        // Create perview constant buffer
+        RTBuilder rayTracingBuilder;
+       // Create perview constant buffer
         UniformBuffer<PerViewData> *pUniformBuffer =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>(
                 "perView");
@@ -316,6 +318,7 @@ int main()
         // Record static command buffer
         GetRenderPassManager()->RecordStaticCmdBuffers(GetSceneManager()->GatherDrawLists());
         // Mainloop
+        bool bExecuteOnce = true;
         while (!glfwWindowShouldClose(s_pWindow))
         {
             glfwPollEvents();
@@ -323,6 +326,20 @@ int main()
             updateUniformBuffer(pUniformBuffer);
 
             GetRenderDevice()->BeginFrame();
+
+            if (GetRenderDevice()->IsRayTracingSupported() && bExecuteOnce)
+            {
+                // Test ray tracing
+                std::vector<BLASInput> vBLASInputs;
+                for (const auto &scenePair : GetSceneManager()->GetAllScenes())
+                {
+                    vBLASInputs.push_back(ConstructBLASInput(scenePair.second));
+                }
+                rayTracingBuilder.BuildBLAS(
+                    vBLASInputs,
+                    VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
+                bExecuteOnce = false;
+            }
 
             // Handle resizing
             {

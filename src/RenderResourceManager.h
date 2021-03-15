@@ -7,7 +7,6 @@
 #include "RenderTargetResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
-#include "AccelerationStructureBuffer.h"
 
 class RenderResourceManager
 {
@@ -105,7 +104,7 @@ public:
         return static_cast<UniformBuffer<T>*>(m_mResources[name].get());
     }
 
-    AccelerationStructureBuffer* GetAccelerationStructureBuffer(const std::string name, uint32_t size)
+    AccelerationStructureBuffer* GetAccelerationStructureBuffer(const std::string& name, uint32_t size)
     {
         if (m_mResources.find(name) == m_mResources.end())
         {

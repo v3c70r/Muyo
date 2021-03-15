@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
-#include "Buffer.h"
+#include <cassert>
 #include "VkRenderDevice.h"
 #include "VkMemoryAllocator.h"
 

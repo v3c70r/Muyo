@@ -12,6 +12,14 @@ class Swapchain;
 class VkRenderDevice
 {
 public:
+    constexpr bool IsRayTracingSupported() const
+    {
+#ifdef _WIN32
+        return true;
+#else
+        return false;
+#endif
+    }
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers = std::vector<const char*>());
 
     virtual void Unintialize();
@@ -122,6 +130,7 @@ public:
     void BeginFrame();
     void Present();
     void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers);
+    void SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers);
     uint32_t GetFrameIdx() const {return m_uImageIdx2Present;}
 
     VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;
