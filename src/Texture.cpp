@@ -16,7 +16,6 @@ Texture::~Texture()
     {
         vkDestroySampler(GetRenderDevice()->GetDevice(), m_textureSampler, nullptr);
         vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
-        GetMemoryAllocator()->FreeImage(m_image, m_allocation);
     }
 }
 

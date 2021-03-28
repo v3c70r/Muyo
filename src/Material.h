@@ -46,7 +46,7 @@ public:
         {
             GetTextureManager()->m_vpTextures[name] = std::make_unique<Texture>();
             GetTextureManager()->m_vpTextures[name]->LoadImage(path);
-            GetTextureManager()->m_vpTextures[name]->setName(name);
+            GetTextureManager()->m_vpTextures[name]->SetDebugName(name);
             m_materialParameters.m_apTextures[type] = GetTextureManager()->m_vpTextures[name].get();
         }
         else

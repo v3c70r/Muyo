@@ -76,5 +76,4 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage,
 RenderTarget::~RenderTarget()
 {
     vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
-    GetMemoryAllocator()->FreeImage(m_image, m_allocation);
 }

@@ -60,6 +60,7 @@ void RenderPassManager::SetSwapchainImageViews(std::vector<VkImageView> &vImageV
 }
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
 {
+    // TODO: Resize passes if needed
 }
 
 void RenderPassManager::Unintialize()

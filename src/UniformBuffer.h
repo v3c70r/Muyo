@@ -25,10 +25,13 @@ struct PerGeometryData
 };
 
 template <class T>
-class UniformBuffer : public IRenderResource
+class UniformBuffer : public BufferResource
 {
 public:
     UniformBuffer()
+        : BufferResource(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VMA_MEMORY_USAGE_CPU_TO_GPU)
+
     {
         const size_t size = sizeof(T);
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
@@ -42,17 +45,4 @@ public:
         memcpy(pMappedMemory, (void*)&buffer, sizeof(T));
         GetMemoryAllocator()->UnmapBuffer(m_allocation);
     }
-    ~UniformBuffer()
-    {
-        GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
-    }
-
-    VkBuffer buffer() const { return m_buffer; }
-
-private:
-    VkBuffer m_buffer = VK_NULL_HANDLE;
-
-    VmaAllocation m_allocation = VK_NULL_HANDLE;
-    const VkBufferUsageFlags BUFFER_USAGE = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-    const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_CPU_TO_GPU;
 };

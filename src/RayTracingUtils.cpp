@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <algorithm>
+#include <string>
 #include <vulkan/vulkan_core.h>
 
 #include "Geometry.h"
@@ -11,8 +12,44 @@
 #include "RenderResourceManager.h"
 #include "Debug.h"
 
+RTBuilder::RTBuilder()
+{
+    // Get function pointers from Vulkan library
+    vkCreateAccelerationStructureKHR =
+        (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(
+            GetRenderDevice()->GetInstance(),
+            "vkCreateAccelerationStructureKHR");
+
+    vkDestroyAccelerationStructureKHR =
+        (PFN_vkDestroyAccelerationStructureKHR)vkGetInstanceProcAddr(
+            GetRenderDevice()->GetInstance(),
+            "vkDestroyAccelerationStructureKHR");
+
+    vkCmdBuildAccelerationStructuresKHR =
+        (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetInstanceProcAddr(
+            GetRenderDevice()->GetInstance(),
+            "vkCmdBuildAccelerationStructuresKHR");
+
+    vkCmdWriteAccelerationStructuresPropertiesKHR =
+        (PFN_vkCmdWriteAccelerationStructuresPropertiesKHR)
+            vkGetInstanceProcAddr(
+                GetRenderDevice()->GetInstance(),
+                "vkCmdWriteAccelerationStructuresPropertiesKHR");
+
+    vkGetAccelerationStructureBuildSizesKHR =
+        (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetInstanceProcAddr(
+            GetRenderDevice()->GetInstance(),
+            "vkGetAccelerationStructureBuildSizesKHR");
+
+    vkCmdCopyAccelerationStructureKHR =
+        (PFN_vkCmdCopyAccelerationStructureKHR)vkGetInstanceProcAddr(
+            GetRenderDevice()->GetInstance(),
+            "vkCmdCopyAccelerationStructureKHR");
+}
+
 BLASInput ConstructBLASInput(const Scene &Scene)
 {
+    // BLAS are acceleration structures
     std::function<void(const SceneNode *, BLASInput &)> ConstructBLASInputRecursive = [&](const SceneNode *pNode, BLASInput &blasInput) {
         const GeometrySceneNode *pGeometryNode = dynamic_cast<const GeometrySceneNode *>(pNode);
         if (pGeometryNode)
@@ -80,6 +117,8 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
         // needed (both written to sizeInfo). The `vkGetAccelerationStructureBuildSizesKHR` function
         // computes the worst case memory requirements based on the user-reported max number of
         // primitives. Later, compaction can fix this potential inefficiency.
+        const std::string sAccBufName = "acBuf_" + std::to_string(idx);
+        const std::string sAccStructName = "acStruct_" + std::to_string(idx);
         std::vector<uint32_t> maxPrimCount(m_blas[idx].m_vRangeInfo.size());
         for (size_t tt = 0; tt < m_blas[idx].m_vRangeInfo.size(); tt++)
         {
@@ -88,10 +127,6 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
         VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
         sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 
-        static auto vkGetAccelerationStructureBuildSizesKHR =
-            (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetInstanceProcAddr(
-                GetRenderDevice()->GetInstance(),
-                "vkGetAccelerationStructureBuildSizesKHR");
         vkGetAccelerationStructureBuildSizesKHR(
             GetRenderDevice()->GetDevice(),
             VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfos[idx],
@@ -103,18 +138,14 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
         createInfo.size = sizeInfo.accelerationStructureSize;
         // Allocate acceleration structure buffer 
-        AccelerationStructureBuffer* bufAcc = GetRenderResourceManager()->GetAccelerationStructureBuffer("scene", createInfo.size);
+        AccelerationStructureBuffer* bufAcc = GetRenderResourceManager()->GetAccelerationStructureBuffer(sAccBufName, createInfo.size);
         createInfo.buffer = bufAcc->buffer();
 
-        static auto vkCreateAccelerationStructureKHR =
-            (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(
-                GetRenderDevice()->GetInstance(),
-                "vkCreateAccelerationStructureKHR");
         vkCreateAccelerationStructureKHR(GetRenderDevice()->GetDevice(),
                                          &createInfo, nullptr,
                                          &m_blas[idx].m_ac);
         // Assign debug name to the acceleration structure
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_blas[idx].m_ac), VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, (std::string("Blas" + std::to_string(idx)).c_str()));
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_blas[idx].m_ac), VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, sAccStructName.c_str());
         buildInfos[idx].dstAccelerationStructure = m_blas[idx].m_ac;
 
         m_blas[idx].m_flags = flags;
@@ -130,8 +161,7 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
     bool bDoCompaction = (flags & VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR)
                         == VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR;
 
-    // Allocate a query pool for storing the needed size for every BLAS
-    // compaction.
+    // Allocate a query pool for storing the needed size for every BLAS compaction.
     VkQueryPoolCreateInfo qpci = {};
     qpci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
     qpci.queryCount = nNumBlas;
@@ -162,10 +192,6 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
         vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo);
         {
             SCOPED_MARKER(cmdBuf, "[RT] Build Acc Struct");
-            static auto vkCmdBuildAccelerationStructuresKHR =
-                (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetInstanceProcAddr(
-                    GetRenderDevice()->GetInstance(),
-                    "vkCmdBuildAccelerationStructuresKHR");
             vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfos[idx],
                                                 vpBuildOffsets.data());
 
@@ -183,11 +209,6 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
             // Write compacted size to query number idx.
             if (bDoCompaction)
             {
-                static auto vkCmdWriteAccelerationStructuresPropertiesKHR =
-                    (PFN_vkCmdWriteAccelerationStructuresPropertiesKHR)
-                        vkGetInstanceProcAddr(
-                            GetRenderDevice()->GetInstance(),
-                            "vkCmdWriteAccelerationStructuresPropertiesKHR");
                 vkCmdWriteAccelerationStructuresPropertiesKHR(
                     cmdBuf, 1, &blas.m_ac,
                     VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
@@ -195,9 +216,85 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
             }
         }
         vkEndCommandBuffer(cmdBuf);
-
         cmdBuffers.push_back(cmdBuf);
     }
+
     GetRenderDevice()->SubmitCommandBuffersAndWait(cmdBuffers);
     cmdBuffers.clear();
+
+    if (bDoCompaction)
+    {
+        std::vector<VkDeviceSize> vCompactSizes(nNumBlas);
+        vkGetQueryPoolResults(GetRenderDevice()->GetDevice(), queryPool, 0,
+                              (uint32_t)vCompactSizes.size(),
+                              vCompactSizes.size() * sizeof(VkDeviceSize),
+                              vCompactSizes.data(), sizeof(VkDeviceSize),
+                              VK_QUERY_RESULT_WAIT_BIT);
+
+        uint32_t nTotalOriginalSizes = 0;
+        uint32_t nTotalCompactSizes = 0;
+        std::vector<VkAccelerationStructureKHR> vAcToSwap;
+        std::vector<AccelerationStructureBuffer*> vBufToSwap;
+        for (uint32_t idx = 0; idx < nNumBlas; idx++)
+        {
+
+            nTotalOriginalSizes += vOriginalSizes[idx];
+            nTotalCompactSizes += vCompactSizes[idx];
+
+            AccelerationStructureBuffer* pBuf = new AccelerationStructureBuffer(vCompactSizes[idx]);
+            VkAccelerationStructureKHR acc = VK_NULL_HANDLE;
+
+            // Create compact acceleration structure
+            VkAccelerationStructureCreateInfoKHR createInfo = {};
+            createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+            createInfo.size = vCompactSizes[idx];
+            createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+            createInfo.buffer = pBuf->buffer();
+            vkCreateAccelerationStructureKHR(GetRenderDevice()->GetDevice(),
+                                             &createInfo, nullptr,
+                                             &acc);
+
+            VkCommandBuffer cmdBuf = GetRenderDevice()->AllocateImmediateCommandBuffer();
+            cmdBuffers.push_back(cmdBuf);
+            VkCommandBufferBeginInfo cmdBeginInfo = {};
+            cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+            cmdBeginInfo.pInheritanceInfo = nullptr;
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(cmdBuf), VK_OBJECT_TYPE_COMMAND_BUFFER, (std::string("[CB] BLAS Compaction " + std::to_string(idx)).c_str()));
+            vkBeginCommandBuffer(cmdBuf, &cmdBeginInfo);
+            {
+                // Copy old acc structure to new acc structure with compaction
+                SCOPED_MARKER(cmdBuf, "Acceleration structure compaction" + std::to_string(idx));
+                VkCopyAccelerationStructureInfoKHR copyInfo = {};
+                copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
+                copyInfo.src = m_blas[idx].m_ac;
+                copyInfo.dst = acc;
+                copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
+                vkCmdCopyAccelerationStructureKHR(cmdBuf, &copyInfo);
+            }
+            vkEndCommandBuffer(cmdBuf);
+
+            // Prepare resources to swap
+            vAcToSwap.push_back(acc);
+            vBufToSwap.push_back(pBuf);
+        }
+        GetRenderDevice()->SubmitCommandBuffersAndWait(cmdBuffers);
+        cmdBuffers.clear();
+
+        // Swap old blas structure with compacted blas structure
+
+        for (uint32_t idx = 0; idx < nNumBlas; idx++)
+        {
+            
+            vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), m_blas[idx].m_ac, nullptr);
+            // Make sure they are the same names used above because we want to swap exactly the same buffer
+            const std::string sAccBufName = "acBuf_" + std::to_string(idx);
+            const std::string sAccStructName = "acStruct_" + std::to_string(idx);
+            m_blas[idx].m_ac = vAcToSwap[idx];
+            GetRenderResourceManager()->AssignResource(sAccBufName, vBufToSwap[idx]);
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_blas[idx].m_ac), VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, sAccStructName.c_str());
+        }
+    }
+    vkDestroyQueryPool(GetRenderDevice()->GetDevice(), queryPool, nullptr);
+
 }
