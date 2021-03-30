@@ -306,8 +306,24 @@ int main()
         //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
-        RTBuilder rayTracingBuilder;
-       // Create perview constant buffer
+        // TODO: Each geometry node should has their own BLAS as they have their own transformation
+        if (GetRenderDevice()->IsRayTracingSupported())
+        {
+            RTBuilder rayTracingBuilder;
+            // Test ray tracing
+            std::vector<BLASInput> vBLASInputs;
+            std::vector<Instance> vInstances;
+            DrawLists dl = GetSceneManager()->GatherDrawLists();
+            vBLASInputs = ConstructBLASInputs(dl);
+            rayTracingBuilder.BuildBLAS(
+                vBLASInputs,
+                VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+
+            rayTracingBuilder.Cleanup(vBLASInputs);
+        }
+        // Create perview constant buffer
+        //
+
         UniformBuffer<PerViewData> *pUniformBuffer =
             GetRenderResourceManager()->getUniformBuffer<PerViewData>(
                 "perView");
@@ -318,7 +334,6 @@ int main()
         // Record static command buffer
         GetRenderPassManager()->RecordStaticCmdBuffers(GetSceneManager()->GatherDrawLists());
         // Mainloop
-        bool bExecuteOnce = true;
         while (!glfwWindowShouldClose(s_pWindow))
         {
             glfwPollEvents();
@@ -327,19 +342,7 @@ int main()
 
             GetRenderDevice()->BeginFrame();
 
-            if (GetRenderDevice()->IsRayTracingSupported() && bExecuteOnce)
-            {
-                // Test ray tracing
-                std::vector<BLASInput> vBLASInputs;
-                for (const auto &scenePair : GetSceneManager()->GetAllScenes())
-                {
-                    vBLASInputs.push_back(ConstructBLASInput(scenePair.second));
-                }
-                rayTracingBuilder.BuildBLAS(
-                    vBLASInputs,
-                    VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
-                bExecuteOnce = false;
-            }
+            
 
             // Handle resizing
             {

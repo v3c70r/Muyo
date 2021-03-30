@@ -55,7 +55,6 @@ public:
     Scene() : m_sName("sans_nom") {}
     explicit Scene(const std::string& sName) : m_sName(sName) {}
     SceneNode* GetRoot() { return m_pRoot.get(); }
-    //const SceneNode* GetRoot() const { return m_pRoot.get(); }
     const std::unique_ptr<SceneNode>& GetRoot() const { return m_pRoot; }
     const DrawLists& GatherDrawLists();
     std::string ConstructDebugString() const;

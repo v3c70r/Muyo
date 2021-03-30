@@ -47,13 +47,17 @@ RTBuilder::RTBuilder()
             "vkCmdCopyAccelerationStructureKHR");
 }
 
-BLASInput ConstructBLASInput(const Scene &Scene)
+std::vector<BLASInput> ConstructBLASInputs(const DrawLists& dls)
 {
-    // BLAS are acceleration structures
-    std::function<void(const SceneNode *, BLASInput &)> ConstructBLASInputRecursive = [&](const SceneNode *pNode, BLASInput &blasInput) {
-        const GeometrySceneNode *pGeometryNode = dynamic_cast<const GeometrySceneNode *>(pNode);
+    std::vector<BLASInput> BLASs;
+    // Just gather opaque nodes for now
+    for (const SceneNode* pSceneNode : dls.m_aDrawLists[DrawLists::DL_OPAQUE])
+    {
+
+        const GeometrySceneNode *pGeometryNode = dynamic_cast<const GeometrySceneNode *>(pSceneNode);
         if (pGeometryNode)
         {
+            BLASInput blasInput;
             for (const auto &primitive : pGeometryNode->GetGeometry()->getPrimitives())
             {
                 VkAccelerationStructureGeometryTrianglesDataKHR triangles = {};
@@ -83,15 +87,15 @@ BLASInput ConstructBLASInput(const Scene &Scene)
                 blasInput.m_vGeometries.emplace_back(geometry);
                 blasInput.m_vRangeInfo.emplace_back(range);
             }
+
+            if (blasInput.m_vGeometries.size() > 0)
+            {
+                BLASs.push_back(blasInput);
+            }
         }
-        for (const auto &child : pNode->GetChildren())
-        {
-            ConstructBLASInputRecursive(child.get(), blasInput);
-        }
-    };
-    BLASInput input;
-    ConstructBLASInputRecursive(Scene.GetRoot().get(), input);
-    return input;
+    }
+
+    return BLASs;
 }
 
 void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags)
@@ -297,4 +301,18 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
     }
     vkDestroyQueryPool(GetRenderDevice()->GetDevice(), queryPool, nullptr);
 
+}
+
+
+void RTBuilder::BuildTLAS(const std::vector<Instance> &instances, VkBuildAccelerationStructureFlagsKHR flags, bool bUpdate)
+{
+
+}
+
+void RTBuilder::Cleanup(std::vector<BLASInput> &vBLASInputs)
+{
+    for (auto& blasInput : vBLASInputs)
+    {
+        vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), blasInput.m_ac, nullptr);
+    }
 }
