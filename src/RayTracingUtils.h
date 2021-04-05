@@ -4,13 +4,20 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+// TODO: Put dedicated acceleration structures into resource manager
+struct AccelerationStructure
+{
+    VkAccelerationStructureKHR m_ac = VK_NULL_HANDLE;
+    VkBuildAccelerationStructureFlagsKHR m_flags = 0;
+};
 struct BLASInput
 {
     std::vector<VkAccelerationStructureGeometryKHR> m_vGeometries;
     std::vector<VkAccelerationStructureBuildRangeInfoKHR> m_vRangeInfo;
+    // Buffer is managed by resource manager
 
     VkAccelerationStructureKHR m_ac = VK_NULL_HANDLE;
-    VkFlags m_flags = {};
+    VkBuildAccelerationStructureFlagsKHR m_flags = 0;
 };
 
 // This is an instance of a BLAS
@@ -24,8 +31,15 @@ struct Instance
     glm::mat4 transform = glm::mat4(1.0);  // Identity
 };
 
+struct RTInputs
+{
+    std::vector<BLASInput> BLASs;
+    std::vector<Instance> TLASs;
+};
+
 class Scene;
-std::vector<BLASInput> ConstructBLASInputs(const DrawLists& dls);
+
+RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls);
 
 class RTBuilder
 {
@@ -34,11 +48,15 @@ public:
     // Construct BLAS GPU structure
     void BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
     void BuildTLAS(const std::vector<Instance>& instances, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR, bool bUpdate = false);
-    void Cleanup(std::vector<BLASInput> &vBLASInputs);
+    void Cleanup();
 
 
 private:
+
+    VkAccelerationStructureInstanceKHR TLASInputToVkGeometryInstance(const Instance& instance);
+
     std::vector<BLASInput> m_blas;
+    AccelerationStructure m_tlas;
 
     // Raytracing functions
     PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
@@ -47,5 +65,6 @@ private:
     PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteAccelerationStructuresPropertiesKHR = nullptr;
     PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
     PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR = nullptr;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
 };
 

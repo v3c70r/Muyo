@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <string>
 #include <vulkan/vulkan_core.h>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "Geometry.h"
 #include "MeshVertex.h"
@@ -45,11 +46,17 @@ RTBuilder::RTBuilder()
         (PFN_vkCmdCopyAccelerationStructureKHR)vkGetInstanceProcAddr(
             GetRenderDevice()->GetInstance(),
             "vkCmdCopyAccelerationStructureKHR");
+
+    vkGetAccelerationStructureDeviceAddressKHR =
+        (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetInstanceProcAddr(
+            GetRenderDevice()->GetInstance(),
+            "vkGetAccelerationStructureDeviceAddressKHR");
 }
 
-std::vector<BLASInput> ConstructBLASInputs(const DrawLists& dls)
+RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
 {
     std::vector<BLASInput> BLASs;
+    std::vector<Instance> TLASs;
     // Just gather opaque nodes for now
     for (const SceneNode* pSceneNode : dls.m_aDrawLists[DrawLists::DL_OPAQUE])
     {
@@ -90,17 +97,26 @@ std::vector<BLASInput> ConstructBLASInputs(const DrawLists& dls)
 
             if (blasInput.m_vGeometries.size() > 0)
             {
+
                 BLASs.push_back(blasInput);
+                Instance tlasInput;
+
+                tlasInput.transform = pGeometryNode->GetMatrix();  // Position of the instance
+                tlasInput.instanceId = BLASs.size() - 1;     // gl_InstanceCustomIndexEXT
+                tlasInput.blasId = BLASs.size() -  1;
+                tlasInput.hitGroupId = 0;  // We will use the same hit group for all objects
+                tlasInput.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+                TLASs.push_back(tlasInput);
             }
         }
     }
 
-    return BLASs;
+    return {BLASs, TLASs};
 }
 
 void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags)
 {
-    std::vector<BLASInput> m_blas = vBLASInputs;
+    m_blas = vBLASInputs;
     uint32_t nNumBlas = (uint32_t)m_blas.size();
     std::vector<VkAccelerationStructureBuildGeometryInfoKHR> buildInfos(nNumBlas);
     std::vector<VkDeviceSize> vOriginalSizes(nNumBlas);
@@ -293,7 +309,8 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
             vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), m_blas[idx].m_ac, nullptr);
             // Make sure they are the same names used above because we want to swap exactly the same buffer
             const std::string sAccBufName = "acBuf_" + std::to_string(idx);
-            const std::string sAccStructName = "acStruct_" + std::to_string(idx);
+
+            const std::string sAccStructName = "acStruct_" + std::to_string(idx)+"_compacted";
             m_blas[idx].m_ac = vAcToSwap[idx];
             GetRenderResourceManager()->AssignResource(sAccBufName, vBufToSwap[idx]);
             setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_blas[idx].m_ac), VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR, sAccStructName.c_str());
@@ -306,13 +323,116 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
 
 void RTBuilder::BuildTLAS(const std::vector<Instance> &instances, VkBuildAccelerationStructureFlagsKHR flags, bool bUpdate)
 {
+    static const std::string TLAS_BUFFER_NAME = "TLAS instance buffer";
+
+    assert(m_tlas.m_ac == VK_NULL_HANDLE || bUpdate);
+    m_tlas.m_flags = flags;
+    std::vector<VkAccelerationStructureInstanceKHR> geometryInstances;
+    geometryInstances.reserve(instances.size());
+    for(const auto& instance : instances)
+    {
+        geometryInstances.push_back(TLASInputToVkGeometryInstance(instance));
+    }
+    if (bUpdate)
+    {
+        GetRenderResourceManager()->removeResource(TLAS_BUFFER_NAME);
+    }
+    uint32_t nBufferSize = sizeof(VkAccelerationStructureInstanceKHR) * geometryInstances.size();
+    AccelerationStructureBuffer* instanceBuffer = GetRenderResourceManager()->GetAccelerationStructureBuffer(TLAS_BUFFER_NAME, geometryInstances.data(), nBufferSize);
+    VkDeviceAddress instanceAddress = GetRenderDevice()->GetBufferDeviceAddress(instanceBuffer->buffer());
+
+    VkAccelerationStructureGeometryInstancesDataKHR instancesDataVk = {};
+    instancesDataVk.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    instancesDataVk.arrayOfPointers = VK_FALSE;
+    instancesDataVk.data.deviceAddress = instanceAddress;
+
+    VkAccelerationStructureGeometryKHR topASGeometry = {};
+    topASGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    topASGeometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    topASGeometry.geometry.instances = instancesDataVk;
+
+    // Query size for TLAS
+    VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    buildInfo.geometryCount = 1;
+    buildInfo.pGeometries = &topASGeometry;
+    buildInfo.mode = bUpdate
+                         ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
+                         : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    buildInfo.srcAccelerationStructure = VK_NULL_HANDLE;
+
+    uint32_t nCount = (uint32_t) instances.size();
+    VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
+    sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
+                                            VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &nCount, &sizeInfo);
+
+    if (!bUpdate)
+    {
+        VkAccelerationStructureCreateInfoKHR createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+        createInfo.size = sizeInfo.accelerationStructureSize;
+        createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        createInfo.buffer = GetRenderResourceManager()->GetAccelerationStructureBuffer("TLAS buffer", sizeInfo.accelerationStructureSize)->buffer();
+        vkCreateAccelerationStructureKHR(GetRenderDevice()->GetDevice(),
+                                         &createInfo, nullptr,
+                                         &m_tlas.m_ac);
+    }
+
+    // Allocate scratch size to build the structure
+    AccelerationStructureBuffer scratchBuffer(sizeInfo.buildScratchSize);
+    VkDeviceAddress scratchAddress = GetRenderDevice()->GetBufferDeviceAddress(scratchBuffer.buffer());
+    buildInfo.srcAccelerationStructure =  bUpdate ? m_tlas.m_ac : VK_NULL_HANDLE;
+    buildInfo.dstAccelerationStructure = m_tlas.m_ac;
+    buildInfo.scratchData.deviceAddress = scratchAddress;
+
+    // Build Offsets info: n instances
+    VkAccelerationStructureBuildRangeInfoKHR buildOffsetInfo{static_cast<uint32_t>(instances.size()), 0, 0, 0};
+    const VkAccelerationStructureBuildRangeInfoKHR* pBuildOffsetInfo = &buildOffsetInfo;
+
+    // Build the TLAS
+    GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf) {
+        vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo);
+    });
 
 }
 
-void RTBuilder::Cleanup(std::vector<BLASInput> &vBLASInputs)
+void RTBuilder::Cleanup()
 {
-    for (auto& blasInput : vBLASInputs)
+    for (auto& blasInput : m_blas)
     {
         vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), blasInput.m_ac, nullptr);
     }
+    vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), m_tlas.m_ac, nullptr);
+}
+
+VkAccelerationStructureInstanceKHR RTBuilder::TLASInputToVkGeometryInstance(const Instance& instance)
+{
+    assert(size_t(instance.blasId) < m_blas.size());
+
+    BLASInput& blas{m_blas[instance.blasId]};
+
+    VkAccelerationStructureDeviceAddressInfoKHR addressInfo{
+        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+        nullptr,
+        blas.m_ac};
+    VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(GetRenderDevice()->GetDevice(), &addressInfo);
+
+    VkAccelerationStructureInstanceKHR gInst{};
+    // The matrices for the instance transforms are row-major, instead of
+    // column-major in the rest of the application
+    //nvmath::mat4f transp = nvmath::transpose(instance.transform);
+    // The gInst.transform value only contains 12 values, corresponding to a 4x3
+    // matrix, hence saving the last row that is anyway always (0,0,0,1). Since
+    // the matrix is row-major, we simply copy the first 12 values of the
+    // original 4x4 matrix
+    // Note: QGU probably no need to transpose the matrix 
+    memcpy(&gInst.transform, glm::value_ptr(instance.transform), sizeof(gInst.transform));
+    gInst.instanceCustomIndex = instance.instanceId;
+    gInst.mask = instance.mask;
+    gInst.instanceShaderBindingTableRecordOffset = instance.hitGroupId;
+    gInst.flags = instance.flags;
+    gInst.accelerationStructureReference = blasAddress;
+    return gInst;
 }

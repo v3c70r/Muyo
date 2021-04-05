@@ -24,7 +24,8 @@ void VkMemoryAllocator::AllocateBuffer(size_t nSize,
                                        VkBuffer& buffer,
                                        VmaAllocation& allocation)
 {
-    VkBufferCreateInfo bufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = nSize;
     bufferInfo.usage = nBufferUsageFlags;
 
@@ -42,7 +43,8 @@ void VkMemoryAllocator::AllocateBuffer(size_t nSize,
                                        VmaAllocation& allocation,
                                        std::string bufferName)
 {
-    VkBufferCreateInfo bufferInfo = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = nSize;
     bufferInfo.usage = nBufferUsageFlags;
 

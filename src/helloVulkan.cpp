@@ -306,20 +306,22 @@ int main()
         //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
-        // TODO: Each geometry node should has their own BLAS as they have their own transformation
         if (GetRenderDevice()->IsRayTracingSupported())
         {
             RTBuilder rayTracingBuilder;
             // Test ray tracing
-            std::vector<BLASInput> vBLASInputs;
-            std::vector<Instance> vInstances;
+
+            RTInputs rtInputs;
             DrawLists dl = GetSceneManager()->GatherDrawLists();
-            vBLASInputs = ConstructBLASInputs(dl);
+            rtInputs = ConstructRTInputsFromDrawLists(dl);
             rayTracingBuilder.BuildBLAS(
-                vBLASInputs,
+                rtInputs.BLASs,
+                VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+            rayTracingBuilder.BuildTLAS(
+                rtInputs.TLASs,
                 VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
-            rayTracingBuilder.Cleanup(vBLASInputs);
+            rayTracingBuilder.Cleanup();
         }
         // Create perview constant buffer
         //

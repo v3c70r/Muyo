@@ -104,6 +104,20 @@ public:
             m_mResources[sName].get());
     }
 
+    AccelerationStructureBuffer* GetAccelerationStructureBuffer(
+        const std::string& sName, const void* pData, uint32_t size)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] =
+                std::make_unique<AccelerationStructureBuffer>(pData, size);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+
+        return static_cast<AccelerationStructureBuffer*>(
+            m_mResources[sName].get());
+    }
+
     // Swap an existing resource with a new pointer
     template <class T>
     void AssignResource(const std::string& sName, T* pResource)
