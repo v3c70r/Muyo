@@ -19,7 +19,8 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_PER_OBJ_DATA,   // Per object data layout
     DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
     DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
-    DESCRIPTOR_LAYOUT_IBL,        // Layouts contains output of GBuffer
+    DESCRIPTOR_LAYOUT_IBL,            // IBL descriptor sets
+    DESCRIPTOR_LAYOUT_RAY_TRACING,     // Raytracing Descriptor sets
     DESCRIPTOR_LAYOUT_COUNT,
 };
 
@@ -66,6 +67,10 @@ public:
             VkImageView prefilteredEnvMap,
             VkImageView specularBrdfLutMap
             );
+
+    // Ray Tracing descriptor set
+    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage);
+    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage);
 
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
@@ -123,6 +128,15 @@ private:
         uboLayoutBinding.pImmutableSamplers = nullptr;
         uboLayoutBinding.stageFlags = stages;
         return uboLayoutBinding;
+    }
+    static VkDescriptorSetLayoutBinding GetBinding(uint32_t nBinding, VkDescriptorType descType, uint32_t nDescCount = 1, VkShaderStageFlags shaderStageFlags = VK_SHADER_STAGE_ALL)
+    {
+        VkDescriptorSetLayoutBinding binding = {};
+        binding.binding = nBinding;
+        binding.descriptorCount = nDescCount;
+        binding.descriptorType = descType;
+        binding.stageFlags = shaderStageFlags;
+        return binding;
     }
 
     static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(

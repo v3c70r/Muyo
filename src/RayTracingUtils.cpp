@@ -187,8 +187,7 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
     qpci.queryCount = nNumBlas;
     qpci.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
     VkQueryPool queryPool;
-    vkCreateQueryPool(GetRenderDevice()->GetDevice(), &qpci, nullptr,
-                      &queryPool);
+    vkCreateQueryPool(GetRenderDevice()->GetDevice(), &qpci, nullptr, &queryPool);
 
     std::vector<VkCommandBuffer> cmdBuffers;
     for (size_t idx = 0; idx < nNumBlas; idx++)
@@ -200,7 +199,7 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
         cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         cmdBeginInfo.pInheritanceInfo = nullptr;
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(cmdBuf), VK_OBJECT_TYPE_COMMAND_BUFFER, (std::string("[CB] build blas" + std::to_string(idx)).c_str()));
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(cmdBuf), VK_OBJECT_TYPE_COMMAND_BUFFER, (std::string("[CB] build blas " + std::to_string(idx)).c_str()));
 
         buildInfos[idx].scratchData.deviceAddress = scratchAddress;
         std::vector<const VkAccelerationStructureBuildRangeInfoKHR *> vpBuildOffsets(blas.m_vRangeInfo.size());
@@ -229,6 +228,9 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
             // Write compacted size to query number idx.
             if (bDoCompaction)
             {
+                // Reset the query before using it
+                vkCmdResetQueryPool(cmdBuf, queryPool, idx, 1);
+                // Write the query to idx query in the pool
                 vkCmdWriteAccelerationStructuresPropertiesKHR(
                     cmdBuf, 1, &blas.m_ac,
                     VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
@@ -393,9 +395,9 @@ void RTBuilder::BuildTLAS(const std::vector<Instance> &instances, VkBuildAcceler
 
     // Build the TLAS
     GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf) {
+        SCOPED_MARKER(cmdBuf, "Buld TLAS");
         vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo);
     });
-
 }
 
 void RTBuilder::Cleanup()

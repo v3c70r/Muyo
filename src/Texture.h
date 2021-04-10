@@ -27,24 +27,22 @@ public:
                      VmaMemoryUsage memoryUsage)
     {
         // Create a vkimage
-        VkImageCreateInfo imageInfo = {};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.extent.width = width;
-        imageInfo.extent.height = height;
-        imageInfo.extent.depth = 1;
-        imageInfo.mipLevels = 1;
-        imageInfo.arrayLayers = 1;
-        imageInfo.format = format;
-        imageInfo.tiling = tiling;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageInfo.usage = usage;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.flags = 0;
+        m_imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        m_imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        m_imageInfo.extent.width = width;
+        m_imageInfo.extent.height = height;
+        m_imageInfo.extent.depth = 1;
+        m_imageInfo.mipLevels = 1;
+        m_imageInfo.arrayLayers = 1;
+        m_imageInfo.format = format;
+        m_imageInfo.tiling = tiling;
+        m_imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        m_imageInfo.usage = usage;
+        m_imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        m_imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        m_imageInfo.flags = 0;
+        CreateImageInternal(memoryUsage);
 
-        GetMemoryAllocator()->AllocateImage(
-            &imageInfo, memoryUsage, m_image, m_allocation);
     }
 
     // TODO: Move this barrier out of the function
@@ -156,18 +154,15 @@ private:
     }
     void mInitImageView()
     {
-        VkImageViewCreateInfo viewInfo = {};
-        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        viewInfo.image = m_image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
-        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = 0;
-        viewInfo.subresourceRange.layerCount = 1;
-        assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &viewInfo,
-                                 nullptr, &m_view) == VK_SUCCESS);
+        m_imageViewInfo.image = m_image;
+        m_imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        m_imageViewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        m_imageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        m_imageViewInfo.subresourceRange.baseMipLevel = 0;
+        m_imageViewInfo.subresourceRange.levelCount = 1;
+        m_imageViewInfo.subresourceRange.baseArrayLayer = 0;
+        m_imageViewInfo.subresourceRange.layerCount = 1;
+        CreateImageViewInternal();
     }
 
     void mInitSampler()

@@ -24,56 +24,41 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage,
     }
 
     assert(aspectMask > 0);
-    VkImageCreateInfo imageInfo = {};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = numMips;
-    imageInfo.arrayLayers = numLayers;
-    imageInfo.format = format;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    m_imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    m_imageInfo.extent.width = width;
+    m_imageInfo.extent.height = height;
+    m_imageInfo.extent.depth = 1;
+    m_imageInfo.mipLevels = numMips;
+    m_imageInfo.arrayLayers = numLayers;
+    m_imageInfo.format = format;
+    m_imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    m_imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    m_imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    m_imageInfo.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
+    m_imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (numLayers > 1)
     {
-        imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+        m_imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
     }
 
-    GetMemoryAllocator()->AllocateImage(&imageInfo, VMA_MEMORY_USAGE_GPU_ONLY,
-                                        m_image, m_allocation);
+    CreateImageInternal(VMA_MEMORY_USAGE_GPU_ONLY);
     assert(m_image != VK_NULL_HANDLE && "Failed to allocate image");
 
     // Create Image View
-    VkImageViewCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    createInfo.image = m_image;
-    createInfo.viewType =
-        numLayers == 1 ? VK_IMAGE_VIEW_TYPE_2D : VK_IMAGE_VIEW_TYPE_CUBE;
-    createInfo.format = format;
-
+    m_imageViewInfo.viewType = numLayers == 1 ? VK_IMAGE_VIEW_TYPE_2D : VK_IMAGE_VIEW_TYPE_CUBE;
     // Swizzles
-    createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-    createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
+    m_imageViewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+    m_imageViewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+    m_imageViewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+    m_imageViewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
     // subresource
-    createInfo.subresourceRange.aspectMask = aspectMask;
-    createInfo.subresourceRange.baseMipLevel = 0;
-    createInfo.subresourceRange.levelCount = numMips;
-    createInfo.subresourceRange.baseArrayLayer = 0;
-    createInfo.subresourceRange.layerCount = numLayers;
-    assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo,
-                             nullptr, &m_view) == VK_SUCCESS);
+    m_imageViewInfo.subresourceRange.aspectMask = aspectMask;
+    m_imageViewInfo.subresourceRange.baseMipLevel = 0;
+    m_imageViewInfo.subresourceRange.levelCount = numMips;
+    m_imageViewInfo.subresourceRange.baseArrayLayer = 0;
+    m_imageViewInfo.subresourceRange.layerCount = numLayers;
+    CreateImageViewInternal();
 
     Texture::sTransitionImageLayout(m_image, VK_IMAGE_LAYOUT_UNDEFINED,
                                     imageLayout);
-}
-RenderTarget::~RenderTarget()
-{
-    vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
 }

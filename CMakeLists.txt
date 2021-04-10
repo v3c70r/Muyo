@@ -131,6 +131,7 @@ add_executable( helloVulkan
     src/DebugUI.cpp
     src/SceneManager.cpp
     src/RayTracingUtils.cpp
+    src/ImageStorageResource.cpp
     )
 
 target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} vma stb tinygltf tinyobj)

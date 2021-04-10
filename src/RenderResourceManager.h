@@ -7,6 +7,7 @@
 #include "RenderTargetResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
+#include "ImageStorageResource.h"
 
 class RenderResourceManager
 {
@@ -116,6 +117,18 @@ public:
 
         return static_cast<AccelerationStructureBuffer*>(
             m_mResources[sName].get());
+    }
+
+    ImageStorageResource* GetStorageImageResource(const std::string& sName, VkExtent2D extent, VkFormat format)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] =
+                std::make_unique<ImageStorageResource>(format, extent.width, extent.height);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+
+        return static_cast<ImageStorageResource*>(m_mResources[sName].get());
     }
 
     // Swap an existing resource with a new pointer

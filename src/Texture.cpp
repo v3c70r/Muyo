@@ -15,7 +15,6 @@ Texture::~Texture()
     if (GetRenderDevice()->GetDevice() != VK_NULL_HANDLE)
     {
         vkDestroySampler(GetRenderDevice()->GetDevice(), m_textureSampler, nullptr);
-        vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
     }
 }
 

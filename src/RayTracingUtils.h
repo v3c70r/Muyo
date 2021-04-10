@@ -49,7 +49,7 @@ public:
     void BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
     void BuildTLAS(const std::vector<Instance>& instances, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR, bool bUpdate = false);
     void Cleanup();
-
+    VkAccelerationStructureKHR GetTLAS() const { return m_tlas.m_ac; }
 
 private:
 

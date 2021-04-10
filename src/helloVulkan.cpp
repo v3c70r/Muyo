@@ -321,7 +321,12 @@ int main()
                 rtInputs.TLASs,
                 VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
+            ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+
+            GetDescriptorManager()->AllocateRayTracingDescriptorSet(rayTracingBuilder.GetTLAS(), rtOutputImage->getView());
+
             rayTracingBuilder.Cleanup();
+
         }
         // Create perview constant buffer
         //
