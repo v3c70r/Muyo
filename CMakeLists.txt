@@ -18,6 +18,8 @@ set ( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
 ## GLFW
 # Look for precompiled glfw library
 find_package(glfw3 3.2 QUIET)
+# will use SDL2 for to replace glfw code
+find_package(SDL2 REQUIRED)
 
 # Otherwise, build from source
 if (NOT ${glfw3_FOUND})
@@ -133,7 +135,7 @@ add_executable( helloVulkan
     src/RayTracingUtils.cpp
     )
 
-target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} vma stb tinygltf tinyobj)
+target_link_libraries(helloVulkan glfw SDL2::SDL2main SDL2::SDL2 imgui ${Vulkan_LIBRARIES} vma stb tinygltf tinyobj)
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES
