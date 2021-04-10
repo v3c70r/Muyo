@@ -93,6 +93,7 @@ include_directories(
     ${GLFW3_INCLUDE_DIR}
     ${GLM_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_LIST_DIR}/include"
     )
 
 add_library(imgui
