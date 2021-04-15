@@ -1,11 +1,12 @@
 #include "PipelineStateBuilder.h"
 #include <array>
 #include <cassert>
+#include <vulkan/vulkan_core.h>
 PipelineStateBuilder& PipelineStateBuilder::setShaderModules(
     const std::vector<VkShaderModule>& shaderModules)
 {
     assert(shaderModules.size() == 2);
-    mShaderStagesInfo.reserve(shaderModules.size());
+    m_vShaderStageInfos.reserve(shaderModules.size());
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
     vertShaderStageInfo.sType =
@@ -21,21 +22,23 @@ PipelineStateBuilder& PipelineStateBuilder::setShaderModules(
     fragShaderStageInfo.module = shaderModules[1];
     fragShaderStageInfo.pName = "main";
 
-    mShaderStagesInfo = {vertShaderStageInfo, fragShaderStageInfo};
+    m_vShaderStageInfos = {vertShaderStageInfo, fragShaderStageInfo};
     return *this;
 }
+
+
 
 PipelineStateBuilder& PipelineStateBuilder::setVertextInfo(
     const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
     const std::vector<VkVertexInputAttributeDescription>& attribDescriptions)
 {
-    mVertexInputInfo.sType =
+    m_vertexInputInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    mVertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
-    mVertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
-    mVertexInputInfo.vertexAttributeDescriptionCount =
+    m_vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
+    m_vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
+    m_vertexInputInfo.vertexAttributeDescriptionCount =
         static_cast<uint32_t>(attribDescriptions.size());
-    mVertexInputInfo.pVertexAttributeDescriptions = attribDescriptions.data();
+    m_vertexInputInfo.pVertexAttributeDescriptions = attribDescriptions.data();
 
     return *this;
 }
@@ -43,41 +46,41 @@ PipelineStateBuilder& PipelineStateBuilder::setVertextInfo(
 PipelineStateBuilder& PipelineStateBuilder::setViewport(
     const VkViewport& viewport, const VkRect2D& scissor)
 {
-    mViewportState.sType =
+    m_viewPortState.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    mViewportState.viewportCount = 1;
-    mViewportState.pViewports = &viewport;
-    mViewportState.scissorCount = 1;
-    mViewportState.pScissors = &scissor;
+    m_viewPortState.viewportCount = 1;
+    m_viewPortState.pViewports = &viewport;
+    m_viewPortState.scissorCount = 1;
+    m_viewPortState.pScissors = &scissor;
 
     return *this;
 }
 
-VkPipeline PipelineStateBuilder::build(VkDevice device)
+VkPipeline PipelineStateBuilder::Build(VkDevice device)
 {
     VkPipeline res = VK_NULL_HANDLE;
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = (uint32_t)mShaderStagesInfo.size();
-    pipelineInfo.pStages = mShaderStagesInfo.data();
+    pipelineInfo.stageCount = (uint32_t)m_vShaderStageInfos.size();
+    pipelineInfo.pStages = m_vShaderStageInfos.data();
 
-    pipelineInfo.pVertexInputState = &mVertexInputInfo;
+    pipelineInfo.pVertexInputState = &m_vertexInputInfo;
 
-    pipelineInfo.pInputAssemblyState = &mInputAssemblyInfo;
+    pipelineInfo.pInputAssemblyState = &m_inputAssemblyInfo;
 
-    pipelineInfo.pViewportState = &mViewportState;
+    pipelineInfo.pViewportState = &m_viewPortState;
 
-    pipelineInfo.pRasterizationState = &mRasterizerInfo;
+    pipelineInfo.pRasterizationState = &m_rasterizerInfo;
 
-    pipelineInfo.pMultisampleState = &mMultisamplingInfo;
+    pipelineInfo.pMultisampleState = &m_multisamplingInfo;
 
-    pipelineInfo.pDepthStencilState = &mDepthStencilInfo;
+    pipelineInfo.pDepthStencilState = &m_depthStencilInfo;
 
-    pipelineInfo.pColorBlendState = &mColorBlendStateInfo;
+    pipelineInfo.pColorBlendState = &m_colorBlendStateInfo;
 
-    pipelineInfo.pDynamicState = &mDynamicStatesInfo;
+    pipelineInfo.pDynamicState = &m_dynamicStatesInfo;
 
-    pipelineInfo.layout = mPipelineLayout;
+    pipelineInfo.layout = m_pipelineLayout;
 
     pipelineInfo.renderPass = mRenderPass;
     pipelineInfo.subpass = mSubpassIndex;
@@ -91,6 +94,60 @@ VkPipeline PipelineStateBuilder::build(VkDevice device)
     return res;
 }
 // Helper function
+RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage)
+{
+    VkPipelineShaderStageCreateInfo shaderStageInfo = {};
+    shaderStageInfo.sType =
+        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStageInfo.stage = shaderStage;
+    shaderStageInfo.module = shaderModule;
+    shaderStageInfo.pName = "main";
+
+    uint32_t nShaderIdx = (uint32_t)m_vShaderStageInfos.size();
+    m_vShaderStageInfos.push_back(shaderStageInfo);
+
+    // Add to ray tracing shader group if it's a ray tracing shader
+    if (shaderStage &
+        (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR))
+    {
+        VkRayTracingShaderGroupCreateInfoKHR info = {};
+        if (shaderStage & (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))
+        {
+            info = {
+                VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                nullptr,
+                VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+                nShaderIdx,            // generalShader
+                VK_SHADER_UNUSED_KHR,  // closestHitShader
+                VK_SHADER_UNUSED_KHR,  // anyHitShader
+                VK_SHADER_UNUSED_KHR,  // intersectionShader
+                nullptr};
+        }
+        else if (shaderStage & VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
+        {
+            info = {
+                VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                nullptr,
+                VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
+                VK_SHADER_UNUSED_KHR,  // generalShader
+                nShaderIdx,            // closestHitShader
+                VK_SHADER_UNUSED_KHR,  // anyHitShader
+                VK_SHADER_UNUSED_KHR,  // intersectionShader
+                nullptr};
+        }
+        else
+        {
+            assert(false && "Unsupported RT stage");
+        }
+        m_vRTShaderGroupInfos.push_back(info);
+    }
+    // Update related fields
+    m_info.pGroups = m_vRTShaderGroupInfos.data();
+    m_info.groupCount = (uint32_t)m_vRTShaderGroupInfos.size();
+    m_info.pStages = m_vShaderStageInfos.data();
+    m_info.stageCount = (uint32_t)m_vShaderStageInfos.size();
+    return *this;
+}
 
 VkShaderModule CreateShaderModule(const std::vector<char>& code)
 {

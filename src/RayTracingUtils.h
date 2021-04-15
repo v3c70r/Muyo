@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
+#include <vulkan/vulkan_core.h>
 
 // TODO: Put dedicated acceleration structures into resource manager
 struct AccelerationStructure
@@ -48,6 +49,7 @@ public:
     // Construct BLAS GPU structure
     void BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
     void BuildTLAS(const std::vector<Instance>& instances, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR, bool bUpdate = false);
+    void BuildRTPipeline();
     void Cleanup();
     VkAccelerationStructureKHR GetTLAS() const { return m_tlas.m_ac; }
 
@@ -58,6 +60,18 @@ private:
     std::vector<BLASInput> m_blas;
     AccelerationStructure m_tlas;
 
+    // Ray Tracing Pipelines
+    VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
+
+    struct RTLightingPushConstantBlock
+    {
+        glm::vec4 vClearColor = {0.0f, 0.0f, 0.0f, 0.0f};
+        glm::vec3 vLightPosition = {0.0f, 0.0f, 1.0f};
+        float fLightIntensity = 0.0f;
+        int nLightType = 0;
+    };
+
     // Raytracing functions
     PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
     PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
@@ -66,5 +80,6 @@ private:
     PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
     PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR = nullptr;
     PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
+    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR = nullptr;
 };
 

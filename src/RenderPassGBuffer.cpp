@@ -176,7 +176,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
             .setRenderPass(m_vRenderPasses.back())
             .setFramebuffer(mFramebuffer)
             .setClearValues(vClearValeus)
-            .build();
+            .Build();
 
         vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
             VK_SUBPASS_CONTENTS_INLINE);
@@ -332,7 +332,7 @@ void RenderPassGBuffer::createPipelines()
 {
     // Pipeline should be created after mRenderArea been updated
     ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(mRenderArea).build();
+    VkViewport viewport = vpBuilder.setWH(mRenderArea).Build();
     VkRect2D scissorRect;
     scissorRect.offset = {0, 0};
     scissorRect.extent = mRenderArea;
@@ -375,16 +375,16 @@ void RenderPassGBuffer::createPipelines()
             builder.setShaderModules({vertShdr, fragShdr})
                 .setVertextInfo({Vertex::getBindingDescription()},
                                 Vertex::getAttributeDescriptions())
-                .setAssembly(iaBuilder.build())
+                .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
-                .setRasterizer(rsBuilder.build())
-                .setMSAA(msBuilder.build())
-                .setColorBlending(blendBuilder.build())
+                .setRasterizer(rsBuilder.Build())
+                .setMSAA(msBuilder.Build())
+                .setColorBlending(blendBuilder.Build())
                 .setPipelineLayout(mGBufferPipelineLayout)
-                .setDepthStencil(depthStencilBuilder.build())
+                .setDepthStencil(depthStencilBuilder.Build())
                 .setRenderPass(m_vRenderPasses.back())
                 .setSubpassIndex(0)
-                .build(GetRenderDevice()->GetDevice());
+                .Build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                               nullptr);
@@ -434,16 +434,16 @@ void RenderPassGBuffer::createPipelines()
             builder.setShaderModules({vertShdr, fragShdr})
                 .setVertextInfo({Vertex::getBindingDescription()},
                                 Vertex::getAttributeDescriptions())
-                .setAssembly(iaBuilder.build())
+                .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
-                .setRasterizer(rsBuilder.build())
-                .setMSAA(msBuilder.build())
-                .setColorBlending(blendBuilder.build())
+                .setRasterizer(rsBuilder.Build())
+                .setMSAA(msBuilder.Build())
+                .setColorBlending(blendBuilder.Build())
                 .setPipelineLayout(mLightingPipelineLayout)
-                .setDepthStencil(depthStencilBuilder.build())
+                .setDepthStencil(depthStencilBuilder.Build())
                 .setRenderPass(m_vRenderPasses.back())
                 .setSubpassIndex(1)
-                .build(GetRenderDevice()->GetDevice());
+                .Build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                               nullptr);

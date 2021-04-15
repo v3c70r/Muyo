@@ -132,7 +132,7 @@ void RenderLayerIBL::setupPipeline()
         // Viewport
         ViewportBuilder vpBuilder;
         VkViewport viewport =
-            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).build();
+            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -181,16 +181,16 @@ void RenderLayerIBL::setupPipeline()
             builder.setShaderModules({vertShdr, fragShdr})
                 .setVertextInfo({Vertex::getBindingDescription()},
                                 Vertex::getAttributeDescriptions())
-                .setAssembly(iaBuilder.build())
+                .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
-                .setRasterizer(rasterizerBuilder.build())
-                .setMSAA(msBuilder.build())
-                .setColorBlending(blendStateBuilder.build())
+                .setRasterizer(rasterizerBuilder.Build())
+                .setMSAA(msBuilder.Build())
+                .setColorBlending(blendStateBuilder.Build())
                 .setPipelineLayout(m_envCubeMapPipelineLayout)
                 .setDynamicStates(dynamicStateEnables)
-                .setDepthStencil(depthStencilBuilder.build())
+                .setDepthStencil(depthStencilBuilder.Build())
                 .setRenderPass(m_vRenderPasses[RENDERPASS_LOAD_ENV_MAP])
-                .build(GetRenderDevice()->GetDevice());
+                .Build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                               nullptr);
@@ -207,7 +207,7 @@ void RenderLayerIBL::setupPipeline()
         // Viewport
         ViewportBuilder vpBuilder;
         VkViewport viewport =
-            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).build();
+            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -256,16 +256,16 @@ void RenderLayerIBL::setupPipeline()
             builder.setShaderModules({vertShdr, fragShdr})
                 .setVertextInfo({Vertex::getBindingDescription()},
                                 Vertex::getAttributeDescriptions())
-                .setAssembly(iaBuilder.build())
+                .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
-                .setRasterizer(rasterizerBuilder.build())
-                .setMSAA(msBuilder.build())
-                .setColorBlending(blendStateBuilder.build())
+                .setRasterizer(rasterizerBuilder.Build())
+                .setMSAA(msBuilder.Build())
+                .setColorBlending(blendStateBuilder.Build())
                 .setPipelineLayout(m_irrCubeMapPipelineLayout)
                 .setDynamicStates(dynamicStateEnables)
-                .setDepthStencil(depthStencilBuilder.build())
+                .setDepthStencil(depthStencilBuilder.Build())
                 .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_IRR_CUBEMAP])
-                .build(GetRenderDevice()->GetDevice());
+                .Build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                               nullptr);
@@ -283,7 +283,7 @@ void RenderLayerIBL::setupPipeline()
         // Viewport
         ViewportBuilder vpBuilder;
         VkViewport viewport =
-            vpBuilder.setWH(PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM).build();
+            vpBuilder.setWH(PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -313,7 +313,7 @@ void RenderLayerIBL::setupPipeline()
                 DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants{
-            getPushConstantRange<PrefilteredPushConstantBlock>(VK_SHADER_STAGE_FRAGMENT_BIT)};
+            GetPushConstantRange<PrefilteredPushConstantBlock>(VK_SHADER_STAGE_FRAGMENT_BIT)};
 
         m_prefilteredCubemapPipelineLayout =
             PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
@@ -332,16 +332,16 @@ void RenderLayerIBL::setupPipeline()
             builder.setShaderModules({vertShdr, fragShdr})
                 .setVertextInfo({Vertex::getBindingDescription()},
                                 Vertex::getAttributeDescriptions())
-                .setAssembly(iaBuilder.build())
+                .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
-                .setRasterizer(rasterizerBuilder.build())
-                .setMSAA(msBuilder.build())
-                .setColorBlending(blendStateBuilder.build())
+                .setRasterizer(rasterizerBuilder.Build())
+                .setMSAA(msBuilder.Build())
+                .setColorBlending(blendStateBuilder.Build())
                 .setPipelineLayout(m_prefilteredCubemapPipelineLayout)
                 .setDynamicStates(dynamicStateEnables)
-                .setDepthStencil(depthStencilBuilder.build())
+                .setDepthStencil(depthStencilBuilder.Build())
                 .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_IRR_CUBEMAP])
-                .build(GetRenderDevice()->GetDevice());
+                .Build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                               nullptr);
@@ -359,7 +359,7 @@ void RenderLayerIBL::setupPipeline()
         // Viewport
         ViewportBuilder vpBuilder;
         VkViewport viewport =
-            vpBuilder.setWH(SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM).build();
+            vpBuilder.setWH(SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -397,15 +397,15 @@ void RenderLayerIBL::setupPipeline()
             builder.setShaderModules({vertShdr, fragShdr})
                 .setVertextInfo({Vertex::getBindingDescription()},
                                 Vertex::getAttributeDescriptions())
-                .setAssembly(iaBuilder.build())
+                .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
-                .setRasterizer(rasterizerBuilder.build())
-                .setMSAA(msBuilder.build())
-                .setColorBlending(blendStateBuilder.build())
+                .setRasterizer(rasterizerBuilder.Build())
+                .setMSAA(msBuilder.Build())
+                .setColorBlending(blendStateBuilder.Build())
                 .setPipelineLayout(m_specularBrdfLutPipelineLayout)
-                .setDepthStencil(depthStencilBuilder.build())
+                .setDepthStencil(depthStencilBuilder.Build())
                 .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT])
-                .build(GetRenderDevice()->GetDevice());
+                .Build(GetRenderDevice()->GetDevice());
 
         vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                               nullptr);
@@ -474,12 +474,12 @@ void RenderLayerIBL::recordCommandBuffer()
                 .setRenderPass(m_vRenderPasses[passIdx])
                 .setClearValues(clearValues)
                 .setFramebuffer(m_aFramebuffers[passIdx])
-                .build();
+                .Build();
 
         ViewportBuilder vpBuilder;
         aViewports[passIdx] =
             vpBuilder.setWH(m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx])
-                .build();
+                .Build();
 
         aScissors[passIdx] = {0, 0, m_aCubemapSizes[passIdx],
                               m_aCubemapSizes[passIdx]};

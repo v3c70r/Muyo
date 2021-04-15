@@ -128,7 +128,7 @@ void RenderPassSkybox::DestroyFramebuffer()
 void RenderPassSkybox::CreatePipeline()
 {
     ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(m_renderArea).build();
+    VkViewport viewport = vpBuilder.setWH(m_renderArea).Build();
     VkRect2D scissorRect;
     scissorRect.offset = {0, 0};
     scissorRect.extent = m_renderArea;
@@ -170,16 +170,16 @@ void RenderPassSkybox::CreatePipeline()
         builder.setShaderModules({vertShdr, fragShdr})
             .setVertextInfo({Vertex::getBindingDescription()},
                             Vertex::getAttributeDescriptions())
-            .setAssembly(iaBuilder.build())
+            .setAssembly(iaBuilder.Build())
             .setViewport(viewport, scissorRect)
-            .setRasterizer(rsBuilder.build())
-            .setMSAA(msBuilder.build())
-            .setColorBlending(blendBuilder.build())
+            .setRasterizer(rsBuilder.Build())
+            .setMSAA(msBuilder.Build())
+            .setColorBlending(blendBuilder.Build())
             .setPipelineLayout(m_pipelineLayout)
-            .setDepthStencil(depthStencilBuilder.build())
+            .setDepthStencil(depthStencilBuilder.Build())
             .setRenderPass(m_vRenderPasses.back())
             .setSubpassIndex(0)
-            .build(GetRenderDevice()->GetDevice());
+            .Build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                           nullptr);
@@ -220,7 +220,7 @@ void RenderPassSkybox::RecordCommandBuffers()
                 .setRenderPass(m_vRenderPasses.back())
                 .setFramebuffer(m_frameBuffer)
                 .setClearValues(vClearValeus)
-                .build();
+                .Build();
 
         vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);

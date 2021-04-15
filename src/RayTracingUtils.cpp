@@ -12,6 +12,9 @@
 #include "VkRenderDevice.h"
 #include "RenderResourceManager.h"
 #include "Debug.h"
+#include "PipelineStateBuilder.h"
+#include "PushConstantBlocks.h"
+#include "DescriptorManager.h"
 
 RTBuilder::RTBuilder()
 {
@@ -51,6 +54,11 @@ RTBuilder::RTBuilder()
         (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetInstanceProcAddr(
             GetRenderDevice()->GetInstance(),
             "vkGetAccelerationStructureDeviceAddressKHR");
+
+    vkCreateRayTracingPipelinesKHR =
+        (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr(
+            GetRenderDevice()->GetInstance(),
+            "vkCreateRayTracingPipelinesKHR");
 }
 
 RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
@@ -407,6 +415,8 @@ void RTBuilder::Cleanup()
         vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), blasInput.m_ac, nullptr);
     }
     vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), m_tlas.m_ac, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
 }
 
 VkAccelerationStructureInstanceKHR RTBuilder::TLASInputToVkGeometryInstance(const Instance& instance)
@@ -437,4 +447,37 @@ VkAccelerationStructureInstanceKHR RTBuilder::TLASInputToVkGeometryInstance(cons
     gInst.flags = instance.flags;
     gInst.accelerationStructureReference = blasAddress;
     return gInst;
+}
+
+void RTBuilder::BuildRTPipeline()
+{
+    // shader stages
+    VkShaderModule rayGenShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rgen.spv"));
+    VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/raytrace.miss.spv"));
+    VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shader/raytrace.rchit.spv"));
+
+    RayTracingPipelineBuilder builder;
+    builder.AddShaderModule(rayGenShdr, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+    .AddShaderModule(missShdr, VK_SHADER_STAGE_MISS_BIT_KHR)
+    .AddShaderModule(chitShdr, VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+
+    // pipeline layout
+    std::vector<VkPushConstantRange> pushConstants = {
+        GetPushConstantRange<RTLightingPushConstantBlock>((VkShaderStageFlagBits)(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))};
+
+    std::vector<VkDescriptorSetLayout> descLayouts = {
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING)};
+
+    m_pipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
+    builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(1);
+    VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
+
+    assert(vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(),
+                                          {}, {},
+                                          1,
+                                          &createInfo,
+                                          nullptr,
+                                          &m_pipeline) == VK_SUCCESS);
 }

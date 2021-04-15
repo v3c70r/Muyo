@@ -60,7 +60,7 @@ void RenderPassUI::setupPipeline()
             DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
     std::vector<VkPushConstantRange> pushConstants = {
-        getPushConstantRange<UIPushConstBlock>(VK_SHADER_STAGE_VERTEX_BIT)};
+        GetPushConstantRange<UIPushConstBlock>(VK_SHADER_STAGE_VERTEX_BIT)};
 
     m_pipelineLayout =
         PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
@@ -70,7 +70,7 @@ void RenderPassUI::setupPipeline()
 
     // Create pipeline
     ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(1, 1).build();
+    VkViewport viewport = vpBuilder.setWH(1, 1).Build();
     VkRect2D scissorRect = {{0, 0}, {1, 1}};
 
     // Dynmaic state
@@ -97,17 +97,17 @@ void RenderPassUI::setupPipeline()
     m_pipeline = builder.setShaderModules({vertShdr, fragShdr})
                      .setVertextInfo({UIVertex::getBindingDescription()},
                                      UIVertex::getAttributeDescriptions())
-                     .setAssembly(iaBuilder.build())
+                     .setAssembly(iaBuilder.Build())
                      .setViewport(viewport, scissorRect)
-                     .setRasterizer(rsBuilder.build())
-                     .setMSAA(msBuilder.build())
-                     .setColorBlending(blendBuilder.build())
+                     .setRasterizer(rsBuilder.Build())
+                     .setMSAA(msBuilder.Build())
+                     .setColorBlending(blendBuilder.Build())
                      .setPipelineLayout(m_pipelineLayout)
-                     .setDepthStencil(depthStencilBuilder.build())
+                     .setDepthStencil(depthStencilBuilder.Build())
                      .setRenderPass(m_vRenderPasses.back())
                      .setDynamicStates(dynamicStateEnables)
                      .setSubpassIndex(0)
-                     .build(GetRenderDevice()->GetDevice());
+                     .Build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);

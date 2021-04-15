@@ -163,7 +163,7 @@ void RenderPassFinal::setupPipeline()
         CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
 
     ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(mRenderArea).build();
+    VkViewport viewport = vpBuilder.setWH(mRenderArea).Build();
     VkRect2D scissorRect;
     scissorRect.offset = {0, 0};
     scissorRect.extent = mRenderArea;
@@ -180,15 +180,15 @@ void RenderPassFinal::setupPipeline()
         builder.setShaderModules({vertShdr, fragShdr})
             .setVertextInfo({Vertex::getBindingDescription()},
                             Vertex::getAttributeDescriptions())
-            .setAssembly(iaBuilder.build())
+            .setAssembly(iaBuilder.Build())
             .setViewport(viewport, scissorRect)
-            .setRasterizer(rsBuilder.build())
-            .setMSAA(msBuilder.build())
-            .setColorBlending(blendBuilder.build())
+            .setRasterizer(rsBuilder.Build())
+            .setMSAA(msBuilder.Build())
+            .setColorBlending(blendBuilder.Build())
             .setPipelineLayout(m_pipelineLayout)
-            .setDepthStencil(depthStencilBuilder.build())
+            .setDepthStencil(depthStencilBuilder.Build())
             .setRenderPass(m_vRenderPasses.back())
-            .build(GetRenderDevice()->GetDevice());
+            .Build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
