@@ -28,7 +28,7 @@
 #include "Debug.h"
 #include "DescriptorManager.h"
 #include "Geometry.h"
-#include "ImGuiGlfwControl.h"
+#include "ImGuiControl.h"
 #include "Material.h"
 #include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
@@ -48,7 +48,12 @@
 #include "SceneManager.h"
 #include "Swapchain.h"
 #include "EventSystem.h"
+
+#if defined (USE_SDL)
 #include "WindowSDL.h"
+#else
+#include "WindowGLFW.h"
+#endif
 
 
 #ifdef ENABLE_RAY_TRACING
@@ -107,11 +112,11 @@ static void InitEventHandlers()
         clickArcballCallback(btn, state);
     });
 
-    // auto pWheel = EventSystem::sys()->globalEvent<EventType::MouseWheel,
-    //                                               GlobalWheelEvent>();
-    // pWheel->watch([](uint32_t timestamp, double xoffset, double yoffset) {
-    //     s_arcball.AddZoom(yoffset * -0.1f);
-    // });
+    auto pWheel = EventSystem::sys()->globalEvent<EventType::MouseWheel,
+                                                  GlobalWheelEvent>();
+    pWheel->watch([](uint32_t timestamp, double xoffset, double yoffset) {
+        s_arcball.AddZoom(yoffset * -0.1f);
+    });
 
     auto pResize = EventSystem::sys()->globalEvent<EventType::WindowResize,
                                                    GlobalResizeEvent>();
