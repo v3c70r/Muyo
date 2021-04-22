@@ -205,7 +205,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                     }
                     const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
                     assert(worldMatrixBuffer != nullptr && "Buffer must be valid");
-                    VkDescriptorSet worldMatrixDescSet = GetDescriptorManager()->AllocateUniformBufferDescriptorSet(*worldMatrixBuffer, 0);
+                    VkDescriptorSet worldMatrixDescSet = GetDescriptorManager()->AllocateUniformBufferDescriptorSet(*worldMatrixBuffer, 0, GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_OBJ_DATA));
 
                     std::vector<VkDescriptorSet> vGBufferDescSets = {perViewSets,
                                                                      materialDescSet,

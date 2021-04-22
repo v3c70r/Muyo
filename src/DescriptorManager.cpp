@@ -85,7 +85,7 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            GetUniformBufferBinding(0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR)};
+            GetUniformBufferBinding(0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)};
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -99,6 +99,31 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
                                 "PerViewData");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA] = layout;
+    }
+
+    // Per view ray tracing layout
+    // This layout is exactly the same layout of PER_VIEW_DATA, but used for ray tracing pipeline
+    // This is because ray tracing pipeline descriptor set layout can not be used with non ray tracing one in the same pipeline layout.
+    {
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
+            GetUniformBufferBinding(0,  VK_SHADER_STAGE_RAYGEN_BIT_KHR)};
+
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "PerViewDataRt");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA_RT] = layout;
     }
 
     // Per obj layout
@@ -476,9 +501,10 @@ VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
 }
 
 VkDescriptorSet DescriptorManager::AllocatePerviewDataDescriptorSet(
-    const UniformBuffer<PerViewData>& perViewData)
+    const UniformBuffer<PerViewData>& perViewData, bool bIsRT)
 {
-    return AllocateUniformBufferDescriptorSet(perViewData, 0);
+    return AllocateUniformBufferDescriptorSet(perViewData, 0,
+                                              m_aDescriptorSetLayouts[bIsRT ? DESCRIPTOR_LAYOUT_PER_VIEW_DATA_RT : DESCRIPTOR_LAYOUT_PER_VIEW_DATA]);
 }
 
 VkDescriptorSet DescriptorManager::AllocateIBLDescriptorSet()

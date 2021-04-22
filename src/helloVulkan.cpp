@@ -187,7 +187,7 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 
         // Ray tracing extensions
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        // VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
@@ -324,6 +324,7 @@ int main()
             ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
 
             GetDescriptorManager()->AllocateRayTracingDescriptorSet(rayTracingBuilder.GetTLAS(), rtOutputImage->getView());
+            rayTracingBuilder.BuildRTPipeline();
 
             rayTracingBuilder.Cleanup();
 

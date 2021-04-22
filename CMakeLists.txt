@@ -140,6 +140,9 @@ target_link_libraries(helloVulkan glfw imgui ${Vulkan_LIBRARIES} vma stb tinyglt
 file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.frag"
     "${CMAKE_SOURCE_DIR}/shaders/*.vert"
+    "${CMAKE_SOURCE_DIR}/shaders/*.rgen"
+    "${CMAKE_SOURCE_DIR}/shaders/*.rmiss"
+    "${CMAKE_SOURCE_DIR}/shaders/*.rchit"
     )
 
 message(STATUS "Shaders: ${GLSL_SOURCE_FILES}")
@@ -149,7 +152,7 @@ foreach (GLSL ${GLSL_SOURCE_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${GLSL_VALIDATOR} -g -V -H ${GLSL} -o ${SPIRV}
+        COMMAND ${GLSL_VALIDATOR} --target-env vulkan1.2 -g -V ${GLSL} -o ${SPIRV}
         DEPENDS ${GLSL})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()

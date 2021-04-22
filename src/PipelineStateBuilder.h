@@ -130,6 +130,8 @@ public:
     {
         m_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
         m_info.pNext = nullptr;
+        m_info.basePipelineHandle = nullptr;
+        m_info.basePipelineIndex = 0;
     }
     RayTracingPipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage);
     RayTracingPipelineBuilder& SetMaxRecursionDepth(uint32_t nDepth)

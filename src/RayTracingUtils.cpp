@@ -56,9 +56,10 @@ RTBuilder::RTBuilder()
             "vkGetAccelerationStructureDeviceAddressKHR");
 
     vkCreateRayTracingPipelinesKHR =
-        (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr(
+        (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr (
             GetRenderDevice()->GetInstance(),
             "vkCreateRayTracingPipelinesKHR");
+    assert(vkCreateRayTracingPipelinesKHR != nullptr);
 }
 
 RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
@@ -453,21 +454,19 @@ void RTBuilder::BuildRTPipeline()
 {
     // shader stages
     VkShaderModule rayGenShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rgen.spv"));
-    VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/raytrace.miss.spv"));
-    VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shader/raytrace.rchit.spv"));
+    VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rmiss.spv"));
+    VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rchit.spv"));
 
     RayTracingPipelineBuilder builder;
     builder.AddShaderModule(rayGenShdr, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
     .AddShaderModule(missShdr, VK_SHADER_STAGE_MISS_BIT_KHR)
-    .AddShaderModule(chitShdr, VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+    .AddShaderModule(chitShdr, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // pipeline layout
-    std::vector<VkPushConstantRange> pushConstants = {
-        GetPushConstantRange<RTLightingPushConstantBlock>((VkShaderStageFlagBits)(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))};
+    std::vector<VkPushConstantRange> pushConstants = {};
+        //GetPushConstantRange<RTLightingPushConstantBlock>((VkShaderStageFlagBits)(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))};
 
-    std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING)};
+    std::vector<VkDescriptorSetLayout> descLayouts = {GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING)};
 
     m_pipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
@@ -475,9 +474,14 @@ void RTBuilder::BuildRTPipeline()
     VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
 
     assert(vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(),
-                                          {}, {},
+                                          VK_NULL_HANDLE, 
+                                          VK_NULL_HANDLE,
                                           1,
                                           &createInfo,
                                           nullptr,
                                           &m_pipeline) == VK_SUCCESS);
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), rayGenShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), chitShdr, nullptr);
 }
