@@ -1,5 +1,6 @@
 #include "RayTracingUtils.h"
 
+#include <cassert>
 #include <functional>
 #include <algorithm>
 #include <string>
@@ -18,6 +19,10 @@
 
 RTBuilder::RTBuilder()
 {
+
+#define GET_VK_FUNC(FUNC_NAME) \
+FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(GetRenderDevice()->GetInstance(), #FUNC_NAME);
+
     // Get function pointers from Vulkan library
     vkCreateAccelerationStructureKHR =
         (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(
@@ -60,6 +65,19 @@ RTBuilder::RTBuilder()
             GetRenderDevice()->GetInstance(),
             "vkCreateRayTracingPipelinesKHR");
     assert(vkCreateRayTracingPipelinesKHR != nullptr);
+
+
+    GET_VK_FUNC(vkGetRayTracingShaderGroupHandlesKHR);
+    GET_VK_FUNC(vkCmdTraceRaysKHR);
+    GET_VK_FUNC(vkCmdPipelineBarrier2KHR);
+
+    //PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR = nullptr;
+
+    //vkCreateRayTracingPipelinesKHR =
+    //    (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr (
+    //        GetRenderDevice()->GetInstance(),
+    //        "vkCreateRayTracingPipelinesKHR");
+    //assert(vkCreateRayTracingPipelinesKHR != nullptr);
 }
 
 RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
@@ -481,7 +499,95 @@ void RTBuilder::BuildRTPipeline()
                                           nullptr,
                                           &m_pipeline) == VK_SUCCESS);
 
+    m_vRTShaderGroupInfos = builder.GetShaderGroupInfos();
+
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), rayGenShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), chitShdr, nullptr);
+}
+void RTBuilder::BuildShaderBindingTable()
+{
+    GetRenderDevice()->GetPhysicalDeviceProperties(m_rtProperties);
+    uint32_t nGroupCount = (uint32_t)m_vRTShaderGroupInfos.size();
+    uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
+    // Align up the group handle size based on the alginment in property 
+    uint32_t nAlignment = m_rtProperties.shaderGroupHandleAlignment;
+    uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
+    uint32_t nStbSize = nGroupHandleSizeAligned * nGroupCount;
+
+    std::vector<uint8_t> shaderHandleBuf(nStbSize);
+
+    assert(vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nGroupCount, nStbSize, shaderHandleBuf.data()) == VK_SUCCESS);
+    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", shaderHandleBuf.data(), (uint32_t)shaderHandleBuf.size());
+}
+void RTBuilder::RayTrace(VkExtent2D imgSize)
+{
+
+    VkExtent2D ext {0, 0};
+    const auto* pStorageImageRes = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", ext, VK_FORMAT_R16G16B16A16_SFLOAT);
+    VkDescriptorSet rtDescSets = GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView());
+    GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf) {
+        {
+            // Transit output image to general layout using Image memory barrier 2
+
+            VkImage outputImage = pStorageImageRes->getImage();
+            VkImageMemoryBarrier2KHR imgBarrier = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR,  //VkStructureType             sType;
+                nullptr,                                       //const void*                 pNext;
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,             //VkPipelineStageFlags2KHR    srcStageMask;
+                0,                                             //VkAccessFlags2KHR           srcAccessMask;
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,  //VkPipelineStageFlags2KHR    dstStageMask;
+                0,                                             //VkAccessFlags2KHR           dstAccessMask;
+                VK_IMAGE_LAYOUT_UNDEFINED,                     //VkImageLayout               oldLayout;
+                VK_IMAGE_LAYOUT_GENERAL,                       //VkImageLayout               newLayout;
+                VK_QUEUE_FAMILY_IGNORED,                       //uint32_t                    srcQueueFamilyIndex;
+                VK_QUEUE_FAMILY_IGNORED,                       //uint32_t                    dstQueueFamilyIndex;
+                outputImage,                                   //VkImage                     image;
+                {
+                    //VkImageSubresourceRange     subresourceRange;
+                    VK_IMAGE_ASPECT_COLOR_BIT,  //VkImageAspectFlags    aspectMask;
+                    0,                          //uint32_t              baseMipLevel;
+                    1,                          //uint32_t              levelCount;
+                    0,                          //uint32_t              baseArrayLayer;
+                    1,                          //uint32_t              layerCount;
+                },
+            };
+            VkDependencyInfoKHR dependency =
+                {
+                    VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,  //sType;
+                    nullptr,                                //pNext;
+                    0,                                      //dependencyFlags;
+                    0,                                      //memoryBarrierCount;
+                    nullptr,                                //pMemoryBarriers;
+                    0,                                      //bufferMemoryBarrierCount;
+                    nullptr,                                //pBufferMemoryBarriers;
+                    1,                                      //imageMemoryBarrierCount;
+                    &imgBarrier                             //pImageMemoryBarriers;
+                };
+            vkCmdPipelineBarrier2KHR(cmdBuf, &dependency);
+        };
+
+        SCOPED_MARKER(cmdBuf, "Trace Ray");
+        vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
+        vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, 1, &rtDescSets, 0, nullptr);
+
+        uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
+        uint32_t nAlignment = m_rtProperties.shaderGroupBaseAlignment;  // Using BASE alignment
+        uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
+        uint32_t nGroupHandleStride = nGroupHandleSizeAligned;
+        VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());
+        std::array<VkStridedDeviceAddressRegionKHR, 4> stridedAddrs = {
+            VkStridedDeviceAddressRegionKHR{SBTAddress + 0u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+            VkStridedDeviceAddressRegionKHR{SBTAddress + 1u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+            VkStridedDeviceAddressRegionKHR{SBTAddress + 2u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+            VkStridedDeviceAddressRegionKHR{0u, 0u, 0u},
+        };
+        vkCmdTraceRaysKHR(
+            cmdBuf,
+            &stridedAddrs[0],
+            &stridedAddrs[1],
+            &stridedAddrs[2],
+            &stridedAddrs[3],
+            imgSize.width, imgSize.height, 1);
+    });
 }

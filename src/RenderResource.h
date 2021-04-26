@@ -185,6 +185,8 @@ protected:
     const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_UNKNOWN;
 };
 
+
+// Ray tracing related buffers
 class AccelerationStructureBuffer : public BufferResource
 {
 public:
@@ -209,6 +211,34 @@ public:
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
                                              "AccelerationStrucutre");
+        SetData(pData, size);
+    }
+};
+
+class ShaderBindingTableBuffer : public BufferResource
+{
+public:
+    //ShaderBindingTableBuffer(uint32_t size)
+    //    : BufferResource(
+    //          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
+    //              VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR,
+    //          VMA_MEMORY_USAGE_GPU_ONLY)
+    //{
+    //    GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
+    //                                         m_buffer, m_allocation,
+    //                                         "SBT");
+    //}
+
+    ShaderBindingTableBuffer(const void* pData, uint32_t size)
+        : BufferResource(
+              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
+                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+              VMA_MEMORY_USAGE_GPU_ONLY)
+    {
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
+                                             m_buffer, m_allocation,
+                                             "SBT");
         SetData(pData, size);
     }
 };

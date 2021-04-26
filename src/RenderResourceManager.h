@@ -131,6 +131,20 @@ public:
         return static_cast<ImageStorageResource*>(m_mResources[sName].get());
     }
 
+    ShaderBindingTableBuffer* GetShaderBindingTableBuffer(
+        const std::string& sName, const void* pData, uint32_t size)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] =
+                std::make_unique<ShaderBindingTableBuffer>(pData, size);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+
+        return static_cast<ShaderBindingTableBuffer*>(
+            m_mResources[sName].get());
+    }
+
     // Swap an existing resource with a new pointer
     template <class T>
     void AssignResource(const std::string& sName, T* pResource)

@@ -193,6 +193,9 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
         // VK_KHR_SPIRV_1_4_EXTENSION_NAME,
         // VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
+
+        // Synchronization 2 extension
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
     };
     return vDeviceExtensions;
 }
@@ -325,6 +328,8 @@ int main()
 
             GetDescriptorManager()->AllocateRayTracingDescriptorSet(rayTracingBuilder.GetTLAS(), rtOutputImage->getView());
             rayTracingBuilder.BuildRTPipeline();
+            rayTracingBuilder.BuildShaderBindingTable();
+            rayTracingBuilder.RayTrace(vpExtent);
 
             rayTracingBuilder.Cleanup();
 

@@ -144,7 +144,16 @@ public:
         m_info.layout = layout;
         return *this;
     }
-    
+
+    std::vector<VkPipelineShaderStageCreateInfo> GetShaderStageInfos() const
+    {
+        return m_vShaderStageInfos;
+    }
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> GetShaderGroupInfos() const
+    {
+        return m_vRTShaderGroupInfos;
+    }
+
 private:
     std::vector<VkPipelineShaderStageCreateInfo> m_vShaderStageInfos;
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> m_vRTShaderGroupInfos;
