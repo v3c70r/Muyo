@@ -10,36 +10,36 @@ static uint32_t               g_Time = 0.0;
 static void installEventHandlers()
 {
    //install callbacks
-    auto pChar = EventSystem::sys()->globalEvent<EventType::Char,
+    auto pChar = EventSystem::sys()->globalEvent<EventType::CHAR,
                                                  GlobalCharEvent>();
-    pChar->watch([](uint32_t timestamp, unsigned int c) {
+    pChar->Watch([](uint32_t timestamp, unsigned int c) {
         ImGuiIO& io = ImGui::GetIO();
         io.AddInputCharacter(c);
         g_Time = timestamp;
     });
 
-    auto pKey = EventSystem::sys()->globalEvent<EventType::Key,
+    auto pKey = EventSystem::sys()->globalEvent<EventType::KEY,
                                                 GlobalKeyEvent>();
-    pKey->watch([](uint32_t timestamp, Input::Key key, uint16_t mods,
+    pKey->Watch([](uint32_t timestamp, Input::Key key, uint16_t mods,
                    EventState state) {
         ImGuiIO& io = ImGui::GetIO();
         if (io.WantCaptureKeyboard) {
-            io.KeysDown[key] = (state == EventState::Pressed) ? true : false;
-            io.KeyCtrl = (mods & Input::Mod_Ctrl);
-            io.KeyShift = (mods & Input::Mod_Shift);
-            io.KeyAlt = (mods & Input::Mod_Alt);
+            io.KeysDown[key] = (state == EventState::PRESSED) ? true : false;
+            io.KeyCtrl = (mods & Input::MOD_CTRL);
+            io.KeyShift = (mods & Input::MOD_SHIFT);
+            io.KeyAlt = (mods & Input::MOD_ALT);
 #ifdef _WIN32
             io.KeySuper = false;
 #else
-            io.KeySuper = (mods & Input::Mod_Meta);
+            io.KeySuper = (mods & Input::MOD_META);
 #endif
         }
         g_Time = timestamp;
     });
 
-    auto pScroll = EventSystem::sys()->globalEvent<EventType::MouseWheel,
+    auto pScroll = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL,
                                                    GlobalWheelEvent>();
-    pScroll->watch([](uint32_t timestamp, float xoffset, float yoffset) {
+    pScroll->Watch([](uint32_t timestamp, float xoffset, float yoffset) {
         ImGuiIO& io = ImGui::GetIO();
         if (io.WantCaptureMouse) {
             io.MouseWheelH += (float)xoffset;
@@ -48,19 +48,19 @@ static void installEventHandlers()
         g_Time = timestamp;
     });
 
-    auto pBtn = EventSystem::sys()->globalEvent<EventType::MouseButton,
+    auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON,
                                                 GlobalButtonEvent>();
-    pBtn->watch([](uint32_t timestamp, Input::Button btn, EventState state) {
+    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state) {
         ImGuiIO& io = ImGui::GetIO();
         if (io.WantCaptureMouse) {
-            io.MouseDown[btn] = (state == EventState::Pressed) ? true : false;
+            io.MouseDown[btn] = (state == EventState::PRESSED) ? true : false;
         }
         g_Time = timestamp;
     });
 
-    auto pMotion = EventSystem::sys()->globalEvent<EventType::MouseMotion,
+    auto pMotion = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION,
                                                    GlobalMotionEvent>();
-    pMotion->watch([](uint32_t timestamp, float sx, float sy) {
+    pMotion->Watch([](uint32_t timestamp, float sx, float sy) {
         ImGuiIO& io = ImGui::GetIO();
         io.MousePos = ImVec2(sx, sy);
         g_Time = timestamp;
@@ -78,28 +78,28 @@ static bool Init()
     //io.BackendPlatformName = "imgui_impl_glfw";
 
     // Keyboard mapping. ImGui will use those indices to peek into the io.KeysDown[] array.
-    io.KeyMap[ImGuiKey_Tab] = Input::Key_Tab;
-    io.KeyMap[ImGuiKey_LeftArrow] = Input::Key_Left;
-    io.KeyMap[ImGuiKey_RightArrow] = Input::Key_Right;
-    io.KeyMap[ImGuiKey_UpArrow] = Input::Key_Up;
-    io.KeyMap[ImGuiKey_DownArrow] = Input::Key_Down;
-    io.KeyMap[ImGuiKey_PageUp] = Input::Key_PageUp;
-    io.KeyMap[ImGuiKey_PageDown] = Input::Key_PageDown;
-    io.KeyMap[ImGuiKey_Home] = Input::Key_Home;
-    io.KeyMap[ImGuiKey_End] = Input::Key_End;
-    io.KeyMap[ImGuiKey_Insert] = Input::Key_Insert;
-    io.KeyMap[ImGuiKey_Delete] = Input::Key_Delete;
-    io.KeyMap[ImGuiKey_Backspace] = Input::Key_Backspace;
-    io.KeyMap[ImGuiKey_Space] = Input::Key_Space;
-    io.KeyMap[ImGuiKey_Enter] = Input::Key_Return;
-    io.KeyMap[ImGuiKey_Escape] = Input::Key_Escape;
+    io.KeyMap[ImGuiKey_Tab] = Input::KEY_TAB;
+    io.KeyMap[ImGuiKey_LeftArrow] = Input::KEY_LEFT;
+    io.KeyMap[ImGuiKey_RightArrow] = Input::KEY_RIGHT;
+    io.KeyMap[ImGuiKey_UpArrow] = Input::KEY_UP;
+    io.KeyMap[ImGuiKey_DownArrow] = Input::KEY_DOWN;
+    io.KeyMap[ImGuiKey_PageUp] = Input::KEY_PAGEUP;
+    io.KeyMap[ImGuiKey_PageDown] = Input::KEY_PAGEDOWN;
+    io.KeyMap[ImGuiKey_Home] = Input::KEY_HOME;
+    io.KeyMap[ImGuiKey_End] = Input::KEY_END;
+    io.KeyMap[ImGuiKey_Insert] = Input::KEY_INSERT;
+    io.KeyMap[ImGuiKey_Delete] = Input::KEY_DELETE;
+    io.KeyMap[ImGuiKey_Backspace] = Input::KEY_BACKSPACE;
+    io.KeyMap[ImGuiKey_Space] = Input::KEY_SPACE;
+    io.KeyMap[ImGuiKey_Enter] = Input::KEY_RETURN;
+    io.KeyMap[ImGuiKey_Escape] = Input::KEY_ESCAPE;
     //io.KeyMap[ImGuiKey_KeyPadEnter] = GLFW_KEY_KP_ENTER;
-    io.KeyMap[ImGuiKey_A] = Input::Key_a;
-    io.KeyMap[ImGuiKey_C] = Input::Key_c;
-    io.KeyMap[ImGuiKey_V] = Input::Key_v;
-    io.KeyMap[ImGuiKey_X] = Input::Key_x;
-    io.KeyMap[ImGuiKey_Y] = Input::Key_y;
-    io.KeyMap[ImGuiKey_Z] = Input::Key_z;
+    io.KeyMap[ImGuiKey_A] = Input::KEY_A;
+    io.KeyMap[ImGuiKey_C] = Input::KEY_C;
+    io.KeyMap[ImGuiKey_V] = Input::KEY_V;
+    io.KeyMap[ImGuiKey_X] = Input::KEY_X;
+    io.KeyMap[ImGuiKey_Y] = Input::KEY_Y;
+    io.KeyMap[ImGuiKey_Z] = Input::KEY_Z;
 
     installEventHandlers();
 
@@ -120,12 +120,12 @@ static void UpdateMouseCursor()
         return;
 
     ImGuiMouseCursor type = ImGui::GetMouseCursor();
-    auto pCursor = EventSystem::sys()->globalEvent<EventType::CursorSet,
+    auto pCursor = EventSystem::sys()->globalEvent<EventType::CURSORSET,
                                                    GlobalCursorSetEvent>();
     if (type == ImGuiMouseCursor_None || io.MouseDrawCursor) {
-        pCursor->emit(g_Time, Input::Cursor::Cursor_None); //use the last time
+        pCursor->Emit(g_Time, Input::Cursor::CURSOR_NONE); //use the last time
     } else if (type < ImGuiMouseCursor_COUNT)  {
-        pCursor->emit(g_Time, (Input::Cursor)type);
+        pCursor->Emit(g_Time, (Input::Cursor)type);
     }
 }
 

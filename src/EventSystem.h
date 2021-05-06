@@ -6,23 +6,23 @@
 #include <map>
 
 #include "Event.h"
-#include <interface/key.h>
-#include <interface/mouse.h>
+#include "Key.h"
+#include "Mouse.h"
 
 enum EventType {
-    Key = 0,
-    Char,
-    MouseButton,
-    MouseMotion,
-    MouseWheel,
-    WindowResize,
-    CursorSet,
-    Count,
+    KEY = 0,
+    CHAR,
+    MOUSEBUTTON,
+    MOUSEMOTION,
+    MOUSEWHEEL,
+    WINDOWRESIZE,
+    CURSORSET,
+    COUNT,
 };
 
 enum EventState {
-    Pressed = true,
-    Released = false,
+    PRESSED = true,
+    RELEASED = false,
 };
 
 template<EventType ET, typename... Args>
@@ -33,25 +33,25 @@ public:
 };
 
 //timestamp, key, modifier and state
-typedef GlobalEvent<EventType::Key, uint32_t, Input::Key, uint16_t, EventState>
+typedef GlobalEvent<EventType::KEY, uint32_t, Input::Key, uint16_t, EventState>
     GlobalKeyEvent;
 
-typedef GlobalEvent<EventType::Char, uint32_t, unsigned int>
+typedef GlobalEvent<EventType::CHAR, uint32_t, unsigned int>
     GlobalCharEvent;
 
-typedef GlobalEvent<EventType::MouseButton, uint32_t, Input::Button, EventState>
+typedef GlobalEvent<EventType::MOUSEBUTTON, uint32_t, Input::Button, EventState>
     GlobalButtonEvent;
 
-typedef GlobalEvent<EventType::MouseMotion, uint32_t, float, float>
+typedef GlobalEvent<EventType::MOUSEMOTION, uint32_t, float, float>
     GlobalMotionEvent;
 
-typedef GlobalEvent<EventType::MouseWheel, uint32_t, float, float>
+typedef GlobalEvent<EventType::MOUSEWHEEL, uint32_t, float, float>
     GlobalWheelEvent;
 
-typedef GlobalEvent<EventType::WindowResize, uint32_t, size_t, size_t>
+typedef GlobalEvent<EventType::WINDOWRESIZE, uint32_t, size_t, size_t>
     GlobalResizeEvent;
 
-typedef GlobalEvent<EventType::CursorSet, uint32_t, Input::Cursor>
+typedef GlobalEvent<EventType::CURSORSET, uint32_t, Input::Cursor>
     GlobalCursorSetEvent;
 
 class EventSystem {

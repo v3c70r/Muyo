@@ -7,14 +7,12 @@
 #include <GLFW/glfw3.h>
 
 #include "EventSystem.h"
-#include "interface/key.h"
-#include "interface/mouse.h"
 
 namespace Window {
 
 namespace _GLFW {
 static GLFWwindow *s_pWindow = nullptr;
-static GLFWcursor *s_pCursors[Input::Cursor::Cursor_Count];
+static GLFWcursor *s_pCursors[Input::Cursor::CURSOR_COUNT];
 
 //get time in milliseconds
 static inline uint32_t Time()
@@ -25,137 +23,142 @@ static inline uint32_t Time()
 /// event handlers
 static Input::Key GetEditKey(int key)
 {
-    switch(key) {
+    switch(key)
+    {
     case GLFW_KEY_ENTER:
-        return Input::Key_Return;
+        return Input::KEY_RETURN;
     case GLFW_KEY_ESCAPE:
-        return Input::Key_Escape;
+        return Input::KEY_ESCAPE;
     case GLFW_KEY_BACKSPACE:
-        return Input::Key_Backspace;
+        return Input::KEY_BACKSPACE;
     case GLFW_KEY_TAB:
-        return Input::Key_Tab;
+        return Input::KEY_TAB;
     case GLFW_KEY_DELETE:
-        return Input::Key_Delete;
+        return Input::KEY_DELETE;
     default:
-        return Input::Key_Unknown;
+        return Input::KEY_UNKNOWN;
     }
 }
 
 static Input::Key GetFunctionKey(int key)
 {
-    switch(key) {
+    switch(key)
+    {
     case GLFW_KEY_CAPS_LOCK:
-        return Input::Key_Capslock;
+        return Input::KEY_CAPSLOCK;
     case GLFW_KEY_PRINT_SCREEN:
-        return Input::Key_Printscreen;
+        return Input::KEY_PRINTSCREEN;
     case GLFW_KEY_SCROLL_LOCK:
-        return Input::Key_Scrolllock;
+        return Input::KEY_SCROLLLOCK;
     case GLFW_KEY_PAUSE:
-        return Input::Key_Pause;
+        return Input::KEY_PAUSE;
     case GLFW_KEY_INSERT:
-        return Input::Key_Insert;
+        return Input::KEY_INSERT;
     case GLFW_KEY_HOME:
-        return Input::Key_Home;
+        return Input::KEY_HOME;
     case GLFW_KEY_PAGE_UP:
-        return Input::Key_PageUp;
+        return Input::KEY_PAGEUP;
     case GLFW_KEY_PAGE_DOWN:
-        return Input::Key_PageDown;
+        return Input::KEY_PAGEDOWN;
     case GLFW_KEY_RIGHT:
-        return Input::Key_Right;
+        return Input::KEY_RIGHT;
     case GLFW_KEY_LEFT:
-        return Input::Key_Left;
+        return Input::KEY_LEFT;
     case GLFW_KEY_DOWN:
-        return Input::Key_Down;
+        return Input::KEY_DOWN;
     case GLFW_KEY_UP:
-        return Input::Key_Up;
+        return Input::KEY_UP;
         //rest are the modifiers we dont care about
     default:
-        return Input::Key_Unknown;
+        return Input::KEY_UNKNOWN;
     }
 }
 
 static void KeyStrokeCallback(GLFWwindow *window, int key, int scancode,
                               int action, int mods)
 {
-    auto pKeyEvent = EventSystem::sys()->globalEvent<EventType::Key,
+    auto pKeyEvent = EventSystem::sys()->globalEvent<EventType::KEY,
                                                      GlobalKeyEvent>();
     EventState state = (action == GLFW_PRESS) ?
-        EventState::Pressed : EventState::Released;
-    uint16_t modifiers = Input::Mod_None;
-    Input::Key press = Input::Key::Key_Unknown;
+        EventState::PRESSED : EventState::RELEASED;
+    uint16_t modifiers = Input::MOD_NONE;
+    Input::Key press = Input::Key::KEY_UNKNOWN;
 
     //get mod
     if (mods & GLFW_MOD_ALT)
-        modifiers |= Input::Mod_Alt;
+        modifiers |= Input::MOD_ALT;
     if (mods & GLFW_MOD_SHIFT)
-        modifiers |= Input::Mod_Shift;
+        modifiers |= Input::MOD_SHIFT;
     if (mods & GLFW_MOD_CONTROL)
-        modifiers |= Input::Mod_Ctrl;
+        modifiers |= Input::MOD_CTRL;
     if (mods & GLFW_MOD_SUPER)
-        modifiers |= Input::Mod_Meta;
+        modifiers |= Input::MOD_META;
 
-    if ((press = GetEditKey(key)) != Input::Key_Unknown)
-        pKeyEvent->emit(Time(), press, modifiers, state);
-    else if ((press = GetFunctionKey(key)) != Input::Key_Unknown)
-        pKeyEvent->emit(Time(), press, modifiers, state);
+    if ((press = GetEditKey(key)) != Input::KEY_UNKNOWN)
+        pKeyEvent->Emit(Time(), press, modifiers, state);
+    else if ((press = GetFunctionKey(key)) != Input::KEY_UNKNOWN)
+        pKeyEvent->Emit(Time(), press, modifiers, state);
 }
 
 static void CharCallback(GLFWwindow* window, unsigned int c)
 {
-    auto pCharEvent = EventSystem::sys()->globalEvent<EventType::Char,
+    auto pCharEvent = EventSystem::sys()->globalEvent<EventType::CHAR,
                                                       GlobalCharEvent>();
-    pCharEvent->emit(Time(), c);
+    pCharEvent->Emit(Time(), c);
 }
 
 static void ScrollCallback(GLFWwindow* window, double xoffset,
                                    double yoffset)
 {
-    auto pWheel = EventSystem::sys()->globalEvent<EventType::MouseWheel,
+    auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL,
                                                   GlobalWheelEvent>();
-    pWheel->emit(Time(), xoffset, yoffset);
+    pWheel->Emit(Time(), xoffset, yoffset);
 }
 
 static void MouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
 {
-    auto pMove = EventSystem::sys()->globalEvent<EventType::MouseMotion,
+    auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION,
                                                  GlobalMotionEvent>();
-    pMove->emit(Time(), xpos, ypos);
+    pMove->Emit(Time(), xpos, ypos);
 }
 
 static void MouseCallback(GLFWwindow *window, int button, int action, int mods)
 {
-    auto pPress = EventSystem::sys()->globalEvent<EventType::MouseButton,
+    auto pPress = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON,
                                                   GlobalButtonEvent>();
     EventState state = (action == GLFW_PRESS) ?
-        EventState::Pressed : EventState::Released;
-    Input::Button btn = Input::Button::Count;
+        EventState::PRESSED : EventState::RELEASED;
+    Input::Button btn = Input::Button::BUTTON_COUNT;
 
     switch (button) {
     case GLFW_MOUSE_BUTTON_LEFT:
-        btn = Input::Button::Left;
+        btn = Input::Button::BUTTON_LEFT;
         break;
     case GLFW_MOUSE_BUTTON_RIGHT:
-        btn = Input::Button::Right;
+        btn = Input::Button::BUTTON_RIGHT;
         break;
     case GLFW_MOUSE_BUTTON_MIDDLE:
-        btn = Input::Button::Middle;
+        btn = Input::Button::BUTTON_MIDDLE;
         break;
     default:
         break;
     }
-    if (btn != Input::Button::Count)
-        pPress->emit(Time(), btn, state);
+    if (btn != Input::Button::BUTTON_COUNT)
+        pPress->Emit(Time(), btn, state);
 }
 
 static void CursorSetCallback(uint32_t timestamp, Input::Cursor cursor)
 {
-    if (cursor == Input::Cursor::Cursor_None ||
-        glfwGetInputMode(s_pWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED) {
+    if (cursor == Input::Cursor::CURSOR_NONE ||
+        glfwGetInputMode(s_pWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+    {
         glfwSetInputMode(s_pWindow, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
-    } else {
+    }
+    else
+    {
         glfwSetCursor(s_pWindow, s_pCursors[cursor] ?
                       s_pCursors[cursor] :
-                      s_pCursors[Input::Cursor::Cursor_Arrow]);
+                      s_pCursors[Input::Cursor::CURSOR_ARROW]);
         glfwSetInputMode(s_pWindow, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     }
 }
@@ -169,37 +172,38 @@ static void InitCursors()
     // _UpdateMouseCursor() function will use the Arrow cursor instead.)
 
     GLFWerrorfun prev_error_callback = glfwSetErrorCallback(NULL);
-    s_pCursors[Input::Cursor::Cursor_Arrow] =
+    s_pCursors[Input::Cursor::CURSOR_ARROW] =
         glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-    s_pCursors[Input::Cursor::Cursor_Text_Input] =
+    s_pCursors[Input::Cursor::CURSOR_TEXT_INPUT] =
         glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
-    s_pCursors[Input::Cursor::Cursor_Resize_Vertical] =
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_VERTICAL] =
         glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
-    s_pCursors[Input::Cursor::Cursor_Resize_Horizental] =
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_HORIZENTAL] =
         glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
 #if GLFW_HAS_NEW_CURSORS
-    s_pCursors[Input::Cursor::Cursor_Resize_Bottom_Left] =
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_LEFT] =
         glfwCreateStandardCursor(GLFW_RESIZE_NEWS_CURSOR);
-    s_pCursors[Input::Cursor::Cursor_Resize_Bottom_Right] =
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_RIGHT] =
         glfwCreateStandardCursor(GLFW_RESIZE_NWSE_CURSOR);
 #else
-    s_pCursors[Input::Cursor::Cursor_Resize_Bottom_Left] =
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_LEFT] =
         glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-    s_pCursors[Input::Cursor::Cursor_Resize_Bottom_Right] =
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_RIGHT] =
         glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
 #endif
-    s_pCursors[Input::Cursor::Cursor_Hand] =
+    s_pCursors[Input::Cursor::CURSOR_HAND] =
         glfwCreateStandardCursor(GLFW_HAND_CURSOR);
 
-    auto pCursor = EventSystem::sys()->globalEvent<EventType::CursorSet,
+    auto pCursor = EventSystem::sys()->globalEvent<EventType::CURSORSET,
                                                    GlobalCursorSetEvent>();
-    pCursor->watch(CursorSetCallback);
+    pCursor->Watch(CursorSetCallback);
     glfwSetErrorCallback(prev_error_callback);
 }
 
 static void FiniCursors()
 {
-    for (int i = 0; i < Input::Cursor::Cursor_Count; i++) {
+    for (int i = 0; i < Input::Cursor::CURSOR_COUNT; i++)
+    {
         glfwDestroyCursor(s_pCursors[i]);
         s_pCursors[i] = nullptr;
     }
@@ -207,14 +211,15 @@ static void FiniCursors()
 
 }
 
-static bool Init(const char *name, unsigned w, unsigned h)
+static bool Initialize(const char *name, unsigned w, unsigned h)
 {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     _GLFW::s_pWindow = glfwCreateWindow(w, h, "Vulkan", nullptr, nullptr);
-    if (!_GLFW::s_pWindow) {
+    if (!_GLFW::s_pWindow)
+    {
         glfwTerminate();
         return false;
     }
@@ -229,7 +234,7 @@ static bool Init(const char *name, unsigned w, unsigned h)
     return true;
 }
 
-static void Fini()
+static void Uninitialize()
 {
     glfwDestroyWindow(_GLFW::s_pWindow);
     _GLFW::s_pWindow = nullptr;
@@ -245,11 +250,6 @@ static bool ShouldQuit()
 static void ProcessEvents()
 {
     glfwPollEvents(); //don't block
-}
-
-static void PostPseudoEvents()
-{
-    glfwPostEmptyEvent();
 }
 
 static std::pair<int, int> GetWindowSize()

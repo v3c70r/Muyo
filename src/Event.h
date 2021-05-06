@@ -13,7 +13,7 @@ template<typename... Args>
 class EventHandler {
 public:
     typedef std::function<void(Args...)> HandlerFunc;
-    typedef size_t HandlerId;
+    typedef uint32_t HandlerId;
 
     explicit EventHandler(const HandlerFunc& func)
         : m_HandlerFunc(func)
@@ -65,8 +65,8 @@ private:
 
 class EventBase {
 protected:
-    EventBase(size_t type) : m_Type(type) {}
-    size_t m_Type;
+    EventBase(uint32_t type) : m_Type(type) {}
+    uint32_t m_Type;
 };
 
 //we will have subclass inherit on this
@@ -74,16 +74,16 @@ template<typename ...Args>
 class Event : public EventBase {
     typedef EventHandler<Args...> HandlerType;
 public:
-    Event(size_t type) : EventBase(type) {}
+    Event(uint32_t type) : EventBase(type) {}
 
-    void emit(Args ... args)
+    void Emit(Args ... args)
     {
         for (HandlerType& handler : m_Collections) {
             handler(args...);
         }
     }
-    //adding a
-    int watch(const HandlerType& handler)
+
+    int Watch(const HandlerType& handler)
     {
         std::lock_guard<std::mutex> lock(m_handlersLock);
 
@@ -91,13 +91,12 @@ public:
         return handler.id();
     }
 
-    //need to use typename to access the dependent type
-    inline typename HandlerType::HandlerId watch(const typename HandlerType::HandlerFunc& handler)
+    inline typename HandlerType::HandlerId Watch(const typename HandlerType::HandlerFunc& handler)
     {
-        return watch(HandlerType(handler));
+        return Watch(HandlerType(handler));
     }
 
-    bool unwatch(HandlerType& handler)
+    bool Unwatch(HandlerType& handler)
     {
         std::lock_guard<std::mutex> lock(m_handlersLock);
 
@@ -109,8 +108,8 @@ public:
         return false;
     }
 
-    //again, using typename to access the dependent typename
-    bool unwatch(typename HandlerType::HandlerId id)
+    //using typename to access the dependent typename
+    bool Unwatch(typename HandlerType::HandlerId id)
     {
         std::lock_guard<std::mutex> lock(m_handlersLock);
 

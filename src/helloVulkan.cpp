@@ -76,13 +76,13 @@ static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
 // Arcball callbacks
 static void clickArcballCallback(int button, int action)
 {
-    if (button == Input::Button::Left)
+    if (button == Input::Button::BUTTON_LEFT)
     {
-        if (EventState::Pressed == action)
+        if (EventState::PRESSED == action)
         {
             s_arcball.startDragging();
         }
-        else if (EventState::Released == action)
+        else if (EventState::RELEASED == action)
         {
             s_arcball.stopDragging();
         }
@@ -100,27 +100,27 @@ static void rotateArcballCallback(double xpos, double ypos)
 
 static void InitEventHandlers()
 {
-    auto pMove = EventSystem::sys()->globalEvent<EventType::MouseMotion,
+    auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION,
                                                  GlobalMotionEvent>();
-    pMove->watch([](uint32_t timestamp, float sx, float sy) {
+    pMove->Watch([](uint32_t timestamp, float sx, float sy) {
         rotateArcballCallback(sx, sy);
     });
 
-    auto pBtn = EventSystem::sys()->globalEvent<EventType::MouseButton,
+    auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON,
                                                 GlobalButtonEvent>();
-    pBtn->watch([](uint32_t timestamp, Input::Button btn, EventState state) {
+    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state) {
         clickArcballCallback(btn, state);
     });
 
-    auto pWheel = EventSystem::sys()->globalEvent<EventType::MouseWheel,
+    auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL,
                                                   GlobalWheelEvent>();
-    pWheel->watch([](uint32_t timestamp, double xoffset, double yoffset) {
+    pWheel->Watch([](uint32_t timestamp, double xoffset, double yoffset) {
         s_arcball.AddZoom(yoffset * -0.1f);
     });
 
-    auto pResize = EventSystem::sys()->globalEvent<EventType::WindowResize,
+    auto pResize = EventSystem::sys()->globalEvent<EventType::WINDOWRESIZE,
                                                    GlobalResizeEvent>();
-    pResize->watch([](uint32_t timestamp, size_t w, size_t h) {
+    pResize->Watch([](uint32_t timestamp, size_t w, size_t h) {
         s_arcball.resize(glm::vec2((float)w, (float)h));
         s_bResizeWanted = true;        
     });
@@ -189,9 +189,7 @@ void cleanup()
     GetMemoryAllocator()->Unintialize();
     GetRenderDevice()->DestroyDevice();
     GetRenderDevice()->Unintialize();
-    Window::Fini();
-    // SDL_DestroyWindow(s_pWindow);
-    // SDL_Quit();
+    Window::Uninitialize();
 }
 
 static bool bIrradianceMapGenerated = false;
@@ -226,7 +224,7 @@ void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 int main()
 {
     // Load mesh into memory
-    if (!Window::Init("hello Vulkan", WIDTH, HEIGHT))
+    if (!Window::Initialize("hello Vulkan", WIDTH, HEIGHT))
         return -1;
     
     // Create Instace
@@ -331,7 +329,6 @@ int main()
                 // TODO: Resizing doesn't work properly, need to investigate
                 int width, height;
                 std::tie(width, height) = Window::GetWindowSize();
-                // SDL_GetWindowSize(s_pWindow, &width, &height);
                 VkExtent2D currentVp = GetRenderDevice()->GetViewportSize();
                 if (width != (int)currentVp.width || height != (int)currentVp.height)
                 {

@@ -13,26 +13,24 @@ set ( CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
 set ( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
 set ( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
 
-### Handle dependencies
-
-## GLFW
-# Look for precompiled glfw library
-find_package(glfw3 3.2 QUIET)
-# Otherwise, build from source
-if (NOT ${glfw3_FOUND})
+#window lib
+if (USE_SDL)
+  find_package(SDL2 REQUIRED)
+  add_definitions(-DUSE_SDL)
+  set(WINDOW_LIB SDL2::SDL2main SDL2::SDL2)
+else()
+  ## GLFW
+  # Look for precompiled glfw library
+  find_package(glfw3 3.2 QUIET)
+  # Otherwise, build from source
+  if (NOT ${glfw3_FOUND})
     # Build glfw from source
     set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
     #set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
     add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
-endif()
-
-find_package(SDL2 QUIET)
-if (${SDL2_FOUND})
-  add_definitions(-DUSE_SDL)
-  set(WINDOW_LIB SDL2::SDL2main SDL2::SDL2)
-else()
+  endif()
   add_definitions(-DUSE_GLFW)
   set(WINDOW_LIB glfw)
 endif()
@@ -98,7 +96,6 @@ include_directories(
     ${GLFW3_INCLUDE_DIR}
     ${GLM_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIRS}
-    "${CMAKE_CURRENT_LIST_DIR}/include"
     )
 
 add_library(imgui

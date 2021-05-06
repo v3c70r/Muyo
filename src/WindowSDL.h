@@ -10,8 +10,6 @@
 #include <vulkan/vulkan_core.h>
 
 #include "EventSystem.h"
-#include "interface/mouse.h"
-
 
 /// This is by no means the best way doing things, but since writing window
 /// system code directly in main.cpp is less pleasant
@@ -27,34 +25,39 @@ static void onKeyStroke(EventSystem *sys, uint32_t time,
                         SDL_Keycode sym, SDL_Scancode scan,
                         int action, int mods)
 {
-    auto pKeyEvent = sys->globalEvent<EventType::Key, GlobalKeyEvent>();
-    auto pCharEvent = sys->globalEvent<EventType::Char, GlobalCharEvent>();
-    enum Input::Key key = Input::Key_Unknown;
-    uint16_t modifiers = Input::Mod_None;
+    auto pKeyEvent = sys->globalEvent<EventType::KEY, GlobalKeyEvent>();
+    auto pCharEvent = sys->globalEvent<EventType::CHAR, GlobalCharEvent>();
+    enum Input::Key key = Input::KEY_UNKNOWN;
+    uint16_t modifiers = Input::MOD_NONE;
     EventState state = (action == SDL_PRESSED) ?
-        EventState::Pressed : EventState::Released;
+        EventState::PRESSED : EventState::RELEASED;
 
     if ((mods & KMOD_ALT))
-        modifiers |= Input::Mod_Alt;
+        modifiers |= Input::MOD_ALT;
     if ((mods & KMOD_SHIFT))
-        modifiers |= Input::Mod_Shift;
+        modifiers |= Input::MOD_SHIFT;
     if ((mods & KMOD_CTRL))
-        modifiers |= Input::Mod_Ctrl;
+        modifiers |= Input::MOD_CTRL;
     if ((mods & KMOD_GUI))
-        modifiers |= Input::Mod_Meta;
+        modifiers |= Input::MOD_META;
 
     //printable chars, we generate char event
-    if ((sym < INT8_MAX) && (::isprint(sym))) {
+    if ((sym < INT8_MAX) && (::isprint(sym)))
+    {
         if (action == SDL_PRESSED)
-            pCharEvent->emit(time, sym);
+            pCharEvent->Emit(time, sym);
         return;
-    } else if ((key = Input::getKeyREBTD(sym))) {
-        pKeyEvent->emit(time, key, modifiers, state);
+    }
+    else if ((key = Input::getKeyREBTD(sym)))
+    {
+        pKeyEvent->Emit(time, key, modifiers, state);
         return;
-    } else if ((scan & SDLK_SCANCODE_MASK)) {
+    }
+    else if ((scan & SDLK_SCANCODE_MASK))
+    {
         key = Input::keyFromScanCode(scan);
-        if (key != Input::Key_Unknown)
-            pKeyEvent->emit(time, key, modifiers, state);
+        if (key != Input::KEY_UNKNOWN)
+            pKeyEvent->Emit(time, key, modifiers, state);
         return;
     }
     //get scancode
@@ -63,78 +66,84 @@ static void onKeyStroke(EventSystem *sys, uint32_t time,
 static void onMouseScroll(EventSystem *sys, uint32_t time,
                           double xoffset, double yoffset)
 {
-    auto pWheel = sys->globalEvent<EventType::MouseWheel, GlobalWheelEvent>();
-    pWheel->emit(time, xoffset, yoffset);
+    auto pWheel = sys->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
+    pWheel->Emit(time, xoffset, yoffset);
 }
 
 static void onMouseMotion(EventSystem *sys, uint32_t time,
                           double xpose, double ypos)
 {
-    auto pMove = sys->globalEvent<EventType::MouseMotion, GlobalMotionEvent>();
-    pMove->emit(time, xpose, ypos);
+    auto pMove = sys->globalEvent<EventType::MOUSEMOTION, GlobalMotionEvent>();
+    pMove->Emit(time, xpose, ypos);
 }
 
 static void onMousePress(EventSystem *sys, uint32_t time, int button,
                          int action)
 {
-    auto pPress = sys->globalEvent<EventType::MouseButton, GlobalButtonEvent>();
+    auto pPress = sys->globalEvent<EventType::MOUSEBUTTON, GlobalButtonEvent>();
     EventState state = (action == SDL_PRESSED) ?
-        EventState::Pressed : EventState::Released;
-    Input::Button btn = Input::Button::Count;
+        EventState::PRESSED : EventState::RELEASED;
+    Input::Button btn = Input::Button::BUTTON_COUNT;
 
-    switch (button) {
+    switch (button)
+    {
     case SDL_BUTTON_LEFT:
-        btn = Input::Button::Left;
+        btn = Input::Button::BUTTON_LEFT;
         break;
     case SDL_BUTTON_MIDDLE:
-        btn = Input::Button::Middle;
+        btn = Input::Button::BUTTON_MIDDLE;
         break;
     case SDL_BUTTON_RIGHT:
-        btn = Input::Button::Right;
+        btn = Input::Button::BUTTON_RIGHT;
         break;
     }
-    if (btn != Input::Button::Count) {
-        pPress->emit(time, btn, state);
+    if (btn != Input::Button::BUTTON_COUNT)
+    {
+        pPress->Emit(time, btn, state);
     }
 
 }
 
 static void onWindowEvent(EventSystem *sys, SDL_WindowEvent &event)
 {
-   auto pResize = sys->globalEvent<EventType::WindowResize, GlobalResizeEvent>();
-   if (event.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-        pResize->emit(event.timestamp, event.data1, event.data2);
-   } else if (event.event == SDL_WINDOWEVENT_CLOSE) {
+   auto pResize = sys->globalEvent<EventType::WINDOWRESIZE, GlobalResizeEvent>();
+   if (event.event == SDL_WINDOWEVENT_SIZE_CHANGED)
+   {
+        pResize->Emit(event.timestamp, event.data1, event.data2);
+   }
+   else if (event.event == SDL_WINDOWEVENT_CLOSE)
+   {
        s_bShouldQuit = true;
    }
 }
 
 static void onSetCursor(uint32_t timestamp, Input::Cursor type)
 {
-        int show = (type != Input::Cursor::Cursor_None) ?
+        int show = (type != Input::Cursor::CURSOR_NONE) ?
             SDL_ENABLE : SDL_DISABLE;
         SDL_Cursor *cursor = nullptr;
 
-        switch (type) {
-        case Input::Cursor::Cursor_Arrow:
+        switch (type)
+        {
+        case Input::Cursor::CURSOR_ARROW:
             cursor = s_pCursors[SDL_SYSTEM_CURSOR_ARROW];
             break;
-        case Input::Cursor::Cursor_Text_Input:
+        case Input::Cursor::CURSOR_TEXT_INPUT:
             cursor = s_pCursors[SDL_SYSTEM_CURSOR_IBEAM];
             break;
-        case Input::Cursor::Cursor_Resize_Horizental:
+        case Input::Cursor::CURSOR_RESIZE_HORIZENTAL:
             cursor = s_pCursors[SDL_SYSTEM_CURSOR_SIZENS];
             break;
-        case Input::Cursor::Cursor_Resize_Vertical:
+        case Input::Cursor::CURSOR_RESIZE_VERTICAL:
             cursor = s_pCursors[SDL_SYSTEM_CURSOR_SIZENS];
             break;
-        case Input::Cursor::Cursor_Resize_Bottom_Left:
+        case Input::Cursor::CURSOR_RESIZE_BOTTOM_LEFT:
             cursor = s_pCursors[SDL_SYSTEM_CURSOR_SIZENESW];
             break;
-        case Input::Cursor::Cursor_Resize_Bottom_Right:
+        case Input::Cursor::CURSOR_RESIZE_BOTTOM_RIGHT:
             cursor = s_pCursors[SDL_SYSTEM_CURSOR_SIZENWSE];
             break;
-        case Input::Cursor::Cursor_Hand:
+        case Input::Cursor::CURSOR_HAND:
             cursor = s_pCursors[SDL_SYSTEM_CURSOR_HAND];
             break;
         default:
@@ -145,8 +154,10 @@ static void onSetCursor(uint32_t timestamp, Input::Cursor type)
         SDL_ShowCursor(show);
 }
 
-static void HandleEvents(SDL_Event& event, EventSystem *system) {
-    switch (event.type) {
+static void HandleEvents(SDL_Event& event, EventSystem *system)
+{
+    switch (event.type)
+    {
     case SDL_KEYDOWN:
     case SDL_KEYUP:
         onKeyStroke(system,
@@ -190,9 +201,9 @@ static void InitCursors()
 {
     for (int i = 0; i < SDL_NUM_SYSTEM_CURSORS; i++)
         s_pCursors[i] = SDL_CreateSystemCursor((SDL_SystemCursor)i);
-    auto pCursor = EventSystem::sys()->globalEvent<EventType::CursorSet,
+    auto pCursor = EventSystem::sys()->globalEvent<EventType::CURSORSET,
                                                    GlobalCursorSetEvent>();
-    pCursor->watch(onSetCursor);
+    pCursor->Watch(onSetCursor);
 }
 
 static void FiniCursors()
@@ -206,7 +217,7 @@ static void FiniCursors()
 
 }
 
-static bool Init(const char *name, unsigned w, unsigned h)
+static bool Initialize(const char *name, unsigned w, unsigned h)
 {
         if (SDL_Init(SDL_INIT_EVERYTHING) < 0)
             return false;
@@ -216,15 +227,17 @@ static bool Init(const char *name, unsigned w, unsigned h)
                                            w, h,
                                            SDL_WINDOW_VULKAN |
                                            SDL_WINDOW_SHOWN);
-        if (!_SDL::s_pWindow) {
+        if (!_SDL::s_pWindow)
+        {
             SDL_Quit();
             return false;
-        } _SDL::s_bShouldQuit = false;
+        }
+        _SDL::s_bShouldQuit = false;
         _SDL::InitCursors();
         return true;
 }
 
-static void Fini()
+static void Uninitialize()
 {
     SDL_DestroyWindow(_SDL::s_pWindow);
     _SDL::s_pWindow = nullptr;
@@ -236,16 +249,6 @@ static void Fini()
 static bool ShouldQuit()
 {
     return _SDL::s_bShouldQuit;
-}
-
-static void PostPseudoEvents()
-{
-        SDL_Event event = {
-            .user = {
-                .type = SDL_USEREVENT,
-                .timestamp = SDL_GetTicks(),
-            }};
-        SDL_PushEvent(&event);
 }
 
 static void ProcessEvents()
