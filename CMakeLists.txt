@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(Muyo)
-# Set system env
-#if (NOT DEFINED VK_SDK_PATH)
-#    message(FATAL_ERROR "VK_SDK_PATH is not defined")
-#endif()
+
+# Compile time features
+option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
+if (${FEATURE_RAY_TRACING})
+    add_compile_definitions(FEATURE_RAY_TRACING)
+endif()
 
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set ( CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
@@ -136,6 +138,7 @@ add_executable( helloVulkan
     src/DebugUI.cpp
     src/SceneManager.cpp
     src/RayTracingUtils.cpp
+    src/ImageStorageResource.cpp
     )
 
 target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
@@ -144,6 +147,9 @@ target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma st
 file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.frag"
     "${CMAKE_SOURCE_DIR}/shaders/*.vert"
+    "${CMAKE_SOURCE_DIR}/shaders/*.rgen"
+    "${CMAKE_SOURCE_DIR}/shaders/*.rmiss"
+    "${CMAKE_SOURCE_DIR}/shaders/*.rchit"
     )
 
 message(STATUS "Shaders: ${GLSL_SOURCE_FILES}")
@@ -153,7 +159,7 @@ foreach (GLSL ${GLSL_SOURCE_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${GLSL_VALIDATOR} -g -V -H ${GLSL} -o ${SPIRV}
+        COMMAND ${GLSL_VALIDATOR} --target-env vulkan1.2 -g -V ${GLSL} -o ${SPIRV}
         DEPENDS ${GLSL})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()

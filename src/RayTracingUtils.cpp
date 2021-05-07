@@ -1,5 +1,6 @@
 #include "RayTracingUtils.h"
 
+#include <cassert>
 #include <functional>
 #include <algorithm>
 #include <string>
@@ -12,9 +13,16 @@
 #include "VkRenderDevice.h"
 #include "RenderResourceManager.h"
 #include "Debug.h"
+#include "PipelineStateBuilder.h"
+#include "PushConstantBlocks.h"
+#include "DescriptorManager.h"
 
 RTBuilder::RTBuilder()
 {
+
+#define GET_VK_FUNC(FUNC_NAME) \
+FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(GetRenderDevice()->GetInstance(), #FUNC_NAME);
+
     // Get function pointers from Vulkan library
     vkCreateAccelerationStructureKHR =
         (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(
@@ -51,6 +59,25 @@ RTBuilder::RTBuilder()
         (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetInstanceProcAddr(
             GetRenderDevice()->GetInstance(),
             "vkGetAccelerationStructureDeviceAddressKHR");
+
+    vkCreateRayTracingPipelinesKHR =
+        (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr (
+            GetRenderDevice()->GetInstance(),
+            "vkCreateRayTracingPipelinesKHR");
+    assert(vkCreateRayTracingPipelinesKHR != nullptr);
+
+
+    GET_VK_FUNC(vkGetRayTracingShaderGroupHandlesKHR);
+    GET_VK_FUNC(vkCmdTraceRaysKHR);
+    GET_VK_FUNC(vkCmdPipelineBarrier2KHR);
+
+    //PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR = nullptr;
+
+    //vkCreateRayTracingPipelinesKHR =
+    //    (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr (
+    //        GetRenderDevice()->GetInstance(),
+    //        "vkCreateRayTracingPipelinesKHR");
+    //assert(vkCreateRayTracingPipelinesKHR != nullptr);
 }
 
 RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
@@ -187,8 +214,7 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
     qpci.queryCount = nNumBlas;
     qpci.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
     VkQueryPool queryPool;
-    vkCreateQueryPool(GetRenderDevice()->GetDevice(), &qpci, nullptr,
-                      &queryPool);
+    vkCreateQueryPool(GetRenderDevice()->GetDevice(), &qpci, nullptr, &queryPool);
 
     std::vector<VkCommandBuffer> cmdBuffers;
     for (size_t idx = 0; idx < nNumBlas; idx++)
@@ -200,7 +226,7 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
         cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         cmdBeginInfo.pInheritanceInfo = nullptr;
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(cmdBuf), VK_OBJECT_TYPE_COMMAND_BUFFER, (std::string("[CB] build blas" + std::to_string(idx)).c_str()));
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(cmdBuf), VK_OBJECT_TYPE_COMMAND_BUFFER, (std::string("[CB] build blas " + std::to_string(idx)).c_str()));
 
         buildInfos[idx].scratchData.deviceAddress = scratchAddress;
         std::vector<const VkAccelerationStructureBuildRangeInfoKHR *> vpBuildOffsets(blas.m_vRangeInfo.size());
@@ -229,6 +255,9 @@ void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAcce
             // Write compacted size to query number idx.
             if (bDoCompaction)
             {
+                // Reset the query before using it
+                vkCmdResetQueryPool(cmdBuf, queryPool, idx, 1);
+                // Write the query to idx query in the pool
                 vkCmdWriteAccelerationStructuresPropertiesKHR(
                     cmdBuf, 1, &blas.m_ac,
                     VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
@@ -393,9 +422,9 @@ void RTBuilder::BuildTLAS(const std::vector<Instance> &instances, VkBuildAcceler
 
     // Build the TLAS
     GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf) {
+        SCOPED_MARKER(cmdBuf, "Buld TLAS");
         vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo);
     });
-
 }
 
 void RTBuilder::Cleanup()
@@ -405,6 +434,8 @@ void RTBuilder::Cleanup()
         vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), blasInput.m_ac, nullptr);
     }
     vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), m_tlas.m_ac, nullptr);
+    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
 }
 
 VkAccelerationStructureInstanceKHR RTBuilder::TLASInputToVkGeometryInstance(const Instance& instance)
@@ -435,4 +466,138 @@ VkAccelerationStructureInstanceKHR RTBuilder::TLASInputToVkGeometryInstance(cons
     gInst.flags = instance.flags;
     gInst.accelerationStructureReference = blasAddress;
     return gInst;
+}
+
+void RTBuilder::BuildRTPipeline()
+{
+    // shader stages
+    VkShaderModule rayGenShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rgen.spv"));
+    VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rmiss.spv"));
+    VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rchit.spv"));
+
+    RayTracingPipelineBuilder builder;
+    builder.AddShaderModule(rayGenShdr, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+    .AddShaderModule(missShdr, VK_SHADER_STAGE_MISS_BIT_KHR)
+    .AddShaderModule(chitShdr, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+
+    // pipeline layout
+    std::vector<VkPushConstantRange> pushConstants = {};
+        //GetPushConstantRange<RTLightingPushConstantBlock>((VkShaderStageFlagBits)(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))};
+
+    std::vector<VkDescriptorSetLayout> descLayouts = {GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING)};
+
+    m_pipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
+    builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(1);
+    VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
+
+    assert(vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(),
+                                          VK_NULL_HANDLE, 
+                                          VK_NULL_HANDLE,
+                                          1,
+                                          &createInfo,
+                                          nullptr,
+                                          &m_pipeline) == VK_SUCCESS);
+
+    m_vRTShaderGroupInfos = builder.GetShaderGroupInfos();
+
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), rayGenShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), chitShdr, nullptr);
+}
+void RTBuilder::BuildShaderBindingTable()
+{
+    GetRenderDevice()->GetPhysicalDeviceProperties(m_rtProperties);
+    uint32_t nGroupCount = (uint32_t)m_vRTShaderGroupInfos.size();
+    uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
+    // Align up the group handle size based on the alginment in property 
+    uint32_t nAlignment = m_rtProperties.shaderGroupHandleAlignment;
+    uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
+    uint32_t nStbSize = nGroupHandleSizeAligned * nGroupCount;
+
+    std::vector<uint8_t> shaderHandleBuf(nStbSize);
+
+    assert(vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nGroupCount, nStbSize, shaderHandleBuf.data()) == VK_SUCCESS);
+    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", shaderHandleBuf.data(), (uint32_t)shaderHandleBuf.size());
+}
+void RTBuilder::RayTrace(VkExtent2D imgSize)
+{
+
+    VkExtent2D ext {0, 0};
+    const auto* pStorageImageRes = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", ext, VK_FORMAT_R16G16B16A16_SFLOAT);
+    VkDescriptorSet rtDescSets = GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView());
+    m_cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
+
+
+    {
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        beginInfo.pInheritanceInfo = nullptr;
+        vkBeginCommandBuffer(m_cmdBuf, &beginInfo);
+        {
+            // Transit output image to general layout using Image memory barrier 2
+
+            VkImage outputImage = pStorageImageRes->getImage();
+            VkImageMemoryBarrier2KHR imgBarrier = {
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR,  //VkStructureType             sType;
+                nullptr,                                       //const void*                 pNext;
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,             //VkPipelineStageFlags2KHR    srcStageMask;
+                0,                                             //VkAccessFlags2KHR           srcAccessMask;
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,  //VkPipelineStageFlags2KHR    dstStageMask;
+                0,                                             //VkAccessFlags2KHR           dstAccessMask;
+                VK_IMAGE_LAYOUT_UNDEFINED,                     //VkImageLayout               oldLayout;
+                VK_IMAGE_LAYOUT_GENERAL,                       //VkImageLayout               newLayout;
+                VK_QUEUE_FAMILY_IGNORED,                       //uint32_t                    srcQueueFamilyIndex;
+                VK_QUEUE_FAMILY_IGNORED,                       //uint32_t                    dstQueueFamilyIndex;
+                outputImage,                                   //VkImage                     image;
+                {
+                    //VkImageSubresourceRange     subresourceRange;
+                    VK_IMAGE_ASPECT_COLOR_BIT,  //VkImageAspectFlags    aspectMask;
+                    0,                          //uint32_t              baseMipLevel;
+                    1,                          //uint32_t              levelCount;
+                    0,                          //uint32_t              baseArrayLayer;
+                    1,                          //uint32_t              layerCount;
+                },
+            };
+            VkDependencyInfoKHR dependency =
+                {
+                    VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,  //sType;
+                    nullptr,                                //pNext;
+                    0,                                      //dependencyFlags;
+                    0,                                      //memoryBarrierCount;
+                    nullptr,                                //pMemoryBarriers;
+                    0,                                      //bufferMemoryBarrierCount;
+                    nullptr,                                //pBufferMemoryBarriers;
+                    1,                                      //imageMemoryBarrierCount;
+                    &imgBarrier                             //pImageMemoryBarriers;
+                };
+            vkCmdPipelineBarrier2KHR(m_cmdBuf, &dependency);
+        };
+
+        SCOPED_MARKER(m_cmdBuf, "Trace Ray");
+        vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
+        vkCmdBindDescriptorSets(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, 1, &rtDescSets, 0, nullptr);
+
+        uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
+        uint32_t nAlignment = m_rtProperties.shaderGroupBaseAlignment;  // Using BASE alignment
+        uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
+        uint32_t nGroupHandleStride = nGroupHandleSizeAligned;
+        VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());
+        std::array<VkStridedDeviceAddressRegionKHR, 4> stridedAddrs = {
+            VkStridedDeviceAddressRegionKHR{SBTAddress + 0u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+            VkStridedDeviceAddressRegionKHR{SBTAddress + 1u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+            VkStridedDeviceAddressRegionKHR{SBTAddress + 2u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+            VkStridedDeviceAddressRegionKHR{0u, 0u, 0u},
+        };
+        vkCmdTraceRaysKHR(
+            m_cmdBuf,
+            &stridedAddrs[0],
+            &stridedAddrs[1],
+            &stridedAddrs[2],
+            &stridedAddrs[3],
+            imgSize.width, imgSize.height, 1);
+
+        vkEndCommandBuffer(m_cmdBuf);
+    }
 }

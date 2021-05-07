@@ -2,9 +2,6 @@
 #pragma once
 #include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
-#ifdef _MSC_VER
-static constexpr float M_PI = 3.141592653f;
-#endif
 
 struct UIPushConstBlock
 {
@@ -18,7 +15,7 @@ struct PrefilteredPushConstantBlock
 };
 
 template <class T>
-VkPushConstantRange getPushConstantRange(
+VkPushConstantRange GetPushConstantRange(
     VkShaderStageFlagBits stageFlags = VK_SHADER_STAGE_ALL)
 {
     VkPushConstantRange pushConstantRange;
@@ -27,4 +24,3 @@ VkPushConstantRange getPushConstantRange(
     pushConstantRange.offset = 0;
     return pushConstantRange;
 }
-

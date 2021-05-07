@@ -1,6 +1,7 @@
 #include "DescriptorManager.h"
 
 #include <cassert>
+#include <vulkan/vulkan_core.h>
 
 #include "Debug.h"
 #include "SamplerManager.h"
@@ -78,6 +79,31 @@ void DescriptorManager::createDescriptorSetLayouts()
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SINGLE_SAMPLER] = layout;
     }
 
+    {
+        // Single storage image
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
+            GetBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT)};
+
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "Single storage image");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE] = layout;
+   
+    }
+
     // Per view layout
     {
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
@@ -85,7 +111,7 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            GetUniformBufferBinding(0)};
+            GetUniformBufferBinding(0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)};
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -99,6 +125,31 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
                                 "PerViewData");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA] = layout;
+    }
+
+    // Per view ray tracing layout
+    // This layout is exactly the same layout of PER_VIEW_DATA, but used for ray tracing pipeline
+    // This is because ray tracing pipeline descriptor set layout can not be used with non ray tracing one in the same pipeline layout.
+    {
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
+            GetUniformBufferBinding(0,  VK_SHADER_STAGE_RAYGEN_BIT_KHR)};
+
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "PerViewDataRt");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA_RT] = layout;
     }
 
     // Per obj layout
@@ -198,6 +249,26 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
                                 "IBL");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IBL] = layout;
+    }
+
+    // Ray tracing
+    {
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
+            GetBinding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR),
+            GetBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR)};
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_RAY_TRACING] = layout;
     }
 }
 
@@ -455,10 +526,50 @@ VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
     return descriptorSet;
 }
 
-VkDescriptorSet DescriptorManager::AllocatePerviewDataDescriptorSet(
-    const UniformBuffer<PerViewData>& perViewData)
+VkDescriptorSet DescriptorManager::AllocateSingleStorageImageDescriptorSet(VkImageView imageView)
 {
-    return AllocateUniformBufferDescriptorSet(perViewData, 0);
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE];
+
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) == VK_SUCCESS);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
+                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single storage image");
+
+    // Prepare buffer descriptor
+    {
+        // prepare image descriptor
+        VkDescriptorImageInfo imageInfo = {};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imageInfo.imageView = imageView;
+
+        VkWriteDescriptorSet descriptorWrite = {};
+
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSet;
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1,
+                               &descriptorWrite, 0, nullptr);
+    }
+    return descriptorSet;
+}
+
+VkDescriptorSet DescriptorManager::AllocatePerviewDataDescriptorSet(
+    const UniformBuffer<PerViewData>& perViewData, bool bIsRT)
+{
+    return AllocateUniformBufferDescriptorSet(perViewData, 0,
+                                              m_aDescriptorSetLayouts[bIsRT ? DESCRIPTOR_LAYOUT_PER_VIEW_DATA_RT : DESCRIPTOR_LAYOUT_PER_VIEW_DATA]);
 }
 
 VkDescriptorSet DescriptorManager::AllocateIBLDescriptorSet()
@@ -516,6 +627,57 @@ void DescriptorManager::UpdateIBLDescriptorSet(
         writeDescriptorSet.pImageInfo = &imageInfo;
     }
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+}
+
+VkDescriptorSet DescriptorManager::AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage)
+{
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_RAY_TRACING];
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) == VK_SUCCESS);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
+                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "Ray Tracing input output");
+    UpdateRayTracingDescriptorSet(descriptorSet, acc, outputImage);
+    return descriptorSet;
+}
+
+void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage)
+{
+    // Two descriptor writes
+    VkWriteDescriptorSetAccelerationStructureKHR accDesc = {};
+    accDesc.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    accDesc.accelerationStructureCount = 1;
+    accDesc.pAccelerationStructures = &acc;
+
+    VkDescriptorImageInfo imageInfo = {VK_NULL_HANDLE, outputImage, VK_IMAGE_LAYOUT_GENERAL};
+
+    std::array<VkWriteDescriptorSet, 2> writes;
+    writes[0] = {};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = descriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    writes[0].pNext = &accDesc;
+
+
+    writes[1] = {};
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].pNext = nullptr;
+    writes[1].dstSet = descriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[1].pImageInfo = &imageInfo;
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 DescriptorManager* GetDescriptorManager() { return &descriptorManager; }

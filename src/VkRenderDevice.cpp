@@ -587,6 +587,6 @@ void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensio
     std::vector<const char*> vDebugLayerNames = vLayerNames;
     vDebugLayerNames.push_back(GetValidationLayerName());
     VkRenderDevice::CreateDevice(
-        vExtensionNames, vLayerNames, surface, vpFeatures);
+        vExtensionNames, vDebugLayerNames, surface, vpFeatures);
 }
 

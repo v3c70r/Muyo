@@ -11,15 +11,16 @@
 
 enum DescriptorLayoutType
 {
-    DESCRIPTOR_LAYOUT_LIGHTING,       // TODO: Remove this
-    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER, // A single sampler descriptor set layout
-                                      // at binding 0
-    DESCRIPTOR_LAYOUT_PER_VIEW_DATA,  // A layout contains mvp matrices at
-                                      // binding 0
-    DESCRIPTOR_LAYOUT_PER_OBJ_DATA,   // Per object data layout
-    DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
-    DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
-    DESCRIPTOR_LAYOUT_IBL,        // Layouts contains output of GBuffer
+    DESCRIPTOR_LAYOUT_LIGHTING,          // TODO: Remove this
+    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,    // A single sampler descriptor set layout at binding 0
+    DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
+    DESCRIPTOR_LAYOUT_PER_VIEW_DATA,     // A layout contains mvp matrices at binding 0
+    DESCRIPTOR_LAYOUT_PER_VIEW_DATA_RT,  // A layout contains mvp matrices at binding 0, for ray tracing
+    DESCRIPTOR_LAYOUT_PER_OBJ_DATA,      // Per object data layout
+    DESCRIPTOR_LAYOUT_MATERIALS,         // A sampler array contains material textures
+    DESCRIPTOR_LAYOUT_GBUFFER,           // Layouts contains output of GBuffer
+    DESCRIPTOR_LAYOUT_IBL,               // IBL descriptor sets
+    DESCRIPTOR_LAYOUT_RAY_TRACING,       // Raytracing Descriptor sets
     DESCRIPTOR_LAYOUT_COUNT,
 };
 
@@ -43,9 +44,10 @@ public:
         const RenderPassGBuffer::GBufferViews &gbufferViews);
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
+    VkDescriptorSet AllocateSingleStorageImageDescriptorSet(VkImageView imageView);
 
     VkDescriptorSet AllocatePerviewDataDescriptorSet(
-        const UniformBuffer<PerViewData> &perViewData);
+        const UniformBuffer<PerViewData> &perViewData, bool bIsRT = false);
 
     // Material Descriptor Set
     VkDescriptorSet AllocateMaterialDescriptorSet();
@@ -67,6 +69,10 @@ public:
             VkImageView specularBrdfLutMap
             );
 
+    // Ray Tracing descriptor set
+    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage);
+    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage);
+
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {
@@ -75,7 +81,7 @@ public:
 
     // Function template to allocate single type uniform buffer descriptor set
     template <class T>
-    VkDescriptorSet AllocateUniformBufferDescriptorSet(const UniformBuffer<T> &uniformBuffer, uint32_t nBinding)
+    VkDescriptorSet AllocateUniformBufferDescriptorSet(const UniformBuffer<T> &uniformBuffer, uint32_t nBinding, const VkDescriptorSetLayout &descLayout)
     {
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
         // Create descriptor sets
@@ -83,8 +89,7 @@ public:
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = m_descriptorPool;
         allocInfo.descriptorSetCount = 1;
-        allocInfo.pSetLayouts =
-            &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA];
+        allocInfo.pSetLayouts = &descLayout;
 
         assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
                                         &descriptorSet) == VK_SUCCESS);
@@ -123,6 +128,15 @@ private:
         uboLayoutBinding.pImmutableSamplers = nullptr;
         uboLayoutBinding.stageFlags = stages;
         return uboLayoutBinding;
+    }
+    static VkDescriptorSetLayoutBinding GetBinding(uint32_t nBinding, VkDescriptorType descType, uint32_t nDescCount = 1, VkShaderStageFlags shaderStageFlags = VK_SHADER_STAGE_ALL)
+    {
+        VkDescriptorSetLayoutBinding binding = {};
+        binding.binding = nBinding;
+        binding.descriptorCount = nDescCount;
+        binding.descriptorType = descType;
+        binding.stageFlags = shaderStageFlags;
+        return binding;
     }
 
     static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(

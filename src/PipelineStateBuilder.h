@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
 #include "VkRenderDevice.h"
 
@@ -23,7 +24,7 @@ public:
     PipelineStateBuilder& setAssembly(
         const VkPipelineInputAssemblyStateCreateInfo& assemblyInfo)
     {
-        mInputAssemblyInfo = assemblyInfo;
+        m_inputAssemblyInfo = assemblyInfo;
         return *this;
     }
     PipelineStateBuilder& setViewport(const VkViewport& viewport,
@@ -31,42 +32,42 @@ public:
     PipelineStateBuilder& setRasterizer(
         const VkPipelineRasterizationStateCreateInfo& rasterizerInfo)
     {
-        mRasterizerInfo = rasterizerInfo;
+        m_rasterizerInfo = rasterizerInfo;
         return *this;
     }
     PipelineStateBuilder& setMSAA(
         const VkPipelineMultisampleStateCreateInfo& multisamplingInfo)
     {
-        mMultisamplingInfo = multisamplingInfo;
+        m_multisamplingInfo = multisamplingInfo;
         return *this;
     }
     PipelineStateBuilder& setColorBlending(
         const VkPipelineColorBlendStateCreateInfo& colorBlendState)
     {
-        mColorBlendStateInfo = colorBlendState;
+        m_colorBlendStateInfo = colorBlendState;
         return *this;
     }
     PipelineStateBuilder& setDynamicStates(
         const std::vector<VkDynamicState>& dynamicStates)
     {
-        mDynamicStatesInfo.sType =
+        m_dynamicStatesInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        mDynamicStatesInfo.dynamicStateCount =
+        m_dynamicStatesInfo.dynamicStateCount =
             static_cast<uint32_t>(dynamicStates.size());
-        mDynamicStatesInfo.pDynamicStates = dynamicStates.data();
+        m_dynamicStatesInfo.pDynamicStates = dynamicStates.data();
         return *this;
     }
 
     PipelineStateBuilder& setPipelineLayout(VkPipelineLayout& pipelineLayout)
     {
-        mPipelineLayout = pipelineLayout;
+        m_pipelineLayout = pipelineLayout;
         return *this;
     }
 
     PipelineStateBuilder& setDepthStencil(
         const VkPipelineDepthStencilStateCreateInfo& depthStencil)
     {
-        mDepthStencilInfo = depthStencil;
+        m_depthStencilInfo = depthStencil;
         return *this;
     }
     PipelineStateBuilder& setRenderPass(VkRenderPass renderPass)
@@ -80,22 +81,21 @@ public:
         return *this;
     }
 
-    VkPipeline build(VkDevice device);
+    VkPipeline Build(VkDevice device);
 
 private:
-    std::vector<VkPipelineShaderStageCreateInfo> mShaderStagesInfo;
-    VkPipelineVertexInputStateCreateInfo mVertexInputInfo = {};
-    VkPipelineInputAssemblyStateCreateInfo mInputAssemblyInfo = {};
+    std::vector<VkPipelineShaderStageCreateInfo> m_vShaderStageInfos;
+    VkPipelineVertexInputStateCreateInfo m_vertexInputInfo = {};
+    VkPipelineInputAssemblyStateCreateInfo m_inputAssemblyInfo = {};
 
-    VkPipelineViewportStateCreateInfo mViewportState = {};
-    VkPipelineRasterizationStateCreateInfo mRasterizerInfo = {};
+    VkPipelineViewportStateCreateInfo m_viewPortState = {};
+    VkPipelineRasterizationStateCreateInfo m_rasterizerInfo = {};
 
-    VkPipelineMultisampleStateCreateInfo mMultisamplingInfo = {};
-    VkPipelineColorBlendStateCreateInfo mColorBlendStateInfo = {};
-    VkPipelineLayout mPipelineLayout;
-    VkPipelineDepthStencilStateCreateInfo mDepthStencilInfo = {};
-    VkPipelineDynamicStateCreateInfo mDynamicStatesInfo = {
-        VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, nullptr, 0};
+    VkPipelineMultisampleStateCreateInfo m_multisamplingInfo = {};
+    VkPipelineColorBlendStateCreateInfo m_colorBlendStateInfo = {};
+    VkPipelineLayout m_pipelineLayout;
+    VkPipelineDepthStencilStateCreateInfo m_depthStencilInfo = {};
+    VkPipelineDynamicStateCreateInfo m_dynamicStatesInfo = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, nullptr, 0, 0, nullptr};
     VkRenderPass mRenderPass = {};
     uint32_t mSubpassIndex = 0;
 };
@@ -110,61 +110,93 @@ template <class T>
 class IBuilder
 {
 public:
-    virtual T build() const = 0;
+    virtual T Build() const = 0;
 };
 
 template <class T>
 class InfoBuilder : public IBuilder<T>
 {
 public:
-    T build() const override { return m_info; }
+    T Build() const override { return m_info; }
 
 protected:
     T m_info = {};
 };
 
-class ViewportBuilder : public IBuilder<VkViewport>
+class RayTracingPipelineBuilder : public InfoBuilder<VkRayTracingPipelineCreateInfoKHR>
+{
+public:
+    RayTracingPipelineBuilder()
+    {
+        m_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+        m_info.pNext = nullptr;
+        m_info.basePipelineHandle = nullptr;
+        m_info.basePipelineIndex = 0;
+    }
+    RayTracingPipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage);
+    RayTracingPipelineBuilder& SetMaxRecursionDepth(uint32_t nDepth)
+    {
+        m_info.maxPipelineRayRecursionDepth = nDepth;
+        return *this;
+    }
+    RayTracingPipelineBuilder& SetPipelineLayout(VkPipelineLayout layout)
+    {
+        m_info.layout = layout;
+        return *this;
+    }
+
+    std::vector<VkPipelineShaderStageCreateInfo> GetShaderStageInfos() const
+    {
+        return m_vShaderStageInfos;
+    }
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> GetShaderGroupInfos() const
+    {
+        return m_vRTShaderGroupInfos;
+    }
+
+private:
+    std::vector<VkPipelineShaderStageCreateInfo> m_vShaderStageInfos;
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> m_vRTShaderGroupInfos;
+};
+
+class ViewportBuilder : public InfoBuilder<VkViewport>
 {
 public:
     ViewportBuilder()
     {
-        m_viewport.x = 0.0;
-        m_viewport.y = 0.0;
-        m_viewport.width = 0.0;
-        m_viewport.height = 0.0;
-        m_viewport.minDepth = 0.0;
-        m_viewport.maxDepth = 1.0;
+        m_info.x = 0.0;
+        m_info.y = 0.0;
+        m_info.width = 0.0;
+        m_info.height = 0.0;
+        m_info.minDepth = 0.0;
+        m_info.maxDepth = 1.0;
     }
     ViewportBuilder& setXY(float x, float y)
     {
-        m_viewport.x = x;
-        m_viewport.y = y;
+        m_info.x = x;
+        m_info.y = y;
         return *this;
     }
     ViewportBuilder& setWH(float w, float h)
     {
-        m_viewport.width = w;
-        m_viewport.height = h;
+        m_info.width = w;
+        m_info.height = h;
         return *this;
     }
 
     ViewportBuilder& setWH(VkExtent2D wh)
     {
-        m_viewport.width = (float)wh.width;
-        m_viewport.height = (float)wh.height;
+        m_info.width = (float)wh.width;
+        m_info.height = (float)wh.height;
         return *this;
     }
 
     ViewportBuilder& setMinMaxDepth(float minDepth, float maxDepth)
     {
-        m_viewport.minDepth = minDepth;
-        m_viewport.maxDepth = maxDepth;
+        m_info.minDepth = minDepth;
+        m_info.maxDepth = maxDepth;
         return *this;
     }
-    VkViewport build() const override { return m_viewport; }
-
-private:
-    VkViewport m_viewport = {};
 };
 
 class RasterizationStateCIBuilder
@@ -378,7 +410,7 @@ public:
 VkShaderModule CreateShaderModule(const std::vector<char>& code);
 std::vector<char> ReadSpv(const std::string& fileName);
 
-// TODO: Move this to proper place
+// TODO: Move these to render device
 namespace PipelineManager
 {
 static VkPipelineLayout CreatePipelineLayout(

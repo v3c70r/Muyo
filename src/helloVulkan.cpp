@@ -6,8 +6,8 @@
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-#define ENABLE_RAY_TRACING
 
+#include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
 #include <array>
@@ -56,7 +56,7 @@
 #endif
 
 
-#ifdef ENABLE_RAY_TRACING
+#ifdef FEATURE_RAY_TRACING
 #include "RayTracingUtils.h"
 #endif
 
@@ -168,12 +168,15 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 
         // Ray tracing extensions
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        // VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
         // VK_KHR_SPIRV_1_4_EXTENSION_NAME,
         // VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
+
+        // Synchronization 2 extension
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
     };
     return vDeviceExtensions;
 }
@@ -283,15 +286,13 @@ int main()
 
     {
         // Load scene
-        //GLTFImporter importer;
-        //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
+#ifdef FEATURE_RAY_TRACING
+        RTBuilder rayTracingBuilder;
         if (GetRenderDevice()->IsRayTracingSupported())
         {
-            RTBuilder rayTracingBuilder;
             // Test ray tracing
-
             RTInputs rtInputs;
             DrawLists dl = GetSceneManager()->GatherDrawLists();
             rtInputs = ConstructRTInputsFromDrawLists(dl);
@@ -302,8 +303,14 @@ int main()
                 rtInputs.TLASs,
                 VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
-            rayTracingBuilder.Cleanup();
+            ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+
+            GetDescriptorManager()->AllocateRayTracingDescriptorSet(rayTracingBuilder.GetTLAS(), rtOutputImage->getView());
+            rayTracingBuilder.BuildRTPipeline();
+            rayTracingBuilder.BuildShaderBindingTable();
+            rayTracingBuilder.RayTrace(vpExtent);
         }
+#endif
         // Create perview constant buffer
         //
 
@@ -344,6 +351,12 @@ int main()
             GetRenderPassManager()->RecordDynamicCmdBuffers(uFrameIdx, vpExt);
 
             std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
+#ifdef FEATURE_RAY_TRACING
+            if (GetRenderDevice()->IsRayTracingSupported())
+            {
+                vCmdBufs.insert(vCmdBufs.begin(), rayTracingBuilder.GetCommandBuffer());
+            }
+#endif
             GetRenderDevice()->SubmitCommandBuffers(vCmdBufs);
 
             GetRenderDevice()->Present();
@@ -359,6 +372,9 @@ int main()
         GetGeometryManager()->Destroy();
         GetSamplerManager()->destroySamplers();
         GetTextureManager()->Destroy();
+#ifdef FEATURE_RAY_TRACING
+        rayTracingBuilder.Cleanup();
+#endif
     }
     ImGui::Shutdown();
     GetRenderPassManager()->Unintialize();
