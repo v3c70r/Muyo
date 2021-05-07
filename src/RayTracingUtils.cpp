@@ -526,7 +526,15 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
     VkExtent2D ext {0, 0};
     const auto* pStorageImageRes = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", ext, VK_FORMAT_R16G16B16A16_SFLOAT);
     VkDescriptorSet rtDescSets = GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView());
-    GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf) {
+    m_cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
+
+
+    {
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        beginInfo.pInheritanceInfo = nullptr;
+        vkBeginCommandBuffer(m_cmdBuf, &beginInfo);
         {
             // Transit output image to general layout using Image memory barrier 2
 
@@ -564,12 +572,12 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
                     1,                                      //imageMemoryBarrierCount;
                     &imgBarrier                             //pImageMemoryBarriers;
                 };
-            vkCmdPipelineBarrier2KHR(cmdBuf, &dependency);
+            vkCmdPipelineBarrier2KHR(m_cmdBuf, &dependency);
         };
 
-        SCOPED_MARKER(cmdBuf, "Trace Ray");
-        vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
-        vkCmdBindDescriptorSets(cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, 1, &rtDescSets, 0, nullptr);
+        SCOPED_MARKER(m_cmdBuf, "Trace Ray");
+        vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
+        vkCmdBindDescriptorSets(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, 1, &rtDescSets, 0, nullptr);
 
         uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
         uint32_t nAlignment = m_rtProperties.shaderGroupBaseAlignment;  // Using BASE alignment
@@ -583,11 +591,13 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
             VkStridedDeviceAddressRegionKHR{0u, 0u, 0u},
         };
         vkCmdTraceRaysKHR(
-            cmdBuf,
+            m_cmdBuf,
             &stridedAddrs[0],
             &stridedAddrs[1],
             &stridedAddrs[2],
             &stridedAddrs[3],
             imgSize.width, imgSize.height, 1);
-    });
+
+        vkEndCommandBuffer(m_cmdBuf);
+    }
 }

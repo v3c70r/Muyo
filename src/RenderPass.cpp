@@ -146,7 +146,12 @@ void RenderPassFinal::setupPipeline()
     // Allocate pipeline layout
     std::vector<VkDescriptorSetLayout> descLayouts = {
         GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
+#ifdef FEATURE_RAY_TRACING
+        GetDescriptorManager()->getDescriptorLayout(
+            DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE)
+#endif
+    };
 
     std::vector<VkPushConstantRange> pushConstants;
     m_pipelineLayout =
@@ -158,9 +163,14 @@ void RenderPassFinal::setupPipeline()
     // Allocate pipeline
     VkShaderModule vertShdr =
         CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
+#ifdef FEATURE_RAY_TRACING
+    VkShaderModule fragShdr =
+        CreateShaderModule(ReadSpv("shaders/triangle_rt.frag.spv"));
+#else
 
     VkShaderModule fragShdr =
         CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
+#endif
 
     ViewportBuilder vpBuilder;
     VkViewport viewport = vpBuilder.setWH(mRenderArea).Build();
@@ -209,9 +219,19 @@ void RenderPassFinal::RecordCommandBuffers()
     VkImageView imgView = GetRenderResourceManager()
                               ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
                               ->getView();
+
+#ifdef FEATURE_RAY_TRACING
+    VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({0, 0}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
+    std::vector<VkDescriptorSet> descSets = {
+        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView),
+        GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(rtOutputView)};
+#else
+    std::vector<VkDescriptorSet> descSets = {
+        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView)};
+#endif
+
     Geometry* pQuad = GetGeometryManager()->GetQuad();
 
-    VkDescriptorSet descSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView);
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -253,7 +273,7 @@ void RenderPassFinal::RecordCommandBuffers()
             vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               m_pipeline);
             vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout, 0, 1, &descSet, 0,
+                                    m_pipelineLayout, 0, descSets.size(), descSets.data(), 0,
                                     nullptr);
             vkCmdDrawIndexed(curCmdBuf, nIndexCount, 1, 0, 0, 0);
         }

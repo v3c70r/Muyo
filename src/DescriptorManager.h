@@ -12,8 +12,8 @@
 enum DescriptorLayoutType
 {
     DESCRIPTOR_LAYOUT_LIGHTING,          // TODO: Remove this
-    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,    // A single sampler descriptor set layout
-                                         // at binding 0
+    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,    // A single sampler descriptor set layout at binding 0
+    DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
     DESCRIPTOR_LAYOUT_PER_VIEW_DATA,     // A layout contains mvp matrices at binding 0
     DESCRIPTOR_LAYOUT_PER_VIEW_DATA_RT,  // A layout contains mvp matrices at binding 0, for ray tracing
     DESCRIPTOR_LAYOUT_PER_OBJ_DATA,      // Per object data layout
@@ -44,6 +44,7 @@ public:
         const RenderPassGBuffer::GBufferViews &gbufferViews);
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
+    VkDescriptorSet AllocateSingleStorageImageDescriptorSet(VkImageView imageView);
 
     VkDescriptorSet AllocatePerviewDataDescriptorSet(
         const UniformBuffer<PerViewData> &perViewData, bool bIsRT = false);

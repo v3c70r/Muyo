@@ -1,8 +1,6 @@
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-#define ENABLE_RAY_TRACING
-
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
@@ -44,7 +42,7 @@
 #include "SceneManager.h"
 #include "Swapchain.h"
 
-#ifdef ENABLE_RAY_TRACING
+#ifdef FEATURE_RAY_TRACING
 #include "RayTracingUtils.h"
 #endif
 
@@ -305,15 +303,13 @@ int main()
 
     {
         // Load scene
-        //GLTFImporter importer;
-        //g_vScenes = importer.ImportScene("assets/mazda_mx-5/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
+#ifdef FEATURE_RAY_TRACING
+        RTBuilder rayTracingBuilder;
         if (GetRenderDevice()->IsRayTracingSupported())
         {
-            RTBuilder rayTracingBuilder;
             // Test ray tracing
-
             RTInputs rtInputs;
             DrawLists dl = GetSceneManager()->GatherDrawLists();
             rtInputs = ConstructRTInputsFromDrawLists(dl);
@@ -330,10 +326,8 @@ int main()
             rayTracingBuilder.BuildRTPipeline();
             rayTracingBuilder.BuildShaderBindingTable();
             rayTracingBuilder.RayTrace(vpExtent);
-
-            rayTracingBuilder.Cleanup();
-
         }
+#endif
         // Create perview constant buffer
         //
 
@@ -377,6 +371,12 @@ int main()
             GetRenderPassManager()->RecordDynamicCmdBuffers(uFrameIdx, vpExt);
 
             std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
+#ifdef FEATURE_RAY_TRACING
+            if (GetRenderDevice()->IsRayTracingSupported())
+            {
+                vCmdBufs.insert(vCmdBufs.begin(), rayTracingBuilder.GetCommandBuffer());
+            }
+#endif
             GetRenderDevice()->SubmitCommandBuffers(vCmdBufs);
 
             GetRenderDevice()->Present();
@@ -394,6 +394,9 @@ int main()
         GetGeometryManager()->Destroy();
         GetSamplerManager()->destroySamplers();
         GetTextureManager()->Destroy();
+#ifdef FEATURE_RAY_TRACING
+        rayTracingBuilder.Cleanup();
+#endif
     }
     ImGui::Shutdown();
     GetRenderPassManager()->Unintialize();

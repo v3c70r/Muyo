@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(Muyo)
-# Set system env
-#if (NOT DEFINED VK_SDK_PATH)
-#    message(FATAL_ERROR "VK_SDK_PATH is not defined")
-#endif()
+
+# Compile time features
+option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
+if (${FEATURE_RAY_TRACING})
+    add_compile_definitions(FEATURE_RAY_TRACING)
+endif()
 
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set ( CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")

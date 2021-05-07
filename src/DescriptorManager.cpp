@@ -1,6 +1,7 @@
 #include "DescriptorManager.h"
 
 #include <cassert>
+#include <vulkan/vulkan_core.h>
 
 #include "Debug.h"
 #include "SamplerManager.h"
@@ -76,6 +77,31 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
                                 "Single sampler");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SINGLE_SAMPLER] = layout;
+    }
+
+    {
+        // Single storage image
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
+            GetBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_FRAGMENT_BIT)};
+
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "Single storage image");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE] = layout;
+   
     }
 
     // Per view layout
@@ -491,6 +517,45 @@ VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
         descriptorWrite.dstBinding = 0;
         descriptorWrite.dstArrayElement = 0;
         descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pImageInfo = &imageInfo;
+
+        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1,
+                               &descriptorWrite, 0, nullptr);
+    }
+    return descriptorSet;
+}
+
+VkDescriptorSet DescriptorManager::AllocateSingleStorageImageDescriptorSet(VkImageView imageView)
+{
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE];
+
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) == VK_SUCCESS);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
+                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single storage image");
+
+    // Prepare buffer descriptor
+    {
+        // prepare image descriptor
+        VkDescriptorImageInfo imageInfo = {};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        imageInfo.imageView = imageView;
+
+        VkWriteDescriptorSet descriptorWrite = {};
+
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSet;
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         descriptorWrite.descriptorCount = 1;
         descriptorWrite.pImageInfo = &imageInfo;
 

@@ -54,7 +54,7 @@ public:
     void BuildShaderBindingTable();
     VkAccelerationStructureKHR GetTLAS() const { return m_tlas.m_ac; }
     void RayTrace(VkExtent2D imgSize);
-
+    VkCommandBuffer GetCommandBuffer() const { return m_cmdBuf; }
 
     void Cleanup();
 
@@ -86,6 +86,8 @@ private:
         float fLightIntensity = 0.0f;
         int nLightType = 0;
     };
+
+    VkCommandBuffer m_cmdBuf = VK_NULL_HANDLE;
 
     // Raytracing functions
     PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
