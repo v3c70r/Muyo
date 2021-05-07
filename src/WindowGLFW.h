@@ -1,6 +1,5 @@
 #pragma once
 
-#include <bits/stdint-uintn.h>
 #include <stdint.h>
 #include <utility>
 #include <vulkan/vulkan.h>

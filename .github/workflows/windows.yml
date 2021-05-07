@@ -1,0 +1,26 @@
+name: Windows
+
+on: [push]
+
+jobs:
+  build_windows_2016:
+
+    runs-on: windows-2016
+    
+    steps:
+    - uses: actions/checkout@v2
+    - name: Submodule Checkout
+      run: git submodule update --init
+    - name: Install Vulkan
+      run: |
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.1.170.0/windows/VulkanSDK-1.1.170.0-Installer.exe" -OutFile VulkanSDK.exe
+          $installer = Start-Process -FilePath VulkanSDK.exe -Wait -PassThru -ArgumentList @("/S");
+          $installer.WaitForExit();
+    - name: configure default
+      run: cmake .
+    - name: build
+      run: cmake --build .
+    - name: configure Ray Tracing
+      run: cmake . -DFEATURE_RAY_TRACING=on
+    - name: build Ray Tracing
+      run: cmake --build .

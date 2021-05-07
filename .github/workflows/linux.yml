@@ -1,4 +1,4 @@
-name: C/C++ CI
+name: Linux
 
 on:
   push:
@@ -13,15 +13,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-      
     - name: Submodule Checkout
       run: git submodule update --init --recursive
-
     - name: Install Vulkan
       run: wget -qO - http://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add - && sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.2.170-bionic.list https://packages.lunarg.com/vulkan/1.2.170/lunarg-vulkan-1.2.170-bionic.list && sudo apt update && sudo apt install vulkan-sdk
     - name: Install Dependencies
       run: sudo apt-get install libgl1-mesa-dev libx11-dev libxi-dev libx11-dev libxcursor-dev libxinerama-dev libxrandr-dev
-    - name: configure
+    - name: configure default
       run: cmake .
     - name: make
       run: make

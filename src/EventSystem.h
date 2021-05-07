@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bits/stdint-uintn.h>
+#include <stdint.h>
 #include <cstddef>
 #include <memory>
 #include <map>
