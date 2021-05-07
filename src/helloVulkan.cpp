@@ -1,5 +1,11 @@
+#include <algorithm>
+#include <iterator>
+#include <ostream>
+#include <stdexcept>
+#include <tuple>
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
 
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -22,7 +28,7 @@
 #include "Debug.h"
 #include "DescriptorManager.h"
 #include "Geometry.h"
-#include "ImGuiGlfwControl.h"
+#include "ImGuiControl.h"
 #include "Material.h"
 #include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
@@ -41,16 +47,24 @@
 #include "RenderPassManager.h"
 #include "SceneManager.h"
 #include "Swapchain.h"
+#include "EventSystem.h"
+
+#if defined (USE_SDL)
+#include "WindowSDL.h"
+#else
+#include "WindowGLFW.h"
+#endif
+
 
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingUtils.h"
 #endif
 
+bool g_bWaylandExt = false;
 const int WIDTH = 1024;
 const int HEIGHT = 768;
 
 static bool s_bResizeWanted = false;
-static GLFWwindow *s_pWindow = nullptr;
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                           (float)WIDTH / (float)HEIGHT, 0.1f,
                                           10.0f),
@@ -58,72 +72,58 @@ static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                      glm::vec3(0.0f, 0.0f, 0.0f),   // Center
                                      glm::vec3(0.0f, 1.0f, 0.0f))); // Up
 
+/// 
 // Arcball callbacks
-static void clickArcballCallback(GLFWwindow *window, int button, int action, int mods)
+static void clickArcballCallback(int button, int action)
 {
-    if (button == GLFW_MOUSE_BUTTON_LEFT)
+    if (button == Input::Button::BUTTON_LEFT)
     {
-        if (GLFW_PRESS == action)
+        if (EventState::PRESSED == action)
         {
             s_arcball.startDragging();
         }
-        else if (GLFW_RELEASE == action)
+        else if (EventState::RELEASED == action)
         {
             s_arcball.stopDragging();
         }
     }
 }
 
-static void rotateArcballCallback(GLFWwindow *window, double xpos, double ypos)
+static void rotateArcballCallback(double xpos, double ypos)
 {
     s_arcball.updateDrag(glm::vec2(xpos, ypos));
 }
 
-// GLFW mouse callback
-static void mouseCallback(GLFWwindow *window, int button, int action, int mods)
-{
-    if (ImGui::GetIO().WantCaptureMouse)
-    {
-        ImGui::MouseButtonCallback(window, button, action, mods);
-    }
-    else
-    {
-        clickArcballCallback(window, button, action, mods);
-    }
-}
-static void mouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
-{
-    rotateArcballCallback(window, xpos, ypos);
-}
+///////////////////////////////////////////////////////////////////////////////
+// event callbacks
+///////////////////////////////////////////////////////////////////////////////
 
-void scrollCallback(GLFWwindow* window, double xoffset,
-                                   double yoffset)
+static void InitEventHandlers()
 {
-    if (ImGui::GetIO().WantCaptureMouse)
-    {
-        ImGui::ScrollCallback(window, xoffset, yoffset);
-    }
-    else
-    {
+    auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION,
+                                                 GlobalMotionEvent>();
+    pMove->Watch([](uint32_t timestamp, float sx, float sy) {
+        rotateArcballCallback(sx, sy);
+    });
+
+    auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON,
+                                                GlobalButtonEvent>();
+    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state) {
+        clickArcballCallback(btn, state);
+    });
+
+    auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL,
+                                                  GlobalWheelEvent>();
+    pWheel->Watch([](uint32_t timestamp, double xoffset, double yoffset) {
         s_arcball.AddZoom(yoffset * -0.1f);
-    }
-}
-// GLFW key callbacks
-static void onKeyStroke(GLFWwindow *window, int key, int scancode, int action,
-                        int mods)
-{
-    if (ImGui::GetIO().WantCaptureKeyboard)
-    {
-        ImGui::KeyCallback(window, key, scancode, action, mods);
-    }
-    else
-    {
-        std::cout << "Key captured by engine\n";
-    }
-}
-void charCallback(GLFWwindow* window, unsigned int c)
-{
-    ImGui::CharCallback(window, c);
+    });
+
+    auto pResize = EventSystem::sys()->globalEvent<EventType::WINDOWRESIZE,
+                                                   GlobalResizeEvent>();
+    pResize->Watch([](uint32_t timestamp, size_t w, size_t h) {
+        s_arcball.resize(glm::vec2((float)w, (float)h));
+        s_bResizeWanted = true;        
+    });
 }
 
 #ifdef __APPLE__
@@ -138,40 +138,23 @@ static DebugUtilsMessenger s_debugMessenger;
 
 ///////////////////////////////////////////
 
-static void onWindowResize(GLFWwindow *pWindow, int width, int height)
-{
-    s_arcball.resize(glm::vec2((float)width, (float)height));
-    s_bResizeWanted = true;
-}
-
-
-void InitGLFW()
-{
-    glfwInit();
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    s_pWindow = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
-    //glfwSetWindowSizeCallback(s_pWindow, onWindowResize);
-    glfwSetKeyCallback(s_pWindow, onKeyStroke);
-    glfwSetMouseButtonCallback(s_pWindow, mouseCallback);
-    glfwSetCursorPosCallback(s_pWindow, mouseCursorCallback);
-    glfwSetScrollCallback(s_pWindow, scrollCallback);
-    glfwSetKeyCallback(s_pWindow, ImGui::KeyCallback);
-    glfwSetCharCallback(s_pWindow, ImGui::CharCallback);
-}
-
 std::vector<const char *> GetRequiredInstanceExtensions()
 {
     std::vector<const char *> vExtensions;
-    uint32_t glfwExtensionCount = 0;
-    const char **glfwExtensions;
+    uint32_t countExtensions = 0;
+    bool waylandSurface = false;
+    const char *waylandExt = "VK_KHR_wayland_surface";
 
-    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    countExtensions = Window::GetVulkanInstanceExtensions(vExtensions);
+    if (countExtensions == 0 || vExtensions.size() == 0) 
+        throw std::runtime_error("Failed to query instance extensions");    
+    //query if we have wayland surface, nvidia GPU will not work with it
+    waylandSurface = std::find_if(std::begin(vExtensions),
+                                  std::end(vExtensions),
+                                  [waylandExt](const char *ext) {
+                                      return std::strcmp(ext, waylandExt) == 0;
+                                  }) != std::end(vExtensions);
 
-    for (uint32_t i = 0; i < glfwExtensionCount; i++)
-    {
-        vExtensions.push_back(glfwExtensions[i]);
-    }
     // This exteinsion is required by logical device's multiview extension
     vExtensions.push_back("VK_KHR_get_physical_device_properties2");
     return vExtensions;
@@ -209,8 +192,7 @@ void cleanup()
     GetMemoryAllocator()->Unintialize();
     GetRenderDevice()->DestroyDevice();
     GetRenderDevice()->Unintialize();
-    glfwDestroyWindow(s_pWindow);
-    glfwTerminate();
+    Window::Uninitialize();
 }
 
 static bool bIrradianceMapGenerated = false;
@@ -245,15 +227,15 @@ void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 int main()
 {
     // Load mesh into memory
-    InitGLFW();
+    if (!Window::Initialize("hello Vulkan", WIDTH, HEIGHT))
+        return -1;
+    
     // Create Instace
     std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
     GetRenderDevice()->Initialize(vInstanceExtensions);
 
     // Create swapchain
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-
-    glfwCreateWindowSurface(GetRenderDevice()->GetInstance(), s_pWindow, NULL, &surface);
+    VkSurfaceKHR surface = Window::GetVulkanSurface(GetRenderDevice()->GetInstance());
 
     // Create device
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {};
@@ -299,7 +281,8 @@ int main()
     GetRenderPassManager()->Initialize(vpExtent.width, vpExtent.height, pSwapchian->GetImageFormat());
     GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
 
-    ImGui::Init(s_pWindow);
+    InitEventHandlers();
+    ImGui::Init();
 
     {
         // Load scene
@@ -341,21 +324,18 @@ int main()
         // Record static command buffer
         GetRenderPassManager()->RecordStaticCmdBuffers(GetSceneManager()->GatherDrawLists());
         // Mainloop
-        while (!glfwWindowShouldClose(s_pWindow))
+        while (!Window::ShouldQuit())
         {
-            glfwPollEvents();
-
+            Window::ProcessEvents();
             updateUniformBuffer(pUniformBuffer);
 
             GetRenderDevice()->BeginFrame();
-
-            
 
             // Handle resizing
             {
                 // TODO: Resizing doesn't work properly, need to investigate
                 int width, height;
-                glfwGetWindowSize(s_pWindow, &width, &height);
+                std::tie(width, height) = Window::GetWindowSize();
                 VkExtent2D currentVp = GetRenderDevice()->GetViewportSize();
                 if (width != (int)currentVp.width || height != (int)currentVp.height)
                 {
@@ -380,9 +360,7 @@ int main()
             GetRenderDevice()->SubmitCommandBuffers(vCmdBufs);
 
             GetRenderDevice()->Present();
-            ImGui::UpdateMousePosAndButtons();
-            ImGui::UpdateMouseCursor();
-            ImGui::UpdateGamepads();
+            ImGui::Update();
         }
         std::cout << "Closing window, wait for device to finish..."
                   << std::endl;

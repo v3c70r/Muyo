@@ -1,0 +1,29 @@
+#pragma once
+
+
+namespace Input
+{
+
+enum Button
+{
+    BUTTON_LEFT = 0,
+    BUTTON_RIGHT,
+    BUTTON_MIDDLE,
+    BUTTON_COUNT
+};
+
+enum Cursor
+{
+    CURSOR_NONE = -1,
+    CURSOR_ARROW = 0,
+    CURSOR_TEXT_INPUT,
+    CURSOR_RESIZE_HORIZENTAL,
+    CURSOR_RESIZE_VERTICAL,
+    CURSOR_RESIZE_BOTTOM_LEFT,
+    CURSOR_RESIZE_BOTTOM_RIGHT,
+    CURSOR_HAND,
+    CURSOR_COUNT,
+};
+
+
+}

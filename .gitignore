@@ -9,3 +9,5 @@ build
 .ycm_extra_conf.py
 *.DS_Store
 cscope.out
+compile_commands.json
+/.cache/
