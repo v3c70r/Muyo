@@ -21,7 +21,7 @@ set ( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
 #window lib
 if (${FEATURE_USE_SDL})
   find_package(SDL2 REQUIRED)
-  add_compile_definitions(-DUSE_SDL)
+  add_compile_definitions(USE_SDL)
   set(WINDOW_LIB SDL2::SDL2main SDL2::SDL2)
 else()
   ## GLFW
@@ -36,7 +36,7 @@ else()
     #set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
     add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
   endif()
-  add_compile_definitions(-DUSE_GLFW)
+  add_compile_definitions(USE_GLFW)
   set(WINDOW_LIB glfw)
 endif()
 
