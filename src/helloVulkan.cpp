@@ -165,7 +165,7 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
         // Synchronization 2 extension
-        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 
 #ifdef FEATURE_RAY_TRACING
