@@ -3,11 +3,14 @@ project(Muyo)
 
 # Compile time features
 option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
+option (FEATURE_SYNCHRONIZATION2 "Compile with ray tracing feature" off)
 option (FEATURE_USE_SDL "Use SDL as window system" off)
-
-
 if (${FEATURE_RAY_TRACING})
     add_compile_definitions(FEATURE_RAY_TRACING)
+endif()
+
+if (${FEATURE_SYNCHRONIZATION2})
+    add_compile_definitions(FEATURE_SYNCHRONIZATION2)
 endif()
 
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
@@ -142,6 +145,7 @@ add_executable( helloVulkan
     src/SceneManager.cpp
     src/RayTracingUtils.cpp
     src/ImageStorageResource.cpp
+    src/ResourceBarrier.cpp
     )
 
 target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)

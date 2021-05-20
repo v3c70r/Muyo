@@ -7,6 +7,7 @@
 #include "Swapchain.h"
 
 
+class IResourceBarrier;
 class RenderResourceManager;
 class Swapchain;
 class VkRenderDevice
@@ -117,6 +118,8 @@ public:
 
     // Helper functions
     VkSampler CreateSampler();
+
+    void AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& resourceBarrier);
 
     VkExtent2D GetViewportSize() const { return m_viewportSize; }
     void SetViewportSize(VkExtent2D vp);

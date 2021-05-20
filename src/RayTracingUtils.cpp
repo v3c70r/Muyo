@@ -16,11 +16,13 @@
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
 #include "DescriptorManager.h"
+#include "ResourceBarrier.h"
+
 
 RTBuilder::RTBuilder()
 {
 
-#define GET_VK_FUNC(FUNC_NAME) \
+#define GET_VK_INSTANCE_FUNC(FUNC_NAME) \
 FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(GetRenderDevice()->GetInstance(), #FUNC_NAME);
 
     // Get function pointers from Vulkan library
@@ -67,17 +69,9 @@ FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(GetRenderDevice()->GetInstanc
     assert(vkCreateRayTracingPipelinesKHR != nullptr);
 
 
-    GET_VK_FUNC(vkGetRayTracingShaderGroupHandlesKHR);
-    GET_VK_FUNC(vkCmdTraceRaysKHR);
-    GET_VK_FUNC(vkCmdPipelineBarrier2KHR);
-
-    //PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR = nullptr;
-
-    //vkCreateRayTracingPipelinesKHR =
-    //    (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr (
-    //        GetRenderDevice()->GetInstance(),
-    //        "vkCreateRayTracingPipelinesKHR");
-    //assert(vkCreateRayTracingPipelinesKHR != nullptr);
+    GET_VK_INSTANCE_FUNC(vkGetRayTracingShaderGroupHandlesKHR);
+    GET_VK_INSTANCE_FUNC(vkCmdTraceRaysKHR);
+    GET_VK_INSTANCE_FUNC(vkCmdPipelineBarrier2KHR);
 }
 
 RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
@@ -484,7 +478,10 @@ void RTBuilder::BuildRTPipeline()
     std::vector<VkPushConstantRange> pushConstants = {};
         //GetPushConstantRange<RTLightingPushConstantBlock>((VkShaderStageFlagBits)(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))};
 
-    std::vector<VkDescriptorSetLayout> descLayouts = {GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING)};
+    std::vector<VkDescriptorSetLayout> descLayouts = {
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING)
+    };
 
     m_pipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
@@ -524,8 +521,14 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
 {
 
     VkExtent2D ext {0, 0};
+
     const auto* pStorageImageRes = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", ext, VK_FORMAT_R16G16B16A16_SFLOAT);
-    VkDescriptorSet rtDescSets = GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView());
+    const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    std::vector<VkDescriptorSet> vDescSets =
+        {
+            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
+            GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView())};
+
     m_cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
 
 
@@ -539,6 +542,7 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
             // Transit output image to general layout using Image memory barrier 2
 
             VkImage outputImage = pStorageImageRes->getImage();
+#ifdef FEATURE_SYNCHRONIZATION2
             VkImageMemoryBarrier2KHR imgBarrier = {
                 VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR,  //VkStructureType             sType;
                 nullptr,                                       //const void*                 pNext;
@@ -573,11 +577,15 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
                     &imgBarrier                             //pImageMemoryBarriers;
                 };
             vkCmdPipelineBarrier2KHR(m_cmdBuf, &dependency);
+#else
+            ImageResourceBarrier barrier(outputImage, VK_IMAGE_LAYOUT_GENERAL);
+            GetRenderDevice()->AddResourceBarrier(m_cmdBuf, barrier);
+#endif
         };
 
         SCOPED_MARKER(m_cmdBuf, "Trace Ray");
         vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
-        vkCmdBindDescriptorSets(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, 1, &rtDescSets, 0, nullptr);
+        vkCmdBindDescriptorSets(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);
 
         uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
         uint32_t nAlignment = m_rtProperties.shaderGroupBaseAlignment;  // Using BASE alignment

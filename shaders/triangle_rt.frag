@@ -9,7 +9,13 @@ layout(rgba32f, set = 1, binding = 0) uniform image2D inRtTarget;
 
 void main() {
     const vec2 vViewport = vec2(1024.0f, 768.0f);
-    outColor = texture(inTexture, texCoords);
-    outColor = imageLoad(inRtTarget, ivec2(vViewport * texCoords));
+    if (texCoords.x > 0.5f)
+    {
+        outColor = texture(inTexture, texCoords);
+    }
+    else
+    {
+        outColor = imageLoad(inRtTarget, ivec2(vViewport * texCoords));
+    }
     outColor.a = 1.0;
 }

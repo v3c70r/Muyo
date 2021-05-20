@@ -1,4 +1,5 @@
 #include "VkRenderDevice.h"
+#include "ResourceBarrier.h"
 
 #include <cassert>
 
@@ -469,6 +470,11 @@ VkSampler VkRenderDevice::CreateSampler()
     assert(vkCreateSampler(m_device, &samplerInfo,
                            nullptr, &sampler) == VK_SUCCESS);
     return sampler;
+}
+
+void VkRenderDevice::AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier &barrier)
+{
+    barrier.AddBarrier(cmdBuf);
 }
 
 VkCommandBuffer VkRenderDevice::AllocatePrimaryCommandbuffer(CommandPools pool)
