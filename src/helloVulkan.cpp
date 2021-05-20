@@ -165,18 +165,17 @@ std::vector<const char *> GetRequiredDeviceExtensions()
     std::vector<const char *> vDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 
+#ifdef FEATURE_RAY_TRACING
         // Ray tracing extensions
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-        // VK_KHR_SPIRV_1_4_EXTENSION_NAME,
-        // VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
+#endif
 
-        // Synchronization 2 extension
-        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME
     };
     return vDeviceExtensions;
 }
@@ -240,6 +239,7 @@ int main()
     // Create device
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {};
     bufferDeviceAddressFeatrues.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT;
+
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature = {};
     rayTracingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
@@ -286,7 +286,7 @@ int main()
 
     {
         // Load scene
-        GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+        GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
 
 #ifdef FEATURE_RAY_TRACING
         RTBuilder rayTracingBuilder;

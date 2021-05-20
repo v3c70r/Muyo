@@ -14,7 +14,7 @@ class VkRenderDevice
 public:
     constexpr bool IsRayTracingSupported() const
     {
-#ifdef _WIN32
+#ifdef FEATURE_RAY_TRACING
         return true;
 #else
         return false;
