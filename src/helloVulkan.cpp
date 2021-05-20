@@ -142,18 +142,17 @@ std::vector<const char *> GetRequiredInstanceExtensions()
 {
     std::vector<const char *> vExtensions;
     uint32_t countExtensions = 0;
-    bool waylandSurface = false;
-    const char *waylandExt = "VK_KHR_wayland_surface";
 
     countExtensions = Window::GetVulkanInstanceExtensions(vExtensions);
     if (countExtensions == 0 || vExtensions.size() == 0) 
         throw std::runtime_error("Failed to query instance extensions");    
+    //const char *waylandExt = "VK_KHR_wayland_surface";
     //query if we have wayland surface, nvidia GPU will not work with it
-    waylandSurface = std::find_if(std::begin(vExtensions),
-                                  std::end(vExtensions),
-                                  [waylandExt](const char *ext) {
-                                      return std::strcmp(ext, waylandExt) == 0;
-                                  }) != std::end(vExtensions);
+    //bool waylandSurface = std::find_if(std::begin(vExtensions),
+    //                              std::end(vExtensions),
+    //                              [waylandExt](const char *ext) {
+    //                                  return std::strcmp(ext, waylandExt) == 0;
+    //                              }) != std::end(vExtensions);
 
     // This exteinsion is required by logical device's multiview extension
     vExtensions.push_back("VK_KHR_get_physical_device_properties2");
@@ -165,6 +164,8 @@ std::vector<const char *> GetRequiredDeviceExtensions()
     std::vector<const char *> vDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
+
+        // Synchronization 2 extension
         VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 
@@ -175,7 +176,6 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 #endif
-
     };
     return vDeviceExtensions;
 }
