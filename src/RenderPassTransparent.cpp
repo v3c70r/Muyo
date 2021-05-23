@@ -139,7 +139,7 @@ void RenderPassTransparent::CreatePipeline()
 
     std::vector<VkPushConstantRange> pushConstants;
 
-    m_pipelineLayout = PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+    m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Transparent");
 

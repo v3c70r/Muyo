@@ -1,18 +1,24 @@
 #pragma once
-#include <memory>
-#include <vector>
-#include <glm/glm.hpp>
-#include <string>
-#include <sstream>
 #include <array>
+#include <glm/glm.hpp>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
 
 static const uint32_t TRANSPARENT_FLAG = 1;
+
+struct AABB
+{
+    glm::vec3 vMin = glm::vec3(0.0);
+    glm::vec3 vMax = glm::vec3(0.0);
+};
 
 class SceneNode
 {
 public:
-    SceneNode(const std::string& name) : m_sName(name){}
-    SceneNode() : m_sName("Root"){}
+    SceneNode(const std::string& name) : m_sName(name) {}
+    SceneNode() : m_sName("Root") {}
     virtual ~SceneNode() {}
     void SetName(const std::string& name) { m_sName = name; }
     const std::string& GetName() const { return m_sName; }
@@ -31,10 +37,20 @@ public:
         return m_vpChildren;
     }
 
+    void SetAABB(AABB aabb)
+    {
+        m_AABB = aabb;
+    }
+    AABB GetAABB() const
+    {
+        return m_AABB;
+    }
+
 protected:
     std::string m_sName;
     std::vector<std::unique_ptr<SceneNode>> m_vpChildren;
     glm::mat4 m_mTransformation = glm::mat4(1.0);
+    AABB m_AABB;
     uint32_t m_uFlag = 0;
 };
 
@@ -59,7 +75,7 @@ public:
     const DrawLists& GatherDrawLists();
     std::string ConstructDebugString() const;
 
-    static bool IsMat4Valid(const glm::mat4 &mat)
+    static bool IsMat4Valid(const glm::mat4& mat)
     {
         bool valid = true;
         valid &=
@@ -88,13 +104,13 @@ class Geometry;
 class GeometrySceneNode : public SceneNode
 {
 public:
-    void SetTransparent() {m_uFlag |= TRANSPARENT_FLAG;}
+    void SetTransparent() { m_uFlag |= TRANSPARENT_FLAG; }
     bool IsTransparent() const { return m_uFlag & TRANSPARENT_FLAG; }
     void SetGeometry(Geometry* pGeometry)
     {
         m_pGeometry = pGeometry;
     }
-    const Geometry* GetGeometry() const 
+    const Geometry* GetGeometry() const
     {
         return m_pGeometry;
     }

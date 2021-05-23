@@ -155,7 +155,7 @@ void RenderPassFinal::setupPipeline()
 
     std::vector<VkPushConstantRange> pushConstants;
     m_pipelineLayout =
-        PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+        GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout),
                             VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Final pass");
