@@ -137,6 +137,11 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
 {
     std::vector<std::unique_ptr<Primitive>> vPrimitives;
     bool bIsMeshTransparent =false;
+
+    // Keep track of local bounding box
+    glm::vec3 vAABBMin(std::numeric_limits<float>::max());
+    glm::vec3 vAABBMax(std::numeric_limits<float>::min());
+
     for (const auto &primitive : mesh.primitives)
     {
         std::vector<glm::vec3> vPositions;
@@ -151,6 +156,18 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 model.accessors.at(primitive.attributes.at(sAttribkey));
             const auto &bufferView = model.bufferViews[accessor.bufferView];
             const auto &buffer = model.buffers[bufferView.buffer];
+
+            // Update min max value for this node
+            auto minValue = accessor.minValues;
+            auto maxValue = accessor.maxValues;
+
+            vAABBMin.x = std::min(vAABBMin.x, (float)minValue[0]);
+            vAABBMin.y = std::min(vAABBMin.y, (float)minValue[1]);
+            vAABBMin.z = std::min(vAABBMin.z, (float)minValue[2]);
+
+            vAABBMax.x = std::min(vAABBMax.x, (float)maxValue[0]);
+            vAABBMax.y = std::min(vAABBMax.y, (float)maxValue[1]);
+            vAABBMax.z = std::min(vAABBMax.z, (float)maxValue[2]);
 
             assert(accessor.type == TINYGLTF_TYPE_VEC3);
             assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
@@ -298,6 +315,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         const tinygltf::Material &gltfMaterial = model.materials[primitive.material];
         auto materialIter = GetMaterialManager()->m_mMaterials.find(gltfMaterial.name);
         Material* pMaterial = nullptr;
+
         if (materialIter == GetMaterialManager()->m_mMaterials.end())
         {
             GetMaterialManager()->m_mMaterials[gltfMaterial.name] = std::make_unique<Material>();
@@ -424,6 +442,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         }
     }
     Geometry *pGeometry = new Geometry(vPrimitives);
+    geomNode.SetAABB({vAABBMin, vAABBMax});
     // Setup world transformation uniform buffer object
     // Use pointer address as string
     std::stringstream ss;

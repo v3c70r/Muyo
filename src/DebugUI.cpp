@@ -59,9 +59,13 @@ void SceneDebugPage::DisplaySceneNodeInfo(const SceneNode& sceneNode) const
     glm::vec3 vSkew;
     glm::vec4 vPerspective;
     glm::decompose(sceneNode.GetMatrix(), vScale, qRotation, vTranslation, vSkew, vPerspective);
+    glm::vec3 AABBMin = sceneNode.GetAABB().vMin;
+    glm::vec3 AABBMax = sceneNode.GetAABB().vMax;
     ImGui::InputFloat3("Scale", glm::value_ptr(vScale), "%.3f", ImGuiInputTextFlags_ReadOnly);
     ImGui::InputFloat3("Translation", glm::value_ptr(vTranslation), "%.3f", ImGuiInputTextFlags_ReadOnly);
     ImGui::InputFloat4("Rotation Quat", glm::value_ptr(qRotation), "%.3f", ImGuiInputTextFlags_ReadOnly);
+    ImGui::InputFloat3("AABB Min", glm::value_ptr(AABBMin), "%.3f", ImGuiInputTextFlags_ReadOnly);
+    ImGui::InputFloat3("AABB Max", glm::value_ptr(AABBMax), "%.3f", ImGuiInputTextFlags_ReadOnly);
 }
 
 void VerticalTabsPage::Render() const

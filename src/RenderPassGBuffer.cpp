@@ -352,8 +352,7 @@ void RenderPassGBuffer::createPipelines()
 
         std::vector<VkPushConstantRange> pushConstants;
 
-        mGBufferPipelineLayout =
-            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+        mGBufferPipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mGBufferPipelineLayout),
                                 VK_OBJECT_TYPE_PIPELINE_LAYOUT, "GBuffer");
@@ -409,8 +408,7 @@ void RenderPassGBuffer::createPipelines()
 
         std::vector<VkPushConstantRange> pushConstants;
 
-        mLightingPipelineLayout =
-            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+        mLightingPipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mLightingPipelineLayout),
                                 VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Lighting");

@@ -165,7 +165,7 @@ void RenderLayerIBL::setupPipeline()
         std::vector<VkPushConstantRange> pushConstants;
 
         m_envCubeMapPipelineLayout =
-            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         // Dynmaic state
         std::vector<VkDynamicState> dynamicStateEnables = {
@@ -240,7 +240,7 @@ void RenderLayerIBL::setupPipeline()
         std::vector<VkPushConstantRange> pushConstants;
 
         m_irrCubeMapPipelineLayout =
-            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         // Dynmaic state
         std::vector<VkDynamicState> dynamicStateEnables = {
@@ -316,7 +316,7 @@ void RenderLayerIBL::setupPipeline()
             GetPushConstantRange<PrefilteredPushConstantBlock>(VK_SHADER_STAGE_FRAGMENT_BIT)};
 
         m_prefilteredCubemapPipelineLayout =
-            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         // Dynmaic state
         std::vector<VkDynamicState> dynamicStateEnables = {
@@ -385,7 +385,7 @@ void RenderLayerIBL::setupPipeline()
         std::vector<VkPushConstantRange> pushConstants;
 
         m_specularBrdfLutPipelineLayout =
-            PipelineManager::CreatePipelineLayout(descLayouts, pushConstants);
+            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         VkShaderModule vertShdr = CreateShaderModule(
             ReadSpv("shaders/lighting.vert.spv"));

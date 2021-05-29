@@ -148,6 +148,10 @@ public:
         vkGetPhysicalDeviceProperties2(m_physicalDevice, &property2);
     }
 
+    VkPipelineLayout CreatePipelineLayout(
+        const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
+        const std::vector<VkPushConstantRange>& pushConstantRanges);
+
 private: // Private structures
     enum CommandPools
     {
