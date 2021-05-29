@@ -70,7 +70,10 @@ static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                           10.0f),
                          glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
                                      glm::vec3(0.0f, 0.0f, 0.0f),   // Center
-                                     glm::vec3(0.0f, 1.0f, 0.0f))); // Up
+                                     glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
+                         0.1f,                                      // near
+                         10.0f                                      // far
+);
 
 /// 
 // Arcball callbacks
@@ -80,18 +83,18 @@ static void clickArcballCallback(int button, int action)
     {
         if (EventState::PRESSED == action)
         {
-            s_arcball.startDragging();
+            s_arcball.StartDragging();
         }
         else if (EventState::RELEASED == action)
         {
-            s_arcball.stopDragging();
+            s_arcball.StopDragging();
         }
     }
 }
 
 static void rotateArcballCallback(double xpos, double ypos)
 {
-    s_arcball.updateDrag(glm::vec2(xpos, ypos));
+    s_arcball.UpdateDrag(glm::vec2(xpos, ypos));
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -121,7 +124,7 @@ static void InitEventHandlers()
     auto pResize = EventSystem::sys()->globalEvent<EventType::WINDOWRESIZE,
                                                    GlobalResizeEvent>();
     pResize->Watch([](uint32_t timestamp, size_t w, size_t h) {
-        s_arcball.resize(glm::vec2((float)w, (float)h));
+        s_arcball.Resize(glm::vec2((float)w, (float)h));
         s_bResizeWanted = true;        
     });
 }
@@ -199,29 +202,7 @@ static bool bIrradianceMapGenerated = false;
 
 void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 {
-    static auto startTime = std::chrono::high_resolution_clock::now();
-
-    auto currentTime = std::chrono::high_resolution_clock::now();
-    double time = std::chrono::duration<float, std::chrono::seconds::period>(
-                      currentTime - startTime)
-                      .count() *
-                  0.01;
-    PerViewData ubo = {};
-    ubo.model = glm::rotate(glm::mat4(1.0f), (float)time * glm::radians(10.0f),
-                            glm::vec3(0.0f, 0.0f, 1.0f));
-    // ubo.model = glm::rotate(glm::mat4(1.0), glm::degrees(time),
-    // glm::vec3(0.0, 1.0, 0.0));
-    ubo.model = glm::mat4(1.0);
-
-    ubo.view = s_arcball.getViewMat();
-    ubo.proj = s_arcball.getProjMat();
-
-    // Update auxiliary matrices
-    ubo.objectToView = ubo.view * ubo.model;
-    ubo.viewToObject = glm::inverse(ubo.objectToView);
-    ubo.normalObjectToView = glm::transpose(ubo.viewToObject);
-
-    ub->setData(ubo);
+    s_arcball.UpdatePerViewDataUBO(ub);
 };
 
 int main()

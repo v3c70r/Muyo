@@ -8,17 +8,6 @@
 #include "VkRenderDevice.h"
 #include "RenderResource.h"
 
-struct PerViewData
-{
-    glm::mat4 model = glm::mat4(1.0);
-    glm::mat4 view = glm::mat4(1.0);
-    glm::mat4 proj = glm::mat4(1.0);
-
-    glm::mat4 objectToView = glm::mat4(1.0);
-    glm::mat4 viewToObject = glm::mat4(1.0);
-    glm::mat4 normalObjectToView = glm::mat4(1.0);
-};
-
 struct PerGeometryData
 {
     glm::mat4 model = glm::mat4(1.0);

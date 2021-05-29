@@ -5,6 +5,7 @@
 #include "RenderPass.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
+#include "Camera.h"
 
 class RenderLayerIBL : public RenderPass
 {

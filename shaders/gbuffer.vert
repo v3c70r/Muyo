@@ -1,17 +1,10 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_GOOGLE_include_directive : enable
 
-layout (set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
+#include "Camera.h"
+CAMERA_UBO(0)
 
-    mat4 objectToView;
-    mat4 viewToObject;
-    mat4 normalObjectToView;
-} ubo;
-
-// TODO: Eliminate small ubo? 
 layout (set = 2, binding = 0) uniform WorldMatrix {
     mat4 mWorldMatrix;
 } worldMatrix;
@@ -34,5 +27,5 @@ void main() {
     outTexCoords1 = inTexCoord.zw;
     outWorldPos = worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
     outWorldNormal = worldMatrix.mWorldMatrix * vec4(inNormal, 0.0);
-    gl_Position = ubo.proj * ubo.view * outWorldPos;
+    gl_Position = uboCamera.proj * uboCamera.view * outWorldPos;
 }

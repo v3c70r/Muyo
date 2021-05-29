@@ -8,6 +8,7 @@
 #include "Material.h"
 #include "RenderPassGBuffer.h"
 #include "UniformBuffer.h"
+#include "Camera.h"
 
 enum DescriptorLayoutType
 {

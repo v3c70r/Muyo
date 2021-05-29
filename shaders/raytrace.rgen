@@ -1,16 +1,10 @@
 // ray gen shader
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_GOOGLE_include_directive : enable
 
-layout (set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-
-    mat4 objectToView;
-    mat4 viewToObject;
-    mat4 normalObjectToView;
-} ubo;
+#include "Camera.h"
+CAMERA_UBO(0)
 
 layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
 layout(set = 1, binding = 1, rgba32f) uniform image2D image;
@@ -24,16 +18,17 @@ void main()
   const vec2 inUV        = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
   vec2       d           = inUV * 2.0 - 1.0;
 
-  //vec4 origin    = ubo.viewToObject * vec4(0.0, 0.0, 1.0, 0.0);
-  //vec4 target    = inverse(ubo.proj) * vec4(d.x, d.y, 1.0, 1.0);
-  //vec4 direction = ubo.viewToObject * vec4(normalize(target.xyz), 0.0);
+  const mat4 invView = inverse(uboCamera.view);
+  vec4 origin    = invView * vec4(0.0, 0.0, 0.0, 1.0);
+  vec4 target    = inverse(uboCamera.proj) * vec4(d.x, d.y, 0.1, 1.0);
+  vec4 direction = normalize(invView * target - origin);
 
-  vec4 origin    = vec4(0.0, 0.0, 1.0, 0.0);
-  vec4 target    = vec4(0.0, 0.0, 1.0, 1.0);
-  vec4 direction = vec4(target.xyz, 0.0);
+  //vec4 origin    = vec4(0.0, 0.0, 1.0, 0.0);
+  //vec4 target    = vec4(0.0, 0.0, 1.0, 1.0);
+  //vec4 direction = vec4(target.xyz, 0.0);
 
   uint  rayFlags = gl_RayFlagsOpaqueEXT;
-  float tMin     = 0.1;
+  float tMin     = 0.0;
   float tMax     = 10.0;
 
   traceRayEXT(topLevelAS,     // acceleration structure

@@ -2,6 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 #include "brdf.h"
+#include "Camera.h"
 
 // Light informations
 const int LIGHT_COUNT = 4;
@@ -30,15 +31,7 @@ const uint GBUFFER_COUNT = 4;
 layout(location = 0) in vec2 texCoords;
 layout(location = 0) out vec4 outColor;
 
-layout (set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-
-    mat4 objectToView;
-    mat4 viewToObject;
-    mat4 normalObjectToView;
-} ubo;
+CAMERA_UBO(0)
 
 layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inGBuffer_POS_AO;
 layout(input_attachment_index = 1, set = 1, binding = 1) uniform subpassInput inGBuffer_ALBEDO_TRANSMITTANCE;
@@ -53,11 +46,11 @@ layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
 void main() {
     // GBuffer info
     const vec3 vWorldPos = subpassLoad(inGBuffer_POS_AO).xyz;
-    const vec3 vViewPos = (ubo.view * vec4(vWorldPos, 1.0)).xyz;
+    const vec3 vViewPos = (uboCamera.view * vec4(vWorldPos, 1.0)).xyz;
     const float fAO = subpassLoad(inGBuffer_POS_AO).w;
     const vec3 vAlbedo = subpassLoad(inGBuffer_ALBEDO_TRANSMITTANCE).xyz;
     const vec3 vWorldNormal = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).xyz;
-    const vec3 vFaceNormal = normalize((ubo.objectToView * vec4(vWorldNormal, 0.0)).xyz);
+    const vec3 vFaceNormal = normalize((uboCamera.view * vec4(vWorldNormal, 0.0)).xyz);
     const float fRoughness = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).w;
     const float fMetallic = subpassLoad(inGBuffer_MATELNESS_TRANSLUCENCY).r;
     //TODO: Read transmittence and translucency if necessary

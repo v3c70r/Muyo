@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #include "brdf.h"
 #include "material.h"
+#include "Camera.h"
 
 // Light informations
 const int LIGHT_COUNT = 4;
@@ -28,15 +29,7 @@ layout(location = 3) in vec4 inWorldNormal;
 
 layout(location = 0) out vec4 outColor;
 
-layout (set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-
-    mat4 objectToView;
-    mat4 viewToObject;
-    mat4 normalObjectToView;
-} ubo;
+CAMERA_UBO(0)
 
 void main()
 {
@@ -58,8 +51,8 @@ void main()
     const float fRoughness = texture(texPBR[TEX_ROUGHNESS], inTexCoords[UVIndices[TEX_ROUGHNESS]]).g * factors.fRoughness;
 
     vec3 vLo = vec3(0.0);
-    const vec3 vViewPos = (ubo.view * inWorldPos).xyz;
-    const vec3 vNormal = (ubo.objectToView * vec4(vWorldNormal, 0.0)).xyz;
+    const vec3 vViewPos = (uboCamera.view * inWorldPos).xyz;
+    const vec3 vNormal = (uboCamera.view * vec4(vWorldNormal, 0.0)).xyz;
     for(int i = 0; i < USED_LIGHT_COUNT; ++i)
     {
         vLo += ComputeDirectLighting(

@@ -159,15 +159,20 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.rchit"
     )
 
+file(GLOB_RECURSE GLSL_HEADER_FILES
+    "${CMAKE_SOURCE_DIR}/shaders/*.h"
+)
+
+
 message(STATUS "Shaders: ${GLSL_SOURCE_FILES}")
-foreach (GLSL ${GLSL_SOURCE_FILES})
-    get_filename_component(FILE_NAME ${GLSL} NAME)
+foreach (GLSL_SOURCE_FILE ${GLSL_SOURCE_FILES})
+    get_filename_component(FILE_NAME ${GLSL_SOURCE_FILE} NAME)
     set(SPIRV "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${FILE_NAME}.spv")
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${GLSL_VALIDATOR} --target-env vulkan1.2 -g -V ${GLSL} -o ${SPIRV}
-        DEPENDS ${GLSL})
+        COMMAND ${GLSL_VALIDATOR} --target-env vulkan1.2 -g -V ${GLSL_SOURCE_FILE} -o ${SPIRV}
+        DEPENDS ${GLSL_SOURCE_FILE} ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()
 
