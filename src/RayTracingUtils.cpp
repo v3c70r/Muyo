@@ -18,6 +18,10 @@
 #include "DescriptorManager.h"
 #include "ResourceBarrier.h"
 
+int32_t AlignUp(uint32_t nSize, uint32_t nAlignment)
+{
+    return (nSize + nAlignment - 1) / nAlignment * nAlignment;
+}
 
 RTBuilder::RTBuilder()
 {
@@ -77,7 +81,7 @@ FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(GetRenderDevice()->GetInstanc
 RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
 {
     std::vector<BLASInput> BLASs;
-    std::vector<Instance> TLASs;
+    std::vector<Instance> vInstances;
     // Just gather opaque nodes for now
     for (const SceneNode* pSceneNode : dls.m_aDrawLists[DrawLists::DL_OPAQUE])
     {
@@ -120,19 +124,19 @@ RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
             {
 
                 BLASs.push_back(blasInput);
-                Instance tlasInput;
+                Instance instance;
 
-                tlasInput.transform = pGeometryNode->GetMatrix();  // Position of the instance
-                tlasInput.instanceId = BLASs.size() - 1;     // gl_InstanceCustomIndexEXT
-                tlasInput.blasId = BLASs.size() -  1;
-                tlasInput.hitGroupId = 0;  // We will use the same hit group for all objects
-                tlasInput.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-                TLASs.push_back(tlasInput);
+                instance.transform = pGeometryNode->GetMatrix();  // Position of the instance
+                instance.instanceId = BLASs.size() - 1;     // gl_InstanceCustomIndexEXT
+                instance.blasId = BLASs.size() -  1;
+                instance.hitGroupId = 0;  // We will use the same hit group for all objects
+                instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+                vInstances.push_back(instance);
             }
         }
     }
 
-    return {BLASs, TLASs};
+    return {BLASs, vInstances};
 }
 
 void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags)
@@ -466,8 +470,16 @@ void RTBuilder::BuildRTPipeline()
 {
     // shader stages
     VkShaderModule rayGenShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rgen.spv"));
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(rayGenShdr), VK_OBJECT_TYPE_SHADER_MODULE, "raytrace.rgen.spv");
+
     VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rmiss.spv"));
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(missShdr), VK_OBJECT_TYPE_SHADER_MODULE, "raytrace.rmiss.spv");
+
     VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rchit.spv"));
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(chitShdr), VK_OBJECT_TYPE_SHADER_MODULE, "raytrace.rchit.spv");
+
+
+    
 
     RayTracingPipelineBuilder builder;
     builder.AddShaderModule(rayGenShdr, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
@@ -505,18 +517,68 @@ void RTBuilder::BuildRTPipeline()
 void RTBuilder::BuildShaderBindingTable()
 {
     GetRenderDevice()->GetPhysicalDeviceProperties(m_rtProperties);
-    uint32_t nGroupCount = (uint32_t)m_vRTShaderGroupInfos.size();
-    uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
-    // Align up the group handle size based on the alginment in property 
-    uint32_t nAlignment = m_rtProperties.shaderGroupHandleAlignment;
-    uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
-    uint32_t nStbSize = nGroupHandleSizeAligned * nGroupCount;
 
-    std::vector<uint8_t> shaderHandleBuf(nStbSize);
+    // Number of handles
+    uint32_t nMissCount = 1;
+    uint32_t nHitCount = 1;
+    uint32_t nHandleCount = 1 + nMissCount + nHitCount;
+    uint32_t nHandleSize = m_rtProperties.shaderGroupHandleSize;
+    uint32_t nHandleSizeAligned = AlignUp(nHandleSize, m_rtProperties.shaderGroupHandleAlignment);
 
-    assert(vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nGroupCount, nStbSize, shaderHandleBuf.data()) == VK_SUCCESS);
-    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", shaderHandleBuf.data(), (uint32_t)shaderHandleBuf.size());
+
+    // Different shader regions
+    m_rgenRegion.stride = AlignUp(nHandleSizeAligned, m_rtProperties.shaderGroupBaseAlignment);
+    m_rgenRegion.size = m_rgenRegion.stride;
+
+    m_missRegion.stride = nHandleSizeAligned;
+    m_missRegion.size = AlignUp(nMissCount * nHandleSizeAligned, m_rtProperties.shaderGroupBaseAlignment);
+
+    m_hitRegion.stride = nHandleSizeAligned;
+    m_hitRegion.size = AlignUp(nHitCount * nHandleSizeAligned, m_rtProperties.shaderGroupBaseAlignment);
+
+    // Fectch handles to the shader groups
+    uint32_t nDataSize = nHandleCount * nHandleSize;
+    std::vector<uint8_t> handles(nDataSize);
+    assert(vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nHandleCount, nDataSize, handles.data()) == VK_SUCCESS);
+
+    // Allocate buffer to store SBT
+    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", handles.data(), (uint32_t)handles.size());
+
+    // Copy handles to GPU
+    VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());
+    m_rgenRegion.deviceAddress = SBTAddress;
+    m_missRegion.deviceAddress = SBTAddress + m_rgenRegion.size;
+    m_hitRegion.deviceAddress = m_missRegion.deviceAddress + m_missRegion.size;
+
+    // Get handle data on CPU
+    auto GetHandle = [&](int i) { return handles.data() + i * nHandleSize; };
+
+    void* pHandlesGPU = m_pSBTBuffer->Map();
+    uint8_t* pData = nullptr;
+    int nHandleIndex = 0;
+
+    // Copy Ray Gen
+    pData = (uint8_t*)pHandlesGPU;
+    memcpy(pData, GetHandle(nHandleIndex++), nHandleSize);
+
+    // Copy Miss
+    pData = (uint8_t*)pHandlesGPU + m_rgenRegion.size;
+    for (uint32_t i = 0 ; i < nMissCount; i++)
+    {
+        memcpy(pData, GetHandle(nHandleIndex++), nHandleSize);
+        pData += m_missRegion.stride;
+    }
+
+    // Copy hit
+    pData = (uint8_t*)pHandlesGPU + m_rgenRegion.size + m_missRegion.size;
+    for (uint32_t i = 0 ; i < nHitCount; i++)
+    {
+        memcpy(pData, GetHandle(nHandleIndex++), nHandleSize);
+        pData += m_hitRegion.stride;
+    }
+    m_pSBTBuffer->Unmap();
 }
+
 void RTBuilder::RayTrace(VkExtent2D imgSize)
 {
 
@@ -587,23 +649,23 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
         vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
         vkCmdBindDescriptorSets(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);
 
-        uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
-        uint32_t nAlignment = m_rtProperties.shaderGroupBaseAlignment;  // Using BASE alignment
-        uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
-        uint32_t nGroupHandleStride = nGroupHandleSizeAligned;
-        VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());
-        std::array<VkStridedDeviceAddressRegionKHR, 4> stridedAddrs = {
-            VkStridedDeviceAddressRegionKHR{SBTAddress + 0u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
-            VkStridedDeviceAddressRegionKHR{SBTAddress + 1u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
-            VkStridedDeviceAddressRegionKHR{SBTAddress + 2u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
-            VkStridedDeviceAddressRegionKHR{0u, 0u, 0u},
-        };
+        //uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
+        //uint32_t nAlignment = m_rtProperties.shaderGroupBaseAlignment;  // Using BASE alignment
+        //uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
+        //uint32_t nGroupHandleStride = nGroupHandleSizeAligned;
+        //VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());
+        //std::array<VkStridedDeviceAddressRegionKHR, 4> stridedAddrs = {
+        //    VkStridedDeviceAddressRegionKHR{SBTAddress + 0u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+        //    VkStridedDeviceAddressRegionKHR{SBTAddress + 1u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+        //    VkStridedDeviceAddressRegionKHR{SBTAddress + 2u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
+        //    VkStridedDeviceAddressRegionKHR{0u, 0u, 0u},
+        //};
         vkCmdTraceRaysKHR(
             m_cmdBuf,
-            &stridedAddrs[0],
-            &stridedAddrs[1],
-            &stridedAddrs[2],
-            &stridedAddrs[3],
+            &m_rgenRegion,
+            &m_missRegion,
+            &m_hitRegion,
+            &m_callRegion,
             imgSize.width, imgSize.height, 1);
 
         vkEndCommandBuffer(m_cmdBuf);

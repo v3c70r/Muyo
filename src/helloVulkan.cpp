@@ -282,7 +282,7 @@ int main()
                 rtInputs.BLASs,
                 VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
             rayTracingBuilder.BuildTLAS(
-                rtInputs.TLASs,
+                rtInputs.vInstances,
                 VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
             ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);

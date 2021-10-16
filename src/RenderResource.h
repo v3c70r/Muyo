@@ -177,6 +177,17 @@ public:
         }
     }
 
+    void* Map()
+    {
+        void* pMappedPointer;
+        GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedPointer);
+        return pMappedPointer;
+    }
+    void Unmap()
+    {
+        GetMemoryAllocator()->UnmapBuffer(m_allocation);
+    }
+
 protected:
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
@@ -221,9 +232,8 @@ public:
     ShaderBindingTableBuffer(const void* pData, uint32_t size)
         : BufferResource(
               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
-                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
-                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-              VMA_MEMORY_USAGE_GPU_ONLY)
+                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+              VMA_MEMORY_USAGE_CPU_TO_GPU)
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,

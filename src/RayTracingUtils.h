@@ -22,7 +22,7 @@ struct BLASInput
     VkBuildAccelerationStructureFlagsKHR m_flags = 0;
 };
 
-// This is an instance of a BLAS
+// This is an instance referes to a BLAS
 struct Instance
 {
     uint32_t blasId{0};      // Index of the BLAS in m_blas
@@ -36,7 +36,7 @@ struct Instance
 struct RTInputs
 {
     std::vector<BLASInput> BLASs;
-    std::vector<Instance> TLASs;
+    std::vector<Instance> vInstances;
 };
 
 class Scene;
@@ -77,7 +77,12 @@ private:
 
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR m_rtProperties = {};
 
+    // SBT
     ShaderBindingTableBuffer* m_pSBTBuffer = nullptr;
+    VkStridedDeviceAddressRegionKHR m_rgenRegion{};
+    VkStridedDeviceAddressRegionKHR m_missRegion{};
+    VkStridedDeviceAddressRegionKHR m_hitRegion{};
+    VkStridedDeviceAddressRegionKHR m_callRegion{};
 
     struct RTLightingPushConstantBlock
     {

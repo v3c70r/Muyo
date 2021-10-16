@@ -18,17 +18,17 @@ void main()
   const vec2 inUV        = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
   vec2       d           = inUV * 2.0 - 1.0;
 
-  const mat4 invView = inverse(uboCamera.view);
-  vec4 origin    = invView * vec4(0.0, 0.0, 0.0, 1.0);
-  vec4 target    = inverse(uboCamera.proj) * vec4(d.x, d.y, 0.1, 1.0);
-  vec4 direction = normalize(invView * target - origin);
+  vec4 originWorld    = uboCamera.viewInv * vec4(0.0, 0.0, 0.0, 1.0);
+  vec3 directionView = mix(uboCamera.vLT, uboCamera.vRB, vec3(inUV, 1.0));
+  vec3 directionWorld = (uboCamera.viewInv * vec4(directionView, 0.0)).xyz;
+  directionWorld = normalize(directionWorld);
 
   //vec4 origin    = vec4(0.0, 0.0, 1.0, 0.0);
   //vec4 target    = vec4(0.0, 0.0, 1.0, 1.0);
   //vec4 direction = vec4(target.xyz, 0.0);
 
   uint  rayFlags = gl_RayFlagsOpaqueEXT;
-  float tMin     = 0.0;
+  float tMin     = 0.1;
   float tMax     = 10.0;
 
   traceRayEXT(topLevelAS,     // acceleration structure
@@ -37,12 +37,12 @@ void main()
               0,              // sbtRecordOffset
               0,              // sbtRecordStride
               0,              // missIndex
-              origin.xyz,     // ray origin
+              originWorld.xyz,     // ray origin
               tMin,           // ray min range
-              direction.xyz,  // ray direction
+              directionWorld.xyz,  // ray direction
               tMax,           // ray max range
               0               // payload (location = 0)
   );
 
-  imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(vResColor.xyz, 1.0));
+  imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(normalize(vResColor.xyz), 1.0));
 }
