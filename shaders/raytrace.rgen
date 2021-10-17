@@ -29,7 +29,7 @@ void main()
 
   uint  rayFlags = gl_RayFlagsOpaqueEXT;
   float tMin     = 0.1;
-  float tMax     = 10.0;
+  float tMax     = 100.0;
 
   traceRayEXT(topLevelAS,     // acceleration structure
               gl_RayFlagsOpaqueEXT,       // rayFlags
@@ -43,6 +43,5 @@ void main()
               tMax,           // ray max range
               0               // payload (location = 0)
   );
-
   imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(normalize(vResColor.xyz), 1.0));
 }

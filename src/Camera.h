@@ -152,6 +152,7 @@ public:
     {
         PerViewData perView = m_perViewData;
         perView.mView = GetViewMat();
+        perView.mViewInv = glm::inverse(perView.mView);
         ubo->setData(perView);
     }
 

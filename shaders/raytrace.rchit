@@ -6,8 +6,8 @@ hitAttributeEXT vec2 vHitAttribs;
 
 void main()
 {
-    //const vec3 barycentrics = vec3(1.0f - vHitAttribs.x - vHitAttribs.y, vHitAttribs.x, vHitAttribs.y);
-    //vResColor = vec3(barycentrics);
+    const vec3 barycentrics = vec3(1.0f - vHitAttribs.x - vHitAttribs.y, vHitAttribs.x, vHitAttribs.y);
+    vResColor = vec3(barycentrics);
 
-    vResColor = vec3(1.0, 0.0, 0.0);
+    //vResColor = vec3(1.0, 0.0, 0.0);
 }

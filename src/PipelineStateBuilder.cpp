@@ -103,7 +103,14 @@ RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkSh
     shaderStageInfo.module = shaderModule;
     shaderStageInfo.pName = "main";
 
-    uint32_t nShaderIdx = (uint32_t)m_vShaderStageInfos.size();
+    enum StageIndices
+    {
+        eRaygen,
+        eMiss,
+        eClosestHit,
+        eShaderGroupCount
+    };
+
     m_vShaderStageInfos.push_back(shaderStageInfo);
 
     // Add to ray tracing shader group if it's a ray tracing shader
@@ -117,7 +124,7 @@ RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkSh
                 VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
                 nullptr,
                 VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-                nShaderIdx,            // generalShader
+                static_cast<uint32_t>((shaderStage & VK_SHADER_STAGE_RAYGEN_BIT_KHR) ? eRaygen : eMiss),            // generalShader
                 VK_SHADER_UNUSED_KHR,  // closestHitShader
                 VK_SHADER_UNUSED_KHR,  // anyHitShader
                 VK_SHADER_UNUSED_KHR,  // intersectionShader
@@ -130,7 +137,7 @@ RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkSh
                 nullptr,
                 VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
                 VK_SHADER_UNUSED_KHR,  // generalShader
-                nShaderIdx,            // closestHitShader
+                eClosestHit,            // closestHitShader
                 VK_SHADER_UNUSED_KHR,  // anyHitShader
                 VK_SHADER_UNUSED_KHR,  // intersectionShader
                 nullptr};

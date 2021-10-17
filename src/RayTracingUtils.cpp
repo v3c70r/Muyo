@@ -542,7 +542,7 @@ void RTBuilder::BuildShaderBindingTable()
     assert(vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nHandleCount, nDataSize, handles.data()) == VK_SUCCESS);
 
     // Allocate buffer to store SBT
-    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", handles.data(), (uint32_t)handles.size());
+    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", handles.data(), m_rgenRegion.size + m_missRegion.size + m_hitRegion.size);
 
     // Copy handles to GPU
     VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());
@@ -649,17 +649,6 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
         vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
         vkCmdBindDescriptorSets(m_cmdBuf, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);
 
-        //uint32_t nGroupHandleSize = m_rtProperties.shaderGroupHandleSize;
-        //uint32_t nAlignment = m_rtProperties.shaderGroupBaseAlignment;  // Using BASE alignment
-        //uint32_t nGroupHandleSizeAligned = (nGroupHandleSize + nAlignment - 1) / nAlignment * nAlignment;
-        //uint32_t nGroupHandleStride = nGroupHandleSizeAligned;
-        //VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());
-        //std::array<VkStridedDeviceAddressRegionKHR, 4> stridedAddrs = {
-        //    VkStridedDeviceAddressRegionKHR{SBTAddress + 0u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
-        //    VkStridedDeviceAddressRegionKHR{SBTAddress + 1u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
-        //    VkStridedDeviceAddressRegionKHR{SBTAddress + 2u * nGroupHandleSizeAligned, nGroupHandleStride, nGroupHandleSizeAligned},
-        //    VkStridedDeviceAddressRegionKHR{0u, 0u, 0u},
-        //};
         vkCmdTraceRaysKHR(
             m_cmdBuf,
             &m_rgenRegion,
