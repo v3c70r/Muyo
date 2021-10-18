@@ -17,6 +17,7 @@
 #include "PushConstantBlocks.h"
 #include "DescriptorManager.h"
 #include "ResourceBarrier.h"
+#include "glm/matrix.hpp"
 
 int32_t AlignUp(uint32_t nSize, uint32_t nAlignment)
 {
@@ -126,7 +127,7 @@ RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
                 BLASs.push_back(blasInput);
                 Instance instance;
 
-                instance.transform = pGeometryNode->GetMatrix();  // Position of the instance
+                instance.transform = pGeometryNode->GetGeometry()->GetWorldMatrix();  // Position of the instance
                 instance.instanceId = BLASs.size() - 1;     // gl_InstanceCustomIndexEXT
                 instance.blasId = BLASs.size() -  1;
                 instance.hitGroupId = 0;  // We will use the same hit group for all objects
@@ -451,13 +452,11 @@ VkAccelerationStructureInstanceKHR RTBuilder::TLASInputToVkGeometryInstance(cons
     VkAccelerationStructureInstanceKHR gInst{};
     // The matrices for the instance transforms are row-major, instead of
     // column-major in the rest of the application
-    //nvmath::mat4f transp = nvmath::transpose(instance.transform);
     // The gInst.transform value only contains 12 values, corresponding to a 4x3
     // matrix, hence saving the last row that is anyway always (0,0,0,1). Since
     // the matrix is row-major, we simply copy the first 12 values of the
     // original 4x4 matrix
-    // Note: QGU probably no need to transpose the matrix 
-    memcpy(&gInst.transform, glm::value_ptr(instance.transform), sizeof(gInst.transform));
+    memcpy(&gInst.transform, glm::value_ptr(glm::transpose(instance.transform)), sizeof(gInst.transform));
     gInst.instanceCustomIndex = instance.instanceId;
     gInst.mask = instance.mask;
     gInst.instanceShaderBindingTableRecordOffset = instance.hitGroupId;

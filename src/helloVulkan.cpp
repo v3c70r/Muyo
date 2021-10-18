@@ -268,7 +268,8 @@ int main()
 
     {
         // Load scene
-        GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
+        //GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
+        GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
 #ifdef FEATURE_RAY_TRACING
         RTBuilder rayTracingBuilder;

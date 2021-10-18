@@ -33,8 +33,8 @@ class Camera
 public:
     Camera(glm::mat4 mProj, glm::mat4 mView, float fNear, float fFar)
     {
-        m_perViewData.mProj = mProj,
-        m_perViewData.mView = mView,
+        m_perViewData.mProj = mProj;
+        m_perViewData.mView = mView;
         m_perViewData.mProjInv = glm::inverse(mProj);
         m_perViewData.mViewInv = glm::inverse(mView);
         m_perViewData.vScreenExtent = {800.0f, 600.0f};
@@ -53,6 +53,19 @@ public:
         m_perViewData.m_fFar = fFar;
     }
     glm::mat4 GetProjMat() const { return m_perViewData.mProj; }
+    virtual void SetProjMat( const glm::mat4 mProj)
+    {
+        m_perViewData.mProj = mProj;
+        m_perViewData.mProjInv = glm::inverse(mProj);
+
+        glm::vec4 vScreenRay = m_perViewData.mProjInv * glm::vec4(-1.0, -1.0, 0.0, 1.0);
+        m_perViewData.vLT = vScreenRay / vScreenRay[3];
+        m_perViewData.vLT = glm::normalize(m_perViewData.vLT);
+
+        vScreenRay = vScreenRay = m_perViewData.mProjInv * glm::vec4(1.0, 1.0, 0.0, 1.0);
+        m_perViewData.vRB = vScreenRay / vScreenRay[3];
+        m_perViewData.vRB = glm::normalize(m_perViewData.vRB);
+    }
     virtual glm::mat4 GetViewMat() const { return m_perViewData.mView; }
     virtual void Resize(const glm::vec2 &newSize)
     {
