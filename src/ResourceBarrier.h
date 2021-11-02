@@ -15,7 +15,7 @@ public:
 
 protected:
     VkImageMemoryBarrier m_imageBarrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    VkPipelineStageFlags m_sourceStage = VK_NULL_HANDLE;
-    VkPipelineStageFlags m_destinationStage = VK_NULL_HANDLE;
+    VkPipelineStageFlags m_sourceStage = VK_PIPELINE_STAGE_NONE_KHR;
+    VkPipelineStageFlags m_destinationStage = VK_PIPELINE_STAGE_NONE_KHR;
 };
 
