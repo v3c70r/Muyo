@@ -202,25 +202,27 @@ class AccelerationStructureBuffer : public BufferResource
 {
 public:
     AccelerationStructureBuffer(uint32_t size)
-        : BufferResource(
-              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
-                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
-              VMA_MEMORY_USAGE_GPU_ONLY)
-    {
+		: BufferResource(
+			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT
+			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR
+			| VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY)
+	{
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
                                              "AccelerationStrucutre");
     }
 
-    AccelerationStructureBuffer(const void* pData, uint32_t size)
-        : BufferResource(
-              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
-                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
-                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-              VMA_MEMORY_USAGE_GPU_ONLY)
-    {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation,
+	AccelerationStructureBuffer(const void* pData, uint32_t size)
+		: BufferResource(
+			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT
+			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR
+			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+			| VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VMA_MEMORY_USAGE_GPU_ONLY)
+	{
+		GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
+			m_buffer, m_allocation,
                                              "AccelerationStrucutre");
         SetData(pData, size);
     }

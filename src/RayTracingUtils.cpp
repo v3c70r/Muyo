@@ -550,7 +550,7 @@ void RTBuilder::BuildShaderBindingTable()
     m_hitRegion.deviceAddress = m_missRegion.deviceAddress + m_missRegion.size;
 
     // Get handle data on CPU
-    auto GetHandle = [&](int i) { return handles.data() + i * nHandleSize; };
+    auto GetHandle = [&](uint32_t i) { return handles.data() + i * nHandleSize; };
 
     void* pHandlesGPU = m_pSBTBuffer->Map();
     uint8_t* pData = nullptr;

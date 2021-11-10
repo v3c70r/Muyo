@@ -23,7 +23,7 @@ public:
     virtual ~MemoryBuffer();
 protected:
     std::string m_sBufferName = "";
-    VkBufferUsageFlags m_bufferUsageFlags;
+    VkBufferUsageFlags m_bufferUsageFlags = 0;
 private:
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
@@ -40,6 +40,10 @@ public:
         : MemoryBuffer(stagedUpload)
     {
         m_bufferUsageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        if (GetRenderDevice()->IsRayTracingSupported())
+        {
+            m_bufferUsageFlags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+        }
         m_sBufferName = sBufferName;
     }
 private:
@@ -53,6 +57,10 @@ public:
         : MemoryBuffer(stagedUpload)
     {
         m_bufferUsageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        if (GetRenderDevice()->IsRayTracingSupported())
+        {
+            m_bufferUsageFlags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+        }
         m_sBufferName = sBufferName;
     }
 };

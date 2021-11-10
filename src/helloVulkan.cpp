@@ -226,7 +226,6 @@ int main()
     rayTracingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
     accStructFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-
     std::vector<void*> features;
     features.push_back(&bufferDeviceAddressFeatrues);
     if (GetRenderDevice()->IsRayTracingSupported())
@@ -234,6 +233,11 @@ int main()
         features.push_back(&rayTracingFeature);
         features.push_back(&accStructFeature);
     }
+#ifdef FEATURE_SYNCHRONIZATION2
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR sync2Feature = {};
+    sync2Feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
+	features.push_back(&sync2Feature);
+#endif
 
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
                                     std::vector<const char *>(),    // Layers

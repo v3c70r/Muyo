@@ -102,7 +102,7 @@ public:
 private:
     std::vector<std::unique_ptr<Primitive>> m_vPrimitives;
     UniformBuffer<glm::mat4>* m_mWorldMatrixBuffer = nullptr;
-    glm::mat4 m_mWorldMatrix;       // Cached world matrix
+    glm::mat4 m_mWorldMatrix = glm::mat4(1.0);       // Cached world matrix
 };
 
 class GeometryManager
