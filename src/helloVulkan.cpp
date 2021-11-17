@@ -283,6 +283,7 @@ int main()
             RTInputs rtInputs;
             DrawLists dl = GetSceneManager()->GatherDrawLists();
             rtInputs = ConstructRTInputsFromDrawLists(dl);
+            rtInputs.vPrimitiveDescriptions;
             rayTracingBuilder.BuildBLAS(
                 rtInputs.BLASs,
                 VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);

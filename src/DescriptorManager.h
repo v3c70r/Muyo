@@ -173,7 +173,7 @@ private:
         m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
 
-    const uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 1000;
+    const uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 100;
     const std::vector<VkDescriptorPoolSize> POOL_SIZES = {
         {VK_DESCRIPTOR_TYPE_SAMPLER, DESCRIPTOR_COUNT_EACH_TYPE},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, DESCRIPTOR_COUNT_EACH_TYPE},

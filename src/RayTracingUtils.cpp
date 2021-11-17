@@ -83,6 +83,7 @@ RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
 {
     std::vector<BLASInput> BLASs;
     std::vector<Instance> vInstances;
+    std::vector<PrimitiveDescription> vPrimitiveDescs;
     // Just gather opaque nodes for now
     for (const SceneNode* pSceneNode : dls.m_aDrawLists[DrawLists::DL_OPAQUE])
     {
@@ -119,6 +120,9 @@ RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
                 range.transformOffset = 0;
                 blasInput.m_vGeometries.emplace_back(geometry);
                 blasInput.m_vRangeInfo.emplace_back(range);
+
+				PrimitiveDescription primDesc = { triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress };
+                vPrimitiveDescs.emplace_back(primDesc);
             }
 
             if (blasInput.m_vGeometries.size() > 0)
@@ -128,7 +132,7 @@ RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
                 Instance instance;
 
                 instance.transform = pGeometryNode->GetGeometry()->GetWorldMatrix();  // Position of the instance
-                instance.instanceId = BLASs.size() - 1;     // gl_InstanceCustomIndexEXT
+				instance.instanceCustomId = vPrimitiveDescs.size() - blasInput.m_vGeometries.size();     // use custom index to address begining of primitive description
                 instance.blasId = BLASs.size() -  1;
                 instance.hitGroupId = 0;  // We will use the same hit group for all objects
                 instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
@@ -137,7 +141,7 @@ RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
         }
     }
 
-    return {BLASs, vInstances};
+    return {BLASs, vInstances, vPrimitiveDescs};
 }
 
 void RTBuilder::BuildBLAS(const std::vector<BLASInput> &vBLASInputs, VkBuildAccelerationStructureFlagsKHR flags)
@@ -457,7 +461,7 @@ VkAccelerationStructureInstanceKHR RTBuilder::TLASInputToVkGeometryInstance(cons
     // the matrix is row-major, we simply copy the first 12 values of the
     // original 4x4 matrix
     memcpy(&gInst.transform, glm::value_ptr(glm::transpose(instance.transform)), sizeof(gInst.transform));
-    gInst.instanceCustomIndex = instance.instanceId;
+    gInst.instanceCustomIndex = instance.instanceCustomId;
     gInst.mask = instance.mask;
     gInst.instanceShaderBindingTableRecordOffset = instance.hitGroupId;
     gInst.flags = instance.flags;

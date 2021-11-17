@@ -191,7 +191,7 @@ public:
 protected:
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
-    uint32_t m_nSize;
+    uint32_t m_nSize = 0;
     const VkBufferUsageFlags BUFFER_USAGE = 0x0;
     const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_UNKNOWN;
 };
@@ -244,10 +244,10 @@ public:
     }
 };
 
-class ShaderStorageBuffer : public BufferResource
+class StorageBuffer : public BufferResource
 {
 public:
-    ShaderStorageBuffer(const void* pData, uint32_t size)
+    StorageBuffer(const void* pData, uint32_t size)
         : BufferResource(
               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                   VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -255,7 +255,7 @@ public:
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
-                                             "SBT");
+                                             "Storage Buffer");
         SetData(pData, size);
     }
 };

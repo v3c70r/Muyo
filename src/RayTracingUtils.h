@@ -22,11 +22,17 @@ struct BLASInput
     VkBuildAccelerationStructureFlagsKHR m_flags = 0;
 };
 
+struct PrimitiveDescription
+{
+    VkDeviceAddress m_vertexBufferAddress;
+    VkDeviceAddress m_indextBufferAddress;
+};
+
 // This is an instance referes to a BLAS
 struct Instance
 {
     uint32_t blasId{0};      // Index of the BLAS in m_blas
-    uint32_t instanceId{0};  // Instance Index (gl_InstanceID)
+    uint32_t instanceCustomId{0};  // Instance Index (gl_InstanceID)
     uint32_t hitGroupId{0};  // Hit group index in the SBT
     uint32_t mask{0xFF};     // Visibility mask, will be AND-ed with ray mask
     VkGeometryInstanceFlagsNV flags = VK_GEOMETRY_INSTANCE_TRIANGLE_CULL_DISABLE_BIT_NV;
@@ -37,6 +43,7 @@ struct RTInputs
 {
     std::vector<BLASInput> BLASs;
     std::vector<Instance> vInstances;
+    std::vector<PrimitiveDescription> vPrimitiveDescriptions;
 };
 
 class Scene;
