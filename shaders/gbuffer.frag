@@ -53,7 +53,7 @@ void main() {
     vec3 vWorldNormal = normalize(inWorldNormal.xyz + vTextureNormal);
 
     // Populate GBuffer
-    outPositionAO = inWorldPos;
+    outPositionAO = inWorldPos / inWorldPos.w;
     outPositionAO.w = texture(texPBR[TEX_AO], inTexCoords[UVIndices[TEX_AO]]).r;
     outAlbedoTransmittance.xyz = texture(texPBR[TEX_ALBEDO], inTexCoords[UVIndices[TEX_ALBEDO]]).xyz * factors.vBaseColorFactors.xyz;
     outAlbedoTransmittance.w = 1.0; // Transmittance

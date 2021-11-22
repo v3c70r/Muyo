@@ -261,7 +261,7 @@ void DescriptorManager::createDescriptorSetLayouts()
         std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
             GetBinding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR),
             GetBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR),
-            GetBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+            GetBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
         };
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -686,7 +686,7 @@ void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptor
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = primDescBuffer.buffer();
     bufferInfo.offset = 0;
-    bufferInfo.range = primDescBuffer.GetNumStructs() * sizeof(primDescBuffer);
+    bufferInfo.range = primDescBuffer.GetSize();
 
     writes[2] = {};
     writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

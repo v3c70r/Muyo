@@ -188,6 +188,8 @@ public:
         GetMemoryAllocator()->UnmapBuffer(m_allocation);
     }
 
+	uint32_t GetSize() const { return m_nSize; }
+
 protected:
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
@@ -259,6 +261,7 @@ public:
                                              m_buffer, m_allocation,
                                              "Storage Buffer");
         SetData((void*)buffer, nSize);
+        m_nNumStructs = nNumStructs;
     }
     uint32_t GetNumStructs() const { return m_nNumStructs;}
 private:

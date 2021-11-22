@@ -9,7 +9,7 @@
 #include "RenderPassGBuffer.h"
 #include "UniformBuffer.h"
 #include "Camera.h"
-class PrimitiveDescription;
+struct PrimitiveDescription;
 
 enum DescriptorLayoutType
 {
