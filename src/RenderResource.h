@@ -244,18 +244,23 @@ public:
     }
 };
 
+template <class T>
 class StorageBuffer : public BufferResource
 {
 public:
-    StorageBuffer(const void* pData, uint32_t size)
+    StorageBuffer(const T* buffer, uint32_t nNumStructs)
         : BufferResource(
               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                   VK_BUFFER_USAGE_TRANSFER_DST_BIT,
               VMA_MEMORY_USAGE_GPU_ONLY)
     {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
+        uint32_t nSize = sizeof(T) * nNumStructs;
+        GetMemoryAllocator()->AllocateBuffer(nSize, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
                                              "Storage Buffer");
-        SetData(pData, size);
+        SetData((void*)buffer, nSize);
     }
+    uint32_t GetNumStructs() const { return m_nNumStructs;}
+private:
+    uint32_t m_nNumStructs = 0;
 };

@@ -47,6 +47,8 @@ struct RTInputs
 };
 
 class Scene;
+template <typename T>
+class StorageBuffer;
 
 RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls);
 

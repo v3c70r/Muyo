@@ -589,13 +589,13 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
 
     const auto* pStorageImageRes = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", ext, VK_FORMAT_R16G16B16A16_SFLOAT);
     const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    StorageBuffer<PrimitiveDescription>* primDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<PrimitiveDescription>>("primitive descs");
     std::vector<VkDescriptorSet> vDescSets =
         {
             GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
-            GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView())};
+            GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView(), *primDescBuffer)};
 
     m_cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
-
 
     {
         VkCommandBufferBeginInfo beginInfo = {};

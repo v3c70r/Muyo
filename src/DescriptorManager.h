@@ -9,6 +9,7 @@
 #include "RenderPassGBuffer.h"
 #include "UniformBuffer.h"
 #include "Camera.h"
+class PrimitiveDescription;
 
 enum DescriptorLayoutType
 {
@@ -71,9 +72,8 @@ public:
             );
 
     // Ray Tracing descriptor set
-    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage);
-    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage);
-
+    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer);
+    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {

@@ -91,6 +91,17 @@ public:
         return static_cast<UniformBuffer<T>*>(m_mResources[sName].get());
     }
 
+    template <class T>
+    StorageBuffer<T>* GetStorageBuffer(const std::string sName, const std::vector<T>& structuredBuffers)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<StorageBuffer<T>>(structuredBuffers.data(), (uint32_t)structuredBuffers.size());
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<StorageBuffer<T>*>(m_mResources[sName].get());
+    }
+
     AccelerationStructureBuffer* GetAccelerationStructureBuffer(
         const std::string& sName, uint32_t size)
     {
@@ -157,6 +168,20 @@ public:
                 m_mResources[sName] = std::unique_ptr<T>(pResource);
                 m_mResources[sName]->SetDebugName(sName);
             }
+        }
+    }
+
+    // Get an allocated resource
+    template <class T>
+    T* GetResource(const std::string& sName)
+    {
+        if (m_mResources.find(sName) != m_mResources.end())
+        {
+            return dynamic_cast<T*>(m_mResources[sName].get());
+        }
+        else
+        {
+            return nullptr;
         }
     }
 

@@ -258,9 +258,11 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
+        std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
             GetBinding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR),
-            GetBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR)};
+            GetBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR),
+            GetBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+        };
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
@@ -629,7 +631,7 @@ void DescriptorManager::UpdateIBLDescriptorSet(
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
-VkDescriptorSet DescriptorManager::AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage)
+VkDescriptorSet DescriptorManager::AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR& acc, const VkImageView& outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer)
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     // Create descriptor sets
@@ -643,22 +645,21 @@ VkDescriptorSet DescriptorManager::AllocateRayTracingDescriptorSet(const VkAccel
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Ray Tracing input output");
-    UpdateRayTracingDescriptorSet(descriptorSet, acc, outputImage);
+    UpdateRayTracingDescriptorSet(descriptorSet, acc, outputImage, primDescBuffer);
     return descriptorSet;
 }
 
-void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage)
+void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer)
 {
-    // Two descriptor writes
+
+    // Three descriptor writes
+    std::array<VkWriteDescriptorSet, 3> writes;
+
+    // Input acceleration structure
     VkWriteDescriptorSetAccelerationStructureKHR accDesc = {};
     accDesc.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
     accDesc.accelerationStructureCount = 1;
     accDesc.pAccelerationStructures = &acc;
-
-    VkDescriptorImageInfo imageInfo = {VK_NULL_HANDLE, outputImage, VK_IMAGE_LAYOUT_GENERAL};
-
-    // Input acceleration structure
-    std::array<VkWriteDescriptorSet, 2> writes;
     writes[0] = {};
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[0].dstSet = descriptorSet;
@@ -670,6 +671,7 @@ void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptor
 
 
     // Output image
+    VkDescriptorImageInfo imageInfo = {VK_NULL_HANDLE, outputImage, VK_IMAGE_LAYOUT_GENERAL};
     writes[1] = {};
     writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[1].pNext = nullptr;
@@ -679,7 +681,25 @@ void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptor
     writes[1].descriptorCount = 1;
     writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[1].pImageInfo = &imageInfo;
+
+    // Primitive desc
+    VkDescriptorBufferInfo bufferInfo = {};
+    bufferInfo.buffer = primDescBuffer.buffer();
+    bufferInfo.offset = 0;
+    bufferInfo.range = primDescBuffer.GetNumStructs() * sizeof(primDescBuffer);
+
+    writes[2] = {};
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].pNext = nullptr;
+    writes[2].dstSet = descriptorSet;
+    writes[2].dstBinding = 2;
+    writes[2].dstArrayElement = 0;
+    writes[2].descriptorCount = 1;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[2].pBufferInfo = &bufferInfo;
+
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
 }
 
 DescriptorManager* GetDescriptorManager() { return &descriptorManager; }
