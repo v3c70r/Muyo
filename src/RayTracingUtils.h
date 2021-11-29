@@ -1,5 +1,6 @@
 #pragma once
 #include "Scene.h"
+#include "Material.h"
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
@@ -26,6 +27,9 @@ struct PrimitiveDescription
 {
     VkDeviceAddress m_vertexBufferAddress;
     VkDeviceAddress m_indextBufferAddress;
+
+    VkDeviceAddress m_pbrFactorAddress;
+    std::array<uint32_t, Material::TEX_COUNT> m_aPbrTextureIndices;
 };
 
 // This is an instance referes to a BLAS

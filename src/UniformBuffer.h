@@ -18,10 +18,19 @@ class UniformBuffer : public BufferResource
 {
 public:
     UniformBuffer()
-        : BufferResource(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        : BufferResource(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT 
+#ifdef FEATURE_RAY_TRACING
+            | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+#endif
+            ,
                          VMA_MEMORY_USAGE_CPU_TO_GPU)
 
     {
+        if (GetRenderDevice()->IsRayTracingSupported())
+        {
+
+
+        }
         const size_t size = sizeof(T);
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,

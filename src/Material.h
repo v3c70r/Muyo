@@ -14,7 +14,7 @@ class Material
 {
 
 public:
-    enum TextureTypes
+    enum TextureType
     {
         TEX_ALBEDO,
         TEX_NORMAL,
@@ -34,30 +34,33 @@ public:
     };
     struct MaterialParameters
     {
-        std::array<Texture *, TEX_COUNT> m_apTextures;
+        std::array<const Texture *, TEX_COUNT> m_apTextures;
+        std::array<uint32_t, TEX_COUNT> m_aTextureIndices;
         UniformBuffer<PBRFactors> *m_pFactors = nullptr;
     };
 
 public:
-    void loadTexture(TextureTypes type, const std::string& path, const std::string& name)
+    VkDeviceAddress GetPBRFactorsDeviceAdd() const
     {
-        const auto it = GetTextureManager()->m_vpTextures.find(name);
-        if (it == GetTextureManager()->m_vpTextures.end())
-        {
-            GetTextureManager()->m_vpTextures[name] = std::make_unique<Texture>();
-            GetTextureManager()->m_vpTextures[name]->LoadImage(path);
-            GetTextureManager()->m_vpTextures[name]->SetDebugName(name);
-            m_materialParameters.m_apTextures[type] = GetTextureManager()->m_vpTextures[name].get();
-        }
-        else
-        {
-            m_materialParameters.m_apTextures[type] = it->second.get();
-        }
+        return GetRenderDevice()->GetBufferDeviceAddress(m_materialParameters.m_pFactors->buffer());
     }
-    VkImageView getImageView(TextureTypes type) const
+
+    void LoadTexture(TextureType type, const std::string& path, const std::string& name)
     {
-        return m_materialParameters.m_apTextures[type]->getView();
+        m_materialParameters.m_apTextures[type] = GetTextureManager()->CreateAndLoadOrGetTexture(name, path);
+        m_materialParameters.m_aTextureIndices[type] = GetTextureManager()->GetTextureIndex(name);
     }
+
+    void FillPbrTextureIndices(std::array<uint32_t, TEX_COUNT>& aIndices) const
+    {
+        aIndices = m_materialParameters.m_aTextureIndices;
+    }
+
+    uint32_t GetTextureOffset(TextureType type) const
+    {
+        m_materialParameters.m_apTextures[type];
+    }
+
     void SetMaterialParameterFactors(const PBRFactors &factors, const std::string &sMaterialName);
 
     VkDescriptorSet GetDescriptorSet() const;

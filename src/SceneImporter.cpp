@@ -412,11 +412,11 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 aUVIndices[2], aUVIndices[3],
                 aUVIndices[4], 0.0f};
 
-            pMaterial->loadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
-            pMaterial->loadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
-            pMaterial->loadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
-            pMaterial->loadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
-            pMaterial->loadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
+            pMaterial->LoadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
+            pMaterial->LoadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
+            pMaterial->LoadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
+            pMaterial->LoadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
+            pMaterial->LoadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
             pMaterial->SetMaterialParameterFactors(pbrFactors, gltfMaterial.name);
 
             pMaterial->AllocateDescriptorSet();

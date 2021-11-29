@@ -205,7 +205,33 @@ private:
 class TextureManager
 {
 public:
-    std::unordered_map<std::string, std::unique_ptr<Texture>> m_vpTextures;
-    void Destroy() { m_vpTextures.clear(); }
+	const Texture* CreateAndLoadOrGetTexture(const std::string& name, const std::string& path)
+	{
+		if (m_mTextureIndices.find(name) == m_mTextureIndices.end())
+		{
+			m_mTextureIndices[name] = (uint32_t)m_vpTextures.size();
+			m_vpTextures.emplace_back(std::make_unique<Texture>());
+			m_vpTextures.back()->LoadImage(path);
+			m_vpTextures.back()->SetDebugName(name);
+			return m_vpTextures.back().get();
+		}
+		else
+		{
+			return m_vpTextures[m_mTextureIndices[name]].get();
+		}
+	}
+    uint32_t GetTextureIndex(const std::string& name) const
+    {
+        return m_mTextureIndices.at(name);
+    }
+    const std::vector<std::unique_ptr<Texture>>& GetTextures() const { return m_vpTextures; }
+	void Destroy()
+	{
+		m_vpTextures.clear();
+		m_mTextureIndices.clear();
+	}
+private:
+	std::vector<std::unique_ptr<Texture>> m_vpTextures;
+	std::unordered_map<std::string, uint32_t> m_mTextureIndices;
 };
-TextureManager *GetTextureManager();
+TextureManager* GetTextureManager();

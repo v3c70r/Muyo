@@ -13,11 +13,11 @@ void MaterialManager::CreateDefaultMaterial()
         Material* pMaterial = GetMaterialManager()->m_mMaterials[sDefaultName].get();
 
         // Load PBR textures
-        pMaterial->loadTexture( Material::TEX_ALBEDO, "assets/Materials/white5x5.png", "defaultAlbedo"); 
-        pMaterial->loadTexture( Material::TEX_METALNESS, "assets/Materials/white5x5.png", "defaultMetalness"); 
-        pMaterial->loadTexture( Material::TEX_NORMAL, "assets/Materials/white5x5.png", "defaultNormal"); 
-        pMaterial->loadTexture( Material::TEX_ROUGHNESS, "assets/Materials/white5x5.png", "defaultRoughness");
-        pMaterial->loadTexture( Material::TEX_AO, "assets/Materials/white5x5.png", "defaultOcclusion");
+        pMaterial->LoadTexture( Material::TEX_ALBEDO, "assets/Materials/white5x5.png", "defaultAlbedo"); 
+        pMaterial->LoadTexture( Material::TEX_METALNESS, "assets/Materials/white5x5.png", "defaultMetalness"); 
+        pMaterial->LoadTexture( Material::TEX_NORMAL, "assets/Materials/white5x5.png", "defaultNormal"); 
+        pMaterial->LoadTexture( Material::TEX_ROUGHNESS, "assets/Materials/white5x5.png", "defaultRoughness");
+        pMaterial->LoadTexture( Material::TEX_AO, "assets/Materials/white5x5.png", "defaultOcclusion");
 
         // Load PBR Factors
         Material::PBRFactors pbrFactors;

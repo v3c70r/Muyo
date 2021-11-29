@@ -17,7 +17,6 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,    // A single sampler descriptor set layout at binding 0
     DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
     DESCRIPTOR_LAYOUT_PER_VIEW_DATA,     // A layout contains mvp matrices at binding 0
-    DESCRIPTOR_LAYOUT_PER_VIEW_DATA_RT,  // A layout contains mvp matrices at binding 0, for ray tracing
     DESCRIPTOR_LAYOUT_PER_OBJ_DATA,      // Per object data layout
     DESCRIPTOR_LAYOUT_MATERIALS,         // A sampler array contains material textures
     DESCRIPTOR_LAYOUT_GBUFFER,           // Layouts contains output of GBuffer
@@ -32,6 +31,7 @@ public:
     void createDescriptorPool();
     void destroyDescriptorPool();
     void createDescriptorSetLayouts();
+    void CreateRayTracingDescriptorLayout(uint32_t nNumSamplers);
     void destroyDescriptorSetLayouts();
 
     VkDescriptorSet AllocateLightingDescriptorSet(
@@ -48,8 +48,7 @@ public:
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     VkDescriptorSet AllocateSingleStorageImageDescriptorSet(VkImageView imageView);
 
-    VkDescriptorSet AllocatePerviewDataDescriptorSet(
-        const UniformBuffer<PerViewData> &perViewData, bool bIsRT = false);
+    VkDescriptorSet AllocatePerviewDataDescriptorSet(const UniformBuffer<PerViewData> &perViewData);
 
     // Material Descriptor Set
     VkDescriptorSet AllocateMaterialDescriptorSet();
@@ -72,8 +71,8 @@ public:
             );
 
     // Ray Tracing descriptor set
-    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer);
-    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer);
+    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer, const std::vector<std::unique_ptr<Texture>>& textures);
+	static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR& acc, const VkImageView& outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer, const std::vector<std::unique_ptr<Texture>>& textures);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {
@@ -141,14 +140,14 @@ private:
     }
 
     static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(
-        uint32_t binding, uint32_t numSamplers)
+		uint32_t binding, uint32_t numSamplers, VkShaderStageFlags stageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
     {
         VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
         samplerLayoutBinding.binding = binding;
         samplerLayoutBinding.descriptorCount = numSamplers;
         samplerLayoutBinding.descriptorType =
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        samplerLayoutBinding.stageFlags = stageFlag;
 
         return samplerLayoutBinding;
     }

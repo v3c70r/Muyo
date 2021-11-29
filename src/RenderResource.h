@@ -127,7 +127,7 @@ public:
                                                  MEMORY_USAGE, m_buffer,
                                                  m_allocation);
         }
-        m_nSize = size;
+        m_nSize = (uint32_t)size;
 
         if (BUFFER_USAGE & VK_BUFFER_USAGE_TRANSFER_DST_BIT)
         {

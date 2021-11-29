@@ -276,6 +276,9 @@ int main()
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
 
 #ifdef FEATURE_RAY_TRACING
+        // Allocate ray tracing descriptor layout based on number of textures in scene.
+        GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureManager()->GetTextures().size());
+
         RTBuilder rayTracingBuilder;
         if (GetRenderDevice()->IsRayTracingSupported())
         {
@@ -296,7 +299,6 @@ int main()
             // Allocate output image
             ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
 
-            GetDescriptorManager()->AllocateRayTracingDescriptorSet(rayTracingBuilder.GetTLAS(), rtOutputImage->getView(), *primDescBuffer);
             rayTracingBuilder.BuildRTPipeline();
             rayTracingBuilder.BuildShaderBindingTable();
             rayTracingBuilder.RayTrace(vpExtent);

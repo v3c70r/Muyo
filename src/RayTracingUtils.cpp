@@ -121,7 +121,10 @@ RTInputs ConstructRTInputsFromDrawLists(const DrawLists& dls)
                 blasInput.m_vGeometries.emplace_back(geometry);
                 blasInput.m_vRangeInfo.emplace_back(range);
 
-				PrimitiveDescription primDesc = { triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress };
+                const Material* pMaterial = primitive->GetMaterial();
+                VkDeviceAddress pbrFactorAdd = pMaterial->GetPBRFactorsDeviceAdd();
+				PrimitiveDescription primDesc = { triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress, pbrFactorAdd};
+                pMaterial->FillPbrTextureIndices(primDesc.m_aPbrTextureIndices);
                 vPrimitiveDescs.emplace_back(primDesc);
             }
 
@@ -593,7 +596,7 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
     std::vector<VkDescriptorSet> vDescSets =
         {
             GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
-            GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView(), *primDescBuffer)};
+            GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView(), *primDescBuffer, GetTextureManager()->GetTextures())};
 
     m_cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
 
