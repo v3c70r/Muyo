@@ -468,13 +468,11 @@ void RenderLayerIBL::recordCommandBuffer()
         RenderPassBeginInfoBuilder beginInfoBuilder;
         aRenderpassBeginInfos[passIdx] =
             beginInfoBuilder
-                .setRenderArea(
-                    VkRect2D({static_cast<int32_t>(m_aCubemapSizes[passIdx]),
-                              static_cast<int32_t>(m_aCubemapSizes[passIdx])}))
-                .setRenderPass(m_vRenderPasses[passIdx])
-                .setClearValues(clearValues)
-                .setFramebuffer(m_aFramebuffers[passIdx])
-                .Build();
+			.setRenderArea(VkExtent2D({ m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx] }))
+			.setRenderPass(m_vRenderPasses[passIdx])
+			.setClearValues(clearValues)
+			.setFramebuffer(m_aFramebuffers[passIdx])
+			.Build();
 
         ViewportBuilder vpBuilder;
         aViewports[passIdx] =

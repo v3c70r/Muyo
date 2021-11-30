@@ -210,27 +210,35 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                    accessor.count * nByteStride);
         }
         // vUV0s
-        {
-            const std::string sAttribkey = "TEXCOORD_0";
-            const auto &accessor =
-                model.accessors.at(primitive.attributes.at(sAttribkey));
-            const auto &bufferView = model.bufferViews[accessor.bufferView];
-            const auto &buffer = model.buffers[bufferView.buffer];
+		{
+			const std::string sAttribkey = "TEXCOORD_0";
+			if (primitive.attributes.find(sAttribkey) != primitive.attributes.end())
+			{
+				const auto& accessor =
+					model.accessors.at(primitive.attributes.at(sAttribkey));
+				const auto& bufferView = model.bufferViews[accessor.bufferView];
+				const auto& buffer = model.buffers[bufferView.buffer];
 
-            assert(accessor.type == TINYGLTF_TYPE_VEC2);
-            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+				assert(accessor.type == TINYGLTF_TYPE_VEC2);
+				assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
 
-            // confirm we use the standard format
-            size_t nByteStride = 8;
-            assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
-            assert(buffer.data.size() >=
-                   bufferView.byteOffset + accessor.byteOffset +
-                       nByteStride * accessor.count);
-            vUV0s.resize(accessor.count);
-            memcpy(vUV0s.data(),
-                   buffer.data.data() + bufferView.byteOffset +
-                       accessor.byteOffset,
-                   accessor.count * nByteStride);
+				// confirm we use the standard format
+				size_t nByteStride = 8;
+				assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
+				assert(buffer.data.size() >=
+					bufferView.byteOffset + accessor.byteOffset +
+					nByteStride * accessor.count);
+				vUV0s.resize(accessor.count);
+				memcpy(vUV0s.data(),
+					buffer.data.data() + bufferView.byteOffset +
+					accessor.byteOffset,
+					accessor.count * nByteStride);
+			}
+            else
+            {
+                vUV0s.resize(vPositions.size());
+                std::fill(vUV0s.begin(), vUV0s.end(), glm::vec2(0.0f, 0.0f));
+            }
         }
         // vUV1s
         {

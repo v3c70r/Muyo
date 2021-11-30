@@ -39,11 +39,12 @@ layout(set = 1, binding = 1) uniform PBRFactors {
 
 void main() {
 
+    // Suports up to 2 sets of UVs
     vec2 inTexCoords[2];
     inTexCoords[0] = inTexCoords0;
     inTexCoords[1] = inTexCoords1;
 
-    uint UVIndices[5];
+    uint UVIndices[TEX_COUNT];
     UVIndices[0] = factors.UVIndices0;
     UVIndices[1] = factors.UVIndices1;
     UVIndices[2] = factors.UVIndices2;

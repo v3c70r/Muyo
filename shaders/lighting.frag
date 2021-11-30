@@ -57,7 +57,6 @@ void main() {
 
     vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetallic);
     vec3 vLo = vec3(0.0);
-    vec3 V = normalize(-vViewPos);
 
     // For each light source
     //
@@ -74,6 +73,7 @@ void main() {
     }
 
     // Add IBL
+    vec3 V = normalize(-vViewPos);
     const float MAX_REFLECTION_LOD = 4.0;
     vec3 R = reflect(-V, vFaceNormal);
     vec3 vPrefilteredColor = textureLod(prefilteredMap, R, fRoughness * MAX_REFLECTION_LOD).rgb;
@@ -96,6 +96,5 @@ void main() {
     vColor = pow(vColor, vec3(1.0 / 2.2));
 
     outColor = vec4(vColor, 1.0);
-    //outColor = vec4(vWorldNormal, 1.0);
     outColor.a = 1.0;
 }
