@@ -214,9 +214,22 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-            GetSamplerBinding(0),    // Irradiance map
-            GetSamplerBinding(1),    // prefiltered environment 
-            GetSamplerBinding(2)};   // specular brdf lut
+            GetSamplerBinding(0, 
+            VK_SHADER_STAGE_FRAGMENT_BIT 
+#ifdef FEATURE_RAY_TRACING
+            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+#endif
+            ),    // Irradiance map
+            GetSamplerBinding(1, VK_SHADER_STAGE_FRAGMENT_BIT 
+#ifdef FEATURE_RAY_TRACING
+            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+#endif
+            ),    // prefiltered environment 
+            GetSamplerBinding(2, VK_SHADER_STAGE_FRAGMENT_BIT 
+#ifdef FEATURE_RAY_TRACING
+            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+#endif
+            )};   // specular brdf lut
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();

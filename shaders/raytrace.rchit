@@ -66,6 +66,11 @@ layout(buffer_reference, scalar) buffer PBRFactors {
 layout(set = 1, binding = 2, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
 layout(set = 1, binding = 3) uniform sampler2D AllTextures[];
 
+// IBL parameters
+layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
+layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
+layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
+
 layout(location = 0) rayPayloadInEXT vec3 vResColor;
 hitAttributeEXT vec2 vHitAttribs;
 
@@ -157,9 +162,34 @@ void main()
                 fRoughness);
     }
 
+    // IBL diffuse
+    vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz;
+    vec3 vDiffuse = vAlbedo * irradiance * 0.1;
+    vec3 diffuse = irradiance * vAlbedo;
 
-    vResColor = vLo;
+    // IBL specular
+    vec3 V = normalize(-vViewPos);
+    const float MAX_REFLECTION_LOD = 4.0;
+    vec3 R = reflect(V, vFaceNormal);
+    vec3 vPrefilteredColor = textureLod(prefilteredMap, R, fRoughness * MAX_REFLECTION_LOD).rgb;
+    vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetalness);
+    vec3 F = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
+    vec2 vEnvBRDF  = texture(specularBrdfLut, vec2(max(dot(vFaceNormal, V), 0.0), fRoughness)).rg;
+    vec3 specular = vPrefilteredColor * (F * vEnvBRDF.x + vEnvBRDF.y);
+    vec3 kS = F;
+    vec3 kD = 1.0 - kS;
+    kD *= 1.0 - fMetalness;
 
+    // IBL result
+    vec3 vAmbient = (kD * vDiffuse + specular) * fAO;
+
+
+
+
+
+    vResColor = vLo + vAmbient;
+
+    // Gamma correction
     vResColor = vResColor / (vResColor + vec3(1.0));
     vResColor = pow(vResColor, vec3(1.0 / 2.2));
 

@@ -345,9 +345,12 @@ int main()
 
             std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
 #ifdef FEATURE_RAY_TRACING
+            // Hack to patch the ray tracing command buffer
+            // Insert it after the first cmd buffer because the first cmd buffer can be the one to generate IBL images.
+            // IBL images are required by ray tracing pass.
             if (GetRenderDevice()->IsRayTracingSupported())
             {
-                vCmdBufs.insert(vCmdBufs.begin(), rayTracingBuilder.GetCommandBuffer());
+                vCmdBufs.insert(vCmdBufs.begin()+1, rayTracingBuilder.GetCommandBuffer());
             }
 #endif
             GetRenderDevice()->SubmitCommandBuffers(vCmdBufs);

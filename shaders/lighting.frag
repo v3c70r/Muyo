@@ -75,7 +75,7 @@ void main() {
     // Add IBL
     vec3 V = normalize(-vViewPos);
     const float MAX_REFLECTION_LOD = 4.0;
-    vec3 R = reflect(-V, vFaceNormal);
+    vec3 R = reflect(V, vFaceNormal);
     vec3 vPrefilteredColor = textureLod(prefilteredMap, R, fRoughness * MAX_REFLECTION_LOD).rgb;
     vec3 F = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
     vec2 vEnvBRDF  = texture(specularBrdfLut, vec2(max(dot(vFaceNormal, V), 0.0), fRoughness)).rg;

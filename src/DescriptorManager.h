@@ -140,14 +140,14 @@ private:
     }
 
     static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(
-		uint32_t binding, uint32_t numSamplers, VkShaderStageFlags stageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
+		uint32_t binding, uint32_t numSamplers, int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
     {
         VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
         samplerLayoutBinding.binding = binding;
         samplerLayoutBinding.descriptorCount = numSamplers;
         samplerLayoutBinding.descriptorType =
             VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        samplerLayoutBinding.stageFlags = stageFlag;
+        samplerLayoutBinding.stageFlags = nStageFlag;
 
         return samplerLayoutBinding;
     }
@@ -163,9 +163,9 @@ private:
         return descSetBinding;
     }
 
-    static VkDescriptorSetLayoutBinding GetSamplerBinding(uint32_t binding)
+    static VkDescriptorSetLayoutBinding GetSamplerBinding(uint32_t binding, int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
     {
-        return GetSamplerArrayBinding(binding, 1);
+        return GetSamplerArrayBinding(binding, 1, nStageFlag);
     }
 
     std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT>

@@ -498,7 +498,8 @@ void RTBuilder::BuildRTPipeline()
 
     std::vector<VkDescriptorSetLayout> descLayouts = {
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING)
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL)
     };
 
     m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
@@ -594,9 +595,20 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
     const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
     StorageBuffer<PrimitiveDescription>* primDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<PrimitiveDescription>>("primitive descs");
     std::vector<VkDescriptorSet> vDescSets =
-        {
-            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
-            GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView(), *primDescBuffer, GetTextureManager()->GetTextures())};
+	{
+		GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
+		GetDescriptorManager()->AllocateRayTracingDescriptorSet(m_tlas.m_ac, pStorageImageRes->getView(), *primDescBuffer, GetTextureManager()->GetTextures()),
+		// IBL descriptor sets
+		GetDescriptorManager()->AllocateIBLDescriptorSet(
+			GetRenderResourceManager()
+				->getColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+				->getView(),
+			GetRenderResourceManager()
+				->getColorTarget("prefiltered_cubemap", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+				->getView(),
+			GetRenderResourceManager()
+				->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
+				->getView()) };
 
     m_cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
 
