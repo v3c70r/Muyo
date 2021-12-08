@@ -61,10 +61,23 @@ public:
     {
         DL_TRANSPARENT,
         DL_OPAQUE,
+        DL_LIGHT,
         DL_COUNT
     };
     std::array<std::vector<const SceneNode*>, DL_COUNT> m_aDrawLists;
 };
+
+struct LightData
+{
+
+    uint32_t LightType = 0;
+    glm::vec3 vPosition = glm::vec3(0.0f);
+    glm::vec3 vColor = glm::vec3(0.0f);
+    float fIntensity = 0.0f;
+};
+
+template<typename T> class StorageBuffer;
+
 class Scene
 {
 public:
@@ -93,8 +106,12 @@ public:
     void SetName(const std::string& sName) { m_sName = sName; }
     const std::string& GetName() const { return m_sName; }
 
+
+protected:
+    void ConstructLightBuffer();
 protected:
     std::unique_ptr<SceneNode> m_pRoot = std::make_unique<SceneNode>();
+    StorageBuffer<LightData>* m_pLightBuffer = nullptr;
     DrawLists m_drawLists;
     std::string m_sName;
     bool m_bAreDrawListsDirty = true;

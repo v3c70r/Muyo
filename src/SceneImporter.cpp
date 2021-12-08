@@ -12,6 +12,7 @@
 #include "Material.h"
 #include "SceneImporter.h"
 #include "RenderResourceManager.h"
+#include "LightSceneNode.h"
 
 std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
 {
@@ -39,12 +40,29 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                     ConstructTreeFromGLTF = [&](SceneNode **ppSceneNode, const tinygltf::Node &gltfNode) {
                         // Copy current node
                         SceneNode *pSceneNode = nullptr;
+                        static const std::string LIGHT_EXT_NAME = "KHR_lights_punctual";
+
                         if (gltfNode.mesh != -1)
                         {
                             const tinygltf::Mesh mesh = model.meshes[gltfNode.mesh];
                             pSceneNode = new GeometrySceneNode;
                             CopyGLTFNode(*pSceneNode, gltfNode);
                             ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
+                        }
+                        else if (gltfNode.extensions.find(LIGHT_EXT_NAME) != gltfNode.extensions.end() && gltfNode.extensions.at(LIGHT_EXT_NAME).Has("light"))
+                        {
+                            int nLightIdx = gltfNode.extensions.at(LIGHT_EXT_NAME).Get("light").Get<int>();
+                            tinygltf::Light light = model.lights[nLightIdx];
+
+                            glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
+                            uint32_t nLightType = LIGHT_TYPE_SPOT;
+                            if (light.type == "SPOT")
+                            {
+                                nLightType = LIGHT_TYPE_SPOT;
+                            }
+
+                            pSceneNode = new LightSceneNode(nLightType, lightColor, (float)light.intensity);
+                            CopyGLTFNode(*pSceneNode, gltfNode);
                         }
                         else
                         {
@@ -113,7 +131,7 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
             qR.w = (float)gltfNode.rotation[3];
         }
 
-        glm::vec3 vS(0.0f);
+        glm::vec3 vS(1.0f);
         if (gltfNode.scale.size() > 0)
         {
             vS.x = (float)gltfNode.scale[0];
@@ -122,10 +140,10 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
         }
 
         glm::mat4 mMat(1.0);
-        glm::translate(mMat, vT);
+        mMat = glm::translate(mMat, vT);
         glm::mat4 mR = glm::mat4_cast(qR);
         mMat = mMat * mR;
-        glm::scale(mMat, vS);
+        mMat = glm::scale(mMat, vS);
         assert(Scene::IsMat4Valid(mMat));
         sceneNode.SetMatrix(mMat);
     }

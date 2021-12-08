@@ -27,8 +27,8 @@ const uint TEX_COUNT = 5;
 layout(set = 1, binding = 0) uniform sampler2D texPBR[TEX_COUNT];
 layout(set = 1, binding = 1) uniform PBRFactors {
     vec4 vBaseColorFactors;
-    float fRoughness;
     float fMetalness;
+    float fRoughness;
     uint UVIndices0;
     uint UVIndices1;
     uint UVIndices2;

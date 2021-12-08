@@ -3,23 +3,8 @@
 #extension GL_GOOGLE_include_directive : enable
 #include "brdf.h"
 #include "Camera.h"
+#include "lights.h"
 
-// Light informations
-const int LIGHT_COUNT = 4;
-const int USED_LIGHT_COUNT = 1;
-const vec3 lightPositions[LIGHT_COUNT] = vec3[](
-    vec3(1.0, 1.0, 0.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0),
-    vec3(1.0, 1.0, 0.0)
-);
-const vec3 lightColors[LIGHT_COUNT] = vec3[](
-    vec3(1.0, 1.0, 1.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0),
-    vec3(1.0, 1.0, 0.0)
-);
-//===============
 
 // GBuffer texture indices
 const uint GBUFFER_POS_AO = 0;
@@ -84,12 +69,13 @@ void main() {
     vec3 kD = 1.0 - kS;
     kD *= 1.0 - fMetallic;
     vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz;
-    vec3 vDiffuse = vAlbedo * irradiance * 0.1;
+    vec3 vDiffuse = vAlbedo * irradiance;
     vec3 diffuse = irradiance * vAlbedo;
 
     vec3 vAmbient = (kD * vDiffuse + specular) * fAO;
 
     vec3 vColor = vLo + vAmbient;
+    //vec3 vColor = vLo;
 
     // Gamma correction
     vColor = vColor / (vColor + vec3(1.0));

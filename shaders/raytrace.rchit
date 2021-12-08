@@ -8,6 +8,7 @@
 
 #include "brdf.h"
 #include "Camera.h"
+#include "lights.h"
 CAMERA_UBO(0)
 
 // Materials
@@ -17,22 +18,6 @@ const uint TEX_METALNESS = 2;
 const uint TEX_ROUGHNESS = 3;
 const uint TEX_AO = 4;
 const uint TEX_COUNT = 5;
-
-// Light informations
-const int LIGHT_COUNT = 4;
-const int USED_LIGHT_COUNT = 1;
-const vec3 lightPositions[LIGHT_COUNT] = vec3[](
-    vec3(1.0, 1.0, 0.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0),
-    vec3(1.0, 1.0, 0.0)
-);
-const vec3 lightColors[LIGHT_COUNT] = vec3[](
-    vec3(1.0, 1.0, 1.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0),
-    vec3(1.0, 1.0, 0.0)
-);
 
 struct PrimitiveDesc
 {
@@ -49,12 +34,14 @@ struct Vertex
     vec4 textureCoord;
 };
 
+layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
+
 layout(buffer_reference, scalar) buffer Vertices {Vertex v[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer Indices {ivec3 i[]; }; // Triangle indices
 layout(buffer_reference, scalar) buffer PBRFactors {
     vec4 vBaseColorFactors;
-    float fRoughness;
     float fMetalness;
+    float fRoughness;
     uint UVIndices0;
     uint UVIndices1;
     uint UVIndices2;
@@ -72,6 +59,7 @@ layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
 layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
 
 layout(location = 0) rayPayloadInEXT vec3 vResColor;
+layout(location = 1) rayPayloadEXT  bool bIsShadowed;
 hitAttributeEXT vec2 vHitAttribs;
 
 // Helper functions
@@ -152,7 +140,36 @@ void main()
     vec3 vLo = vec3(0.0, 0.0, 0.0);
     for(int i = 0; i < USED_LIGHT_COUNT; ++i)
     {
-        vLo += ComputeDirectLighting(
+        bIsShadowed = false;
+
+        vec3 vLightDir = lightPositions[i] - vWorldPos;
+        float fLightDistance = length(vLightDir);
+        vec3 L = normalize(vLightDir);
+        float tMin   = 0.001;
+        float tMax   = fLightDistance;
+        vec3  origin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+        vec3  rayDir = L;
+        uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+        traceRayEXT(topLevelAS,  // acceleration structure
+                flags,       // rayFlags
+                0xFF,        // cullMask
+                0,           // sbtRecordOffset
+                0,           // sbtRecordStride
+                1,           // missIndex
+                origin,      // ray origin
+                tMin,        // ray min range
+                rayDir,      // ray direction
+                tMax,        // ray max range
+                1            // payload (location = 1)
+                );
+
+        float factor = 1.0;
+        if (bIsShadowed)
+        {
+            factor = 0.3;
+        }
+
+        vLo += factor * ComputeDirectLighting(
                 lightPositions[i],
                 lightColors[i],
                 vViewPos,
@@ -164,7 +181,7 @@ void main()
 
     // IBL diffuse
     vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz;
-    vec3 vDiffuse = vAlbedo * irradiance * 0.1;
+    vec3 vDiffuse = vAlbedo * irradiance;
     vec3 diffuse = irradiance * vAlbedo;
 
     // IBL specular
@@ -183,10 +200,7 @@ void main()
     // IBL result
     vec3 vAmbient = (kD * vDiffuse + specular) * fAO;
 
-
-
-
-
+    // Hack to remove IBL
     vResColor = vLo + vAmbient;
 
     // Gamma correction

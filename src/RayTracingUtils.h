@@ -85,8 +85,6 @@ private:
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline m_pipeline = VK_NULL_HANDLE;
 
-    // Shader group infos
-    std::vector<VkRayTracingShaderGroupCreateInfoKHR> m_vRTShaderGroupInfos;
 
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR m_rtProperties = {};
 

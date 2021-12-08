@@ -67,7 +67,7 @@ const int HEIGHT = 768;
 static bool s_bResizeWanted = false;
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                           (float)WIDTH / (float)HEIGHT, 0.1f,
-                                          10.0f),
+                                          100.0f),
                          glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
                                      glm::vec3(0.0f, 0.0f, 0.0f),   // Center
                                      glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
@@ -274,6 +274,9 @@ int main()
         // Load scene
         //GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
         GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+        //GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
+        //GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
+        //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
 
 #ifdef FEATURE_RAY_TRACING
         // Allocate ray tracing descriptor layout based on number of textures in scene.

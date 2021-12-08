@@ -481,6 +481,9 @@ void RTBuilder::BuildRTPipeline()
     VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rmiss.spv"));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(missShdr), VK_OBJECT_TYPE_SHADER_MODULE, "raytrace.rmiss.spv");
 
+    VkShaderModule missShadowShdr = CreateShaderModule(ReadSpv("shaders/raytraceShadow.rmiss.spv"));
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(missShadowShdr), VK_OBJECT_TYPE_SHADER_MODULE, "raytraceShadow.rmiss.spv");
+
     VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shaders/raytrace.rchit.spv"));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(chitShdr), VK_OBJECT_TYPE_SHADER_MODULE, "raytrace.rchit.spv");
 
@@ -490,6 +493,7 @@ void RTBuilder::BuildRTPipeline()
     RayTracingPipelineBuilder builder;
     builder.AddShaderModule(rayGenShdr, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
     .AddShaderModule(missShdr, VK_SHADER_STAGE_MISS_BIT_KHR)
+    .AddShaderModule(missShadowShdr, VK_SHADER_STAGE_MISS_BIT_KHR)
     .AddShaderModule(chitShdr, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // pipeline layout
@@ -504,7 +508,7 @@ void RTBuilder::BuildRTPipeline()
 
     m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
-    builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(1);
+    builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(2);
     VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
 
     assert(vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(),
@@ -515,10 +519,10 @@ void RTBuilder::BuildRTPipeline()
                                           nullptr,
                                           &m_pipeline) == VK_SUCCESS);
 
-    m_vRTShaderGroupInfos = builder.GetShaderGroupInfos();
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), rayGenShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShdr, nullptr);
+    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShadowShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), chitShdr, nullptr);
 }
 void RTBuilder::BuildShaderBindingTable()
@@ -526,7 +530,7 @@ void RTBuilder::BuildShaderBindingTable()
     GetRenderDevice()->GetPhysicalDeviceProperties(m_rtProperties);
 
     // Number of handles
-    uint32_t nMissCount = 1;
+    uint32_t nMissCount = 2;
     uint32_t nHitCount = 1;
     uint32_t nHandleCount = 1 + nMissCount + nHitCount;
     uint32_t nHandleSize = m_rtProperties.shaderGroupHandleSize;
