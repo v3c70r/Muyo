@@ -1,5 +1,7 @@
 #include "SceneManager.h"
 #include "SceneImporter.h"
+#include "LightSceneNode.h"
+#include "RenderResourceManager.h"
 static SceneManager s_sceneManager;
 
 SceneManager* GetSceneManager()
@@ -32,4 +34,19 @@ DrawLists SceneManager::GatherDrawLists()
         }
     }
     return dls;
+}
+
+StorageBuffer<LightData>* SceneManager::ConstructLightBufferFromDrawLists(const DrawLists& dl)
+{
+    const std::vector<const SceneNode*> lightNodes = dl.m_aDrawLists[DrawLists::DL_LIGHT];
+    std::vector<LightData> lightData;
+    lightData.reserve(lightNodes.size());
+    for (const SceneNode* pNode : lightNodes)
+    {
+        const LightSceneNode* pLightNode = static_cast<const LightSceneNode*>(pNode);
+        lightData.push_back(
+            {pLightNode->GetLightType(), pLightNode->GetWorldPosition(),
+             pLightNode->GetColor(), pLightNode->GetIntensity()});
+    }
+    return GetRenderResourceManager()->GetStorageBuffer("light data", lightData);
 }

@@ -32,19 +32,6 @@ std::string Scene::ConstructDebugString() const
     return ss.str();
 }
 
-void Scene::ConstructLightBuffer()
-{
-	const std::vector<const SceneNode*> lightNodes = m_drawLists.m_aDrawLists[DrawLists::DL_LIGHT];
-	std::vector<LightData> lightData;
-	lightData.reserve(lightNodes.size());
-	for (const SceneNode* pNode : lightNodes)
-	{
-		const LightSceneNode* pLightNode = static_cast<const LightSceneNode*>(pNode);
-		lightData.push_back({pLightNode->GetLightType(), pLightNode->GetWorldPosition(), pLightNode->GetColor(), pLightNode->GetIntensity()});
-	}
-	m_pLightBuffer = GetRenderResourceManager()->GetStorageBuffer(m_sName+" light data", lightData);
-}
-
 const DrawLists &Scene::GatherDrawLists()
 {
     if (m_bAreDrawListsDirty)
@@ -84,9 +71,6 @@ const DrawLists &Scene::GatherDrawLists()
             };
         FlattenTreeRecursive(m_pRoot, m_pRoot->GetMatrix(), m_drawLists);
         m_bAreDrawListsDirty = false;
-
-        // Update light GPU buffer
-        ConstructLightBuffer();
     }
     return m_drawLists;
 }

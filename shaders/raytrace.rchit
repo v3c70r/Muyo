@@ -9,6 +9,7 @@
 #include "brdf.h"
 #include "Camera.h"
 #include "lights.h"
+
 CAMERA_UBO(0)
 
 // Materials
@@ -57,6 +58,9 @@ layout(set = 1, binding = 3) uniform sampler2D AllTextures[];
 layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
 layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
 layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
+
+// Light data
+LIGHTS_UBO(3)
 
 layout(location = 0) rayPayloadInEXT vec3 vResColor;
 layout(location = 1) rayPayloadEXT  bool bIsShadowed;
@@ -138,11 +142,12 @@ void main()
     // For each light source
     //
     vec3 vLo = vec3(0.0, 0.0, 0.0);
-    for(int i = 0; i < USED_LIGHT_COUNT; ++i)
+    for(int i = 0; i < numLights.nNumLights; ++i)
     {
         bIsShadowed = false;
 
-        vec3 vLightDir = lightPositions[i] - vWorldPos;
+        LightData light = lightDatas.i[i];
+        vec3 vLightDir = light.vPosition - vWorldPos;
         float fLightDistance = length(vLightDir);
         vec3 L = normalize(vLightDir);
         float tMin   = 0.001;
@@ -163,20 +168,17 @@ void main()
                 1            // payload (location = 1)
                 );
 
-        float factor = 1.0;
-        if (bIsShadowed)
+        if (!bIsShadowed)
         {
-            factor = 0.3;
-        }
-
-        vLo += factor * ComputeDirectLighting(
-                lightPositions[i],
-                lightColors[i],
+            vLo += ComputeDirectLighting(
+                light.vPosition,
+                light.vColor * light.fIntensity,
                 vViewPos,
                 vFaceNormal,
                 vAlbedo,
-                fMetalness, 
+                fMetalness,
                 fRoughness);
+        }
     }
 
     // IBL diffuse

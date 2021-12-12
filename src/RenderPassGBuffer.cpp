@@ -252,6 +252,7 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                                      mRenderArea)
                     ->getView()};
 
+            const StorageBuffer<LightData>* lightDataBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
             std::vector<VkDescriptorSet> lightingDescSets = {
                 perViewSets,
                 // GBuffer descriptor sets
@@ -267,7 +268,9 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                         ->getView(),
                     GetRenderResourceManager()
                         ->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
-                        ->getView())};
+                        ->getView()),
+                // Light data buffer
+                GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)};
             const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
@@ -398,12 +401,10 @@ void RenderPassGBuffer::createPipelines()
     {
         // Create lighting pipeline
         std::vector<VkDescriptorSetLayout> descLayouts = {
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),  // MPV matrices
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_GBUFFER),  // GBuffer textures
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_IBL)  // Irradiance map
+            GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),  // MPV matrices
+            GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_GBUFFER),        // GBuffer textures
+            GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL),            // Irradiance map
+            GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA),     // Irradiance map
         };
 
         std::vector<VkPushConstantRange> pushConstants;

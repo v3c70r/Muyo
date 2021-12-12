@@ -278,6 +278,9 @@ int main()
         //GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
         //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
 
+        DrawLists dl = GetSceneManager()->GatherDrawLists();
+        StorageBuffer<LightData>* lightData = GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
+
 #ifdef FEATURE_RAY_TRACING
         // Allocate ray tracing descriptor layout based on number of textures in scene.
         GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureManager()->GetTextures().size());
@@ -287,7 +290,6 @@ int main()
         {
             // Test ray tracing
             RTInputs rtInputs;
-            DrawLists dl = GetSceneManager()->GatherDrawLists();
             rtInputs = ConstructRTInputsFromDrawLists(dl);
             rayTracingBuilder.BuildBLAS(
                 rtInputs.BLASs,
@@ -318,7 +320,7 @@ int main()
         GetMaterialManager()->CreateDefaultMaterial();
 
         // Record static command buffer
-        GetRenderPassManager()->RecordStaticCmdBuffers(GetSceneManager()->GatherDrawLists());
+        GetRenderPassManager()->RecordStaticCmdBuffers(dl);
         // Mainloop
         while (!Window::ShouldQuit())
         {

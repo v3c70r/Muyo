@@ -6,6 +6,7 @@
 #include "Debug.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
+#include "RenderResourceManager.h"
 
 // Poor man's singletone
 static DescriptorManager descriptorManager;
@@ -243,6 +244,39 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
                                 "IBL");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IBL] = layout;
+    }
+
+    // Light Data
+    {
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
+        descriptorSetLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+
+        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
+            GetBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT
+#ifdef FEATURE_RAY_TRACING
+                                                                    | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+#endif
+                       ),
+            GetBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT
+#ifdef FEATURE_RAY_TRACING
+                                                                    | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+#endif
+                       ),
+        };
+
+        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
+        descriptorSetLayoutInfo.pBindings = bindings.data();
+
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+                                           &descriptorSetLayoutInfo, nullptr,
+                                           &layout) == VK_SUCCESS);
+
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
+                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
+                                "light data");
+        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHT_DATA] = layout;
     }
 }
 
@@ -628,6 +662,69 @@ void DescriptorManager::UpdateIBLDescriptorSet(
     }
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
+
+    VkDescriptorSet DescriptorManager::AllocateLightDataDescriptorSet(uint32_t nNumLights, const StorageBuffer<LightData> &lightData)
+{
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHT_DATA];
+    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) == VK_SUCCESS);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
+                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "Light Data");
+    UpdateRayLightDataDescriptorSet(descriptorSet, nNumLights, lightData);
+    return descriptorSet;
+}
+
+void DescriptorManager::UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights, const StorageBuffer<LightData>& lightData)
+{
+    // Allocate a single buffer for number of lights
+    UniformBuffer<uint32_t>* numLightsBuffer = GetRenderResourceManager()->getUniformBuffer<uint32_t>("num lights");
+    numLightsBuffer->setData(nNumLights);
+
+    std::array<VkWriteDescriptorSet, 2> writes;
+
+    // Num of lights
+    VkDescriptorBufferInfo numLightBufferInfo = {};
+    numLightBufferInfo.buffer = numLightsBuffer->buffer();
+    numLightBufferInfo.offset = 0;
+    numLightBufferInfo.range = sizeof(uint32_t);
+
+    writes[0] = {};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].pNext = nullptr;
+    writes[0].dstSet = descriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].pBufferInfo = &numLightBufferInfo;
+
+    // Light buffer
+    VkDescriptorBufferInfo lightDataBufferInfo = {};
+    lightDataBufferInfo.buffer = lightData.buffer();
+    lightDataBufferInfo.offset = 0;
+    lightDataBufferInfo.range = lightData.GetSize();
+
+    writes[1] = {};
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].pNext = nullptr;
+    writes[1].dstSet = descriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].pBufferInfo = &lightDataBufferInfo;
+
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
+    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer, const std::vector<std::unique_ptr<Texture>> &textures);
 
 VkDescriptorSet DescriptorManager::AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR& acc, const VkImageView& outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer, const std::vector<std::unique_ptr<Texture>>& textures)
 {

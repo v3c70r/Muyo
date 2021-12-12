@@ -28,6 +28,8 @@ layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
 layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
 layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
 
+LIGHTS_UBO(3)
+
 void main() {
     // GBuffer info
     const vec3 vWorldPos = subpassLoad(inGBuffer_POS_AO).xyz;
@@ -45,16 +47,17 @@ void main() {
 
     // For each light source
     //
-    for(int i = 0; i < USED_LIGHT_COUNT; ++i)
+    for (int i = 0; i < numLights.nNumLights; ++i)
     {
+        LightData light = lightDatas.i[i];
         vLo += ComputeDirectLighting(
-                lightPositions[i],
-                lightColors[i],
-                vViewPos.xyz,
-                vFaceNormal,
-                vAlbedo,
-                fMetallic, 
-                fRoughness);
+            light.vPosition,
+            light.vColor * light.fIntensity,
+            vViewPos.xyz,
+            vFaceNormal,
+            vAlbedo,
+            fMetallic,
+            fRoughness);
     }
 
     // Add IBL
@@ -74,8 +77,8 @@ void main() {
 
     vec3 vAmbient = (kD * vDiffuse + specular) * fAO;
 
-    vec3 vColor = vLo + vAmbient;
-    //vec3 vColor = vLo;
+    //vec3 vColor = vLo + vAmbient;
+    vec3 vColor = vLo;
 
     // Gamma correction
     vColor = vColor / (vColor + vec3(1.0));

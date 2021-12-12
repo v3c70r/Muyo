@@ -10,6 +10,7 @@ public:
     const SceneMap& GetAllScenes() const { return m_mScenes; }
     void LoadSceneFromFile(const std::string& sPath);
     DrawLists GatherDrawLists();
+    static StorageBuffer<LightData>* ConstructLightBufferFromDrawLists(const DrawLists& dl);
 private:
     SceneMap m_mScenes;
 };

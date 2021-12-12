@@ -20,7 +20,7 @@ public:
     }
     glm::vec3 GetWorldPosition() const
     {
-        glm::vec4 vPos = glm::vec4(1.0, 1.0, 1.0, 1.0) * m_mWorldTransformation;
+		glm::vec4 vPos = m_mWorldTransformation * glm::vec4(0.0, 0.0, 0.0, 1.0);
         vPos = vPos / vPos.w;
         return glm::vec3(vPos);
     }

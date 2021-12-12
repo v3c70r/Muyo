@@ -503,7 +503,8 @@ void RTBuilder::BuildRTPipeline()
     std::vector<VkDescriptorSetLayout> descLayouts = {
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL)
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA)
     };
 
     m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
@@ -598,6 +599,7 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
     const auto* pStorageImageRes = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", ext, VK_FORMAT_R16G16B16A16_SFLOAT);
     const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
     StorageBuffer<PrimitiveDescription>* primDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<PrimitiveDescription>>("primitive descs");
+    const StorageBuffer<LightData>* lightDataBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
     std::vector<VkDescriptorSet> vDescSets =
 	{
 		GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
@@ -612,7 +614,10 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
 				->getView(),
 			GetRenderResourceManager()
 				->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
-				->getView()) };
+				->getView()),
+        // Light data buffer
+        GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)
+    };
 
     m_cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
 

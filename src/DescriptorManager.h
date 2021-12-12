@@ -10,6 +10,7 @@
 #include "UniformBuffer.h"
 #include "Camera.h"
 struct PrimitiveDescription;
+struct LightData;
 
 enum DescriptorLayoutType
 {
@@ -22,6 +23,7 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_GBUFFER,           // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_IBL,               // IBL descriptor sets
     DESCRIPTOR_LAYOUT_RAY_TRACING,       // Raytracing Descriptor sets
+    DESCRIPTOR_LAYOUT_LIGHT_DATA,        // Light data layout
     DESCRIPTOR_LAYOUT_COUNT,
 };
 
@@ -70,9 +72,12 @@ public:
             VkImageView specularBrdfLutMap
             );
 
+    VkDescriptorSet AllocateLightDataDescriptorSet(uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
+    static void UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
+
     // Ray Tracing descriptor set
-    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer, const std::vector<std::unique_ptr<Texture>>& textures);
-	static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR& acc, const VkImageView& outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer, const std::vector<std::unique_ptr<Texture>>& textures);
+    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer, const std::vector<std::unique_ptr<Texture>> &textures);
+    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer, const std::vector<std::unique_ptr<Texture>> &textures);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {

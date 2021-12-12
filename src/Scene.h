@@ -106,12 +106,8 @@ public:
     void SetName(const std::string& sName) { m_sName = sName; }
     const std::string& GetName() const { return m_sName; }
 
-
-protected:
-    void ConstructLightBuffer();
 protected:
     std::unique_ptr<SceneNode> m_pRoot = std::make_unique<SceneNode>();
-    StorageBuffer<LightData>* m_pLightBuffer = nullptr;
     DrawLists m_drawLists;
     std::string m_sName;
     bool m_bAreDrawListsDirty = true;
