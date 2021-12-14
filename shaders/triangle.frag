@@ -7,7 +7,6 @@ layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D inTexture;
 
 void main() {
-    const vec2 vViewport = vec2(1024.0f, 768.0f);
     outColor = texture(inTexture, texCoords);
     outColor.a = 1.0;
 }

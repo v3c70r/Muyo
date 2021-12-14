@@ -89,18 +89,18 @@ void RenderLayerIBL::setupFramebuffer()
 {
     std::array<VkImageView, RENDERPASS_COUNT> vImageViews = {
         GetRenderResourceManager()
-            ->getColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM},
+            ->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM},
                              TEX_FORMAT, 1, 6)
             ->getView(),
         GetRenderResourceManager()
-            ->getColorTarget("irr_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM},
+            ->GetColorTarget("irr_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM},
                              TEX_FORMAT, 1, 6)
             ->getView(),
         GetRenderResourceManager()
-            ->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            ->GetColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
             ->getView(),
         GetRenderResourceManager()
-            ->getColorTarget("specular_brdf_lut", {SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
+            ->GetColorTarget("specular_brdf_lut", {SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
             ->getView()};
 
     // Create framebuffers
@@ -124,7 +124,7 @@ void RenderLayerIBL::setupFramebuffer()
     }
 }
 
-void RenderLayerIBL::setupPipeline()
+void RenderLayerIBL::CreatePipeline()
 {
     // Create two pipelines for two subpasses
     // 1. Generate environment cube map from equirectangle hdr image
@@ -434,10 +434,10 @@ void RenderLayerIBL::setupDescriptorSets()
 
     // Environment cube map descriptor set
     m_irrMapDescriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
-        GetRenderResourceManager() ->getColorTarget("env_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM}, TEX_FORMAT, 1, 6) ->getView());
+        GetRenderResourceManager() ->GetColorTarget("env_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM}, TEX_FORMAT, 1, 6) ->getView());
 }
 
-void RenderLayerIBL::recordCommandBuffer()
+void RenderLayerIBL::RecordCommandBuffer()
 {
     // Get skybox vertex data
     m_pSkybox = getSkybox();
@@ -543,9 +543,9 @@ void RenderLayerIBL::recordCommandBuffer()
             vkCmdEndRenderPass(m_commandBuffer);
         }
         // Compute prefiltered irradiance map
-        VkImage prefilteredImage = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_DST_BIT)->getImage();
+        VkImage prefilteredImage = GetRenderResourceManager()->GetColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_DST_BIT)->getImage();
         GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
-        VkImage prefilteredImageTmp = GetRenderResourceManager()->getColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)->getImage();
+        VkImage prefilteredImageTmp = GetRenderResourceManager()->GetColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)->getImage();
 
         {
             SCOPED_MARKER(m_commandBuffer, "Computed Prefiltered cubemap");
@@ -661,14 +661,14 @@ RenderLayerIBL::RenderLayerIBL()
 {
     setupRenderPass();
     setupFramebuffer();
-    setupPipeline();
+    CreatePipeline();
     setupDescriptorSets();
-    recordCommandBuffer();
+    RecordCommandBuffer();
 }
 
 RenderLayerIBL::~RenderLayerIBL()
 {
-    destroyFramebuffer();
+    DestroyFramebuffer();
     for (auto renderpass : m_vRenderPasses)
     {
         vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderpass,
@@ -687,7 +687,7 @@ RenderLayerIBL::~RenderLayerIBL()
 
 
 
-void RenderLayerIBL::destroyFramebuffer()
+void RenderLayerIBL::DestroyFramebuffer()
 {
     for (auto framebuffer : m_aFramebuffers)
     {

@@ -81,16 +81,15 @@ public:
 
     RenderPassGBuffer();
     ~RenderPassGBuffer();
-    void recordCommandBuffer(const std::vector<const Geometry*>& vpGeometries);
-    void createFramebuffer();
-    void destroyFramebuffer();
-    void setGBufferImageViews(VkImageView positionView, VkImageView albedoView,
+    void RecordCommandBuffer(const std::vector<const Geometry*>& vpGeometries);
+    void DestroyFramebuffer();
+    void SetGBufferImageViews(VkImageView positionView, VkImageView albedoView,
                               VkImageView normalView, VkImageView uvView,
                               VkImageView lightingOutput, VkImageView depthView,
                               uint32_t nWidth, uint32_t nHeight);
     void createGBufferViews(VkExtent2D size);
     void removeGBufferViews();
-    void createPipelines();
+    void CreatePipeline() override;
 
     VkCommandBuffer GetCommandBuffer(size_t idx) const override { return m_vCommandBuffers[0]; }
 

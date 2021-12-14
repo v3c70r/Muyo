@@ -370,7 +370,7 @@ void RTBuilder::BuildTLAS(const std::vector<Instance> &instances, VkBuildAcceler
     }
     if (bUpdate)
     {
-        GetRenderResourceManager()->removeResource(TLAS_BUFFER_NAME);
+        GetRenderResourceManager()->RemoveResource(TLAS_BUFFER_NAME);
     }
     uint32_t nBufferSize = sizeof(VkAccelerationStructureInstanceKHR) * geometryInstances.size();
     AccelerationStructureBuffer* instanceBuffer = GetRenderResourceManager()->GetAccelerationStructureBuffer(TLAS_BUFFER_NAME, geometryInstances.data(), nBufferSize);
@@ -607,13 +607,13 @@ void RTBuilder::RayTrace(VkExtent2D imgSize)
 		// IBL descriptor sets
 		GetDescriptorManager()->AllocateIBLDescriptorSet(
 			GetRenderResourceManager()
-				->getColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+				->GetColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
 				->getView(),
 			GetRenderResourceManager()
-				->getColorTarget("prefiltered_cubemap", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+				->GetColorTarget("prefiltered_cubemap", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
 				->getView(),
 			GetRenderResourceManager()
-				->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
+				->GetColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
 				->getView()),
         // Light data buffer
         GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)

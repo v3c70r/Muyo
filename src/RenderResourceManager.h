@@ -19,7 +19,7 @@ public:
 
     void Unintialize() { m_mResources.clear(); }
 
-    RenderTarget* getRenderTarget(const std::string sName, bool bColorTarget,
+    RenderTarget* GetRenderTarget(const std::string sName, bool bColorTarget,
                                   VkExtent2D extent, VkFormat format,
                                   uint32_t numMips = 1, uint32_t numLayers = 1,
                                   VkImageUsageFlags nAdditionalUsageFlags = 0)
@@ -51,27 +51,27 @@ public:
         return static_cast<Texture*>(m_mResources[sName].get());
     }
 
-    RenderTarget* getDepthTarget(const std::string sName, VkExtent2D extent,
+    RenderTarget* GetDepthTarget(const std::string sName, VkExtent2D extent,
                                  VkFormat format = VK_FORMAT_D32_SFLOAT)
     {
-        return getRenderTarget(sName, false, extent, format);
+        return GetRenderTarget(sName, false, extent, format);
     }
 
-    RenderTarget* getColorTarget(
+    RenderTarget* GetColorTarget(
         const std::string sName, VkExtent2D extent,
         VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t numMips = 1,
         uint32_t numLayers = 1, VkImageUsageFlags nAdditionalUsageFlags = 0)
     {
-        return getRenderTarget(sName, true, extent, format, numMips, numLayers,
+        return GetRenderTarget(sName, true, extent, format, numMips, numLayers,
                                nAdditionalUsageFlags);
     }
 
-    RenderTarget* getColorTarget(const std::string sName)
+    RenderTarget* GetColorTarget(const std::string sName)
     {
         return static_cast<RenderTarget*>(m_mResources[sName].get());
     }
 
-    void removeResource(const std::string sName)
+    void RemoveResource(const std::string sName)
     {
         if (auto it = m_mResources.find(sName); it != m_mResources.end())
         {

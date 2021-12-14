@@ -60,8 +60,7 @@ void Swapchain::CreateSwapchain(
     // Get swap chain images;
     vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, nullptr);
     m_swapchainImages.resize(numBuffers);
-    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers,
-                            m_swapchainImages.data());
+    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, m_swapchainImages.data());
 
     // Create swapchain image views
     m_swapchainImageViews.resize(numBuffers);

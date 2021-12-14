@@ -36,7 +36,7 @@ struct ImGuiResource
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     int nTotalIndexCount = 0;
 
-    void createResources(VkRenderPass UIRenderPass, uint32_t numSwapchainBuffers);
+    void createResources(uint32_t numSwapchainBuffers);
     void destroyResources();
 };
 
@@ -44,23 +44,20 @@ class RenderPassUI : public RenderPassFinal
 {
 public:
     RenderPassUI(VkFormat swapChainFormat);
-    void recordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx);
+    void RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx);
     ~RenderPassUI() override;
 
     // ImGui Related functions
     void newFrame(VkExtent2D screenExtent);
     void updateBuffers(uint32_t nSwapchainBufferIndex);
-    virtual void setSwapchainImageViews(std::vector<VkImageView>& vImageViews,
-                                        VkImageView depthImageView,
-                                        uint32_t nWidth, uint32_t nHeight) override;
+    void CreateImGuiResources();
     template <class DebugPageType>
     void RegisterDebugPage(const std::string& sName)
     {
         m_vpDebugPages.emplace_back(new DebugPageType(sName));
     }
+    virtual void CreatePipeline() override;
 
-protected:
-    void setupPipeline() override;
 
 private:
     struct PushConstBlock

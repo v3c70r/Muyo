@@ -104,7 +104,7 @@ RenderPassGBuffer::RenderPassGBuffer()
 
 RenderPassGBuffer::~RenderPassGBuffer()
 {
-    destroyFramebuffer();
+    DestroyFramebuffer();
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_vRenderPasses.back(), nullptr);
 
     // Destroy pipelines and pipeline layouts
@@ -118,7 +118,7 @@ RenderPassGBuffer::~RenderPassGBuffer()
                             mLightingPipelineLayout, nullptr);
 }
 
-void RenderPassGBuffer::setGBufferImageViews(
+void RenderPassGBuffer::SetGBufferImageViews(
     VkImageView positionView, VkImageView albedoView, VkImageView normalView,
     VkImageView uvView, VkImageView lightingOutput, VkImageView depthView,
     uint32_t nWidth, uint32_t nHeight)
@@ -145,12 +145,12 @@ void RenderPassGBuffer::setGBufferImageViews(
     mRenderArea = {nWidth, nHeight};
 }
 
-void RenderPassGBuffer::destroyFramebuffer()
+void RenderPassGBuffer::DestroyFramebuffer()
 {
     vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), mFramebuffer, nullptr);
 }
 
-void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& vpGeometries)
+void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& vpGeometries)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -235,20 +235,20 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
             // Create gbuffer render target views
             GBufferViews vGBufferRTViews = {
                 GetRenderResourceManager()
-                    ->getColorTarget("GBUFFER_POSITION_AO", mRenderArea)
+                    ->GetColorTarget("GBUFFER_POSITION_AO", mRenderArea)
                     ->getView(),
 
                 GetRenderResourceManager()
-                    ->getColorTarget("GBUFFER_ALBEDO_TRANSMITTANCE",
+                    ->GetColorTarget("GBUFFER_ALBEDO_TRANSMITTANCE",
                                      mRenderArea)
                     ->getView(),
 
                 GetRenderResourceManager()
-                    ->getColorTarget("GBUFFER_NORMAL_ROUGHNESS", mRenderArea)
+                    ->GetColorTarget("GBUFFER_NORMAL_ROUGHNESS", mRenderArea)
                     ->getView(),
 
                 GetRenderResourceManager()
-                    ->getColorTarget("GBUFFER_METALNESS_TRANSLUCENCY",
+                    ->GetColorTarget("GBUFFER_METALNESS_TRANSLUCENCY",
                                      mRenderArea)
                     ->getView()};
 
@@ -261,13 +261,13 @@ void RenderPassGBuffer::recordCommandBuffer(const std::vector<const Geometry*>& 
                 // IBL descriptor sets
                 GetDescriptorManager()->AllocateIBLDescriptorSet(
                     GetRenderResourceManager()
-                        ->getColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                        ->GetColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                         ->getView(),
                     GetRenderResourceManager()
-                        ->getColorTarget("prefiltered_cubemap", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
+                        ->GetColorTarget("prefiltered_cubemap", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                         ->getView(),
                     GetRenderResourceManager()
-                        ->getColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
+                        ->GetColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
                         ->getView()),
                 // Light data buffer
                 GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)};
@@ -304,7 +304,7 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
     for (int i = 0; i < LightingAttachments::COLOR_ATTACHMENTS_COUNT; i++)
     {
         views[i] = GetRenderResourceManager()
-                       ->getColorTarget(mAttachments.aNames[i], size,
+                       ->GetColorTarget(mAttachments.aNames[i], size,
                                         mAttachments.aFormats[i])
                        ->getView();
     }
@@ -314,24 +314,24 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
          i < LightingAttachments::ATTACHMENTS_COUNT; i++)
     {
         views[i] = GetRenderResourceManager()
-                       ->getDepthTarget(mAttachments.aNames[i], size,
+                       ->GetDepthTarget(mAttachments.aNames[i], size,
                                         mAttachments.aFormats[i])
                        ->getView();
     }
 
-    setGBufferImageViews(views[0], views[1], views[2], views[3], views[4],
+    SetGBufferImageViews(views[0], views[1], views[2], views[3], views[4],
                          views[5], size.width, size.height);
 }
 void RenderPassGBuffer::removeGBufferViews()
 {
     for (int i = 0; i < LightingAttachments::ATTACHMENTS_COUNT; i++)
     {
-        GetRenderResourceManager()->removeResource(mAttachments.aNames[i]);
+        GetRenderResourceManager()->RemoveResource(mAttachments.aNames[i]);
     }
-    destroyFramebuffer();
+    DestroyFramebuffer();
 }
 
-void RenderPassGBuffer::createPipelines()
+void RenderPassGBuffer::CreatePipeline()
 {
     // Pipeline should be created after mRenderArea been updated
     ViewportBuilder vpBuilder;

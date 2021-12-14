@@ -18,7 +18,7 @@ public:
     void DestroySwapchain();
     VkExtent2D GetSwapchainExtent() const { return m_swapchainExtent; }
     VkSurfaceKHR GetSurface() const { return m_surface; }
-    std::vector<VkImageView>& GetImageViews() { return m_swapchainImageViews; }
+    const std::vector<VkImageView>& GetImageViews() const { return m_swapchainImageViews; }
     VkFormat GetImageFormat() const {return m_swapchainFormat.format;}
     uint32_t GetNextImage(VkSemaphore& semaphore);
     VkSwapchainKHR& GetSwapChain() { return m_swapchain; }

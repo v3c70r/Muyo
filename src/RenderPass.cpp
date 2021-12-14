@@ -99,7 +99,7 @@ RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
 
 RenderPassFinal::~RenderPassFinal()
 {
-    destroyFramebuffers();
+    DestroyFramebuffers();
     VkRenderPass& renderPass = (m_vRenderPasses.back());
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderPass, nullptr);
     m_vRenderPasses.clear();
@@ -107,11 +107,11 @@ RenderPassFinal::~RenderPassFinal()
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
 }
 
-void RenderPassFinal::setSwapchainImageViews(
-    std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
+void RenderPassFinal::SetSwapchainImageViews(
+    const std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
     uint32_t nWidth, uint32_t nHeight)
 {
-    destroyFramebuffers();
+    DestroyFramebuffers();
     m_vFramebuffers.resize(vImageViews.size());
     for (size_t i = 0; i < vImageViews.size(); i++)
     {
@@ -132,30 +132,25 @@ void RenderPassFinal::setSwapchainImageViews(
                                    &m_vFramebuffers[i]) == VK_SUCCESS);
     }
     mRenderArea = {nWidth, nHeight};
-    setupPipeline();
 }
 
-void RenderPassFinal::setupPipeline()
+void RenderPassFinal::CreatePipeline()
 {
     if (m_pipeline != VK_NULL_HANDLE)
     {
         vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-        vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(),
-                                m_pipelineLayout, nullptr);
+		vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
     }
     // Allocate pipeline layout
     std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
 #ifdef FEATURE_RAY_TRACING
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE)
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE)
 #endif
     };
 
     std::vector<VkPushConstantRange> pushConstants;
-    m_pipelineLayout =
-        GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
+    m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout),
                             VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Final pass");
@@ -185,6 +180,7 @@ void RenderPassFinal::setupPipeline()
     blendBuilder.setAttachments(1);
     DepthStencilCIBuilder depthStencilBuilder;
     PipelineStateBuilder builder;
+    std::vector<VkDynamicState> vDynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
     m_pipeline =
         builder.setShaderModules({vertShdr, fragShdr})
@@ -198,6 +194,7 @@ void RenderPassFinal::setupPipeline()
             .setPipelineLayout(m_pipelineLayout)
             .setDepthStencil(depthStencilBuilder.Build())
             .setRenderPass(m_vRenderPasses.back())
+            .setDynamicStates(vDynamicStates)
             .Build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
@@ -209,16 +206,9 @@ void RenderPassFinal::setupPipeline()
         VK_OBJECT_TYPE_PIPELINE, "Final Pass");
 }
 
-void RecordCommandBuffers()
-{
-    
-}
-
 void RenderPassFinal::RecordCommandBuffers()
 {
-    VkImageView imgView = GetRenderResourceManager()
-                              ->getColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))
-                              ->getView();
+    VkImageView imgView = GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))->getView();
 
 #ifdef FEATURE_RAY_TRACING
     VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({0, 0}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
@@ -240,9 +230,26 @@ void RenderPassFinal::RecordCommandBuffers()
 
     for (size_t i = 0; i < m_vFramebuffers.size(); i++)
     {
-        VkCommandBuffer curCmdBuf =
-            GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
+        VkCommandBuffer curCmdBuf = VK_NULL_HANDLE;
+        if (m_vCommandBuffers.size() <= i)
+        {
+            curCmdBuf = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
+            m_vCommandBuffers.push_back(curCmdBuf);
+        }
+        else
+        {
+            vkResetCommandBuffer(m_vCommandBuffers[i], VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+            curCmdBuf = m_vCommandBuffers[i];
+        }
+
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
+
+        // Set dynamic viewport and scissor
+        VkViewport viewport = {0.0, 0.0, (float)mRenderArea.width, (float)mRenderArea.height, 0.0, 1.0};
+        vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
+        VkRect2D scissor = {0, 0, mRenderArea.width, mRenderArea.height};
+        vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
+
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -282,14 +289,20 @@ void RenderPassFinal::RecordCommandBuffers()
 
         vkCmdEndRenderPass(curCmdBuf);
         vkEndCommandBuffer(curCmdBuf);
-        m_vCommandBuffers.push_back(curCmdBuf);
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(curCmdBuf),
                                 VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] Final");
     }
 }
 
-void RenderPassFinal::destroyFramebuffers()
+void RenderPassFinal::Resize(const std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
+                             uint32_t uWidth, uint32_t uHeight)
+{
+    mRenderArea = {uWidth, uHeight};
+    SetSwapchainImageViews(vImageViews, depthImageView, uWidth, uHeight);
+}
+
+void RenderPassFinal::DestroyFramebuffers()
 {
     for (auto& framebuffer : m_vFramebuffers)
     {

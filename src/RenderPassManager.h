@@ -4,9 +4,12 @@
 #include <array>
 #include <memory>
 #include <vector>
+#include <string>
 
 class RenderPass;
+class Swapchain;
 struct DrawLists;
+
 enum RenderPassNames
 {
     // Order matters
@@ -22,8 +25,8 @@ enum RenderPassNames
 class RenderPassManager
 {
 public:
-    void Initialize(uint32_t uWidth, uint32_t uHeight, VkFormat swapchainFormat);
-    void SetSwapchainImageViews(std::vector<VkImageView> &vImageViews, VkImageView depthImageView);
+    void Initialize(uint32_t uWidth, uint32_t uHeight);
+    void SetSwapchainImageViews(const std::vector<VkImageView> &vImageViews, VkImageView depthImageView);
     void OnResize(uint32_t uWidth, uint32_t uHeight);
     void Unintialize();
     void RecordStaticCmdBuffers(const DrawLists& drawLists);

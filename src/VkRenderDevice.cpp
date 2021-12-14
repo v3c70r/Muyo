@@ -360,7 +360,7 @@ void VkRenderDevice::CreateCommandPools()
     commandPoolInfo.queueFamilyIndex = 0;
     // Static comamand pools
     {
-        commandPoolInfo.flags = 0;
+        commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         assert(vkCreateCommandPool(m_device,
                                    &commandPoolInfo, nullptr,
                                    &m_aCommandPools[MAIN_CMD_POOL]) == VK_SUCCESS);

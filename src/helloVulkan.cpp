@@ -61,8 +61,8 @@
 #endif
 
 bool g_bWaylandExt = false;
-const int WIDTH = 1024;
-const int HEIGHT = 768;
+const int WIDTH = 1920;
+const int HEIGHT = 1080;
 
 static bool s_bResizeWanted = false;
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
@@ -72,7 +72,10 @@ static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                      glm::vec3(0.0f, 0.0f, 0.0f),   // Center
                                      glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
                          0.1f,                                      // near
-                         10.0f                                      // far
+                         10.0f,                                     // far
+                         (float)WIDTH,
+                         (float)HEIGHT
+
 );
 
 /// 
@@ -259,12 +262,12 @@ int main()
 
     // Can it be in gbuffer depth?
     RenderTarget *pDepthResource =
-        GetRenderResourceManager()->getDepthTarget(
+        GetRenderResourceManager()->GetDepthTarget(
             "depthTarget",
             vpExtent);
 
     Swapchain* pSwapchian = GetRenderDevice()->GetSwapchain();
-    GetRenderPassManager()->Initialize(vpExtent.width, vpExtent.height, pSwapchian->GetImageFormat());
+    GetRenderPassManager()->Initialize(vpExtent.width, vpExtent.height);
     GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
 
     InitEventHandlers();
@@ -329,24 +332,9 @@ int main()
 
             GetRenderDevice()->BeginFrame();
 
-            // Handle resizing
-            {
-                // TODO: Resizing doesn't work properly, need to investigate
-                int width, height;
-                std::tie(width, height) = Window::GetWindowSize();
-                VkExtent2D currentVp = GetRenderDevice()->GetViewportSize();
-                if (width != (int)currentVp.width || height != (int)currentVp.height)
-                {
-                    VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
-                    GetRenderDevice()->SetViewportSize(vp);
-                    //GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
-                    s_bResizeWanted = false;
-                    continue;
-                }
-            }
+            
             uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
-            VkExtent2D vpExt = {WIDTH, HEIGHT};
-            GetRenderPassManager()->RecordDynamicCmdBuffers(uFrameIdx, vpExt);
+            GetRenderPassManager()->RecordDynamicCmdBuffers(uFrameIdx, GetRenderDevice()->GetViewportSize());
 
             std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
 #ifdef FEATURE_RAY_TRACING
@@ -362,6 +350,25 @@ int main()
 
             GetRenderDevice()->Present();
             ImGui::Update();
+
+            // Handle resizing
+            {
+                // TODO: Resizing doesn't work properly, need to investigate
+                assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
+                int width, height;
+                std::tie(width, height) = Window::GetWindowSize();
+                VkExtent2D currentVp = GetRenderDevice()->GetViewportSize();
+                if (width != (int)currentVp.width || height != (int)currentVp.height)
+                {
+                    //VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
+                    GetRenderPassManager()->OnResize(width, height);
+                    s_arcball.Resize(glm::vec2((float)width, (float)height));
+                    GetRenderPassManager()->RecordStaticCmdBuffers(dl);
+                    //GetRenderDevice()->SetViewportSize(vp);
+                    //GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
+                    s_bResizeWanted = false;
+                }
+            }
         }
         std::cout << "Closing window, wait for device to finish..."
                   << std::endl;

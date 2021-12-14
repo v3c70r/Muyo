@@ -103,8 +103,8 @@ void RenderPassSkybox::CreateFramebuffer(uint32_t uWidth, uint32_t uHeight)
     VkExtent2D vp = {uWidth, uHeight};
 
     std::array<VkImageView, 2> views = {
-        GetRenderResourceManager()->getColorTarget("LIGHTING_OUTPUT", vp)->getView(),
-        GetRenderResourceManager()->getDepthTarget("GBUFFER_DEPTH", vp)->getView()};
+        GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", vp)->getView(),
+        GetRenderResourceManager()->GetDepthTarget("GBUFFER_DEPTH", vp)->getView()};
 
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -206,7 +206,15 @@ void RenderPassSkybox::RecordCommandBuffers()
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
-    VkCommandBuffer mCommandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
+    if (m_vCommandBuffers.empty())
+    {
+        m_vCommandBuffers.push_back(GetRenderDevice()->AllocateStaticPrimaryCommandbuffer());
+    }
+    else
+    {
+        vkResetCommandBuffer(m_vCommandBuffers[0], VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+    }
+    VkCommandBuffer& mCommandBuffer = m_vCommandBuffers[0];
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
     {
         SCOPED_MARKER(mCommandBuffer, "Skybox Pass");
@@ -233,7 +241,7 @@ void RenderPassSkybox::RecordCommandBuffers()
             GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
             GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
                 GetRenderResourceManager()
-                    ->getColorTarget("irr_cube_map", {0, 0},
+                    ->GetColorTarget("irr_cube_map", {0, 0},
                                      VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
                     ->getView())};
 
@@ -262,7 +270,6 @@ void RenderPassSkybox::RecordCommandBuffers()
     vkEndCommandBuffer(mCommandBuffer);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "Skybox");
-    m_vCommandBuffers.push_back(mCommandBuffer);
 }
 
 VkCommandBuffer RenderPassSkybox::GetCommandBuffer(size_t idx) const

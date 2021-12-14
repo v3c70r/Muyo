@@ -98,8 +98,8 @@ void RenderPassTransparent::CreateFramebuffer(uint32_t uWidth, uint32_t uHeight)
 {
     VkExtent2D vp = {uWidth, uHeight};
     std::array<VkImageView, 2> views = {
-        GetRenderResourceManager()->getColorTarget("LIGHTING_OUTPUT", vp)->getView(),
-        GetRenderResourceManager()->getDepthTarget("GBUFFER_DEPTH", vp)->getView()};
+        GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", vp)->getView(),
+        GetRenderResourceManager()->GetDepthTarget("GBUFFER_DEPTH", vp)->getView()};
 
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -162,7 +162,6 @@ void RenderPassTransparent::CreatePipeline()
 
     PipelineStateBuilder builder;
 
-    // TODO: Enable depth test, disable depth write
     m_pipeline =
         builder.setShaderModules({vertShdr, fragShdr})
             .setVertextInfo({Vertex::getBindingDescription()},
@@ -203,7 +202,16 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
-    VkCommandBuffer mCommandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
+
+    if (m_vCommandBuffers.empty())
+    {
+        m_vCommandBuffers.push_back(GetRenderDevice()->AllocateStaticPrimaryCommandbuffer());
+    }
+    else
+    {
+        vkResetCommandBuffer(m_vCommandBuffers.back(), VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+    }
+    VkCommandBuffer mCommandBuffer = m_vCommandBuffers.back();
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
     {
         SCOPED_MARKER(mCommandBuffer, "Transparent Pass");
@@ -274,5 +282,4 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
     vkEndCommandBuffer(mCommandBuffer);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "Transparent");
-    m_vCommandBuffers.push_back(mCommandBuffer);
 }

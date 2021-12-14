@@ -31,13 +31,13 @@ struct PerViewData
 class Camera
 {
 public:
-    Camera(glm::mat4 mProj, glm::mat4 mView, float fNear, float fFar)
+    Camera(glm::mat4 mProj, glm::mat4 mView, float fNear, float fFar, float width, float height)
     {
         m_perViewData.mProj = mProj;
         m_perViewData.mView = mView;
         m_perViewData.mProjInv = glm::inverse(mProj);
         m_perViewData.mViewInv = glm::inverse(mView);
-        m_perViewData.vScreenExtent = {800.0f, 600.0f};
+        m_perViewData.vScreenExtent = {width, height};
 
         // Left top
         glm::vec4 vScreenRay = m_perViewData.mProjInv * glm::vec4(-1.0, -1.0, 0.0, 1.0);
@@ -86,8 +86,8 @@ protected:
 class Arcball : public Camera
 {
 public:
-    Arcball(glm::mat4 proj, glm::mat4 view, float fNear, float fFar)
-        : Camera(proj, view, fNear, fFar),
+    Arcball(glm::mat4 proj, glm::mat4 view, float fNear, float fFar, float width, float height)
+        : Camera(proj, view, fNear, fFar, width, height),
           mLastPos(glm::vec2(0.0)),
           mCurPos(glm::vec2(0.0)),
           mArcballRotate(glm::mat4(1.0)),

@@ -16,7 +16,7 @@ class RenderLayerIBL : public RenderPass
 public:
     RenderLayerIBL();
     ~RenderLayerIBL();
-    void destroyFramebuffer();
+    void DestroyFramebuffer();
 
     VkCommandBuffer GetCommandBuffer(size_t idx) const override
     {
@@ -26,9 +26,9 @@ public:
 private:    // Methods
     void setupRenderPass();
     void setupFramebuffer();
-    void setupPipeline();
+    void CreatePipeline() override;
     void setupDescriptorSets();
-    void recordCommandBuffer();
+    void RecordCommandBuffer();
 
 private:
     const uint32_t ENV_CUBE_DIM = 128;

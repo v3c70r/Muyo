@@ -7,7 +7,7 @@
 #include "PushConstantBlocks.h"
 #include <imgui.h>
 
-void ImGuiResource::createResources(VkRenderPass UIRenderPass, uint32_t numSwapchainBuffers) { 
+void ImGuiResource::createResources(uint32_t numSwapchainBuffers) { 
     ImGuiIO& io = ImGui::GetIO();
     // Create font texture
     unsigned char* fontData;
@@ -40,10 +40,10 @@ RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
     ImGui::CreateContext();
 }
 
-void RenderPassUI::setSwapchainImageViews(std::vector<VkImageView>& vImageViews, VkImageView depthImageView, uint32_t nWidth, uint32_t nHeight)
+void RenderPassUI::CreateImGuiResources()
 {
-    m_uiResources.createResources(m_vRenderPasses.back(), vImageViews.size());
-    RenderPassFinal::setSwapchainImageViews(vImageViews, depthImageView, nWidth, nHeight);
+    assert(m_vFramebuffers.size() > 0);
+    m_uiResources.createResources((uint32_t)m_vFramebuffers.size());
 }
 
 RenderPassUI::~RenderPassUI()
@@ -52,7 +52,7 @@ RenderPassUI::~RenderPassUI()
     ImGui::DestroyContext();
 }
 
-void RenderPassUI::setupPipeline()
+void RenderPassUI::CreatePipeline()
 {
     // Create pipeline layout
     std::vector<VkDescriptorSetLayout> descLayouts = {
@@ -169,7 +169,7 @@ void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)
     m_uiResources.indexBuffers[nSwapchainBufferIndex].unmap();
 }
 
-void RenderPassUI::recordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapchainBufferIndex)
+void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapchainBufferIndex)
 {
     if (m_vCommandBuffers.size() != m_vFramebuffers.size())
     {
