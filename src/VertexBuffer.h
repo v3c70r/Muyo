@@ -11,56 +11,50 @@
 
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
-class MemoryBuffer
+#include "RenderResource.h"
+
+template <class VertexType>
+class VertexBuffer : public BufferResource
 {
 public:
-    MemoryBuffer(bool stagedUpload = true);
-    void* map();
-    void unmap();
-    void setData(const void* data, size_t size);
-    void flush();
-    const VkBuffer& buffer() const { return m_buffer; }
-    virtual ~MemoryBuffer();
-protected:
-    std::string m_sBufferName = "";
-    VkBufferUsageFlags m_bufferUsageFlags = 0;
-private:
-    VkBuffer m_buffer = VK_NULL_HANDLE;
-    VmaAllocation m_allocation = VK_NULL_HANDLE;
-
-    VmaMemoryUsage m_memoryUsage;
-    size_t m_nSize = 0;
-};
-
-class VertexBuffer : public MemoryBuffer
-{
-public:
-    VertexBuffer(bool stagedUpload = true,
-                 std::string sBufferName = "vertex buffer")
-        : MemoryBuffer(stagedUpload)
+    VertexBuffer(bool bStagedUpoload = true)
+        : BufferResource(
+              VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | (bStagedUpoload ? VK_BUFFER_USAGE_TRANSFER_DST_BIT : 0)  // Staged upload needs to be transfer dist bit
+#ifdef FEATURE_RAY_TRACING
+                  | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+#endif
+              ,
+              bStagedUpoload ? VMA_MEMORY_USAGE_GPU_ONLY : VMA_MEMORY_USAGE_CPU_TO_GPU)
     {
-        m_bufferUsageFlags |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        if (GetRenderDevice()->IsRayTracingSupported())
-        {
-            m_bufferUsageFlags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-        }
-        m_sBufferName = sBufferName;
     }
-private:
-};
-
-class IndexBuffer : public MemoryBuffer
-{
-public:
-    IndexBuffer(bool stagedUpload = true,
-                 std::string sBufferName = "index buffer")
-        : MemoryBuffer(stagedUpload)
+    VertexBuffer(const std::vector<VertexType>& vVertexData, bool bStagedUpoload = true) : VertexBuffer(bStagedUpoload)
     {
-        m_bufferUsageFlags |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        if (GetRenderDevice()->IsRayTracingSupported())
-        {
-            m_bufferUsageFlags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-        }
-        m_sBufferName = sBufferName;
+        size_t nSizeInByte = vVertexData.size() * sizeof(VertexType);
+        GetMemoryAllocator()->AllocateBuffer(nSizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "VertexBuffer");
+        SetData(vVertexData.data(), nSizeInByte);
     }
 };
+
+class IndexBuffer : public BufferResource
+{
+public:
+    IndexBuffer(bool bStagedUpoload = true)
+        : BufferResource(
+              VK_BUFFER_USAGE_INDEX_BUFFER_BIT 
+              | (bStagedUpoload ? VK_BUFFER_USAGE_TRANSFER_DST_BIT : 0)   // Staged upload needs to be transfer dist bit
+#ifdef FEATURE_RAY_TRACING
+              | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+#endif
+              ,
+              bStagedUpoload ? VMA_MEMORY_USAGE_GPU_ONLY : VMA_MEMORY_USAGE_CPU_TO_GPU
+          ) 
+        {}
+		template<class IndexType>
+        IndexBuffer(const std::vector<IndexType>& vIndexData, bool bStagedUpoload = true) : IndexBuffer(bStagedUpoload)
+        {
+			size_t nSizeInByte = vIndexData.size() * sizeof(IndexType);
+            GetMemoryAllocator()->AllocateBuffer(nSizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "IndexBuffer");
+            SetData(vIndexData.data(), nSizeInByte);
+        }
+};
+

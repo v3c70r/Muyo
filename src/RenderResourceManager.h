@@ -8,18 +8,42 @@
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "ImageStorageResource.h"
+#include "VertexBuffer.h"
 
 class RenderResourceManager
 {
-    using ResourceMap =
-        std::unordered_map<std::string, std::unique_ptr<IRenderResource>>;
+    using ResourceMap = std::unordered_map<std::string, std::unique_ptr<IRenderResource>>;
 
 public:
     void Initialize(){};
 
     void Unintialize() { m_mResources.clear(); }
 
-    RenderTarget* GetRenderTarget(const std::string sName, bool bColorTarget,
+    template <typename T>
+    VertexBuffer<T>* GetVertexBuffer(const std::string& sName, const std::vector<T>& vVertexData, bool bStagedUpoload = true)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<VertexBuffer<T>>(vVertexData, bStagedUpoload);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<VertexBuffer<T>*>(m_mResources[sName].get());
+    }
+
+    template<class IndexType>
+    IndexBuffer* GetIndexBuffer(const std::string& sName, const std::vector<IndexType> vIndexData, bool bStagedUpoload = true)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<IndexBuffer>(vIndexData, bStagedUpoload);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<IndexBuffer*>(m_mResources[sName].get());
+
+    }
+
+
+    RenderTarget* GetRenderTarget(const std::string& sName, bool bColorTarget,
                                   VkExtent2D extent, VkFormat format,
                                   uint32_t numMips = 1, uint32_t numLayers = 1,
                                   VkImageUsageFlags nAdditionalUsageFlags = 0)

@@ -5,7 +5,6 @@
 #include "RenderResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
-#include <imgui.h>
 
 void ImGuiResource::createResources(uint32_t numSwapchainBuffers) { 
     ImGuiIO& io = ImGui::GetIO();
@@ -20,12 +19,20 @@ void ImGuiResource::createResources(uint32_t numSwapchainBuffers) {
         pTexture->getView());
     GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER);
 
-    vertexBuffers.resize(numSwapchainBuffers);
-    indexBuffers.resize(numSwapchainBuffers);
+    vpVertexBuffers.resize(numSwapchainBuffers);
+    vpIndexBuffers.resize(numSwapchainBuffers);
+	std::vector<ImDrawVert> vDummyVert = { ImDrawVert{
+		{0.0, 0.0},
+		{0.0, 0.0},
+		{0}
+		}
+	};
+    std::vector<ImDrawIdx> vDummpyIndex = { 0 };
+    //ImDrawIdx
     for (uint32_t i = 0; i< numSwapchainBuffers; i++)
     {
-        vertexBuffers[i] = VertexBuffer(false, "UI Vertex buffer");
-        indexBuffers[i] = IndexBuffer(false, "UI Index buffer");
+        vpVertexBuffers[i] = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertex_buffer_"+std::to_string(i),vDummyVert, false);
+        vpIndexBuffers[i] = GetRenderResourceManager()->GetIndexBuffer("UIIndex_buffer_" + std::to_string(i), vDummpyIndex, false);
     }
 }
 
@@ -148,11 +155,13 @@ void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)
     }
 
     // Prepare vertex buffer and index buffer
-    m_uiResources.vertexBuffers[nSwapchainBufferIndex].setData(nullptr, vertexBufferSize);
-    m_uiResources.indexBuffers[nSwapchainBufferIndex].setData(nullptr, indexBufferSize);
+    m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->SetData(nullptr, vertexBufferSize);
+    m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->SetData(nullptr, indexBufferSize);
+    //m_uiResources.vertexBuffers[nSwapchainBufferIndex].setData(nullptr, vertexBufferSize);
+    //m_uiResources.indexBuffers[nSwapchainBufferIndex].setData(nullptr, indexBufferSize);
 
-    ImDrawVert* vtxDst = (ImDrawVert*)m_uiResources.vertexBuffers[nSwapchainBufferIndex].map();
-    ImDrawIdx* idxDst = (ImDrawIdx*)m_uiResources.indexBuffers[nSwapchainBufferIndex].map();
+    ImDrawVert* vtxDst = (ImDrawVert*)m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->Map();
+    ImDrawIdx* idxDst = (ImDrawIdx*)m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->Map();
 
     for (int n = 0; n < imDrawData->CmdListsCount; n++)
     {
@@ -165,8 +174,8 @@ void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)
         idxDst += cmd_list->IdxBuffer.Size;
     }
 
-    m_uiResources.vertexBuffers[nSwapchainBufferIndex].unmap();
-    m_uiResources.indexBuffers[nSwapchainBufferIndex].unmap();
+    m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->Unmap();
+    m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->Unmap();
 }
 
 void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapchainBufferIndex)
@@ -233,10 +242,10 @@ void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
                            sizeof(PushConstBlock), &pushConstBlock);
 
         VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(curCmdBuf, 0, 1,
-                               &m_uiResources.vertexBuffers[nSwapchainBufferIndex].buffer(), &offset);
-        vkCmdBindIndexBuffer(curCmdBuf, m_uiResources.indexBuffers[nSwapchainBufferIndex].buffer(), 0,
-                             VK_INDEX_TYPE_UINT32);
+        VkBuffer vertexBuffer = m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->buffer();
+        VkBuffer indexBuffer = m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->buffer();
+        vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
         vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 m_pipelineLayout, 0, 1,

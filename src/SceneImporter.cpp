@@ -160,6 +160,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     glm::vec3 vAABBMin(std::numeric_limits<float>::max());
     glm::vec3 vAABBMax(std::numeric_limits<float>::min());
 
+    uint32_t nPrimitiveIndex = 0;
     for (const auto &primitive : mesh.primitives)
     {
         std::vector<glm::vec3> vPositions;
@@ -334,8 +335,11 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 assert(false && "Unsupported type");
             }
         }
-        vPrimitives.emplace_back(
-            std::make_unique<Primitive>(vVertices, vIndices));
+
+        // Construct primitive name
+
+        std::string sPrimitiveName(mesh.name + "_" + std::to_string(nPrimitiveIndex));
+        vPrimitives.emplace_back(std::make_unique<Primitive>(sPrimitiveName, vVertices, vIndices));
 
         //  =========Material
         const tinygltf::Material &gltfMaterial = model.materials[primitive.material];

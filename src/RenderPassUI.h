@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <imgui.h>
 
 #include "RenderPass.h"
 #include "Texture.h"
@@ -19,11 +20,12 @@ struct UISettings
     float lightTimer = 0.0f;
 };
 class Texture;
+struct UIVertex;
 struct ImGuiResource
 {
     // Vertex buffer and index buffer can be updated each frame
-    std::vector<VertexBuffer> vertexBuffers;
-    std::vector<IndexBuffer> indexBuffers;
+    std::vector<VertexBuffer<ImDrawVert>*> vpVertexBuffers;
+    std::vector<IndexBuffer*> vpIndexBuffers;
 
     VkSampler sampler;
     VkDeviceMemory fontMemory = VK_NULL_HANDLE;

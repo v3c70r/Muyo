@@ -188,7 +188,7 @@ void main()
 
     // IBL specular
     vec3 V = normalize(-vViewPos);
-    const float MAX_REFLECTION_LOD = 4.0;
+    const float MAX_REFLECTION_LOD = 7.0;
     vec3 R = reflect(V, vFaceNormal);
     vec3 vPrefilteredColor = textureLod(prefilteredMap, R, fRoughness * MAX_REFLECTION_LOD).rgb;
     vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetalness);

@@ -22,6 +22,7 @@
 #include <limits>
 #include <set>
 #include <vector>
+#include <filesystem>
 
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
 #include "Camera.h"
@@ -65,14 +66,15 @@ const int WIDTH = 1920;
 const int HEIGHT = 1080;
 
 static bool s_bResizeWanted = false;
+const float FAR = 100.0f;
 static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
                                           (float)WIDTH / (float)HEIGHT, 0.1f,
-                                          100.0f),
+                                          FAR),
                          glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
                                      glm::vec3(0.0f, 0.0f, 0.0f),   // Center
                                      glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
                          0.1f,                                      // near
-                         10.0f,                                     // far
+                         FAR,                                     // far
                          (float)WIDTH,
                          (float)HEIGHT
 
@@ -208,7 +210,7 @@ void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
     s_arcball.UpdatePerViewDataUBO(ub);
 };
 
-int main()
+int main(int argc, char** argv)
 {
     // Load mesh into memory
     if (!Window::Initialize("hello Vulkan", WIDTH, HEIGHT))
@@ -274,12 +276,32 @@ int main()
     ImGui::Init();
 
     {
-        // Load scene
-        //GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
-        GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
-        //GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
-        //GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
-        //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
+        bool bFileFromArg = false;
+        if (argc == 2)
+        {
+            namespace fs = std::filesystem;
+            fs::path path(argv[1]);
+            if (fs::exists(path))
+            {
+                std::string sPath{path.relative_path().string()};
+                GetSceneManager()->LoadSceneFromFile(sPath);
+                bFileFromArg = true;
+            }
+        }
+
+        if (!bFileFromArg)
+        {
+            // Load scene
+            //GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/sofa_combination/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/catherdral/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
+            //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/Documents/cars/New Folder/cars.gltf");
+            GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
+        }
 
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         StorageBuffer<LightData>* lightData = GetSceneManager()->ConstructLightBufferFromDrawLists(dl);

@@ -62,14 +62,14 @@ void main() {
 
     // Add IBL
     vec3 V = normalize(-vViewPos);
-    const float MAX_REFLECTION_LOD = 4.0;
+    const float MAX_REFLECTION_LOD = 7.0;
     vec3 R = reflect(V, vFaceNormal);
     vec3 vPrefilteredColor = textureLod(prefilteredMap, R, fRoughness * MAX_REFLECTION_LOD).rgb;
     vec3 F = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
     vec2 vEnvBRDF  = texture(specularBrdfLut, vec2(max(dot(vFaceNormal, V), 0.0), fRoughness)).rg;
     vec3 specular = vPrefilteredColor * (F * vEnvBRDF.x + vEnvBRDF.y);
     vec3 kS = F;
-    vec3 kD = 1.0 - kS;
+    vec3 kD = vec3(1.0) - kS;
     kD *= 1.0 - fMetallic;
     vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz;
     vec3 vDiffuse = vAlbedo * irradiance;
@@ -77,8 +77,8 @@ void main() {
 
     vec3 vAmbient = (kD * vDiffuse + specular) * fAO;
 
-    //vec3 vColor = vLo + vAmbient;
-    vec3 vColor = vLo;
+    vec3 vColor = vLo + vAmbient;
+    //vec3 vColor = vLo;
 
     // Gamma correction
     vColor = vColor / (vColor + vec3(1.0));

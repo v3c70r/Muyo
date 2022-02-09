@@ -111,6 +111,7 @@ add_library(imgui
     thirdparty/imgui/imgui_demo.cpp
     thirdparty/imgui/imgui_draw.cpp
     thirdparty/imgui/imgui_widgets.cpp
+    thirdparty/imgui/imgui_tables.cpp
     )
     
 #Enable CPPCHECK

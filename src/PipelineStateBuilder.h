@@ -10,6 +10,7 @@
 #include "VkRenderDevice.h"
 
 // Fluent builder
+template <typename T>
 class VertexBuffer;
 
 class PipelineStateBuilder

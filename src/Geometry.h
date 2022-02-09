@@ -6,28 +6,27 @@
 #include "MeshVertex.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
+#include "RenderResourceManager.h"
 class Material;
 class Primitive
 {
 public:
-    Primitive(const std::vector<Vertex>& vertices,
+    Primitive(const std::string& sName, const std::vector<Vertex>& vertices,
               const std::vector<Index>& indices)
     {
-        m_vertexBuffer.setData(reinterpret_cast<const void*>(vertices.data()),
-                               sizeof(Vertex) * vertices.size());
+        m_pVertexBuffer = GetRenderResourceManager()->GetVertexBuffer<Vertex>(sName+ "_vertex", vertices);
         m_nVertexCount = (uint32_t)vertices.size();
-        m_indexBuffer.setData(reinterpret_cast<const void*>(indices.data()),
-                              sizeof(Index) * indices.size());
+        m_pIndexBuffer = GetRenderResourceManager()->GetIndexBuffer(sName+"_index", indices);
         m_nIndexCount = (uint32_t)indices.size();
     }
     VkBuffer getVertexDeviceBuffer() const
     {
-        return m_vertexBuffer.buffer();
+        return m_pVertexBuffer->buffer();
     }
 
     VkBuffer getIndexDeviceBuffer() const
     {
-        return m_indexBuffer.buffer();
+        return m_pIndexBuffer->buffer();
     }
 
     uint32_t getIndexCount() const
@@ -44,8 +43,8 @@ public:
     const Material* GetMaterial() const { return m_pMaterial; }
 
 private:
-    VertexBuffer m_vertexBuffer;
-    IndexBuffer m_indexBuffer;
+    VertexBuffer<Vertex>* m_pVertexBuffer = nullptr;
+    IndexBuffer* m_pIndexBuffer = nullptr;
     uint32_t m_nIndexCount = 0;
     uint32_t m_nVertexCount = 0;
     Material* m_pMaterial = nullptr;

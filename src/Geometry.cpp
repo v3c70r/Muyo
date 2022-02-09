@@ -20,7 +20,7 @@ Geometry* GeometryManager::GetQuad()
             {{-1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 1.0f, 1.0f, 0.0f}}};
 
         static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
-        Geometry *pGeometry = new Geometry(std::make_unique<Primitive>(VERTICES, INDICES));
+        Geometry *pGeometry = new Geometry(std::make_unique<Primitive>("simple_quad", VERTICES, INDICES));
         m_nQuadIdx = vpGeometries.size();
         vpGeometries.emplace_back(pGeometry);
     }
@@ -110,7 +110,7 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
             indices.push_back((Index)index);
         }
 
-        primitives.emplace_back(std::make_unique<Primitive>(vertices, indices));
+        primitives.emplace_back(std::make_unique<Primitive>(path+std::to_string(i), vertices, indices));
     }
     return std::make_unique<Geometry>(primitives);
 }

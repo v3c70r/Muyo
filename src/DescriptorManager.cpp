@@ -648,7 +648,8 @@ void DescriptorManager::UpdateIBLDescriptorSet(
     for (uint32_t i = 0; i < aIBLViews.size(); i++)
     {
         VkDescriptorImageInfo& imageInfo = imageInfos[i];
-        imageInfo = {GetSamplerManager()->getSampler(SAMPLER_1_MIPS), aIBLViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        // Needs 8 mips for prefiltered env map
+        imageInfo = {GetSamplerManager()->getSampler(i == 1  ? SAMPLER_8_MIPS : SAMPLER_1_MIPS), aIBLViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
         VkWriteDescriptorSet& writeDescriptorSet = writeDescriptorSets[i];
         writeDescriptorSet = {};
