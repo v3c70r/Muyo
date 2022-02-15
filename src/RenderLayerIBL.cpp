@@ -143,7 +143,7 @@ void RenderLayerIBL::CreatePipeline()
         InputAssemblyStateCIBuilder iaBuilder;
         // Rasterizer
         RasterizationStateCIBuilder rasterizerBuilder;
-        rasterizerBuilder.setFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        rasterizerBuilder.SetFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
         // MSAA
         MultisampleStateCIBuilder msBuilder;
         // Blend
@@ -218,7 +218,7 @@ void RenderLayerIBL::CreatePipeline()
         InputAssemblyStateCIBuilder iaBuilder;
         // Rasterizer
         RasterizationStateCIBuilder rasterizerBuilder;
-        rasterizerBuilder.setFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        rasterizerBuilder.SetFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
         // MSAA
         MultisampleStateCIBuilder msBuilder;
         // Blend
@@ -294,7 +294,7 @@ void RenderLayerIBL::CreatePipeline()
         InputAssemblyStateCIBuilder iaBuilder;
         // Rasterizer
         RasterizationStateCIBuilder rasterizerBuilder;
-        rasterizerBuilder.setFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        rasterizerBuilder.SetFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
         // MSAA
         MultisampleStateCIBuilder msBuilder;
         // Blend

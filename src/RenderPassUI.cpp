@@ -8,6 +8,10 @@
 
 void ImGuiResource::createResources(uint32_t numSwapchainBuffers) { 
     ImGuiIO& io = ImGui::GetIO();
+
+    // Enable docking
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
     // Create font texture
     unsigned char* fontData;
     int texWidth, texHeight;
@@ -24,7 +28,7 @@ void ImGuiResource::createResources(uint32_t numSwapchainBuffers) {
 	std::vector<ImDrawVert> vDummyVert = { ImDrawVert{
 		{0.0, 0.0},
 		{0.0, 0.0},
-		{0}
+		0
 		}
 	};
     std::vector<ImDrawIdx> vDummpyIndex = { 0 };
@@ -105,7 +109,7 @@ void RenderPassUI::CreatePipeline()
                                      UIVertex::getAttributeDescriptions())
                      .setAssembly(iaBuilder.Build())
                      .setViewport(viewport, scissorRect)
-                     .setRasterizer(rsBuilder.Build())
+                     .setRasterizer(rsBuilder.SetCullMode(VK_CULL_MODE_NONE).SetFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE).Build())
                      .setMSAA(msBuilder.Build())
                      .setColorBlending(blendBuilder.Build())
                      .setPipelineLayout(m_pipelineLayout)
@@ -157,8 +161,6 @@ void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)
     // Prepare vertex buffer and index buffer
     m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->SetData(nullptr, vertexBufferSize);
     m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->SetData(nullptr, indexBufferSize);
-    //m_uiResources.vertexBuffers[nSwapchainBufferIndex].setData(nullptr, vertexBufferSize);
-    //m_uiResources.indexBuffers[nSwapchainBufferIndex].setData(nullptr, indexBufferSize);
 
     ImDrawVert* vtxDst = (ImDrawVert*)m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->Map();
     ImDrawIdx* idxDst = (ImDrawIdx*)m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->Map();
@@ -166,12 +168,10 @@ void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)
     for (int n = 0; n < imDrawData->CmdListsCount; n++)
     {
         const ImDrawList* cmd_list = imDrawData->CmdLists[n];
-        memcpy(vtxDst, cmd_list->VtxBuffer.Data,
-               cmd_list->VtxBuffer.Size * sizeof(ImDrawVert));
-        memcpy(idxDst, cmd_list->IdxBuffer.Data,
-               cmd_list->IdxBuffer.Size * sizeof(ImDrawIdx));
-        vtxDst += cmd_list->VtxBuffer.Size;
-        idxDst += cmd_list->IdxBuffer.Size;
+		memcpy(vtxDst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.size_in_bytes());
+		memcpy(idxDst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.size_in_bytes());
+        vtxDst += cmd_list->VtxBuffer.size();
+        idxDst += cmd_list->IdxBuffer.size();
     }
 
     m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->Unmap();
@@ -229,7 +229,7 @@ void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
             0.0, 1.0};
         vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
 
-        VkRect2D scissor = {0, 0, screenExtent};
+        VkRect2D scissor = {{0, 0}, screenExtent};
         vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
 
         // UI scale and translate via push constants
@@ -241,17 +241,43 @@ void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
                            VK_SHADER_STAGE_VERTEX_BIT, 0,
                            sizeof(PushConstBlock), &pushConstBlock);
 
-        VkDeviceSize offset = 0;
+		vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+		vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+			m_pipelineLayout, 0, 1,
+			&m_uiResources.descriptorSet, 0, nullptr);
+
         VkBuffer vertexBuffer = m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->buffer();
         VkBuffer indexBuffer = m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->buffer();
-        vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
-        vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
-        vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-        vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                m_pipelineLayout, 0, 1,
-                                &m_uiResources.descriptorSet, 0, nullptr);
 
-        vkCmdDrawIndexed(curCmdBuf, m_uiResources.nTotalIndexCount, 1, 0, 0, 0);
+        ImDrawData* pDrawData = ImGui::GetDrawData();
+		int32_t nVertexOffset = 0;
+		int32_t nIndexOffset = 0;
+
+        if (pDrawData->CmdListsCount > 0)
+        {
+			VkDeviceSize offset = 0;
+			vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
+			vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+            for (int32_t i = 0; i < pDrawData->CmdListsCount; i++)
+            {
+                const ImDrawList* pDrawList = pDrawData->CmdLists[i];
+                for (int32_t j = 0; j < pDrawList->CmdBuffer.Size; j++)
+                {
+                    const ImDrawCmd& drawCmd = pDrawList->CmdBuffer[j];
+                    // Setup scissor rect according to the draw cmd
+                    VkRect2D scissorRect;
+                    scissorRect.offset.x = std::max((int32_t)(drawCmd.ClipRect.x), 0);
+                    scissorRect.offset.y = std::max((int32_t)(drawCmd.ClipRect.y), 0);
+                    scissorRect.extent.width = (uint32_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x);
+                    scissorRect.extent.height = (uint32_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y);
+                    vkCmdSetScissor(curCmdBuf, 0, 1, &scissorRect);
+					vkCmdDrawIndexed(curCmdBuf, drawCmd.ElemCount, 1, nIndexOffset, nVertexOffset, 0);
+                    nIndexOffset += drawCmd.ElemCount;
+                }
+                nVertexOffset += pDrawList->VtxBuffer.Size;
+            }
+        }
 
         vkCmdEndRenderPass(curCmdBuf);
         vkEndCommandBuffer(curCmdBuf);

@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <imgui.h>
 // ImGui Debug UI pages
 class SceneNode;
 class IDebugUIPage
@@ -36,8 +37,18 @@ private:
     void DisplaySceneNodeInfo(const SceneNode& sceneNode) const;
 };
 
+class DemoDebugPage : public IDebugUIPage
+{
+public:
+    DemoDebugPage() : IDebugUIPage("ImGui Demo") {}
+    explicit DemoDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
+    void Render() const override;
+    bool ShouldRender() const override { return true; }
+    ~DemoDebugPage() override{};
+};
+
 // Home of all vertical tabs on the left side
-class VerticalTabsPage : IDebugUIPage
+class VerticalTabsPage : public IDebugUIPage
 {
 public:
     VerticalTabsPage() : IDebugUIPage("Vertical Tabs") {}
@@ -48,4 +59,17 @@ public:
 private:
     // A list of tabs
     uint32_t uCurrentSelection = 0;
+};
+
+// A full scree dock space page
+class DockSpace : public IDebugUIPage
+{
+public:
+    DockSpace() : IDebugUIPage("DockSpace") {}
+    explicit DockSpace(const std::string& sName) : IDebugUIPage(sName) {}
+    void Render() const override;
+    bool ShouldRender() const override { return true; }
+    ~DockSpace() override {}
+private:
+    const ImGuiWindowFlags WINDOW_FLAG = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
 };

@@ -5,7 +5,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <imgui.h>
 #include <functional>
 
 void ResourceManagerDebugPage::Render() const
@@ -68,9 +67,37 @@ void SceneDebugPage::DisplaySceneNodeInfo(const SceneNode& sceneNode) const
     ImGui::InputFloat3("AABB Max", glm::value_ptr(AABBMax), "%.3f", ImGuiInputTextFlags_ReadOnly);
 }
 
+void DemoDebugPage::Render() const
+{
+    ImGui::ShowDemoWindow();
+}
+
 void VerticalTabsPage::Render() const
 {
     // Render left tabs
+}
+
+void DockSpace::Render() const
+{
+    // TODO: move this part outside
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));   // No padding
+
+    bool bOpen = true;
+    ImGui::Begin(m_sName.c_str(), &bOpen, WINDOW_FLAG);
+    ImGui::PopStyleVar(3);
+
+    // Create a DockSpace node where any window can be docked
+    ImGuiID dockSpaceId = ImGui::GetID(m_sName.c_str());
+    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+    ImGui::End();
+
 }
 
 

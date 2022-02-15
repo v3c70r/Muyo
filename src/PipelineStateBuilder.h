@@ -219,23 +219,23 @@ public:
         m_info.depthBiasClamp = 0.0f;           // Optional
         m_info.depthBiasSlopeFactor = 0.0f;     // Optional
     }
-    RasterizationStateCIBuilder& setDepthClampEnable(bool isEnabled)
+    RasterizationStateCIBuilder& SetDepthClampEnable(bool isEnabled)
     {
         m_info.depthClampEnable = isEnabled;
         return *this;
     }
-    RasterizationStateCIBuilder& setPolygonMode(VkPolygonMode polygonMode)
+    RasterizationStateCIBuilder& SetPolygonMode(VkPolygonMode polygonMode)
     {
         m_info.polygonMode = polygonMode;
         return *this;
     }
 
-    RasterizationStateCIBuilder& setFrontFace(VkFrontFace frontFace)
+    RasterizationStateCIBuilder& SetFrontFace(VkFrontFace frontFace)
     {
         m_info.frontFace = frontFace;
         return *this;
     }
-    RasterizationStateCIBuilder& setCullMode(VkCullModeFlags uCullMode)
+    RasterizationStateCIBuilder& SetCullMode(VkCullModeFlags uCullMode)
     {
         m_info.cullMode = uCullMode;
         return *this;

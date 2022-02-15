@@ -37,9 +37,11 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
     {
         m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(pSwapchian->GetImageFormat());
         RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+        pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
         // Register debug ui pages
-        //pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
+        pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
         pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
+        //pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
     }
 
     // IBL pass
