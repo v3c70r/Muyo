@@ -73,3 +73,15 @@ public:
 private:
     const ImGuiWindowFlags WINDOW_FLAG = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
 };
+
+class EnvironmentMapDebugPage : public IDebugUIPage
+{
+public:
+    EnvironmentMapDebugPage() : IDebugUIPage("Default Resource Manager Debug Page") {}
+    explicit EnvironmentMapDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
+    void Render() const override;
+    bool ShouldRender() const override { return true; }
+    ~EnvironmentMapDebugPage() override{};
+};
+
+

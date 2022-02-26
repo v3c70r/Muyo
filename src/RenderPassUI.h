@@ -30,7 +30,6 @@ struct ImGuiResource
     VkSampler sampler;
     VkDeviceMemory fontMemory = VK_NULL_HANDLE;
 
-    std::unique_ptr<Texture> pTexture = nullptr;
 
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
     //VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;

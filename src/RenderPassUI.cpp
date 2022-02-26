@@ -1,4 +1,5 @@
 #include "RenderPassUI.h"
+#include "DescriptorManager.h"
 #include "VkRenderDevice.h"
 #include "DescriptorManager.h"
 #include "Debug.h"
@@ -16,12 +17,10 @@ void ImGuiResource::createResources(uint32_t numSwapchainBuffers) {
     unsigned char* fontData;
     int texWidth, texHeight;
     io.Fonts->GetTexDataAsRGBA32(&fontData, &texWidth, &texHeight);
-    pTexture = std::make_unique<Texture>();
-    pTexture->LoadPixels(fontData, texWidth, texHeight);
-    // Allocate descriptor
-    descriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
-        pTexture->getView());
-    GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER);
+
+    // UI font texture has texture id of 0. It has to be inserted before other texture
+    GetRenderResourceManager()->GetTexture("ui_font_texture", fontData, texWidth, texHeight);
+    GetDescriptorManager()->GetImGuiTextureId("ui_font_texture");
 
     vpVertexBuffers.resize(numSwapchainBuffers);
     vpIndexBuffers.resize(numSwapchainBuffers);
@@ -40,10 +39,7 @@ void ImGuiResource::createResources(uint32_t numSwapchainBuffers) {
     }
 }
 
-void ImGuiResource::destroyResources()
-{
-    pTexture = nullptr;
-}
+
 
 RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
     : RenderPassFinal(swapChainFormat, false)
@@ -59,7 +55,6 @@ void RenderPassUI::CreateImGuiResources()
 
 RenderPassUI::~RenderPassUI()
 {
-    m_uiResources.destroyResources();
     ImGui::DestroyContext();
 }
 
@@ -242,9 +237,6 @@ void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
                            sizeof(PushConstBlock), &pushConstBlock);
 
 		vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-		vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-			m_pipelineLayout, 0, 1,
-			&m_uiResources.descriptorSet, 0, nullptr);
 
         VkBuffer vertexBuffer = m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->buffer();
         VkBuffer indexBuffer = m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->buffer();
@@ -265,6 +257,10 @@ void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
                 for (int32_t j = 0; j < pDrawList->CmdBuffer.Size; j++)
                 {
                     const ImDrawCmd& drawCmd = pDrawList->CmdBuffer[j];
+                    // Bind correct texture
+                    vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            m_pipelineLayout, 0, 1,
+                                            &GetDescriptorManager()->GetImGuiTextureDescriptorSet((size_t)drawCmd.TextureId), 0, nullptr);
                     // Setup scissor rect according to the draw cmd
                     VkRect2D scissorRect;
                     scissorRect.offset.x = std::max((int32_t)(drawCmd.ClipRect.x), 0);

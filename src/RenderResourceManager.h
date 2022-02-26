@@ -64,12 +64,23 @@ public:
         return static_cast<RenderTarget*>(m_mResources[sName].get());
     }
 
-    Texture* getTexture(const std::string sName, const std::string path)
+    Texture* GetTexture(const std::string sName, const std::string path)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
             m_mResources[sName] = std::make_unique<Texture>();
             static_cast<Texture*>(m_mResources[sName].get())->LoadImage(path);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<Texture*>(m_mResources[sName].get());
+    }
+
+    Texture* GetTexture(const std::string sName, void* pixelData, int nWidth, int nHeight)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<Texture>();
+            static_cast<Texture*>(m_mResources[sName].get())->LoadPixels(pixelData, nWidth, nHeight);
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<Texture*>(m_mResources[sName].get());

@@ -428,7 +428,7 @@ void RenderLayerIBL::setupDescriptorSets()
 
     // Environment map sampler descriptor set
     VkImageView envMapView =
-        GetRenderResourceManager()->getTexture("EnvMap", "assets/hdr/Walk_Of_Fame/Mans_Outside_2k.hdr")->getView();
+        GetRenderResourceManager()->GetTexture("EnvMap", "assets/hdr/Mans_Outside_2k.hdr")->getView();
     m_envMapDescriptorSet =
         GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(envMapView);
 

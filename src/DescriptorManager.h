@@ -4,6 +4,7 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <map>
 
 #include "Material.h"
 #include "RenderPassGBuffer.h"
@@ -123,6 +124,13 @@ public:
         return descriptorSet;
     }
 
+
+    // Register or get a texture id to be used in ImGui
+    size_t GetImGuiTextureId(const std::string& sResourceName);
+    const VkDescriptorSet& GetImGuiTextureDescriptorSet(size_t nTextureId) const
+    {
+        return m_vImGuiTextureDescriptorSets[nTextureId];
+    }
 private:
     static VkDescriptorSetLayoutBinding GetUniformBufferBinding(uint32_t binding, VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
     {
@@ -190,5 +198,12 @@ private:
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, DESCRIPTOR_COUNT_EACH_TYPE},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, DESCRIPTOR_COUNT_EACH_TYPE},
         {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, DESCRIPTOR_COUNT_EACH_TYPE}};
+
+    // UI texture descriptor tracker
+    // ImGui uses textureId to track the bond texture in each draw command.
+    // I add a map to bind the textureId to corresbonding texture to show.
+    // This allows me to bind the image I want to show in UI with the texture's resource name
+    std::vector<VkDescriptorSet> m_vImGuiTextureDescriptorSets;
+    std::map<std::string, size_t> m_mImGuiTextureIds;
 };
 DescriptorManager *GetDescriptorManager();

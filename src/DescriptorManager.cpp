@@ -822,5 +822,20 @@ void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptor
 
 }
 
+size_t DescriptorManager::GetImGuiTextureId(const std::string& sResourceName)
+{
+    if (m_mImGuiTextureIds.find(sResourceName) == m_mImGuiTextureIds.end())
+    {
+        Texture* pTexture = GetRenderResourceManager()->GetResource<Texture>(sResourceName);
+        if (pTexture)
+        {
+            // Allocate a descriptor for this resource.
+            m_mImGuiTextureIds[sResourceName] = m_vImGuiTextureDescriptorSets.size();
+            m_vImGuiTextureDescriptorSets.push_back(GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(pTexture->getView()));
+        }
+    }
+    return m_mImGuiTextureIds[sResourceName];
+}
+
 DescriptorManager* GetDescriptorManager() { return &descriptorManager; }
 
