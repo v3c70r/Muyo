@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <imgui.h>
+#include <filesystem>
 // ImGui Debug UI pages
 class SceneNode;
 class IDebugUIPage
@@ -18,7 +19,6 @@ protected:
 class ResourceManagerDebugPage : public IDebugUIPage
 {
 public:
-    ResourceManagerDebugPage() : IDebugUIPage("Default Resource Manager Debug Page") {}
     explicit ResourceManagerDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
@@ -28,7 +28,6 @@ public:
 class SceneDebugPage : public IDebugUIPage
 {
 public:
-    SceneDebugPage() : IDebugUIPage("Default Scene Debug Page") {}
     explicit SceneDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
@@ -40,7 +39,6 @@ private:
 class DemoDebugPage : public IDebugUIPage
 {
 public:
-    DemoDebugPage() : IDebugUIPage("ImGui Demo") {}
     explicit DemoDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
@@ -51,7 +49,6 @@ public:
 class VerticalTabsPage : public IDebugUIPage
 {
 public:
-    VerticalTabsPage() : IDebugUIPage("Vertical Tabs") {}
     explicit VerticalTabsPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
@@ -65,7 +62,6 @@ private:
 class DockSpace : public IDebugUIPage
 {
 public:
-    DockSpace() : IDebugUIPage("DockSpace") {}
     explicit DockSpace(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
@@ -77,11 +73,25 @@ private:
 class EnvironmentMapDebugPage : public IDebugUIPage
 {
 public:
-    EnvironmentMapDebugPage() : IDebugUIPage("Default Resource Manager Debug Page") {}
-    explicit EnvironmentMapDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
+    explicit EnvironmentMapDebugPage(const std::string& sName) : IDebugUIPage(sName) {
+        const std::string sRootPath = "assets/hdr";
+        for (const auto& hdrEntry : std::filesystem::directory_iterator(sRootPath))
+        {
+            if (hdrEntry.path().extension() == ".hdr")
+            {
+                m_vHDRImagePathes.push_back(hdrEntry);
+                m_vHDRImagePatheStrings.push_back(m_vHDRImagePathes.back().filename().string());
+            }
+        }
+    }
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~EnvironmentMapDebugPage() override{};
+private:
+    std::vector<std::filesystem::path> m_vHDRImagePathes;
+    std::vector<std::string> m_vHDRImagePatheStrings;
+    mutable int m_nCurrentHDRIndex = 0;
+
 };
 
 

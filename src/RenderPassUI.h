@@ -38,7 +38,6 @@ struct ImGuiResource
     int nTotalIndexCount = 0;
 
     void createResources(uint32_t numSwapchainBuffers);
-    void destroyResources();
 };
 
 class RenderPassUI : public RenderPassFinal

@@ -105,6 +105,19 @@ void EnvironmentMapDebugPage::Render() const
 {
     ImGui::Begin(m_sName.c_str());
     {
+
+        // Draw HDR selector
+        struct Funcs
+        {
+            static bool ItemGetter(void* data, int n, const char** out_str)
+            {
+                *out_str = ((const std::string*)data)[n].c_str();
+                return true;
+            }
+        };
+
+        ImGui::Combo("Current HDR", &m_nCurrentHDRIndex, &Funcs::ItemGetter, (void*)m_vHDRImagePatheStrings.data(), m_vHDRImagePathes.size());
+
         //Texture* pEnvMapTexture = GetRenderResourceManager()->GetResource<Texture>("EnvMap");
         ImGuiIO& io = ImGui::GetIO();
         ImTextureID my_tex_id = (void*)GetDescriptorManager()->GetImGuiTextureId("EnvMap");
