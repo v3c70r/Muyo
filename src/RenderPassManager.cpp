@@ -170,3 +170,11 @@ std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgI
     }
     return vCmdBufs;
 }
+
+void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
+{
+    RenderLayerIBL *pIBLPass = static_cast<RenderLayerIBL *>(m_vpRenderPasses[RENDERPASS_IBL].get());
+    pIBLPass->ReloadEnvironmentMap(sNewEnvMapPath);
+
+    m_bIsIrradianceGenerated = false;
+}

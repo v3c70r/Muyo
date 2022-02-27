@@ -17,6 +17,7 @@ public:
     RenderLayerIBL();
     ~RenderLayerIBL();
     void DestroyFramebuffer();
+    void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
 
     VkCommandBuffer GetCommandBuffer(size_t idx) const override
     {

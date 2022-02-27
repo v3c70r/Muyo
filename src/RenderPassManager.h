@@ -32,6 +32,7 @@ public:
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
     void RecordDynamicCmdBuffers(uint32_t uFrameIdx, VkExtent2D vpExtent);
     std::vector<VkCommandBuffer> GetCommandBuffers(uint32_t uImgIdx);
+    void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
 
 private:
     std::array<std::unique_ptr<RenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};

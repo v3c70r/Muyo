@@ -693,3 +693,14 @@ void RenderLayerIBL::DestroyFramebuffer()
                              nullptr);
     }
 }
+
+void RenderLayerIBL::ReloadEnvironmentMap(const std::string& sNewEnvMapPath)
+{
+    // Destroy and reload env map resource
+    GetRenderResourceManager()->RemoveResource("EnvMap");
+    // Recreate env map resource with new texture
+    VkImageView envMapView = GetRenderResourceManager()->GetTexture("EnvMap", sNewEnvMapPath)->getView();
+    // Update descriptor set with new envmap view
+    GetDescriptorManager()->UpdateSingleSamplerDescriptorSet(m_envMapDescriptorSet, envMapView);
+    RecordCommandBuffer();
+}

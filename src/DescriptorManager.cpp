@@ -537,28 +537,32 @@ VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single Sampler");
 
-    // Prepare buffer descriptor
-    {
-        // prepare image descriptor
-        VkDescriptorImageInfo imageInfo = {};
-        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfo.imageView = textureView;
-        imageInfo.sampler = GetSamplerManager()->getSampler(SAMPLER_1_MIPS);
+    UpdateSingleSamplerDescriptorSet(descriptorSet, textureView);
 
-        VkWriteDescriptorSet descriptorWrite = {};
-
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSet;
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pImageInfo = &imageInfo;
-
-        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1,
-                               &descriptorWrite, 0, nullptr);
-    }
     return descriptorSet;
+}
+
+void DescriptorManager::UpdateSingleSamplerDescriptorSet(VkDescriptorSet& descriptorSet, VkImageView textureView)
+{
+    // Prepare buffer descriptor
+    // prepare image descriptor
+    VkDescriptorImageInfo imageInfo = {};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = textureView;
+    imageInfo.sampler = GetSamplerManager()->getSampler(SAMPLER_1_MIPS);
+
+    VkWriteDescriptorSet descriptorWrite = {};
+
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = descriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1,
+                           &descriptorWrite, 0, nullptr);
 }
 
 VkDescriptorSet DescriptorManager::AllocateSingleStorageImageDescriptorSet(VkImageView imageView)
@@ -833,6 +837,15 @@ size_t DescriptorManager::GetImGuiTextureId(const std::string& sResourceName)
             m_mImGuiTextureIds[sResourceName] = m_vImGuiTextureDescriptorSets.size();
             m_vImGuiTextureDescriptorSets.push_back(GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(pTexture->getView()));
         }
+    }
+    else
+    {
+        // Update descriptor set each time we get the texture id, This is because the resource could be destroyed and recreated.
+        // It's a little bit overkill but not too bad for UI render.
+        // We should only update the descriptoer set when the texture view is changed on the resource.
+        // This update takes 0.01ms on GTX 1070 card. Not cheap
+        VkImageView textureView = GetRenderResourceManager()->GetResource<Texture>(sResourceName)->getView();
+        GetDescriptorManager()->UpdateSingleSamplerDescriptorSet(m_vImGuiTextureDescriptorSets[m_mImGuiTextureIds[sResourceName]], textureView);
     }
     return m_mImGuiTextureIds[sResourceName];
 }

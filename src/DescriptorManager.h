@@ -49,6 +49,7 @@ public:
         const RenderPassGBuffer::GBufferViews &gbufferViews);
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
+    void UpdateSingleSamplerDescriptorSet(VkDescriptorSet& descriptorSet, VkImageView textureView);
     VkDescriptorSet AllocateSingleStorageImageDescriptorSet(VkImageView imageView);
 
     VkDescriptorSet AllocatePerviewDataDescriptorSet(const UniformBuffer<PerViewData> &perViewData);
