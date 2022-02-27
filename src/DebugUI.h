@@ -2,6 +2,7 @@
 #include <string>
 #include <imgui.h>
 #include <filesystem>
+#include <vector>
 // ImGui Debug UI pages
 class SceneNode;
 class IDebugUIPage
