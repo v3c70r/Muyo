@@ -293,14 +293,14 @@ int main(int argc, char** argv)
         {
             // Load scene
             //GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+            GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/sofa_combination/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/catherdral/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
             //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/Documents/cars/New Folder/cars.gltf");
-            GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
         }
 
         DrawLists dl = GetSceneManager()->GatherDrawLists();

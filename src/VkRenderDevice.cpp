@@ -2,6 +2,7 @@
 #include "ResourceBarrier.h"
 
 #include <cassert>
+#include <set>
 
 #include "Debug.h"
 #include "RenderResourceManager.h"
@@ -172,55 +173,45 @@ void VkRenderDevice::CreateDevice(
     const VkSurfaceKHR& surface,
     const std::vector<void*>& vpFeatures)    // surface for compatibility check
 {
-    // Query queue family support
-    struct QueueFamilyIndice
-    {
-        int graphicsFamily = -1;
-        int presentFamily = -1;
-        bool isComplete() { return graphicsFamily >= 0 && presentFamily >= 0; }
-    };
     // Find supported queue
-    QueueFamilyIndice indices;
     uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount,
-                                             nullptr);
+    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount,
-                                             queueFamilies.data());
+    vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-    // Find the first queue family support both graphics and presentation
-    int i = 0;
+    // Find the first queue families support all the queues
+    int nQueueFamilyIdx = 0;
     for (const auto& queueFamily : queueFamilies)
     {
         // Check for graphics support
-        if (queueFamily.queueCount > 0 &&
-            queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-            indices.graphicsFamily = i;
+        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        {
+            m_queueFamilyIndices.nGraphicsQueueFamily = nQueueFamilyIdx;
+        }
 
-        // Check for presentation support ( they can be in the same queeu
-        // family)
+        // Check for presentation support ( they can be in the same queeu family)
         VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, surface,
-                                             &presentSupport);
+        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, nQueueFamilyIdx, surface, &presentSupport);
 
         if (queueFamily.queueCount > 0 && presentSupport)
-            indices.presentFamily = i;
+        {
+            m_queueFamilyIndices.nPresentQueneFamily = nQueueFamilyIdx;
+        }
 
-        if (indices.isComplete()) break;
-        i++;
+        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+        {
+            m_queueFamilyIndices.nComputeQueueFamily = nQueueFamilyIdx;
+        }
+
+        if (m_queueFamilyIndices.isComplete()) 
+        {
+            break;
+        }
+
+        nQueueFamilyIdx++;
     }
 
-    // Handle queue family indices and add them to the device creation info
-
-    int queueFamilyIndex = 0;  //TODO: Enumerate proper queue family for different usages
-    float queuePriority = 1.0f;
-    // Create a queue for each of the family
-    VkDeviceQueueCreateInfo queueCreateInfo = {};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    // Queue are stored in the orders
-    queueCreateInfo.queueFamilyIndex = queueFamilyIndex;
-    queueCreateInfo.queueCount = 1;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    assert(m_queueFamilyIndices.isComplete());
 
     struct ExtensionHeader  // Helper struct to link extensions together
     {
@@ -228,7 +219,7 @@ void VkRenderDevice::CreateDevice(
         void* pNext;
     };
 
-    VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
 
@@ -257,11 +248,49 @@ void VkRenderDevice::CreateDevice(
         vkGetPhysicalDeviceFeatures2(m_physicalDevice, &features2);
     }
 
+    // Handle queue family indices and add them to the device creation info
+
+    float fQueuePriority = 1.0f;
+    // Create a queue for each of the family
+
+    auto cmp = [](VkDeviceQueueCreateInfo info1, VkDeviceQueueCreateInfo info2)
+    { return info1.queueFamilyIndex < info2.queueFamilyIndex; };
+    std::set<VkDeviceQueueCreateInfo, decltype(cmp)> sQueueCreateInfos;
+
+    sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
+                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,         // sType;
+                nullptr,                                            // pNext;
+                0,                                                  // flags;
+                (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,  // queueFamilyIndex;
+                1,                                                  // queueCount;
+                &fQueuePriority                                     // pQueuePriorities;
+        }));
+
+    sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
+                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,         // sType;
+                nullptr,                                            // pNext;
+                0,                                                  // flags;
+                (uint32_t)m_queueFamilyIndices.nPresentQueneFamily,   // queueFamilyIndex;
+                1,                                                  // queueCount;
+                &fQueuePriority                                     // pQueuePriorities;
+        }));
+
+    sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
+                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,         // sType;
+                nullptr,                                            // pNext;
+                0,                                                  // flags;
+                (uint32_t)m_queueFamilyIndices.nComputeQueueFamily,   // queueFamilyIndex;
+                1,                                                  // queueCount;
+                &fQueuePriority                                     // pQueuePriorities;
+        }));
+
+    std::vector<VkDeviceQueueCreateInfo> vQueueCreateInfos(sQueueCreateInfos.begin(), sQueueCreateInfos.end());
+
     VkDeviceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.queueCreateInfoCount = 1;
+    createInfo.pQueueCreateInfos = vQueueCreateInfos.data();
+    createInfo.queueCreateInfoCount = (uint32_t)vQueueCreateInfos.size();
 
     createInfo.pEnabledFeatures = nullptr;
     createInfo.pNext = &features2;
@@ -272,21 +301,43 @@ void VkRenderDevice::CreateDevice(
     createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
     createInfo.ppEnabledLayerNames = layers.data();
 
-    assert(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo,
-                          nullptr, &m_device) == VK_SUCCESS);
+    assert(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device) == VK_SUCCESS);
 
     {
-        VkQueue graphicsQueue = VK_NULL_HANDLE;
-        VkQueue presentQueue = VK_NULL_HANDLE;
-        vkGetDeviceQueue(m_device, queueFamilyIndex,
-                         0, &graphicsQueue);
-        vkGetDeviceQueue(m_device, queueFamilyIndex,
-                         0, &presentQueue);
 
-        SetGraphicsQueue(graphicsQueue, queueFamilyIndex);
-        SetPresentQueue(presentQueue, queueFamilyIndex);
+        vkGetDeviceQueue(m_device, m_queueFamilyIndices.nGraphicsQueueFamily, 0, &m_graphicsQueue);
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics Queue");
 
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present Queue");
+        vkGetDeviceQueue(m_device, m_queueFamilyIndices.nPresentQueneFamily, 0, &m_presentQueue);
+        if (m_presentQueue == m_graphicsQueue)
+        {
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present Queue");
+        }
+        else
+        {
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Present Queue");
+        }
+
+        vkGetDeviceQueue(m_device, m_queueFamilyIndices.nComputeQueueFamily, 0, &m_computeQueue);
+        if (m_computeQueue == m_graphicsQueue)
+        {
+            if (m_computeQueue == m_presentQueue)
+            {
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present/Compute Queue");
+            }
+            else
+            {
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Compute Queue");
+            }
+        }
+        else if (m_computeQueue == m_presentQueue)
+        {
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Prsent/Compute Queue");
+        }
+        else
+        {
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Compute Queue");
+        }
     }
 }
 
@@ -355,11 +406,12 @@ void VkRenderDevice::SetViewportSize(VkExtent2D viewport)
 
 void VkRenderDevice::CreateCommandPools()
 {
+    // I assumes that the queue family supports both graphcs and present
     VkCommandPoolCreateInfo commandPoolInfo = {};
     commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    commandPoolInfo.queueFamilyIndex = 0;
     // Static comamand pools
     {
+        commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         assert(vkCreateCommandPool(m_device,
                                    &commandPoolInfo, nullptr,
@@ -367,6 +419,7 @@ void VkRenderDevice::CreateCommandPools()
     }
     // transient pool
     {
+        commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
         assert(vkCreateCommandPool(m_device,
                                    &commandPoolInfo, nullptr,
@@ -374,10 +427,20 @@ void VkRenderDevice::CreateCommandPools()
     }
     // Reusable pool
     {
+        commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
         assert(vkCreateCommandPool(m_device,
                                    &commandPoolInfo, nullptr,
                                    &m_aCommandPools[PER_FRAME_CMD_POOL]) == VK_SUCCESS);
+    }
+
+    // Compute pool
+    {
+        commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nComputeQueueFamily;
+        commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        assert(vkCreateCommandPool(m_device,
+                                   &commandPoolInfo, nullptr,
+                                   &m_aCommandPools[COMPUTE_CMD_POOL]) == VK_SUCCESS);
     }
 }
 
@@ -392,6 +455,16 @@ void VkRenderDevice::DestroyCommandPools()
 void VkRenderDevice::Unintialize()
 {
     vkDestroyInstance(m_instance, nullptr);
+}
+
+VkCommandBuffer VkRenderDevice::AllocateComputeCommandBuffer()
+{
+    return AllocatePrimaryCommandbuffer(COMPUTE_CMD_POOL);
+}
+
+void VkRenderDevice::FreeComputeCommandBuffer(VkCommandBuffer& commandBuffer)
+{
+    FreePrimaryCommandbuffer(commandBuffer, COMPUTE_CMD_POOL);
 }
 
 VkCommandBuffer VkRenderDevice::AllocateStaticPrimaryCommandbuffer()

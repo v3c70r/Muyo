@@ -87,7 +87,7 @@ void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
         // Recreate swap chian
         const Swapchain *pSwapchain = GetRenderDevice()->GetSwapchain();
 
-        // Recreate render dependent render passes
+        // Recreate dependent render passes
         static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
         static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->Resize(pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
 

@@ -94,11 +94,23 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     return res;
 }
 // Helper function
+ComputePipelineBuilder& ComputePipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage)
+{
+    // only a single stage for compute pipeline
+    assert(shaderStage == VK_SHADER_STAGE_COMPUTE_BIT);
+
+    m_shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    m_shaderStageInfo.stage = shaderStage;
+    m_shaderStageInfo.module = shaderModule;
+    m_shaderStageInfo.pName = "main";
+    m_info.stage = m_shaderStageInfo;
+
+    return *this;
+}
 RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage)
 {
     VkPipelineShaderStageCreateInfo shaderStageInfo = {};
-    shaderStageInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStageInfo.stage = shaderStage;
     shaderStageInfo.module = shaderModule;
     shaderStageInfo.pName = "main";

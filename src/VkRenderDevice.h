@@ -51,28 +51,14 @@ public:
     VkQueue& GetGraphicsQueue() { return m_graphicsQueue; }
     VkQueue& GetImmediateQueue() { return m_graphicsQueue;} // TODO: Handle copy queue
     VkQueue& GetPresentQueue() { return m_presentQueue; }
+    VkQueue& GetComputeQueue() { return m_computeQueue; }
     VkInstance& GetInstance() { return m_instance; }
-    int GetGraphicsQueueFamilyIndex() const { return m_graphicsQueueFamilyIndex; }
-    int GetPresentQueueFamilyIndex() const { return m_presentQueueFamilyIndex; }
 
     void SetDevice(VkDevice device) { m_device = device; }
     void SetPhysicalDevice(VkPhysicalDevice physicalDevice)
     {
         m_physicalDevice = physicalDevice;
     }
-    void SetGraphicsQueue(VkQueue graphicsQueue, int queueFamilyIndex)
-    {
-        m_graphicsQueue = graphicsQueue;
-        m_graphicsQueueFamilyIndex = queueFamilyIndex;
-    }
-
-    void SetPresentQueue(VkQueue presentQueue, int queueFamilyIndex)
-    {
-        m_presentQueue = presentQueue;
-        m_presentQueueFamilyIndex = queueFamilyIndex;
-    }
-
-    // TODO: Add compute queue if needed
 
     void SetInstance(VkInstance instance)
     {
@@ -80,6 +66,9 @@ public:
     }
 
     // Command buffer allocations
+    VkCommandBuffer AllocateComputeCommandBuffer();
+    void FreeComputeCommandBuffer(VkCommandBuffer& commandBuffer);
+
     VkCommandBuffer AllocateStaticPrimaryCommandbuffer();
 
     void FreeStaticPrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
@@ -158,6 +147,7 @@ private: // Private structures
         MAIN_CMD_POOL,
         IMMEDIATE_CMD_POOL,
         PER_FRAME_CMD_POOL,
+        COMPUTE_CMD_POOL,
         NUM_CMD_POOLS
     };
 
@@ -231,17 +221,23 @@ private:  // helper functions to create render device
     void FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);
 
 private:  // Members
+    struct QueueFamilyIndice
+    {
+        int nGraphicsQueueFamily = -1;
+        int nPresentQueneFamily = -1;
+        int nComputeQueueFamily = -1;
+        bool isComplete() { return nGraphicsQueueFamily >= 0 && nPresentQueneFamily >= 0 && nComputeQueueFamily >= 0; }
+    } m_queueFamilyIndices;
+
     VkDevice m_device = VK_NULL_HANDLE;
     VkQueue m_graphicsQueue = VK_NULL_HANDLE;
     VkQueue m_presentQueue = VK_NULL_HANDLE;
+    VkQueue m_computeQueue = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
 
     std::array<VkCommandPool, NUM_CMD_POOLS> m_aCommandPools = {VK_NULL_HANDLE,
                                                                VK_NULL_HANDLE};
 
-    int m_graphicsQueueFamilyIndex = -1;
-    int m_presentQueueFamilyIndex = -1;
-    int m_computeQueueFamilyIndex = -1;
     bool m_bIsValidationEnabled = false;
     std::vector<const char*> m_vLayers;
 

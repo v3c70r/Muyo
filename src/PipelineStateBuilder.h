@@ -124,6 +124,19 @@ protected:
     T m_info = {};
 };
 
+class ComputePipelineBuilder : public InfoBuilder<VkComputePipelineCreateInfo>
+{
+public:
+    ComputePipelineBuilder& SetPipelineLayout(VkPipelineLayout layout)
+    {
+        m_info.layout = layout;
+        return *this;
+    }
+    ComputePipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage = VK_SHADER_STAGE_COMPUTE_BIT);
+private:
+    VkPipelineShaderStageCreateInfo m_shaderStageInfo;
+};
+
 class RayTracingPipelineBuilder : public InfoBuilder<VkRayTracingPipelineCreateInfoKHR>
 {
 public:
