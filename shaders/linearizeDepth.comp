@@ -1,0 +1,10 @@
+#version 450
+
+layout(set = 0, binding = 0) uniform sampler2D depth;
+layout(set = 1, binding = 0, r8) uniform image2D linearDepth;
+
+void main()
+{
+    //imageStore(linearDepth, ivec2(gl_GlobalInvocationID.xy), 1.0);
+    
+}

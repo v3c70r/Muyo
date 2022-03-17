@@ -200,82 +200,85 @@ void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
             // No need to free it as it will be destroyed with the pool
         }
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
-
-        VkRenderPassBeginInfo renderPassBeginInfo = {};
-        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.renderPass = m_vRenderPasses.back();
-        renderPassBeginInfo.framebuffer = m_vFramebuffers[nSwapchainBufferIndex];
-
-        renderPassBeginInfo.renderArea.offset = {0, 0};
-        renderPassBeginInfo.renderArea.extent = mRenderArea;
-        std::array<VkClearValue, 2> clearValues = {};
-        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[1].depthStencil = {1.0f, 0};
-        renderPassBeginInfo.clearValueCount =
-            static_cast<uint32_t>(clearValues.size());
-        renderPassBeginInfo.pClearValues = clearValues.data();
-
-        vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
-                             VK_SUBPASS_CONTENTS_INLINE);
-
-        // Set dynamic viewport and scissor
-        VkViewport viewport = {
-            0.0, 0.0, (float)screenExtent.width, (float)screenExtent.height,
-            0.0, 1.0};
-        vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
-
-        VkRect2D scissor = {{0, 0}, screenExtent};
-        vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
-
-        // UI scale and translate via push constants
-        PushConstBlock pushConstBlock;
-        pushConstBlock.scale =
-            glm::vec2(2.0f / io.DisplaySize.x, 2.0f / io.DisplaySize.y);
-        pushConstBlock.translate = glm::vec2(-1.0f);
-        vkCmdPushConstants(curCmdBuf, m_pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT, 0,
-                           sizeof(PushConstBlock), &pushConstBlock);
-
-		vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-
-        VkBuffer vertexBuffer = m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->buffer();
-        VkBuffer indexBuffer = m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->buffer();
-
-        ImDrawData* pDrawData = ImGui::GetDrawData();
-		int32_t nVertexOffset = 0;
-		int32_t nIndexOffset = 0;
-
-        if (pDrawData->CmdListsCount > 0)
         {
-			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
-			vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+            SCOPED_MARKER(curCmdBuf, "UI");
 
-            for (int32_t i = 0; i < pDrawData->CmdListsCount; i++)
+            VkRenderPassBeginInfo renderPassBeginInfo = {};
+            renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            renderPassBeginInfo.renderPass = m_vRenderPasses.back();
+            renderPassBeginInfo.framebuffer = m_vFramebuffers[nSwapchainBufferIndex];
+
+            renderPassBeginInfo.renderArea.offset = {0, 0};
+            renderPassBeginInfo.renderArea.extent = mRenderArea;
+            std::array<VkClearValue, 2> clearValues = {};
+            clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+            clearValues[1].depthStencil = {1.0f, 0};
+            renderPassBeginInfo.clearValueCount =
+                static_cast<uint32_t>(clearValues.size());
+            renderPassBeginInfo.pClearValues = clearValues.data();
+
+            vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
+                                 VK_SUBPASS_CONTENTS_INLINE);
+
+            // Set dynamic viewport and scissor
+            VkViewport viewport = {
+                0.0, 0.0, (float)screenExtent.width, (float)screenExtent.height,
+                0.0, 1.0};
+            vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
+
+            VkRect2D scissor = {{0, 0}, screenExtent};
+            vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
+
+            // UI scale and translate via push constants
+            PushConstBlock pushConstBlock;
+            pushConstBlock.scale =
+                glm::vec2(2.0f / io.DisplaySize.x, 2.0f / io.DisplaySize.y);
+            pushConstBlock.translate = glm::vec2(-1.0f);
+            vkCmdPushConstants(curCmdBuf, m_pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               sizeof(PushConstBlock), &pushConstBlock);
+
+            vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+
+            VkBuffer vertexBuffer = m_uiResources.vpVertexBuffers[nSwapchainBufferIndex]->buffer();
+            VkBuffer indexBuffer = m_uiResources.vpIndexBuffers[nSwapchainBufferIndex]->buffer();
+
+            ImDrawData* pDrawData = ImGui::GetDrawData();
+            int32_t nVertexOffset = 0;
+            int32_t nIndexOffset = 0;
+
+            if (pDrawData->CmdListsCount > 0)
             {
-                const ImDrawList* pDrawList = pDrawData->CmdLists[i];
-                for (int32_t j = 0; j < pDrawList->CmdBuffer.Size; j++)
-                {
-                    const ImDrawCmd& drawCmd = pDrawList->CmdBuffer[j];
-                    // Bind correct texture
-                    vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                            m_pipelineLayout, 0, 1,
-                                            &GetDescriptorManager()->GetImGuiTextureDescriptorSet((size_t)drawCmd.TextureId), 0, nullptr);
-                    // Setup scissor rect according to the draw cmd
-                    VkRect2D scissorRect;
-                    scissorRect.offset.x = std::max((int32_t)(drawCmd.ClipRect.x), 0);
-                    scissorRect.offset.y = std::max((int32_t)(drawCmd.ClipRect.y), 0);
-                    scissorRect.extent.width = (uint32_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x);
-                    scissorRect.extent.height = (uint32_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y);
-                    vkCmdSetScissor(curCmdBuf, 0, 1, &scissorRect);
-					vkCmdDrawIndexed(curCmdBuf, drawCmd.ElemCount, 1, nIndexOffset, nVertexOffset, 0);
-                    nIndexOffset += drawCmd.ElemCount;
-                }
-                nVertexOffset += pDrawList->VtxBuffer.Size;
-            }
-        }
+                VkDeviceSize offset = 0;
+                vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-        vkCmdEndRenderPass(curCmdBuf);
+                for (int32_t i = 0; i < pDrawData->CmdListsCount; i++)
+                {
+                    const ImDrawList* pDrawList = pDrawData->CmdLists[i];
+                    for (int32_t j = 0; j < pDrawList->CmdBuffer.Size; j++)
+                    {
+                        const ImDrawCmd& drawCmd = pDrawList->CmdBuffer[j];
+                        // Bind correct texture
+                        vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                                m_pipelineLayout, 0, 1,
+                                                &GetDescriptorManager()->GetImGuiTextureDescriptorSet((size_t)drawCmd.TextureId), 0, nullptr);
+                        // Setup scissor rect according to the draw cmd
+                        VkRect2D scissorRect;
+                        scissorRect.offset.x = std::max((int32_t)(drawCmd.ClipRect.x), 0);
+                        scissorRect.offset.y = std::max((int32_t)(drawCmd.ClipRect.y), 0);
+                        scissorRect.extent.width = (uint32_t)(drawCmd.ClipRect.z - drawCmd.ClipRect.x);
+                        scissorRect.extent.height = (uint32_t)(drawCmd.ClipRect.w - drawCmd.ClipRect.y);
+                        vkCmdSetScissor(curCmdBuf, 0, 1, &scissorRect);
+                        vkCmdDrawIndexed(curCmdBuf, drawCmd.ElemCount, 1, nIndexOffset, nVertexOffset, 0);
+                        nIndexOffset += drawCmd.ElemCount;
+                    }
+                    nVertexOffset += pDrawList->VtxBuffer.Size;
+                }
+            }
+
+            vkCmdEndRenderPass(curCmdBuf);
+        }
         vkEndCommandBuffer(curCmdBuf);
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(curCmdBuf),

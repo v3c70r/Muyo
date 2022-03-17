@@ -38,11 +38,11 @@ void VkRenderDevice::Initialize(
     // Populate application info structure
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Hello Triangle";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 2, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 2, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_2;
+    appInfo.pApplicationName = "Muyo";
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 3, 0);
+    appInfo.pEngineName = "Muyo";
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 3, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_3;
 
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -347,62 +347,6 @@ void VkRenderDevice::DestroyDevice()
     m_device = VK_NULL_HANDLE;
 }
 
-void VkRenderDevice::CreateSwapchain(const VkSurfaceKHR& swapchainSurface)
-{
-    assert(m_pSwapchain == nullptr);
-    m_pSwapchain = std::make_unique<Swapchain>();
-    m_pSwapchain->CreateSwapchain(swapchainSurface,
-                                  SWAPCHAIN_FORMAT,
-                                  PRESENT_MODE,
-                                  NUM_BUFFERS);
-
-    // Create semaphores on presentation and graphics queues
-    VkSemaphoreCreateInfo semaphoreInfo = {};
-    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    assert(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_imageAvailableSemaphore) == VK_SUCCESS);
-    assert(vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphore) == VK_SUCCESS);
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_imageAvailableSemaphore), VK_OBJECT_TYPE_SEMAPHORE, "SwapchianImageAvailable");
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderFinishedSemaphore), VK_OBJECT_TYPE_SEMAPHORE, "RenderFinished");
-
-    // Create a fence to wait for GPU execution for each swapchain image
-    VkFenceCreateInfo fenceInfo = {};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    for (auto &fence : m_aGPUExecutionFence)
-    {
-        assert(vkCreateFence(m_device, &fenceInfo, nullptr, &fence) == VK_SUCCESS);
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(fence), VK_OBJECT_TYPE_FENCE, "renderFinished");
-    }
-}
-
-void VkRenderDevice::DestroySwapchain()
-{
-    // Destroy fences and semaphores
-    vkDestroySemaphore(m_device, m_imageAvailableSemaphore, nullptr);
-    vkDestroySemaphore(m_device, m_renderFinishedSemaphore, nullptr);
-
-    for (auto &fence: m_aGPUExecutionFence)
-    {
-        vkDestroyFence(m_device, fence, nullptr);
-    }
-
-    m_pSwapchain->DestroySwapchain();
-    m_pSwapchain = nullptr;
-}
-void VkRenderDevice::SetViewportSize(VkExtent2D viewport)
- { 
-     if (viewport.width != m_viewportSize.width || viewport.height != m_viewportSize.height)
-     {
-         m_viewportSize = viewport;
-         // recreate swapchain with the same surface
-         VkSurfaceKHR surface = m_pSwapchain->GetSurface();
-         m_pSwapchain->DestroySwapchain();
-         m_pSwapchain->CreateSwapchain(surface,
-                                       SWAPCHAIN_FORMAT,
-                                       PRESENT_MODE,
-                                       NUM_BUFFERS);
-     }
- }
 
 void VkRenderDevice::CreateCommandPools()
 {
@@ -569,33 +513,21 @@ void VkRenderDevice::FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer,
     vkFreeCommandBuffers(m_device, m_aCommandPools[pool], 1, &commandBuffer);
 }
 
-void VkRenderDevice::BeginFrame()
+void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore> &waitSemaphores, std::vector<VkSemaphore> &signalSemaphores, std::vector<VkPipelineStageFlags> flags, VkFence signalFence)
 {
-    m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailableSemaphore);
-
-    // Wait for previous command renders to current swaphchain image to finish
-    vkWaitForFences(m_device, 1, &m_aGPUExecutionFence[m_uImageIdx2Present], VK_TRUE, std::numeric_limits<uint64_t>::max());
-    vkResetFences(m_device, 1, &m_aGPUExecutionFence[m_uImageIdx2Present]);
-}
-
-void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers)
-{
-    VkPipelineStageFlags stageFlag =
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;  // only color attachment waits for the semaphore
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &m_imageAvailableSemaphore;
-    submitInfo.pWaitDstStageMask = &stageFlag;
+    submitInfo.waitSemaphoreCount = (uint32_t)waitSemaphores.size();
+    submitInfo.pWaitSemaphores = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask = flags.data();
 
     submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
     submitInfo.pCommandBuffers = vCmdBuffers.data();
 
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &m_renderFinishedSemaphore;
+    submitInfo.signalSemaphoreCount = (uint32_t)signalSemaphores.size();
+    submitInfo.pSignalSemaphores = signalSemaphores.data();
 
-    assert(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo,
-                         m_aGPUExecutionFence[m_uImageIdx2Present]) == VK_SUCCESS);
+    assert(vkQueueSubmit(queue, 1, &submitInfo, signalFence) == VK_SUCCESS);
 }
 
 void VkRenderDevice::SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers)
@@ -605,26 +537,10 @@ void VkRenderDevice::SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& v
     submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
     submitInfo.pCommandBuffers = vCmdBuffers.data();
 
-    assert(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo, nullptr) ==
-           VK_SUCCESS);
+    assert(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo, nullptr) == VK_SUCCESS);
     assert(vkQueueWaitIdle(GetGraphicsQueue()) == VK_SUCCESS);
 }
 
-void VkRenderDevice::Present()
-{
-    VkPresentInfoKHR presentInfo = {};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &m_renderFinishedSemaphore;
-
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &(m_pSwapchain->GetSwapChain());
-    presentInfo.pImageIndices = &m_uImageIdx2Present;
-
-    presentInfo.pResults = nullptr;
-
-    vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
-}
 
 VkDeviceAddress VkRenderDevice::GetBufferDeviceAddress(VkBuffer buffer) const
 {

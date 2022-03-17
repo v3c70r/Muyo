@@ -1,27 +1,67 @@
-#include <cassert>
-#include "Scene.h"
 #include "RenderPassManager.h"
-#include "RenderResourceManager.h"
-#include "RenderPass.h"
-#include "RenderPassGBuffer.h"
-#include "RenderPassUI.h"
-#include "RenderLayerIBL.h"
-#include "RenderPassTransparent.h"
-#include "RenderPassSkybox.h"
+
+#include <cassert>
+
 #include "DebugUI.h"
+#include "RenderLayerIBL.h"
+#include "RenderPass.h"
+#include "RenderPassAO.h"
+#include "RenderPassGBuffer.h"
+#include "RenderPassSkybox.h"
+#include "RenderPassTransparent.h"
+#include "RenderPassUI.h"
+#include "RenderResourceManager.h"
+#include "Scene.h"
+#include "Swapchain.h"
 
 static RenderPassManager renderPassManager;
 
-RenderPassManager* GetRenderPassManager()
+RenderPassManager *GetRenderPassManager()
 {
     return &renderPassManager;
 }
 
-void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
+void RenderPassManager::CreateSwapchain(const VkSurfaceKHR &swapchainSurface)
+{
+    assert(m_pSwapchain == nullptr);
+    m_pSwapchain = std::make_unique<Swapchain>();
+    m_pSwapchain->CreateSwapchain(swapchainSurface,
+                                  SWAPCHAIN_FORMAT,
+                                  PRESENT_MODE,
+                                  NUM_BUFFERS);
+}
+
+void RenderPassManager::BeginFrame()
+{
+    m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailable);
+
+    // Wait for previous command renders to current swaphchain image to finish
+    vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &m_aGPUExecutionFence[m_uImageIdx2Present], VK_TRUE, std::numeric_limits<uint64_t>::max());
+    vkResetFences(GetRenderDevice()->GetDevice(), 1, &m_aGPUExecutionFence[m_uImageIdx2Present]);
+}
+
+void RenderPassManager::Present()
+{
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &m_renderFinished;
+
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &(m_pSwapchain->GetSwapChain());
+    presentInfo.pImageIndices = &m_uImageIdx2Present;
+
+    presentInfo.pResults = nullptr;
+
+    vkQueuePresentKHR(GetRenderDevice()->GetPresentQueue(), &presentInfo);
+}
+
+void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSurfaceKHR &swapchainSurface)
 {
     m_uWidth = uWidth;
     m_uHeight = uHeight;
-    const Swapchain* pSwapchian = GetRenderDevice()->GetSwapchain();
+
+    CreateSwapchain(swapchainSurface);
 
     VkExtent2D vp = {uWidth, uHeight};
     // GBuffer pass
@@ -32,17 +72,17 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
         pGBufferPass->CreatePipeline();
     }
     // Final pass
-    m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(pSwapchian->GetImageFormat());
+    m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(m_pSwapchain->GetImageFormat());
     // UI Pass
     {
-        m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(pSwapchian->GetImageFormat());
+        m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(m_pSwapchain->GetImageFormat());
         RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
         pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
         // Register debug ui pages
         pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
         pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
         pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
-        //pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
+        // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
     }
 
     // IBL pass
@@ -51,23 +91,54 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
     m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>();
     // Skybox pass
     m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>();
+
+    m_vpRenderPasses[RENDERPASS_AO] = std::make_unique<RenderPassAO>();
+
+    RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
+
+    SetSwapchainImageViews(m_pSwapchain->GetImageViews(), pDepthResource->getView());
+
+    // Create semaphores
+    //
+    VkSemaphoreCreateInfo semaphoreInfo = {};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_depthReady) == VK_SUCCESS);
+    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_aoReady) == VK_SUCCESS);
+
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_depthReady), VK_OBJECT_TYPE_SEMAPHORE, "Depth Ready");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aoReady), VK_OBJECT_TYPE_SEMAPHORE, "AO Ready");
+
+    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailable) == VK_SUCCESS);
+    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinished) == VK_SUCCESS);
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_imageAvailable), VK_OBJECT_TYPE_SEMAPHORE, "Swapchian ImageAvailable");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderFinished), VK_OBJECT_TYPE_SEMAPHORE, "Render Finished");
+
+    // Create a fence to wait for GPU execution for each swapchain image
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    for (auto &fence : m_aGPUExecutionFence)
+    {
+        assert(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence) == VK_SUCCESS);
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(fence), VK_OBJECT_TYPE_FENCE, "renderFinished");
+    }
 }
 
 void RenderPassManager::SetSwapchainImageViews(const std::vector<VkImageView> &vImageViews, VkImageView depthImageView)
 {
     assert(m_uWidth != 0 && m_uHeight != 0);
-    static_cast<RenderPassFinal*>(m_vpRenderPasses[RENDERPASS_FINAL].get())->SetSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
+    static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->SetSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
     static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->CreatePipeline();
 
-    static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get())->SetSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
-    static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get())->CreateImGuiResources();
-    static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get())->CreatePipeline();
+    static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->SetSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
+    static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->CreateImGuiResources();
+    static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->CreatePipeline();
 
-    static_cast<RenderPassTransparent*>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
-    static_cast<RenderPassTransparent*>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
+    static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
+    static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
 
-    static_cast<RenderPassSkybox*>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreateFramebuffer(m_uWidth, m_uHeight);
-    static_cast<RenderPassSkybox*>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreatePipeline();
+    static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreateFramebuffer(m_uWidth, m_uHeight);
+    static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreatePipeline();
 }
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
@@ -78,27 +149,24 @@ void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
         m_uHeight = uHeight;
 
         assert(m_uWidth != 0 && m_uHeight != 0);
-        GetRenderDevice()->SetViewportSize({uWidth, uHeight});
+
+        // recreate swapchain with the same surface
+        VkSurfaceKHR surface = m_pSwapchain->GetSurface();
+        m_pSwapchain->DestroySwapchain();
+        m_pSwapchain->CreateSwapchain(surface,
+                                      SWAPCHAIN_FORMAT,
+                                      PRESENT_MODE,
+                                      NUM_BUFFERS);
 
         // Reallocate depth target
         GetRenderResourceManager()->RemoveResource("depthTarget");
         RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", {uWidth, uHeight});
 
         // Recreate swap chian
-        const Swapchain *pSwapchain = GetRenderDevice()->GetSwapchain();
 
         // Recreate dependent render passes
-        static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
-        static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->Resize(pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
-
-        // No need to update back buffers
-        //static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->DestroyFramebuffer();
-        //static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
-        //static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
-
-        //static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->DestroyFramebuffer();
-        //static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreateFramebuffer(m_uWidth, m_uHeight);
-        //static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreatePipeline();
+        static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
+        static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
     }
 }
 
@@ -108,9 +176,19 @@ void RenderPassManager::Unintialize()
     {
         pPass = nullptr;
     }
+    vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_depthReady, nullptr);
+    vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_aoReady, nullptr);
+    vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_imageAvailable, nullptr);
+    vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_renderFinished, nullptr);
+    for (auto &fence : m_aGPUExecutionFence)
+    {
+        vkDestroyFence(GetRenderDevice()->GetDevice(), fence, nullptr);
+    }
+    m_pSwapchain->DestroySwapchain();
+    m_pSwapchain = nullptr;
 }
 
-void RenderPassManager::RecordStaticCmdBuffers(const DrawLists& drawLists)
+void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 {
     {
         RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
@@ -141,14 +219,18 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists& drawLists)
     pSkybox->RecordCommandBuffers();
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->RecordCommandBuffers();
+    RenderPassAO *pAOPass = static_cast<RenderPassAO *>(m_vpRenderPasses[RENDERPASS_AO].get());
+    pAOPass->RecordCommandBuffer();
 }
 
-void RenderPassManager::RecordDynamicCmdBuffers(uint32_t nFrameIdx, VkExtent2D vpExtent)
+void RenderPassManager::RecordDynamicCmdBuffers()
 {
-    RenderPassUI* pUIPass = static_cast<RenderPassUI*>(m_vpRenderPasses[RENDERPASS_UI].get());
+
+    VkExtent2D vpExtent = {m_uWidth, m_uHeight};
+    RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
     pUIPass->newFrame(vpExtent);
-    pUIPass->updateBuffers(nFrameIdx);
-    pUIPass->RecordCommandBuffer(vpExtent, nFrameIdx);
+    pUIPass->updateBuffers(m_uImageIdx2Present);
+    pUIPass->RecordCommandBuffer(vpExtent, m_uImageIdx2Present);
 }
 
 std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgIdx)
@@ -177,4 +259,59 @@ void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
     pIBLPass->ReloadEnvironmentMap(sNewEnvMapPath);
 
     m_bIsIrradianceGenerated = false;
+}
+
+void RenderPassManager::SubmitCommandBuffers()
+{
+    // This function manages command buffer submissions and queue synchronizations
+    std::vector<VkCommandBuffer> vCmdBufs;
+    std::vector<VkSemaphore> vWaitForSemaphores;
+    std::vector<VkPipelineStageFlags> vWaitStages;
+    std::vector<VkSemaphore> vSignalSemaphores;
+
+    if (!m_bIsIrradianceGenerated)
+    {
+        vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_IBL]->GetCommandBuffer(m_uImageIdx2Present));
+        m_bIsIrradianceGenerated = true;
+    }
+
+    // Submit graphics queue to signal depth ready semaphore
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer(m_uImageIdx2Present));
+    vSignalSemaphores.push_back(m_depthReady);
+    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
+
+    vCmdBufs.clear();
+    vSignalSemaphores.clear();
+
+    // Submit other graphics tasks
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer(m_uImageIdx2Present));
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer(m_uImageIdx2Present));
+    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
+
+    vCmdBufs.clear();
+    // Submit compute tasks
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_AO]->GetCommandBuffer(m_uImageIdx2Present));
+    vWaitForSemaphores.push_back(m_depthReady);
+    vSignalSemaphores.push_back(m_aoReady);
+    vWaitStages.push_back(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetComputeQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
+
+    vCmdBufs.clear();
+    vWaitForSemaphores.clear();
+    vSignalSemaphores.clear();
+    vWaitStages.clear();
+    // Submit passes to swapchain
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_FINAL]->GetCommandBuffer(m_uImageIdx2Present));
+
+    VkCommandBuffer uiCmdBuffer = m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer(m_uImageIdx2Present);
+    if (uiCmdBuffer != VK_NULL_HANDLE)  // it's possible there's no UI to draw
+    {
+        vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer(m_uImageIdx2Present));
+    }
+    vWaitForSemaphores.push_back(m_imageAvailable);
+    vWaitForSemaphores.push_back(m_aoReady);
+    vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    vSignalSemaphores.push_back(m_renderFinished);
+    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetComputeQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages, m_aGPUExecutionFence[m_uImageIdx2Present]);
 }

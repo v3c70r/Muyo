@@ -194,7 +194,7 @@ void cleanup()
     GetDescriptorManager()->destroyDescriptorSetLayouts();
     GetDescriptorManager()->destroyDescriptorPool();
 
-    GetRenderDevice()->DestroySwapchain();
+    GetRenderPassManager()->Unintialize();
     GetRenderDevice()->DestroyCommandPools();
     GetRenderResourceManager()->Unintialize();
     GetMemoryAllocator()->Unintialize();
@@ -247,10 +247,8 @@ int main(int argc, char** argv)
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
                                     std::vector<const char *>(),    // Layers
                                     surface, features);
-    GetRenderDevice()->CreateSwapchain(surface);
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
-    GetRenderDevice()->SetViewportSize(VkExtent2D{WIDTH, HEIGHT});
 
     GetRenderDevice()->CreateCommandPools();
 
@@ -260,17 +258,7 @@ int main(int argc, char** argv)
 
     GetSamplerManager()->createSamplers();
 
-    VkExtent2D vpExtent = {WIDTH, HEIGHT};
-
-    // Can it be in gbuffer depth?
-    RenderTarget *pDepthResource =
-        GetRenderResourceManager()->GetDepthTarget(
-            "depthTarget",
-            vpExtent);
-
-    Swapchain* pSwapchian = GetRenderDevice()->GetSwapchain();
-    GetRenderPassManager()->Initialize(vpExtent.width, vpExtent.height);
-    GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
+    GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
 
     InitEventHandlers();
     ImGui::Init();
@@ -352,25 +340,25 @@ int main(int argc, char** argv)
             Window::ProcessEvents();
             updateUniformBuffer(pUniformBuffer);
 
-            GetRenderDevice()->BeginFrame();
+            GetRenderPassManager()->BeginFrame();
 
             
-            uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
-            GetRenderPassManager()->RecordDynamicCmdBuffers(uFrameIdx, GetRenderDevice()->GetViewportSize());
+            //uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
+            GetRenderPassManager()->RecordDynamicCmdBuffers();
 
-            std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
-#ifdef FEATURE_RAY_TRACING
-            // Hack to patch the ray tracing command buffer
-            // Insert it after the first cmd buffer because the first cmd buffer can be the one to generate IBL images.
-            // IBL images are required by ray tracing pass.
-            if (GetRenderDevice()->IsRayTracingSupported())
-            {
-                vCmdBufs.insert(vCmdBufs.begin()+1, rayTracingBuilder.GetCommandBuffer());
-            }
-#endif
-            GetRenderDevice()->SubmitCommandBuffers(vCmdBufs);
+//            std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
+//#ifdef FEATURE_RAY_TRACING
+//            // Hack to patch the ray tracing command buffer
+//            // Insert it after the first cmd buffer because the first cmd buffer can be the one to generate IBL images.
+//            // IBL images are required by ray tracing pass.
+//            if (GetRenderDevice()->IsRayTracingSupported())
+//            {
+//                vCmdBufs.insert(vCmdBufs.begin()+1, rayTracingBuilder.GetCommandBuffer());
+//            }
+//#endif
+            GetRenderPassManager()->SubmitCommandBuffers();
 
-            GetRenderDevice()->Present();
+            GetRenderPassManager()->Present();
             ImGui::Update();
 
             // Handle resizing
@@ -379,7 +367,7 @@ int main(int argc, char** argv)
                 assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
                 int width, height;
                 std::tie(width, height) = Window::GetWindowSize();
-                VkExtent2D currentVp = GetRenderDevice()->GetViewportSize();
+                VkExtent2D currentVp = GetRenderPassManager()->GetViewportSize();
                 if (width != (int)currentVp.width || height != (int)currentVp.height)
                 {
                     //VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
@@ -407,7 +395,6 @@ int main(int argc, char** argv)
 #endif
     }
     ImGui::Shutdown();
-    GetRenderPassManager()->Unintialize();
     cleanup();
     return 0;
 }

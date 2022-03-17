@@ -147,6 +147,7 @@ add_executable( helloVulkan
     src/RayTracingUtils.cpp
     src/ImageStorageResource.cpp
     src/ResourceBarrier.cpp
+    src/RenderPassAO.cpp
     )
 
 target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
@@ -158,6 +159,7 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.rgen"
     "${CMAKE_SOURCE_DIR}/shaders/*.rmiss"
     "${CMAKE_SOURCE_DIR}/shaders/*.rchit"
+    "${CMAKE_SOURCE_DIR}/shaders/*.comp"
     )
 
 file(GLOB_RECURSE GLSL_HEADER_FILES

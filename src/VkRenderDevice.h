@@ -4,12 +4,10 @@
 #include <array>
 #include <memory>
 #include <cstring>  // strcmp
-#include "Swapchain.h"
 
 
 class IResourceBarrier;
 class RenderResourceManager;
-class Swapchain;
 class VkRenderDevice
 {
 public:
@@ -42,8 +40,6 @@ public:
         uint32_t nMipCount = 1,
         uint32_t nLayerCount = 1);
 
-    void CreateSwapchain(const VkSurfaceKHR& swapchainSurface);
-    void DestroySwapchain();
     void CreateCommandPools();
     void DestroyCommandPools();
     VkDevice& GetDevice() { return m_device; }
@@ -110,16 +106,8 @@ public:
 
     void AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& resourceBarrier);
 
-    VkExtent2D GetViewportSize() const { return m_viewportSize; }
-    void SetViewportSize(VkExtent2D vp);
-
-    Swapchain* GetSwapchain() { return m_pSwapchain.get(); }
-
-    void BeginFrame();
-    void Present();
-    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers);
+    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore> &waitSemaphores, std::vector<VkSemaphore> &signalSemaphores, std::vector<VkPipelineStageFlags> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
     void SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers);
-    uint32_t GetFrameIdx() const {return m_uImageIdx2Present;}
 
     VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;
 
@@ -206,15 +194,6 @@ private: // Private structures
         }
     };
 
-    const VkSurfaceFormatKHR SWAPCHAIN_FORMAT = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-    const VkPresentModeKHR PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
-
-#ifdef __APPLE__
-    static const uint32_t NUM_BUFFERS = 2;
-#else
-    static const uint32_t NUM_BUFFERS = 3;
-#endif
-
 private:  // helper functions to create render device
     void PickPhysicalDevice();
     VkCommandBuffer AllocatePrimaryCommandbuffer(CommandPools pool);
@@ -235,20 +214,11 @@ private:  // Members
     VkQueue m_computeQueue = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
 
-    std::array<VkCommandPool, NUM_CMD_POOLS> m_aCommandPools = {VK_NULL_HANDLE,
-                                                               VK_NULL_HANDLE};
+    std::array<VkCommandPool, NUM_CMD_POOLS> m_aCommandPools;
 
     bool m_bIsValidationEnabled = false;
     std::vector<const char*> m_vLayers;
 
-    VkExtent2D m_viewportSize;
-
-    // Presentation related members
-    std::unique_ptr<Swapchain> m_pSwapchain = nullptr;
-    VkSemaphore m_imageAvailableSemaphore = VK_NULL_HANDLE;   // Semaphores to notify the frame when the current image is ready
-    VkSemaphore m_renderFinishedSemaphore = VK_NULL_HANDLE;
-    std::array<VkFence, NUM_BUFFERS> m_aGPUExecutionFence;
-    uint32_t m_uImageIdx2Present = 0;
 protected:
     VkInstance m_instance = VK_NULL_HANDLE;
 };
