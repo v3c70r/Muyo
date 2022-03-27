@@ -50,8 +50,9 @@ void main() {
     for (int i = 0; i < numLights.nNumLights; ++i)
     {
         LightData light = lightDatas.i[i];
+        const vec3 vLightViewPos = (uboCamera.view * vec4(light.vPosition, 1.0)).xyz;
         vLo += ComputeDirectLighting(
-            light.vPosition,
+            vLightViewPos,
             light.vColor * light.fIntensity,
             vViewPos.xyz,
             vFaceNormal,

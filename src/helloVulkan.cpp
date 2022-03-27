@@ -258,10 +258,8 @@ int main(int argc, char** argv)
 
     GetSamplerManager()->createSamplers();
 
-    GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
 
     InitEventHandlers();
-    ImGui::Init();
 
     {
         bool bFileFromArg = false;
@@ -291,6 +289,7 @@ int main(int argc, char** argv)
             //GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
         }
 
+		GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         StorageBuffer<LightData>* lightData = GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 

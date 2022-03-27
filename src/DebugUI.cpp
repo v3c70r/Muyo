@@ -4,6 +4,8 @@
 #include "DescriptorManager.h"
 #include "RenderPassManager.h"
 
+#include "LightSceneNode.h"
+
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -173,6 +175,31 @@ void EnvironmentMapDebugPage::Render() const
                 }
             }
         }
+    }
+    ImGui::End();
+}
+
+LightsDebugPage::LightsDebugPage(const std::string& sName)
+    : IDebugUIPage(sName)
+{
+    DrawLists dl = GetSceneManager()->GatherDrawLists();
+    const std::vector<const SceneNode*> lightNodes = dl.m_aDrawLists[DrawLists::DL_LIGHT];
+    for (const SceneNode* lightNode : lightNodes)
+    {
+            m_vpLightNodes.push_back(static_cast<const LightSceneNode*>(lightNode));
+    }
+}
+
+void LightsDebugPage::Render() const
+{
+
+    ImGui::Begin("Lights");
+    for (const LightSceneNode* pLightNode : m_vpLightNodes)
+    {
+        static const std::array<std::string, 1> TYPE_NAMES = {"Point"};
+        pLightNode->GetColor();
+        ImGui::Text("%s\t%s\t", pLightNode->GetName().c_str(), TYPE_NAMES[pLightNode->GetLightType()].c_str());
+        ImGui::ColorEdit3("MyColor##1", (float*)glm::value_ptr(pLightNode->GetColor()));
     }
     ImGui::End();
 }

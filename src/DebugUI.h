@@ -13,6 +13,8 @@ public:
     virtual void Render() const = 0;
     virtual bool ShouldRender() const = 0;
     virtual ~IDebugUIPage() {}
+    std::string GetName() const { return m_sName; }
+
 protected:
     std::string m_sName;
 };
@@ -93,6 +95,24 @@ private:
     std::vector<std::string> m_vHDRImagePatheStrings;
     mutable int m_nCurrentHDRIndex = 0;
 
+};
+
+
+class LightSceneNode;
+class LightsDebugPage : public IDebugUIPage
+{
+public:
+    explicit LightsDebugPage(const std::string& sName);
+    void UpdateLightNodes(const std::vector<const LightSceneNode*> vpLightNodes)
+    {
+        m_vpLightNodes = vpLightNodes;
+    }
+    void Render() const override;
+    bool ShouldRender() const override { return true; }
+    ~LightsDebugPage() override {}
+private:
+    std::vector<const LightSceneNode*> m_vpLightNodes;
+    
 };
 
 

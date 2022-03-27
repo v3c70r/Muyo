@@ -6,6 +6,7 @@
 #include "RenderResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
+#include "ImGuiControl.h"
 
 void ImGuiResource::createResources(uint32_t numSwapchainBuffers) { 
     ImGuiIO& io = ImGui::GetIO();
@@ -45,6 +46,7 @@ RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
     : RenderPassFinal(swapChainFormat, false)
 {
     ImGui::CreateContext();
+    ImGui::Init();
 }
 
 void RenderPassUI::CreateImGuiResources()

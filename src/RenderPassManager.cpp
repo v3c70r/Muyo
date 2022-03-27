@@ -82,6 +82,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
         pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
         pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
         pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
+        pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
         // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
     }
 
