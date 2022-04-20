@@ -2,7 +2,9 @@
 
 enum LightType
 {
-    LIGHT_TYPE_SPOT = 0,
+    LIGHT_TYPE_POINT = 0,
+    LIGHT_TYPE_LINEAR = 1,
+    LIGHT_TYPE_POLYGON = 2,
     LIGHT_TYPE_COUNT
 };
 
@@ -37,9 +39,32 @@ public:
         return m_fIntensity;
     }
 
+    virtual LightData ConstructLightData() const = 0;
 private:
-    uint32_t m_nLightType = LIGHT_TYPE_SPOT;
+    uint32_t m_nLightType;
     glm::mat4 m_mWorldTransformation = glm::mat4(1.0);
     glm::vec3 m_vColor = glm::vec3(0.0);
     float m_fIntensity = 0.0f;
+};
+
+class PointLightNode : public LightSceneNode
+{
+public:
+    PointLightNode (const glm::vec3 &vColor, const float &fIntensity, float fRadius = 0.0f)
+        : LightSceneNode(LIGHT_TYPE_POINT, vColor, fIntensity), m_fRadius(fRadius)
+    {
+    }
+
+    LightData ConstructLightData() const override
+    {
+        return {
+            LIGHT_TYPE_POINT,
+            GetWorldPosition(),
+            GetColor(),
+            GetIntensity(),
+            glm::vec4(m_fRadius, 0.0f, 0.0f, 0.0f)};
+    }
+
+private:
+    float m_fRadius = 0.0f;
 };

@@ -44,9 +44,7 @@ StorageBuffer<LightData>* SceneManager::ConstructLightBufferFromDrawLists(const 
     for (const SceneNode* pNode : lightNodes)
     {
         const LightSceneNode* pLightNode = static_cast<const LightSceneNode*>(pNode);
-        lightData.push_back(
-            {pLightNode->GetLightType(), pLightNode->GetWorldPosition(),
-             pLightNode->GetColor(), pLightNode->GetIntensity()});
+        lightData.push_back(pLightNode->ConstructLightData());
     }
     // Add a dummy light
     if (lightData.size() == 0)

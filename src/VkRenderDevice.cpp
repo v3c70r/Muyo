@@ -255,7 +255,7 @@ void VkRenderDevice::CreateDevice(
 
     auto cmp = [](VkDeviceQueueCreateInfo info1, VkDeviceQueueCreateInfo info2)
     { return info1.queueFamilyIndex < info2.queueFamilyIndex; };
-    std::set<VkDeviceQueueCreateInfo, decltype(cmp)> sQueueCreateInfos;
+    std::set<VkDeviceQueueCreateInfo, decltype(cmp)> sQueueCreateInfos(cmp);
 
     sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
                 VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,         // sType;

@@ -55,13 +55,13 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                             tinygltf::Light light = model.lights[nLightIdx];
 
                             glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
-                            uint32_t nLightType = LIGHT_TYPE_SPOT;
+                            uint32_t nLightType = LIGHT_TYPE_POINT;
                             if (light.type == "SPOT")
                             {
-                                nLightType = LIGHT_TYPE_SPOT;
+                                nLightType = LIGHT_TYPE_POINT;
                             }
 
-                            pSceneNode = new LightSceneNode(nLightType, lightColor, (float)light.intensity);
+                            pSceneNode = new PointLightNode(lightColor, (float)light.intensity);
                             CopyGLTFNode(*pSceneNode, gltfNode);
                         }
                         else

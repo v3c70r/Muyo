@@ -20,6 +20,7 @@ struct LightData
     vec3 vPosition;
     vec3 vColor;
     float fIntensity;
+    vec4 vLightData;
 };
 
 
