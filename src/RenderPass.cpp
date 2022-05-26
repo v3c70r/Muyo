@@ -145,7 +145,8 @@ void RenderPassFinal::CreatePipeline()
     std::vector<VkDescriptorSetLayout> descLayouts = {
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
 #ifdef FEATURE_RAY_TRACING
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE)
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA)
 #endif
     };
 
@@ -211,10 +212,19 @@ void RenderPassFinal::RecordCommandBuffers()
     VkImageView imgView = GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))->getView();
 
 #ifdef FEATURE_RAY_TRACING
-    VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({0, 0}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
-    std::vector<VkDescriptorSet> descSets = {
-        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView),
-        GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(rtOutputView)};
+    //VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({1, 1}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
+    ImageResource* pRTOutput = GetRenderResourceManager()->GetResource<ImageResource>("Ray Tracing Output");
+    assert(pRTOutput);
+    VkImageView rtOutputView  = pRTOutput->getView();
+    UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView");
+
+    std::vector<VkDescriptorSet>
+        descSets = {
+            GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView),
+            GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(rtOutputView),
+            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(
+                *perView)
+        };
 #else
     std::vector<VkDescriptorSet> descSets = {
         GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView)};

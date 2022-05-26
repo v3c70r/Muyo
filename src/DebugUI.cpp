@@ -5,6 +5,7 @@
 #include "RenderPassManager.h"
 
 #include "LightSceneNode.h"
+#include "imgui.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
@@ -202,6 +203,34 @@ void LightsDebugPage::Render() const
         ImGui::ColorEdit3("MyColor##1", (float*)glm::value_ptr(pLightNode->GetColor()));
     }
     ImGui::End();
+}
+
+void CameraDebugPage::Render() const
+{
+    // m_pCamera could be unavailable before render pass manager initialization
+    if (m_pCamera)
+    {
+        ImGui::GetWindowViewport();
+        ImGui::SetNextWindowPos(ImVec2(-10, GetRenderPassManager()->GetViewportSize().height - 30));
+        ImGui::SetNextWindowSize(ImVec2(GetRenderPassManager()->GetViewportSize().width, 30));
+        float fRatio = m_pCamera->GetLeftSplitScreenRatio();
+        static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
+        ImGui::Begin("Camera", nullptr, flags);
+        ImGui::PushItemWidth(GetRenderPassManager()->GetViewportSize().width);
+        //Set ImGui slider to transparent
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(1, 0, 0, 0.5));
+        ImGui::SliderFloat("##", &fRatio, 0.0f, 1.0f, "");
+        ImGui::PopItemWidth();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        m_pCamera->SetLeftSplitScreenRatio(fRatio);
+        ImGui::End();
+    }
 }
 
 #undef GLM_ENABLE_EXPERIMENTAL

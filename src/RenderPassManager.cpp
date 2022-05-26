@@ -11,8 +11,12 @@
 #include "RenderPassTransparent.h"
 #include "RenderPassUI.h"
 #include "RenderResourceManager.h"
+#include "RenderPassRayTracing.h"
 #include "Scene.h"
 #include "Swapchain.h"
+#ifdef FEATURE_RAY_TRACING
+#include "RayTracingSceneManager.h"
+#endif
 
 static RenderPassManager renderPassManager;
 
@@ -33,6 +37,15 @@ void RenderPassManager::CreateSwapchain(const VkSurfaceKHR &swapchainSurface)
 
 void RenderPassManager::BeginFrame()
 {
+
+    m_pCamera->SetFrameId(m_temporalInfo.nFrameId);
+    m_temporalInfo.nFrameId++;
+    m_temporalInfo.nFrameNoCameraMove++;
+
+    UniformBuffer<PerViewData> *pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    m_pCamera->UpdatePerViewDataUBO(pUniformBuffer);
+    
+
     m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailable);
 
     // Wait for previous command renders to current swaphchain image to finish
@@ -74,17 +87,17 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     // Final pass
     m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(m_pSwapchain->GetImageFormat());
     // UI Pass
-    {
-        m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(m_pSwapchain->GetImageFormat());
-        RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
-        pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
-        // Register debug ui pages
-        pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
-        pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
-        pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
-        pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
-        // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
-    }
+    m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(m_pSwapchain->GetImageFormat());
+    RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+    pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
+    // Register debug ui pages
+    pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
+    pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
+    pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
+    pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
+    CameraDebugPage *pCameraDebugPage = pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
+
+    // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
 
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
@@ -92,8 +105,15 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>();
     // Skybox pass
     m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>();
-
+    // AO pass
     m_vpRenderPasses[RENDERPASS_AO] = std::make_unique<RenderPassAO>();
+#ifdef FEATURE_RAY_TRACING
+    // RenderPass Ray Tracing
+    m_vpRenderPasses[RENDERPASS_RAY_TRACING] = std::make_unique<RenderPassRayTracing>();
+#else
+    m_vpRenderPasses[RENDERPASS_RAY_TRACING] = nullptr;
+#endif
+
 
     RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
 
@@ -123,6 +143,23 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
         assert(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence) == VK_SUCCESS);
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(fence), VK_OBJECT_TYPE_FENCE, "renderFinished");
     }
+
+    // Allocate an arcball camera
+    // TODO: Allocate camera as needed if we ever support mulit render targets
+    const float FAR = 100.0f;
+    m_pCamera = std::make_unique<Arcball>(
+        glm::perspective(glm::radians(80.0f),
+                         (float)m_uWidth / (float)m_uHeight, 0.1f,
+                         FAR),
+        glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
+                    glm::vec3(0.0f, 0.0f, 0.0f),   // Center
+                    glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
+        0.1f,                                      // near
+        FAR,                                       // far
+        (float)m_uWidth,
+        (float)m_uHeight
+    );
+    pCameraDebugPage->SetCamera(GetCamera());
 }
 
 void RenderPassManager::SetSwapchainImageViews(const std::vector<VkImageView> &vImageViews, VkImageView depthImageView)
@@ -168,6 +205,9 @@ void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
         // Recreate dependent render passes
         static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
         static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
+
+        // Update arcball tracking
+        m_pCamera->Resize(glm::vec2((float)uWidth, (float)uHeight));
     }
 }
 
@@ -216,12 +256,28 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         pTransparentPass->RecordCommandBuffers(vpGeometries);
     }
 
+#ifdef FEATURE_RAY_TRACING
+    if (m_vpRenderPasses[RENDERPASS_RAY_TRACING])
+    {
+        RenderPassRayTracing *pRTPass = static_cast<RenderPassRayTracing *>(m_vpRenderPasses[RENDERPASS_RAY_TRACING].get());
+        pRTPass->RecordCommandBuffer(
+                VkExtent2D({m_uWidth, m_uHeight}),
+                m_pRayTracingSceneManager->GetRayGenRegion(),
+                m_pRayTracingSceneManager->GetRayMissRegion(),
+                m_pRayTracingSceneManager->GetRayHitRegion(),
+                m_pRayTracingSceneManager->GetPipelineLayout(),
+                m_pRayTracingSceneManager->GetPipeline()
+                );
+    }
+#endif
     RenderPassSkybox *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
     pSkybox->RecordCommandBuffers();
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->RecordCommandBuffers();
     RenderPassAO *pAOPass = static_cast<RenderPassAO *>(m_vpRenderPasses[RENDERPASS_AO].get());
     pAOPass->RecordCommandBuffer();
+
+
 }
 
 void RenderPassManager::RecordDynamicCmdBuffers()
@@ -287,6 +343,9 @@ void RenderPassManager::SubmitCommandBuffers()
     // Submit other graphics tasks
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer(m_uImageIdx2Present));
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer(m_uImageIdx2Present));
+#ifdef FEATURE_RAY_TRACING
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_RAY_TRACING]->GetCommandBuffer(m_uImageIdx2Present));
+#endif
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
 
     vCmdBufs.clear();

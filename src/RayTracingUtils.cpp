@@ -31,49 +31,14 @@ RTBuilder::RTBuilder()
 FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(GetRenderDevice()->GetInstance(), #FUNC_NAME);
 
     // Get function pointers from Vulkan library
-    vkCreateAccelerationStructureKHR =
-        (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(
-            GetRenderDevice()->GetInstance(),
-            "vkCreateAccelerationStructureKHR");
-
-    vkDestroyAccelerationStructureKHR =
-        (PFN_vkDestroyAccelerationStructureKHR)vkGetInstanceProcAddr(
-            GetRenderDevice()->GetInstance(),
-            "vkDestroyAccelerationStructureKHR");
-
-    vkCmdBuildAccelerationStructuresKHR =
-        (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetInstanceProcAddr(
-            GetRenderDevice()->GetInstance(),
-            "vkCmdBuildAccelerationStructuresKHR");
-
-    vkCmdWriteAccelerationStructuresPropertiesKHR =
-        (PFN_vkCmdWriteAccelerationStructuresPropertiesKHR)
-            vkGetInstanceProcAddr(
-                GetRenderDevice()->GetInstance(),
-                "vkCmdWriteAccelerationStructuresPropertiesKHR");
-
-    vkGetAccelerationStructureBuildSizesKHR =
-        (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetInstanceProcAddr(
-            GetRenderDevice()->GetInstance(),
-            "vkGetAccelerationStructureBuildSizesKHR");
-
-    vkCmdCopyAccelerationStructureKHR =
-        (PFN_vkCmdCopyAccelerationStructureKHR)vkGetInstanceProcAddr(
-            GetRenderDevice()->GetInstance(),
-            "vkCmdCopyAccelerationStructureKHR");
-
-    vkGetAccelerationStructureDeviceAddressKHR =
-        (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetInstanceProcAddr(
-            GetRenderDevice()->GetInstance(),
-            "vkGetAccelerationStructureDeviceAddressKHR");
-
-    vkCreateRayTracingPipelinesKHR =
-        (PFN_vkCreateRayTracingPipelinesKHR)vkGetInstanceProcAddr (
-            GetRenderDevice()->GetInstance(),
-            "vkCreateRayTracingPipelinesKHR");
-    assert(vkCreateRayTracingPipelinesKHR != nullptr);
-
-
+    GET_VK_INSTANCE_FUNC(vkCreateAccelerationStructureKHR);
+    GET_VK_INSTANCE_FUNC(vkDestroyAccelerationStructureKHR);
+    GET_VK_INSTANCE_FUNC(vkCmdBuildAccelerationStructuresKHR);
+    GET_VK_INSTANCE_FUNC(vkCmdWriteAccelerationStructuresPropertiesKHR);
+    GET_VK_INSTANCE_FUNC(vkGetAccelerationStructureBuildSizesKHR);
+    GET_VK_INSTANCE_FUNC(vkCmdCopyAccelerationStructureKHR);
+    GET_VK_INSTANCE_FUNC(vkGetAccelerationStructureDeviceAddressKHR);
+    GET_VK_INSTANCE_FUNC(vkCreateRayTracingPipelinesKHR);
     GET_VK_INSTANCE_FUNC(vkGetRayTracingShaderGroupHandlesKHR);
     GET_VK_INSTANCE_FUNC(vkCmdTraceRaysKHR);
     GET_VK_INSTANCE_FUNC(vkCmdPipelineBarrier2KHR);
@@ -554,7 +519,7 @@ void RTBuilder::BuildShaderBindingTable()
     assert(vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nHandleCount, nDataSize, handles.data()) == VK_SUCCESS);
 
     // Allocate buffer to store SBT
-    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", handles.data(), m_rgenRegion.size + m_missRegion.size + m_hitRegion.size);
+    m_pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", m_rgenRegion.size + m_missRegion.size + m_hitRegion.size);
 
     // Copy handles to GPU
     VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(m_pSBTBuffer->buffer());

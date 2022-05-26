@@ -25,6 +25,7 @@
 #include <filesystem>
 
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
+#include "VkExtFuncsLoader.h"
 #include "Camera.h"
 #include "Debug.h"
 #include "DescriptorManager.h"
@@ -58,48 +59,41 @@
 
 
 #ifdef FEATURE_RAY_TRACING
-#include "RayTracingUtils.h"
+#include "RayTracingSceneManager.h"
 #endif
 
 bool g_bWaylandExt = false;
 const int WIDTH = 1920;
 const int HEIGHT = 1080;
 
-static bool s_bResizeWanted = false;
-const float FAR = 100.0f;
-static Arcball s_arcball(glm::perspective(glm::radians(80.0f),
-                                          (float)WIDTH / (float)HEIGHT, 0.1f,
-                                          FAR),
-                         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
-                                     glm::vec3(0.0f, 0.0f, 0.0f),   // Center
-                                     glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
-                         0.1f,                                      // near
-                         FAR,                                     // far
-                         (float)WIDTH,
-                         (float)HEIGHT
-
-);
-
 /// 
 // Arcball callbacks
 static void clickArcballCallback(int button, int action)
 {
-    if (button == Input::Button::BUTTON_LEFT)
+    Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera());
+    if (pArcball)
     {
-        if (EventState::PRESSED == action)
+        if (button == Input::Button::BUTTON_LEFT)
         {
-            s_arcball.StartDragging();
-        }
-        else if (EventState::RELEASED == action)
-        {
-            s_arcball.StopDragging();
+            if (EventState::PRESSED == action)
+            {
+                pArcball->StartDragging();
+            }
+            else if (EventState::RELEASED == action)
+            {
+                pArcball->StopDragging();
+            }
         }
     }
 }
 
 static void rotateArcballCallback(double xpos, double ypos)
 {
-    s_arcball.UpdateDrag(glm::vec2(xpos, ypos));
+    Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera());
+    if (pArcball)
+    {
+        pArcball->UpdateDrag(glm::vec2(xpos, ypos));
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -120,29 +114,19 @@ static void InitEventHandlers()
         clickArcballCallback(btn, state);
     });
 
-    auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL,
-                                                  GlobalWheelEvent>();
-    pWheel->Watch([](uint32_t timestamp, double xoffset, double yoffset) {
-        s_arcball.AddZoom(yoffset * -0.1f);
-    });
+    auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
+
+    pWheel->Watch([](uint32_t timestamp, double xoffset, double yoffset)
+                  {
+
+    if (Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera()))
+    {
+        pArcball->AddZoom(yoffset * -0.1f);
+    } });
 
     auto pResize = EventSystem::sys()->globalEvent<EventType::WINDOWRESIZE,
                                                    GlobalResizeEvent>();
-    pResize->Watch([](uint32_t timestamp, size_t w, size_t h) {
-        s_arcball.Resize(glm::vec2((float)w, (float)h));
-        s_bResizeWanted = true;        
-    });
 }
-
-#ifdef __APPLE__
-static const uint32_t NUM_BUFFERS = 2;
-#else
-static const uint32_t NUM_BUFFERS = 3;
-#endif
-
-static DebugUtilsMessenger s_debugMessenger;
-
-//Geometry* g_pQuadGeometry = nullptr;
 
 ///////////////////////////////////////////
 
@@ -203,11 +187,9 @@ void cleanup()
     Window::Uninitialize();
 }
 
-static bool bIrradianceMapGenerated = false;
-
 void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
 {
-    s_arcball.UpdatePerViewDataUBO(ub);
+    //s_arcball.UpdatePerViewDataUBO(ub);
 };
 
 int main(int argc, char** argv)
@@ -219,6 +201,7 @@ int main(int argc, char** argv)
     // Create Instace
     std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
     GetRenderDevice()->Initialize(vInstanceExtensions);
+    VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
 
     // Create swapchain
     VkSurfaceKHR surface = Window::GetVulkanSurface(GetRenderDevice()->GetInstance());
@@ -279,7 +262,10 @@ int main(int argc, char** argv)
         {
             // Load scene
             //GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
-            GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_emissive/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/Emissive/scene.gltf");
+            GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_Emissive/untitled.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/Cornell_box/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/sofa_combination/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
@@ -294,51 +280,59 @@ int main(int argc, char** argv)
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         StorageBuffer<LightData>* lightData = GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
-#ifdef FEATURE_RAY_TRACING
-        // Allocate ray tracing descriptor layout based on number of textures in scene.
-        GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureManager()->GetTextures().size());
-
-        RTBuilder rayTracingBuilder;
-        if (GetRenderDevice()->IsRayTracingSupported())
-        {
-            // Test ray tracing
-            RTInputs rtInputs;
-            rtInputs = ConstructRTInputsFromDrawLists(dl);
-            rayTracingBuilder.BuildBLAS(
-                rtInputs.BLASs,
-                VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
-            rayTracingBuilder.BuildTLAS(
-                rtInputs.vInstances,
-                VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
-
-            // Allocate primitive description buffer
-            StorageBuffer<PrimitiveDescription>* primDescBuffer = GetRenderResourceManager()->GetStorageBuffer("primitive descs", rtInputs.vPrimitiveDescriptions);
-
-            // Allocate output image
-            ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
-
-            rayTracingBuilder.BuildRTPipeline();
-            rayTracingBuilder.BuildShaderBindingTable();
-            rayTracingBuilder.RayTrace(vpExtent);
-        }
-#endif
-        // Create perview constant buffer
-        //
-
-        UniformBuffer<PerViewData> *pUniformBuffer =
-            GetRenderResourceManager()->getUniformBuffer<PerViewData>(
-                "perView");
+		UniformBuffer<PerViewData>* pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
         // Load materials
         GetMaterialManager()->CreateDefaultMaterial();
 
+  
+        
+
+        // Test ray tracing
+#ifdef FEATURE_RAY_TRACING
+
+        RayTracingSceneManager RTSceneManager;
+        RTSceneManager.BuildScene(dl.m_aDrawLists[DrawLists::DL_OPAQUE]);
+        RTSceneManager.BuildRayTracingPipeline();
+        RTSceneManager.AllocateShaderBindingTable();
+        GetRenderPassManager()->SetRayTracingSceneManager(&RTSceneManager);
+        // Allocate ray tracing descriptor layout based on number of textures in scene.
+        //GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureManager()->GetTextures().size());
+
+        //RTBuilder rayTracingBuilder;
+        //if (GetRenderDevice()->IsRayTracingSupported())
+        //{
+        //    // Test ray tracing
+        //    RTInputs rtInputs;
+        //    rtInputs = ConstructRTInputsFromDrawLists(dl);
+        //    rayTracingBuilder.BuildBLAS(
+        //        rtInputs.BLASs,
+        //        VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+        //    rayTracingBuilder.BuildTLAS(
+        //        rtInputs.vInstances,
+        //        VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+
+        //    // Allocate primitive description buffer
+        //    StorageBuffer<PrimitiveDescription>* primDescBuffer = GetRenderResourceManager()->GetStorageBuffer("primitive descs", rtInputs.vPrimitiveDescriptions);
+
+        //    // Allocate output image
+        //    ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+
+        //    rayTracingBuilder.BuildRTPipeline();
+        //    rayTracingBuilder.BuildShaderBindingTable();
+        //    rayTracingBuilder.RayTrace(vpExtent);
+        //}
+#endif
+        // Create perview constant buffer
+        //
+
         // Record static command buffer
         GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-        // Mainloop
+       // Mainloop
         while (!Window::ShouldQuit())
         {
             Window::ProcessEvents();
-            updateUniformBuffer(pUniformBuffer);
+            //updateUniformBuffer(pUniformBuffer);
 
             GetRenderPassManager()->BeginFrame();
 
@@ -346,16 +340,6 @@ int main(int argc, char** argv)
             //uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
             GetRenderPassManager()->RecordDynamicCmdBuffers();
 
-//            std::vector<VkCommandBuffer> vCmdBufs = GetRenderPassManager()->GetCommandBuffers(uFrameIdx);
-//#ifdef FEATURE_RAY_TRACING
-//            // Hack to patch the ray tracing command buffer
-//            // Insert it after the first cmd buffer because the first cmd buffer can be the one to generate IBL images.
-//            // IBL images are required by ray tracing pass.
-//            if (GetRenderDevice()->IsRayTracingSupported())
-//            {
-//                vCmdBufs.insert(vCmdBufs.begin()+1, rayTracingBuilder.GetCommandBuffer());
-//            }
-//#endif
             GetRenderPassManager()->SubmitCommandBuffers();
 
             GetRenderPassManager()->Present();
@@ -372,11 +356,9 @@ int main(int argc, char** argv)
                 {
                     //VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
                     GetRenderPassManager()->OnResize(width, height);
-                    s_arcball.Resize(glm::vec2((float)width, (float)height));
                     GetRenderPassManager()->RecordStaticCmdBuffers(dl);
                     //GetRenderDevice()->SetViewportSize(vp);
                     //GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
-                    s_bResizeWanted = false;
                 }
             }
         }
@@ -391,7 +373,8 @@ int main(int argc, char** argv)
         GetSamplerManager()->destroySamplers();
         GetTextureManager()->Destroy();
 #ifdef FEATURE_RAY_TRACING
-        rayTracingBuilder.Cleanup();
+        //rayTracingBuilder.Cleanup();
+        RTSceneManager.DestroyPipeline();
 #endif
     }
     ImGui::Shutdown();

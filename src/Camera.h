@@ -20,12 +20,17 @@ struct PerViewData
     glm::mat4 mProjInv = glm::mat4(1.0);
     glm::mat4 mViewInv = glm::mat4(1.0);
     glm::vec2 vScreenExtent = glm::vec2(0.0);
-    glm::vec2 padding = glm::vec2(0.0);
+    glm::vec2 vPadding = glm::vec2(0.0);
     // Left top ray and bottom right ray directions
     glm::vec3 vLT = glm::vec3(0.0);
     float m_fNear = 0.0f;
     glm::vec3 vRB = glm::vec3(0.0);
     float m_fFar = 1.0f;
+
+    uint32_t nFrameId = 0;
+    float fAperture = 3.0f;
+    float fFocalDistance = 10.0f;
+    float fLeftSplitScreenRatio = 0.5f;
 };
 
 class Camera
@@ -53,7 +58,7 @@ public:
         m_perViewData.m_fFar = fFar;
     }
     glm::mat4 GetProjMat() const { return m_perViewData.mProj; }
-    virtual void SetProjMat( const glm::mat4 mProj)
+    virtual void SetProjMat(const glm::mat4 mProj)
     {
         m_perViewData.mProj = mProj;
         m_perViewData.mProjInv = glm::inverse(mProj);
@@ -78,6 +83,29 @@ public:
     {
         ubo->setData(m_perViewData);
     };
+    
+    void SetAperture(float fAperture)
+    {
+        m_perViewData.fAperture = fAperture;
+    }
+    
+    void SetFocalDistance(float fDistance)
+    {
+        m_perViewData.fFocalDistance = fDistance;
+    }
+    
+    void SetFrameId(uint32_t nFrameId)
+    {
+        m_perViewData.nFrameId = nFrameId;
+    }
+    void SetLeftSplitScreenRatio(float ratio)
+    {
+        m_perViewData.fLeftSplitScreenRatio = ratio;
+    }
+    float GetLeftSplitScreenRatio() const
+    {
+        return m_perViewData.fLeftSplitScreenRatio;
+    }
 
 protected:
     PerViewData m_perViewData;
@@ -187,45 +215,44 @@ private:
         P.y = P.y;
         float OP_squared = P.x * P.x + P.y * P.y;
         if (OP_squared <= 1 * 1)
-            P.z = sqrt(1 * 1 - OP_squared);  // Pythagoras
+            P.z = sqrt(1 * 1 - OP_squared); // Pythagoras
         else
-            P = glm::normalize(P);  // nearest point
+            P = glm::normalize(P); // nearest point
         return P;
     }
-
 };
 
-//class FPScamera : public Camera {
-//public:
-//    FPScamera() : mStrafe(0.0), mForward(0.0), mEyeVector(glm::vec3(0.0)) {}
-//    void pitch(float angle) { mEuler[1] += angle; }
-//    void yaw(float angle) { mEuler[2] += angle; }
-//    void forward(float dist) { mForward = dist; }
-//    void strafe(float dist) { mStrafe = dist; }
-//    void Update() override
-//    {
-//        glm::mat4 matRoll = glm::mat4(1.0f);   // identity matrix;
-//        glm::mat4 matPitch = glm::mat4(1.0f);  // identity matrix
-//        glm::mat4 matYaw = glm::mat4(1.0f);    // identity matrix
-//        // roll, pitch and yaw are used to store our angles in our class
-//        matRoll = glm::rotate(matRoll, mEuler[0], glm::vec3(0.0f, 0.0f, 1.0f));
-//        matPitch = glm::rotate(matPitch, mEuler[1], glm::vec3(1.0f, 0.0f, 0.0f));
-//        matYaw = glm::rotate(matYaw, mEuler[2], glm::vec3(0.0f, 1.0f, 0.0f));
-//        // order matters
-//        glm::mat4 rotate = matRoll * matPitch * matYaw;
-//        glm::vec3 forward(m_perViewData.mView[0][2], m_perViewData.mView[1][2],
-//                          m_perViewData.mView[2][2]);
-//        glm::vec3 strafe(m_perViewData.mView[0][0], m_perViewData.mView[1][0],
-//                         m_perViewData.mView[2][0]);
-//        mEyeVector += (-mForward * forward + mStrafe * strafe);
-//        mForward = 0;
-//        mStrafe = 0;
-//        glm::mat4 translate = glm::mat4(1.0f);
-//        translate = glm::translate(translate, -mEyeVector);
-//        m_perViewData.mView = rotate * translate;
-//    }
-//protected:
-//    float mStrafe;
-//    float mForward;
-//    glm::vec3 mEyeVector;
-//};
+// class FPScamera : public Camera {
+// public:
+//     FPScamera() : mStrafe(0.0), mForward(0.0), mEyeVector(glm::vec3(0.0)) {}
+//     void pitch(float angle) { mEuler[1] += angle; }
+//     void yaw(float angle) { mEuler[2] += angle; }
+//     void forward(float dist) { mForward = dist; }
+//     void strafe(float dist) { mStrafe = dist; }
+//     void Update() override
+//     {
+//         glm::mat4 matRoll = glm::mat4(1.0f);   // identity matrix;
+//         glm::mat4 matPitch = glm::mat4(1.0f);  // identity matrix
+//         glm::mat4 matYaw = glm::mat4(1.0f);    // identity matrix
+//         // roll, pitch and yaw are used to store our angles in our class
+//         matRoll = glm::rotate(matRoll, mEuler[0], glm::vec3(0.0f, 0.0f, 1.0f));
+//         matPitch = glm::rotate(matPitch, mEuler[1], glm::vec3(1.0f, 0.0f, 0.0f));
+//         matYaw = glm::rotate(matYaw, mEuler[2], glm::vec3(0.0f, 1.0f, 0.0f));
+//         // order matters
+//         glm::mat4 rotate = matRoll * matPitch * matYaw;
+//         glm::vec3 forward(m_perViewData.mView[0][2], m_perViewData.mView[1][2],
+//                           m_perViewData.mView[2][2]);
+//         glm::vec3 strafe(m_perViewData.mView[0][0], m_perViewData.mView[1][0],
+//                          m_perViewData.mView[2][0]);
+//         mEyeVector += (-mForward * forward + mStrafe * strafe);
+//         mForward = 0;
+//         mStrafe = 0;
+//         glm::mat4 translate = glm::mat4(1.0f);
+//         translate = glm::translate(translate, -mEyeVector);
+//         m_perViewData.mView = rotate * translate;
+//     }
+// protected:
+//     float mStrafe;
+//     float mForward;
+//     glm::vec3 mEyeVector;
+// };

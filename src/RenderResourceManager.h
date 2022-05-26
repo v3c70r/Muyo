@@ -151,6 +151,27 @@ public:
             m_mResources[sName].get());
     }
 
+    AccelerationStructure* CreateTLAS(
+        const std::string& sName, uint32_t size)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<AccelerationStructure>(size, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<AccelerationStructure*>(m_mResources[sName].get());
+    }
+
+    AccelerationStructure* CreateBLAS(
+        const std::string& sName, uint32_t size)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<AccelerationStructure>(size, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<AccelerationStructure*>(m_mResources[sName].get());
+    }
     AccelerationStructureBuffer* GetAccelerationStructureBuffer(
         const std::string& sName, const void* pData, uint32_t size)
     {
@@ -178,12 +199,12 @@ public:
     }
 
     ShaderBindingTableBuffer* GetShaderBindingTableBuffer(
-        const std::string& sName, const void* pData, uint32_t size)
+        const std::string& sName, uint32_t size)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
             m_mResources[sName] =
-                std::make_unique<ShaderBindingTableBuffer>(pData, size);
+                std::make_unique<ShaderBindingTableBuffer>(size);
             m_mResources[sName]->SetDebugName(sName);
         }
 

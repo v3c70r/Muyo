@@ -8,6 +8,8 @@
 
 class RenderPass;
 class Swapchain;
+class RayTracingSceneManager;
+class Camera;
 struct DrawLists;
 
 enum RenderPassNames
@@ -23,6 +25,8 @@ enum RenderPassNames
     RENDERPASS_UI,
 
     RENDERPASS_AO,
+
+    RENDERPASS_RAY_TRACING,
 
     RENDERPASS_COUNT
 };
@@ -44,6 +48,15 @@ public:
     VkExtent2D GetViewportSize() const {return VkExtent2D({m_uWidth, m_uHeight});}
 
     void SubmitCommandBuffers();
+
+    Camera* GetCamera() {return m_pCamera.get();}
+
+#ifdef FEATURE_RAY_TRACING
+    void SetRayTracingSceneManager(const RayTracingSceneManager* pSceneManager)
+    {
+        m_pRayTracingSceneManager = pSceneManager;
+    }
+#endif
 
 private:
 #ifdef __APPLE__
@@ -70,6 +83,17 @@ private:
     uint32_t m_uImageIdx2Present = 0;
 
     std::unique_ptr<Swapchain> m_pSwapchain = nullptr;
+    std::unique_ptr<Camera> m_pCamera = nullptr;
+
+#ifdef FEATURE_RAY_TRACING
+    const RayTracingSceneManager* m_pRayTracingSceneManager = nullptr;
+#endif
+
+    struct TemporalInfo
+    {
+        uint32_t nFrameId = 0;
+        uint32_t nFrameNoCameraMove = 0;
+    } m_temporalInfo;
 };
 
 RenderPassManager* GetRenderPassManager();

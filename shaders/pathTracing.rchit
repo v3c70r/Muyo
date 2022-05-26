@@ -9,6 +9,8 @@
 #include "brdf.h"
 #include "Camera.h"
 #include "lights.h"
+#include "pathTracingPayload.h"
+#include "random.h"
 
 CAMERA_UBO(0)
 
@@ -49,8 +51,9 @@ layout(buffer_reference, scalar) buffer PBRFactors {
     uint UVIndices2;
     uint UVIndices3;
     uint UVIndices4;
+    uint UVIndices5;
     vec3 vEmissiveFactor;
-    vec2 padding0;
+    float padding0;
 };
 
 layout(set = 1, binding = 2, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
@@ -64,8 +67,7 @@ layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
 // Light data
 LIGHTS_UBO(3)
 
-layout(location = 0) rayPayloadInEXT vec3 vResColor;
-layout(location = 1) rayPayloadEXT  bool bIsShadowed;
+layout(location = 0) rayPayloadInEXT RayPayload ray;
 hitAttributeEXT vec2 vHitAttribs;
 
 // Helper functions
@@ -89,6 +91,45 @@ Vertex InterpolateVertex(Vertex v0, Vertex v1, Vertex v2, vec3 vBarycentrics)
     v.textureCoord.zw = InterpolateBarycentric(v0.textureCoord.zw, v1.textureCoord.zw, v2.textureCoord.zw, vBarycentrics);
     return v;
 }
+
+RayPayload ScatteryRay(const vec3 vDirection, const vec3 vNormal, const vec3 vAlbedo, const float fRoughness, const float t, inout uint nSeed)
+{
+    const vec3 vReflected = reflect(vDirection, vNormal);
+    const bool bIsScattered = dot(vReflected, vNormal) > 0;
+
+    const vec4 vColorAndDistance = vec4(vAlbedo, t);
+    const vec4 vScatter = vec4(vReflected + fRoughness * RandomInUnitSphere(nSeed), bIsScattered ? 1 : 0);
+
+    return RayPayload(vColorAndDistance, vScatter, nSeed);
+}
+
+// Diffuse Light
+RayPayload ScatterDiffuseLight(const vec3 vEmissive, const float t, inout uint seed)
+{
+	const vec4 colorAndDistance = vec4(vEmissive, t);
+	const vec4 scatter = vec4(1, 0, 0, 0);
+
+	return RayPayload(colorAndDistance, scatter, seed);
+}
+
+// Dielectric
+//RayPayload ScatterDieletric(const Material m, const vec3 direction, const vec3 normal, const vec2 texCoord, const float t, inout uint seed)
+//{
+//	const float dot = dot(direction, normal);
+//	const vec3 outwardNormal = dot > 0 ? -normal : normal;
+//	const float niOverNt = dot > 0 ? m.RefractionIndex : 1 / m.RefractionIndex;
+//	const float cosine = dot > 0 ? m.RefractionIndex * dot : -dot;
+//
+//	const vec3 refracted = refract(direction, outwardNormal, niOverNt);
+//	const float reflectProb = refracted != vec3(0) ? Schlick(cosine, m.RefractionIndex) : 1;
+//
+//	const vec4 texColor = m.DiffuseTextureId >= 0 ? texture(TextureSamplers[nonuniformEXT(m.DiffuseTextureId)], texCoord) : vec4(1);
+//	
+//	return RandomFloat(seed) < reflectProb
+//		? RayPayload(vec4(texColor.rgb, t), vec4(reflect(direction, normal), 1), seed)
+//		: RayPayload(vec4(texColor.rgb, t), vec4(refracted, 1), seed);
+//}
+
 
 void main()
 {
@@ -138,80 +179,17 @@ void main()
     const float fMetalness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_METALNESS])], vTexCoords[UVIndices[TEX_METALNESS]]).r * pbrFactors.fMetalness;
     const vec3 vEmissive = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.vEmissiveFactor;
 
-
     const vec3 vViewPos = (uboCamera.view * vec4(vWorldPos, 1.0)).xyz;
-
     const vec3 vFaceNormal = normalize((uboCamera.view * vec4(vWorldNormal, 0.0)).xyz);
-    // For each light source
-    //
-    vec3 vLo = vec3(0.0, 0.0, 0.0);
-    for(int i = 0; i < numLights.nNumLights; ++i)
+
+    if (abs(length(vEmissive)) < 0.01)
     {
-        bIsShadowed = false;
-
-        LightData light = lightDatas.i[i];
-        vec3 vLightDir = light.vPosition - vWorldPos;
-        float fLightDistance = length(vLightDir);
-        vec3 L = normalize(vLightDir);
-        float tMin   = 0.001;
-        float tMax   = fLightDistance;
-        vec3  origin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
-        vec3  rayDir = L;
-        uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
-        //traceRayEXT(topLevelAS,  // acceleration structure
-        //        flags,       // rayFlags
-        //        0xFF,        // cullMask
-        //        0,           // sbtRecordOffset
-        //        0,           // sbtRecordStride
-        //        1,           // missIndex
-        //        origin,      // ray origin
-        //        tMin,        // ray min range
-        //        rayDir,      // ray direction
-        //        tMax,        // ray max range
-        //        1            // payload (location = 1)
-        //        );
-
-        //if (!bIsShadowed)
-        {
-            vLo += ComputeDirectLighting(
-                light.vPosition,
-                light.vColor * light.fIntensity,
-                vViewPos,
-                vFaceNormal,
-                vAlbedo,
-                fMetalness,
-                fRoughness);
-        }
+        ray = ScatteryRay(gl_WorldRayDirectionEXT, vWorldNormal, vAlbedo, fRoughness, gl_HitTEXT, ray.uRandomSeed);
+    }
+    else
+    {
+        ray = ScatterDiffuseLight(vEmissive, gl_HitTEXT, ray.uRandomSeed);
     }
 
-    // IBL diffuse
-    vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz;
-    vec3 vDiffuse = vAlbedo * irradiance;
-    vec3 diffuse = irradiance * vAlbedo;
 
-    // IBL specular
-    vec3 V = normalize(-vViewPos);
-    const float MAX_REFLECTION_LOD = 7.0;
-    vec3 R = reflect(V, vFaceNormal);
-    vec3 vPrefilteredColor = textureLod(prefilteredMap, R, fRoughness * MAX_REFLECTION_LOD).rgb;
-    vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetalness);
-    vec3 F = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
-    vec2 vEnvBRDF  = texture(specularBrdfLut, vec2(max(dot(vFaceNormal, V), 0.0), fRoughness)).rg;
-    vec3 specular = vPrefilteredColor * (F * vEnvBRDF.x + vEnvBRDF.y);
-    vec3 kS = F;
-    vec3 kD = 1.0 - kS;
-    kD *= 1.0 - fMetalness;
-
-    // IBL result
-    vec3 vAmbient = (kD * vDiffuse + specular) * fAO;
-
-    // Hack to remove IBL
-    //vResColor = vLo + vAmbient + vEmissive;
-    vResColor = vLo + vEmissive;
-
-    // Gamma correction
-    vResColor = vResColor / (vResColor + vec3(1.0));
-    vResColor = pow(vResColor, vec3(1.0 / 2.2));
-
-    //vResColor = vec3(1.0, 0.0, 0.0);
 }

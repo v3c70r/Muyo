@@ -52,9 +52,10 @@ public:
     void updateBuffers(uint32_t nSwapchainBufferIndex);
     void CreateImGuiResources();
     template <class DebugPageType>
-    void RegisterDebugPage(const std::string& sName)
+    DebugPageType* RegisterDebugPage(const std::string& sName)
     {
         m_vpDebugPages.emplace_back(new DebugPageType(sName));
+        return static_cast<DebugPageType*>(m_vpDebugPages.back().get());
     }
     virtual void CreatePipeline() override;
 

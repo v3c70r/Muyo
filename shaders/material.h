@@ -6,7 +6,8 @@ const uint TEX_NORMAL = 1;
 const uint TEX_METALNESS = 2;
 const uint TEX_ROUGHNESS = 3;
 const uint TEX_AO = 4;
-const uint TEX_COUNT = 5;
+const uint TEX_EMISSIVE = 5;
+const uint TEX_COUNT = 6;
 layout(set = 1, binding = 0) uniform sampler2D texPBR[TEX_COUNT];
 layout(set = 1, binding = 1) uniform PBRFactors {
     vec4 vBaseColorFactors;
@@ -17,6 +18,8 @@ layout(set = 1, binding = 1) uniform PBRFactors {
     uint UVIndices2;
     uint UVIndices3;
     uint UVIndices4;
+    uint UVIndices5;
+    vec3 vEmissiveFactor;
     float padding0;
 } factors;
 #endif

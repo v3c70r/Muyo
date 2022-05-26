@@ -34,6 +34,7 @@ layout(set = 1, binding = 1) uniform PBRFactors {
     uint UVIndices2;
     uint UVIndices3;
     uint UVIndices4;
+    vec3 vEmissiveFactor;
     float padding0;
 } factors;
 

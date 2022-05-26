@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <string>
+#include <cassert>
 
 
 class DebugUtilsMessenger
@@ -52,4 +53,9 @@ private:
 #define TOKENPASTE2(x, y) TOKENPASTE(x, y)
 #define SCOPED_MARKER(OBJ, MESSAGE)\
     auto TOKENPASTE2(scoped_marker_,__LINE__) = ScopedMarker(OBJ, MESSAGE)
+
+// Assertion for vulkan function calls
+static void VK_ASSERT(VkResult result) {
+    assert(result == VK_SUCCESS);
+}
 

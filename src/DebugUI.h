@@ -5,6 +5,7 @@
 #include <vector>
 // ImGui Debug UI pages
 class SceneNode;
+class Camera;
 class IDebugUIPage
 {
 public:
@@ -113,6 +114,19 @@ public:
 private:
     std::vector<const LightSceneNode*> m_vpLightNodes;
     
+};
+
+class CameraDebugPage : public IDebugUIPage
+{
+public:
+    explicit CameraDebugPage(const std::string& sName)
+        : IDebugUIPage(sName) {}
+    void SetCamera(Camera* pCamera) { m_pCamera = pCamera; }
+    void Render() const override;
+    bool ShouldRender() const override { return true; }
+    ~CameraDebugPage() override {}
+private:
+    Camera* m_pCamera = nullptr;
 };
 
 

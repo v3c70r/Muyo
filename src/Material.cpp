@@ -18,6 +18,7 @@ void MaterialManager::CreateDefaultMaterial()
         pMaterial->LoadTexture( Material::TEX_NORMAL, "assets/Materials/white5x5.png", "defaultNormal"); 
         pMaterial->LoadTexture( Material::TEX_ROUGHNESS, "assets/Materials/white5x5.png", "defaultRoughness");
         pMaterial->LoadTexture( Material::TEX_AO, "assets/Materials/white5x5.png", "defaultOcclusion");
+        pMaterial->LoadTexture( Material::TEX_EMISSIVE, "assets/Materials/white5x5.png", "defaultOcclusion");
 
         // Load PBR Factors
         Material::PBRFactors pbrFactors;

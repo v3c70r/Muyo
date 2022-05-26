@@ -8,7 +8,7 @@
 
 class ShaderBindingTableBuffer;
 // TODO: Put dedicated acceleration structures into resource manager
-struct AccelerationStructure
+struct AC
 {
     VkAccelerationStructureKHR m_ac = VK_NULL_HANDLE;
     VkBuildAccelerationStructureFlagsKHR m_flags = 0;
@@ -79,7 +79,7 @@ private:
 private:
 
     std::vector<BLASInput> m_blas;
-    AccelerationStructure m_tlas;
+    AC m_tlas;
 
     // Ray Tracing Pipelines
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;

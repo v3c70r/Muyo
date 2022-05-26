@@ -21,6 +21,7 @@ public:
         TEX_METALNESS,
         TEX_ROUGHNESS,
         TEX_AO,
+        TEX_EMISSIVE,
         TEX_COUNT
     };
 
@@ -29,7 +30,8 @@ public:
         float m_aBaseColorFactor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         float m_fMetalicFactor = 1.0;
         float m_fRoughnessFactor = 1.0;
-        uint32_t m_aUVIndices[TEX_COUNT] = {0, 0, 0, 0, 0};
+        uint32_t m_aUVIndices[TEX_COUNT] = {0, 0, 0, 0, 0, 0};
+        float m_vEmissiveFactor[3] = {0.0, 0.0, 0.0};
         float m_fPadding1 = 0.0;
     };
     struct MaterialParameters
@@ -56,11 +58,6 @@ public:
         aIndices = m_materialParameters.m_aTextureIndices;
     }
 
-    uint32_t GetTextureOffset(TextureType type) const
-    {
-        m_materialParameters.m_apTextures[type];
-    }
-
     void SetMaterialParameterFactors(const PBRFactors &factors, const std::string &sMaterialName);
 
     VkDescriptorSet GetDescriptorSet() const;
@@ -73,7 +70,7 @@ public:
 private:
     MaterialParameters m_materialParameters;
     const std::array<std::string, TEX_COUNT> m_aNames = {
-        "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO"};
+        "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO", "TEX_EMISSIVE"};
     VkDescriptorSet m_descriptorSet;
     bool m_bIsTransparent = false;
 };

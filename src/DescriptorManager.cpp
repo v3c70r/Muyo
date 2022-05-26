@@ -430,21 +430,13 @@ VkDescriptorSet DescriptorManager::AllocateLightingDescriptorSet(
         // prepare image descriptor
         std::array<VkDescriptorImageInfo, 4> imageInfos = {
             // position
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            position,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), position, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // albedo
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            albedo,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // normal
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            normal,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), normal, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // UV
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            uv,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), uv, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
 
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

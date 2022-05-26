@@ -313,7 +313,7 @@ void RenderLayerIBL::CreatePipeline()
                 DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants{
-            GetPushConstantRange<PrefilteredPushConstantBlock>(VK_SHADER_STAGE_FRAGMENT_BIT)};
+            GetPushConstantRange<SingleFloatPushConstant>(VK_SHADER_STAGE_FRAGMENT_BIT)};
 
         m_prefilteredCubemapPipelineLayout =
             GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
@@ -566,9 +566,10 @@ void RenderLayerIBL::RecordCommandBuffer()
                 vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                   m_prefilteredCubemapPipeline);
 
-                PrefilteredPushConstantBlock pushConstantBlock;
-                pushConstantBlock.fRoughness = (float)uMip / (float)(NUM_PREFILTERED_CUBEMAP_MIP - 1);
-                vkCmdPushConstants(m_commandBuffer, m_prefilteredCubemapPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrefilteredPushConstantBlock), &pushConstantBlock);
+                // Pass roughness as push constant
+                SingleFloatPushConstant pushConstantBlock;
+                pushConstantBlock.fValue = (float)uMip / (float)(NUM_PREFILTERED_CUBEMAP_MIP - 1);
+                vkCmdPushConstants(m_commandBuffer, m_prefilteredCubemapPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SingleFloatPushConstant), &pushConstantBlock);
 
                 // Set dynamic viewport and scissor
                 VkViewport viewport = {

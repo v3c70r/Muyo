@@ -9,10 +9,12 @@ struct UIPushConstBlock
     glm::vec2 translate;
 };
 
-struct PrefilteredPushConstantBlock
+struct SingleFloatPushConstant
 {
-    float fRoughness;
+    float fValue;
 };
+
+
 
 template <class T>
 VkPushConstantRange GetPushConstantRange(

@@ -429,24 +429,40 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                     (sceneDir / model.images[occlusionTexture.source].uri)
                         .string();
                 sOcclusionTexName = model.images[occlusionTexture.source].uri;
-                //sOcclusionTexName = model.images[occlusionTexture.source].name;
+            }
+
+            // Emissive
+            std::string sEmissiveTexPath = "assets/Materials/white5x5.png";
+            std::string sEmissiveTexName = "defaultEmissive";
+            if (gltfMaterial.emissiveTexture.index != -1)
+            {
+                aUVIndices[Material::TEX_EMISSIVE] = gltfMaterial.emissiveTexture.texCoord;
+                const tinygltf::Texture &emissiveTexture =
+                    model.textures[gltfMaterial.emissiveTexture.index];
+                sEmissiveTexPath =
+                    (sceneDir / model.images[emissiveTexture.source].uri)
+                        .string();
+                sEmissiveTexName = model.images[emissiveTexture.source].uri;
             }
 
             // PBR factors
             Material::PBRFactors pbrFactors = {
-                    (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
-                    (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3], // Base Color
-                (float)gltfMaterial.pbrMetallicRoughness.metallicFactor,                                                                       // Metallic
-                (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,                                                                      // Roughness
-                aUVIndices[0], aUVIndices[1],                                                                                                  // UVs
-                aUVIndices[2], aUVIndices[3],
-                aUVIndices[4], 0.0f};
+                {(float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
+                 (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3]},  // Base Color
+                (float)gltfMaterial.pbrMetallicRoughness.metallicFactor,                                                                     // Metallic
+                (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,                                                                    // Roughness
+                {aUVIndices[0], aUVIndices[1],                                                                                               // UVs
+                 aUVIndices[2], aUVIndices[3],
+                 aUVIndices[4], aUVIndices[4]},
+                {(float)gltfMaterial.emissiveFactor[0], (float)gltfMaterial.emissiveFactor[1], (float)gltfMaterial.emissiveFactor[2]},
+                0.0f};
 
             pMaterial->LoadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
             pMaterial->LoadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
             pMaterial->LoadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
             pMaterial->LoadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
             pMaterial->LoadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
+            pMaterial->LoadTexture(Material::TEX_EMISSIVE, sEmissiveTexPath, sEmissiveTexName);
             pMaterial->SetMaterialParameterFactors(pbrFactors, gltfMaterial.name);
 
             pMaterial->AllocateDescriptorSet();

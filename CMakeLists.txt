@@ -14,12 +14,13 @@ if (${FEATURE_SYNCHRONIZATION2})
 endif()
 
 set (CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-set ( CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
-set ( CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
-set ( CMAKE_LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
-set ( CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
-set ( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
-set ( CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
+set (CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
+set (CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
+set (CMAKE_LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
+set (CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
+set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
+set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
+set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 #window lib
 if (${FEATURE_USE_SDL})
@@ -56,7 +57,9 @@ if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
     list(APPEND CMAKE_PREFIX_PATH $ENV{VULKAN_SDK})
 endif()
 
+# Cap vulkan version to avoid validation layer error
 find_package(Vulkan REQUIRED)
+
 
 ## Vulkan Memory Allocator
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
@@ -74,16 +77,7 @@ add_library(tinygltf ${CMAKE_SOURCE_DIR}/thirdparty/tinygltf/tiny_gltf.cc)
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/stb)
 add_library(stb ${CMAKE_SOURCE_DIR}/thirdparty/stb/stb.cpp)
 
-find_file(GLSL_VALIDATOR 
-    NAMES 
-    glslangValidator glslangValidator.exe 
-    PATHS 
-    "${Vulkan_INCLUDE_DIR}/../Bin"
-    "${Vulkan_INCLUDE_DIR}/../bin"
-    "$ENV{VULKAN_SDK}/bin"
-    "$ENV{VULKAN_SDK}/Bin"
-    )
-if(NOT EXISTS ${GLSL_VALIDATOR})
+if(NOT EXISTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE})
     message(FATAL_ERROR "Can't find glslangValidator at ${GLSL_VALIDATOR}")
 endif()
 
@@ -144,10 +138,13 @@ add_executable( helloVulkan
     src/RenderPassTransparent.cpp
     src/DebugUI.cpp
     src/SceneManager.cpp
-    src/RayTracingUtils.cpp
+    #src/RayTracingUtils.cpp
+    src/RayTracingSceneManager.cpp
     src/ImageStorageResource.cpp
     src/ResourceBarrier.cpp
     src/RenderPassAO.cpp
+    src/RenderPassRayTracing.cpp
+    src/VkExtFuncsLoader.cpp
     )
 
 target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
@@ -174,7 +171,7 @@ foreach (GLSL_SOURCE_FILE ${GLSL_SOURCE_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${GLSL_VALIDATOR} --target-env vulkan1.2 -g -V ${GLSL_SOURCE_FILE} -o ${SPIRV}
+        COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.2 -g -V ${GLSL_SOURCE_FILE} -o ${SPIRV}
         DEPENDS ${GLSL_SOURCE_FILE} ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()

@@ -6,6 +6,7 @@
 #include "Debug.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
+#include "VkExtFuncsLoader.h"
 
 class IRenderResource
 {
@@ -230,10 +231,58 @@ public:
     }
 };
 
+class AccelerationStructure : public IRenderResource
+{
+public:
+    AccelerationStructure(uint32_t size, VkAccelerationStructureTypeKHR type) : m_accelerationStructureBuffer(size)
+    {
+        VkAccelerationStructureCreateInfoKHR createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+        createInfo.type = type;
+        createInfo.size = size;
+        createInfo.buffer = m_accelerationStructureBuffer.buffer();
+        VkExt::vkCreateAccelerationStructureKHR(GetRenderDevice()->GetDevice(),
+                                                &createInfo, nullptr,
+                                                &m_accelerationStructure);
+    }
+    virtual ~AccelerationStructure() override
+    {
+        VkExt::vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), m_accelerationStructure, nullptr);
+    }
+
+    virtual VkObjectType GetVkObjectType() const override
+    {
+        return VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;
+    }
+
+    virtual void SetDebugName(const std::string& sName) const override
+    {
+        m_accelerationStructureBuffer.SetDebugName(sName);
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_accelerationStructure), GetVkObjectType(), sName.c_str());
+    }
+
+    VkAccelerationStructureKHR GetAccelerationStructure() const
+    {
+        return m_accelerationStructure;
+    }
+    VkDeviceAddress GetAccelerationStructureAddress() const
+    {
+        VkAccelerationStructureDeviceAddressInfoKHR addressInfo{
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+            nullptr,
+            m_accelerationStructure};
+        return VkExt::vkGetAccelerationStructureDeviceAddressKHR(GetRenderDevice()->GetDevice(), &addressInfo);
+    }
+
+private:
+    AccelerationStructureBuffer m_accelerationStructureBuffer;
+    VkAccelerationStructureKHR m_accelerationStructure = VK_NULL_HANDLE;
+};
+
 class ShaderBindingTableBuffer : public BufferResource
 {
 public:
-    ShaderBindingTableBuffer(const void* pData, uint32_t size)
+    ShaderBindingTableBuffer(uint32_t size)
         : BufferResource(
               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
                   VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
@@ -242,7 +291,6 @@ public:
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
                                              "SBT");
-        SetData(pData, size);
     }
 };
 

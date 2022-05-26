@@ -245,8 +245,9 @@ void VkRenderDevice::CreateDevice(
 
         // query support
         // This will qury support for the chain
-        vkGetPhysicalDeviceFeatures2(m_physicalDevice, &features2);
     }
+
+    vkGetPhysicalDeviceFeatures2(m_physicalDevice, &features2);
 
     // Handle queue family indices and add them to the device creation info
 
@@ -290,12 +291,12 @@ void VkRenderDevice::CreateDevice(
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 
     createInfo.pQueueCreateInfos = vQueueCreateInfos.data();
-    createInfo.queueCreateInfoCount = (uint32_t)vQueueCreateInfos.size();
+    createInfo.queueCreateInfoCount = static_cast<uint32_t>(vQueueCreateInfos.size());
 
     createInfo.pEnabledFeatures = nullptr;
     createInfo.pNext = &features2;
 
-    createInfo.enabledExtensionCount = vDeviceExtensions.size();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(vDeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = vDeviceExtensions.data();
 
     createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());

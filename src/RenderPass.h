@@ -8,11 +8,17 @@
 #include <vector>
 
 class Geometry;
+
+class IRenderPass
+{
+    virtual ~IRenderPass();
+    virtual VkCommandBuffer GetCommandBuffer() const = 0;
+};
+
 class RenderPass
 {
 public:
     virtual ~RenderPass() {}
-    virtual VkRenderPass GetPass(size_t idx = 0) const { return m_vRenderPasses[idx]; }
     virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const  = 0;
     virtual void CreatePipeline() = 0;
     //virtual void RecordCommandBuffers() = 0;
