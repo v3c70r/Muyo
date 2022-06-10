@@ -432,7 +432,7 @@ void RenderLayerIBL::setupDescriptorSets()
 
     // Environment cube map descriptor set
     m_irrMapDescriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
-        GetRenderResourceManager() ->GetColorTarget("env_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM}, TEX_FORMAT, 1, 6) ->getView());
+        GetRenderResourceManager() ->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM}, TEX_FORMAT, 1, 6) ->getView());
 }
 
 void RenderLayerIBL::RecordCommandBuffer()

@@ -6,8 +6,12 @@
 
 #include "pathTracingPayload.h"
 layout(location = 0) rayPayloadInEXT RayPayload ray;
+layout(set = 2, binding = 0) uniform samplerCube environmentMap;
+
 
 void main()
 {
-    ray.vColorAndDistance = vec4(0.0, 0.0, 0.0, 1.0);
+    // Fetch skybox radiance when hitting the skybox
+    const vec3 vSkyboxColor = texture(environmentMap, normalize(ray.vScatterDirection.xyz)).rgb;
+    ray.vColorAndDistance = vec4(vSkyboxColor, 1.0);
 }

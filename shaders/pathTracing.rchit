@@ -60,15 +60,42 @@ layout(set = 1, binding = 2, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } prim
 layout(set = 1, binding = 3) uniform sampler2D AllTextures[];
 
 // IBL parameters
-layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
-layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
-layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
+layout(set = 2, binding = 0) uniform samplerCube environmentMap;
 
 // Light data
 LIGHTS_UBO(3)
 
 layout(location = 0) rayPayloadInEXT RayPayload ray;
 hitAttributeEXT vec2 vHitAttribs;
+
+
+// integrate environment diffuse lighting
+vec3 IntegrateEnvironmentDiffuse(vec3 vNormal)
+{
+    const float PI = 3.14159265359;
+    vec3 vIrradiance = vec3(0.0f);
+    vec3 vUp = vec3(0.0, 1.0, 0.0);
+    vec3 vRight = cross(vUp, vNormal);
+    vUp = cross(vRight, vNormal);
+
+    float fSampleDelta = 0.5f;
+    float fNumSamples = 0.0f;
+
+    for (float fPhi = 0.0; fPhi < 2.0 * PI; fPhi += fSampleDelta)
+    {
+        for (float fTheta = 0.0; fTheta < PI; fTheta += fSampleDelta)
+        {
+            vec3 vSampleDirTangent = vec3(sin(fTheta) * cos(fPhi), sin(fTheta) * sin(fPhi), cos(fTheta));
+            vec3 vSampleDir = vSampleDirTangent * vRight + vSampleDirTangent.y * vUp + vSampleDirTangent.z * vNormal;
+            vSampleDir = normalize(vSampleDir);
+            vIrradiance += texture(environmentMap, vSampleDir).rgb * cos(fTheta) * sin(fTheta);
+            fNumSamples += 1.0f;
+        }
+    }
+    return PI * vIrradiance / fNumSamples;
+}
+
+
 
 // Helper functions
 vec3 InterpolateBarycentric(vec3 p0, vec3 p1, vec3 p2, vec3 vBarycentrics)
@@ -101,6 +128,12 @@ RayPayload ScatteryRay(const vec3 vDirection, const vec3 vNormal, const vec3 vAl
     const vec4 vScatter = vec4(vReflected + fRoughness * RandomInUnitSphere(nSeed), bIsScattered ? 1 : 0);
 
     return RayPayload(vColorAndDistance, vScatter, nSeed);
+}
+
+RayPayload IntegrateSkylightRay(const vec3 vNormal)
+{
+    const vec3 vColor = IntegrateEnvironmentDiffuse(vNormal);
+    return RayPayload(vec4(vColor, 1.0), vec4(0.0, 0.0, 0.0, 0.0), 0);
 }
 
 // Diffuse Light

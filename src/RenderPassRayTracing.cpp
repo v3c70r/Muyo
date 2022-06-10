@@ -24,22 +24,17 @@ void RenderPassRayTracing::RecordCommandBuffer(VkExtent2D imgSize,
 
     static const std::string TLAS_NAME = "TLAS";
 
+    // TODO: Expose these from IBL render pass.
+    static const uint32_t ENV_CUBE_DIM = 128;
+    const VkFormat TEX_FORMAT = VK_FORMAT_R32G32B32A32_SFLOAT;
+
     AccelerationStructure* pTLAS = GetRenderResourceManager()->GetResource<AccelerationStructure>(TLAS_NAME);
     std::vector<VkDescriptorSet> vDescSets =
-	{
-		GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
-		GetDescriptorManager()->AllocateRayTracingDescriptorSet(pTLAS->GetAccelerationStructure(), pStorageImageRes->getView(), *primDescBuffer, GetTextureManager()->GetTextures()),
-		// IBL descriptor sets
-		GetDescriptorManager()->AllocateIBLDescriptorSet(
-			GetRenderResourceManager()
-				->GetColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
-				->getView(),
-			GetRenderResourceManager()
-				->GetColorTarget("prefiltered_cubemap", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
-				->getView(),
-			GetRenderResourceManager()
-				->GetColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
-				->getView()),
+    {
+        GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
+        GetDescriptorManager()->AllocateRayTracingDescriptorSet(pTLAS->GetAccelerationStructure(), pStorageImageRes->getView(), *primDescBuffer, GetTextureManager()->GetTextures()),
+        // Environment cube map descriptor set
+        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet( GetRenderResourceManager()->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM}, TEX_FORMAT, 1, 6)->getView()), 
         // Light data buffer
         GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)
     };

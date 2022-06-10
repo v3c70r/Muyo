@@ -34,7 +34,7 @@ void RayTracingSceneManager::BuildRayTracingPipeline()
     std::vector<VkDescriptorSetLayout> descLayouts = {
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL),
+        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
         GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA)};
 
     m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);

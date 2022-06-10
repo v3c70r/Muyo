@@ -13,8 +13,6 @@ layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
 layout(set = 1, binding = 1, rgba32f) uniform image2D image;
 
 layout(location = 0) rayPayloadEXT RayPayload ray;
-
-
 // Reference
 // https://github.com/GPSnoopy/RayTracingInVulkan/tree/master/assets/shaders
 
@@ -39,7 +37,7 @@ void main()
 
 
   // shoot multiple rays from a pixel
-  const int NUM_SAMPLES = 3;
+  const int NUM_SAMPLES = 1;
   vec3 vPixelColor = vec3(0.0);
   ray.uRandomSeed = InitRandomSeed(InitRandomSeed(gl_LaunchIDEXT.x, gl_LaunchIDEXT.y), uboCamera.uFrameId);
   for (uint nSample = 0; nSample < NUM_SAMPLES; nSample++)
@@ -48,6 +46,7 @@ void main()
       vec3 vRayColor = vec3(1.0f);
       vec3 vOrigin = originWorld.xyz;
       vec3 vDirection = directionWorld.xyz;
+      ray.vScatterDirection = vec4(vDirection, 0.0);
 
       for (uint nDepth = 0; nDepth <= MAX_DEPTH; nDepth++)
       {
