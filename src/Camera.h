@@ -50,7 +50,7 @@ public:
         m_perViewData.vLT = glm::normalize(m_perViewData.vLT);
 
         // Bottom rgith
-        vScreenRay = vScreenRay = m_perViewData.mProjInv * glm::vec4(1.0, 1.0, 0.0, 1.0);
+        vScreenRay = m_perViewData.mProjInv * glm::vec4(1.0, 1.0, 0.0, 1.0);
         m_perViewData.vRB = vScreenRay / vScreenRay[3];
         m_perViewData.vRB = glm::normalize(m_perViewData.vRB);
 
@@ -67,7 +67,7 @@ public:
         m_perViewData.vLT = vScreenRay / vScreenRay[3];
         m_perViewData.vLT = glm::normalize(m_perViewData.vLT);
 
-        vScreenRay = vScreenRay = m_perViewData.mProjInv * glm::vec4(1.0, 1.0, 0.0, 1.0);
+        vScreenRay = m_perViewData.mProjInv * glm::vec4(1.0, 1.0, 0.0, 1.0);
         m_perViewData.vRB = vScreenRay / vScreenRay[3];
         m_perViewData.vRB = glm::normalize(m_perViewData.vRB);
     }

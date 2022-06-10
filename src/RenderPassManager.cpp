@@ -13,7 +13,6 @@
 #include "RenderResourceManager.h"
 #include "RenderPassRayTracing.h"
 #include "Scene.h"
-#include "Swapchain.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
 #endif

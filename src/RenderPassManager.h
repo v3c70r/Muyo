@@ -5,9 +5,9 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include "Swapchain.h"
 
 class RenderPass;
-class Swapchain;
 class RayTracingSceneManager;
 class Camera;
 struct DrawLists;
