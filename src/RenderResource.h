@@ -261,10 +261,11 @@ public:
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_accelerationStructure), GetVkObjectType(), sName.c_str());
     }
 
-    VkAccelerationStructureKHR GetAccelerationStructure() const
+    const VkAccelerationStructureKHR& GetAccelerationStructure() const
     {
         return m_accelerationStructure;
     }
+
     VkDeviceAddress GetAccelerationStructureAddress() const
     {
         VkAccelerationStructureDeviceAddressInfoKHR addressInfo{

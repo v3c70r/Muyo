@@ -81,7 +81,7 @@ public:
     virtual void Update() = 0;
     virtual void UpdatePerViewDataUBO(UniformBuffer<PerViewData> *ubo)
     {
-        ubo->setData(m_perViewData);
+        ubo->SetData(m_perViewData);
     };
     
     void SetAperture(float fAperture)
@@ -194,7 +194,7 @@ public:
         PerViewData perView = m_perViewData;
         perView.mView = GetViewMat();
         perView.mViewInv = glm::inverse(perView.mView);
-        ubo->setData(perView);
+        ubo->SetData(perView);
     }
 
 protected:

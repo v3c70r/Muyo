@@ -293,8 +293,6 @@ int main(int argc, char** argv)
 
         RayTracingSceneManager RTSceneManager;
         RTSceneManager.BuildScene(dl.m_aDrawLists[DrawLists::DL_OPAQUE]);
-        RTSceneManager.BuildRayTracingPipeline();
-        RTSceneManager.AllocateShaderBindingTable();
         GetRenderPassManager()->SetRayTracingSceneManager(&RTSceneManager);
         // Allocate ray tracing descriptor layout based on number of textures in scene.
         //GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureManager()->GetTextures().size());
@@ -372,10 +370,6 @@ int main(int argc, char** argv)
         GetGeometryManager()->Destroy();
         GetSamplerManager()->destroySamplers();
         GetTextureManager()->Destroy();
-#ifdef FEATURE_RAY_TRACING
-        //rayTracingBuilder.Cleanup();
-        RTSceneManager.DestroyPipeline();
-#endif
     }
     ImGui::Shutdown();
     cleanup();

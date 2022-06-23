@@ -7,7 +7,7 @@
 #include "RenderTargetResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
-#include "ImageStorageResource.h"
+#include "StorageImageResource.h"
 #include "VertexBuffer.h"
 
 class RenderResourceManager
@@ -186,16 +186,16 @@ public:
             m_mResources[sName].get());
     }
 
-    ImageStorageResource* GetStorageImageResource(const std::string& sName, VkExtent2D extent, VkFormat format)
+    StorageImageResource* GetStorageImageResource(const std::string& sName, VkExtent2D extent, VkFormat format)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
             m_mResources[sName] =
-                std::make_unique<ImageStorageResource>(format, extent.width, extent.height);
+                std::make_unique<StorageImageResource>(format, extent.width, extent.height);
             m_mResources[sName]->SetDebugName(sName);
         }
 
-        return static_cast<ImageStorageResource*>(m_mResources[sName].get());
+        return static_cast<StorageImageResource*>(m_mResources[sName].get());
     }
 
     ShaderBindingTableBuffer* GetShaderBindingTableBuffer(

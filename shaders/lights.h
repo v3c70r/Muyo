@@ -23,7 +23,6 @@ struct LightData
     vec4 vLightData;
 };
 
-
 // Macro to bind light buffer
 #define LIGHTS_UBO(SET)                                                         \
     layout(std140, set = SET, binding = 0) uniform NumLightsUBO                 \

@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "RenderPassParameters.h"
+
 class Geometry;
 
 class IRenderPass
@@ -21,10 +23,11 @@ public:
     virtual ~RenderPass() {}
     virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const  = 0;
     virtual void CreatePipeline() = 0;
-    //virtual void RecordCommandBuffers() = 0;
+    virtual void PrepareRenderPass() {};
 protected:
     std::vector<VkCommandBuffer> m_vCommandBuffers;
     std::vector<VkRenderPass> m_vRenderPasses;
+    RenderPassParameters m_renderPassParameters;
 };
 
 // The pass render to swap chain

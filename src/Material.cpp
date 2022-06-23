@@ -35,7 +35,7 @@ MaterialManager *GetMaterialManager()
 void Material::SetMaterialParameterFactors(const PBRFactors &factors, const std::string &sMaterialName)
 {
     auto* pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PBRFactors>(sMaterialName);
-    pUniformBuffer->setData(factors);
+    pUniformBuffer->SetData(factors);
     m_materialParameters.m_pFactors = pUniformBuffer;
 }
 

@@ -108,7 +108,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_AO] = std::make_unique<RenderPassAO>();
 #ifdef FEATURE_RAY_TRACING
     // RenderPass Ray Tracing
-    m_vpRenderPasses[RENDERPASS_RAY_TRACING] = std::make_unique<RenderPassRayTracing>();
+    m_vpRenderPasses[RENDERPASS_RAY_TRACING] = std::make_unique<RenderPassRayTracing>(vp);
 #else
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = nullptr;
 #endif
@@ -176,6 +176,7 @@ void RenderPassManager::SetSwapchainImageViews(const std::vector<VkImageView> &v
 
     static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreateFramebuffer(m_uWidth, m_uHeight);
     static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreatePipeline();
+
 }
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
@@ -259,14 +260,8 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     if (m_vpRenderPasses[RENDERPASS_RAY_TRACING])
     {
         RenderPassRayTracing *pRTPass = static_cast<RenderPassRayTracing *>(m_vpRenderPasses[RENDERPASS_RAY_TRACING].get());
-        pRTPass->RecordCommandBuffer(
-                VkExtent2D({m_uWidth, m_uHeight}),
-                m_pRayTracingSceneManager->GetRayGenRegion(),
-                m_pRayTracingSceneManager->GetRayMissRegion(),
-                m_pRayTracingSceneManager->GetRayHitRegion(),
-                m_pRayTracingSceneManager->GetPipelineLayout(),
-                m_pRayTracingSceneManager->GetPipeline()
-                );
+        pRTPass->PrepareRenderPass();
+        pRTPass->RecordCommandBuffer();
     }
 #endif
     RenderPassSkybox *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());

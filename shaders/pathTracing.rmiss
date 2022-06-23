@@ -6,7 +6,7 @@
 
 #include "pathTracingPayload.h"
 layout(location = 0) rayPayloadInEXT RayPayload ray;
-layout(set = 2, binding = 0) uniform samplerCube environmentMap;
+layout(set = 0, binding = 6) uniform samplerCube environmentMap;
 
 
 void main()

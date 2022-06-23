@@ -12,7 +12,6 @@
 #include "pathTracingPayload.h"
 #include "random.h"
 
-CAMERA_UBO(0)
 
 // Materials
 const uint TEX_ALBEDO = 0;
@@ -38,7 +37,13 @@ struct Vertex
     vec4 textureCoord;
 };
 
-layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
+CAMERA_UBO(0)
+layout(set = 0, binding = 1) uniform accelerationStructureEXT topLevelAS;
+layout(set = 0, binding = 4, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
+layout(set = 0, binding = 5) uniform sampler2D AllTextures[];
+layout(set = 2, binding = 6) uniform samplerCube environmentMap;
+// Light data
+LIGHTS_UBO(1)
 
 layout(buffer_reference, scalar) buffer Vertices {Vertex v[]; }; // Positions of an object
 layout(buffer_reference, scalar) buffer Indices {ivec3 i[]; }; // Triangle indices
@@ -56,14 +61,8 @@ layout(buffer_reference, scalar) buffer PBRFactors {
     float padding0;
 };
 
-layout(set = 1, binding = 2, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
-layout(set = 1, binding = 3) uniform sampler2D AllTextures[];
 
-// IBL parameters
-layout(set = 2, binding = 0) uniform samplerCube environmentMap;
 
-// Light data
-LIGHTS_UBO(3)
 
 layout(location = 0) rayPayloadInEXT RayPayload ray;
 hitAttributeEXT vec2 vHitAttribs;

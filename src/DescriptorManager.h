@@ -23,7 +23,6 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_MATERIALS,         // A sampler array contains material textures
     DESCRIPTOR_LAYOUT_GBUFFER,           // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_IBL,               // IBL descriptor sets
-    DESCRIPTOR_LAYOUT_RAY_TRACING,       // Raytracing Descriptor sets
     DESCRIPTOR_LAYOUT_LIGHT_DATA,        // Light data layout
     DESCRIPTOR_LAYOUT_COUNT,
 };
@@ -34,7 +33,6 @@ public:
     void createDescriptorPool();
     void destroyDescriptorPool();
     void createDescriptorSetLayouts();
-    void CreateRayTracingDescriptorLayout(uint32_t nNumSamplers);
     void destroyDescriptorSetLayouts();
 
     VkDescriptorSet AllocateLightingDescriptorSet(
@@ -76,10 +74,6 @@ public:
 
     VkDescriptorSet AllocateLightDataDescriptorSet(uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
     static void UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
-
-    // Ray Tracing descriptor set
-    VkDescriptorSet AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer, const std::vector<std::unique_ptr<Texture>> &textures);
-    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer, const std::vector<std::unique_ptr<Texture>> &textures);
 
     VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
     {
@@ -132,6 +126,12 @@ public:
     {
         return m_vImGuiTextureDescriptorSets[nTextureId];
     }
+
+    VkDescriptorPool GetDescriptorPool() const
+    {
+        return m_descriptorPool;
+    }
+
 private:
     static VkDescriptorSetLayoutBinding GetUniformBufferBinding(uint32_t binding, VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
     {
@@ -182,8 +182,9 @@ private:
         return GetSamplerArrayBinding(binding, 1, nStageFlag);
     }
 
-    std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT>
-        m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
+    std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT> m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
+
+    
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
 
     const uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 100;

@@ -284,39 +284,12 @@ void DescriptorManager::createDescriptorSetLayouts()
     }
 }
 
-void DescriptorManager::CreateRayTracingDescriptorLayout(uint32_t nNumSamplers)
-{
-	// Ray tracing
-	{
-		VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
-
-		descriptorSetLayoutInfo.sType =
-			VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-
-		std::array<VkDescriptorSetLayoutBinding, 4> bindings = {
-			GetBinding(0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR),
-			GetBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR),
-			GetBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR),
-			GetSamplerArrayBinding(3, nNumSamplers, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
-		};
-		descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
-		descriptorSetLayoutInfo.pBindings = bindings.data();
-
-		VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-		assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
-			&descriptorSetLayoutInfo, nullptr,
-			&layout) == VK_SUCCESS);
-		m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_RAY_TRACING] = layout;
-	}
-
-}
 
 void DescriptorManager::destroyDescriptorSetLayouts()
 {
     for (auto& descriptorSetLayout : m_aDescriptorSetLayouts)
     {
-        vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(),
-                                     descriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), descriptorSetLayout, nullptr);
     }
 }
 
@@ -686,7 +659,7 @@ void DescriptorManager::UpdateRayLightDataDescriptorSet(VkDescriptorSet descript
 {
     // Allocate a single buffer for number of lights
     UniformBuffer<uint32_t>* numLightsBuffer = GetRenderResourceManager()->getUniformBuffer<uint32_t>("num lights");
-    numLightsBuffer->setData(nNumLights);
+    numLightsBuffer->SetData(nNumLights);
 
     std::array<VkWriteDescriptorSet, 2> writes;
 
@@ -725,102 +698,8 @@ void DescriptorManager::UpdateRayLightDataDescriptorSet(VkDescriptorSet descript
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-    static void UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription> &primDescBuffer, const std::vector<std::unique_ptr<Texture>> &textures);
-
-VkDescriptorSet DescriptorManager::AllocateRayTracingDescriptorSet(const VkAccelerationStructureKHR& acc, const VkImageView& outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer, const std::vector<std::unique_ptr<Texture>>& textures)
-{
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    // Create descriptor sets
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_RAY_TRACING];
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
-
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
-                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "Ray Tracing input output");
-    UpdateRayTracingDescriptorSet(descriptorSet, acc, outputImage, primDescBuffer, textures);
-    return descriptorSet;
-}
-
-void DescriptorManager::UpdateRayTracingDescriptorSet(VkDescriptorSet descriptorSet, const VkAccelerationStructureKHR &acc, const VkImageView &outputImage, const StorageBuffer<PrimitiveDescription>& primDescBuffer, const std::vector<std::unique_ptr<Texture>>& textures)
-{
-
-    // Three descriptor writes
-    std::array<VkWriteDescriptorSet, 4> writes;
-
-    // Input acceleration structure
-    VkWriteDescriptorSetAccelerationStructureKHR accDesc = {};
-    accDesc.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-    accDesc.accelerationStructureCount = 1;
-    accDesc.pAccelerationStructures = &acc;
-    writes[0] = {};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = descriptorSet;
-    writes[0].dstBinding = 0;
-    writes[0].dstArrayElement = 0;
-    writes[0].descriptorCount = 1;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-    writes[0].pNext = &accDesc;
 
 
-    // Output image
-    VkDescriptorImageInfo imageInfo = {VK_NULL_HANDLE, outputImage, VK_IMAGE_LAYOUT_GENERAL};
-    writes[1] = {};
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].pNext = nullptr;
-    writes[1].dstSet = descriptorSet;
-    writes[1].dstBinding = 1;
-    writes[1].dstArrayElement = 0;
-    writes[1].descriptorCount = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    writes[1].pImageInfo = &imageInfo;
-
-    // Primitive desc
-    VkDescriptorBufferInfo bufferInfo = {};
-    bufferInfo.buffer = primDescBuffer.buffer();
-    bufferInfo.offset = 0;
-    bufferInfo.range = primDescBuffer.GetSize();
-
-    writes[2] = {};
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].pNext = nullptr;
-    writes[2].dstSet = descriptorSet;
-    writes[2].dstBinding = 2;
-    writes[2].dstArrayElement = 0;
-    writes[2].descriptorCount = 1;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[2].pBufferInfo = &bufferInfo;
-
-    // All textures
-    
-    std::vector<VkDescriptorImageInfo> imageInfos;
-    imageInfos.reserve(textures.size());
-    for (const auto& texture : textures)
-    {
-        VkDescriptorImageInfo imageInfo = {
-                    GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-                    texture->getView(),
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-		imageInfos.push_back(imageInfo);
-    }
-
-	writes[3] = {};
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].pNext = nullptr;
-    writes[3].dstSet = descriptorSet;
-    writes[3].dstBinding = 3;
-    writes[3].dstArrayElement = 0;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[3].descriptorCount = (uint32_t)imageInfos.size();
-    writes[3].pImageInfo = imageInfos.data();
-
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-
-}
 
 size_t DescriptorManager::GetImGuiTextureId(const std::string& sResourceName)
 {

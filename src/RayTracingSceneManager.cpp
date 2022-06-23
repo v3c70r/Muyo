@@ -3,58 +3,9 @@
 #include "Geometry.h"
 #include "DescriptorManager.h"
 #include "VkExtFuncsLoader.h"
-#include "PipelineStateBuilder.h"
 
 #include <glm/gtc/type_ptr.hpp>
-void RayTracingSceneManager::BuildRayTracingPipeline()
-{
-    // shader stages
-    VkShaderModule rayGenShdr = CreateShaderModule(ReadSpv("shaders/pathTracing.rgen.spv"));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(rayGenShdr), VK_OBJECT_TYPE_SHADER_MODULE, "pathTracing.rgen.spv");
 
-    VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/pathTracing.rmiss.spv"));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(missShdr), VK_OBJECT_TYPE_SHADER_MODULE, "pathTracing.rmiss.spv");
-
-    //VkShaderModule missShadowShdr = CreateShaderModule(ReadSpv("shaders/raytraceShadow.rmiss.spv"));
-    //setDebugUtilsObjectName(reinterpret_cast<uint64_t>(missShadowShdr), VK_OBJECT_TYPE_SHADER_MODULE, "raytraceShadow.rmiss.spv");
-
-    VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shaders/pathTracing.rchit.spv"));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(chitShdr), VK_OBJECT_TYPE_SHADER_MODULE, "pathTracing.rchit.spv");
-
-    RayTracingPipelineBuilder builder;
-    builder.AddShaderModule(rayGenShdr, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
-        .AddShaderModule(missShdr, VK_SHADER_STAGE_MISS_BIT_KHR)
-        //.AddShaderModule(missShadowShdr, VK_SHADER_STAGE_MISS_BIT_KHR)
-        .AddShaderModule(chitShdr, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-
-    // pipeline layout
-    std::vector<VkPushConstantRange> pushConstants = {};
-    // GetPushConstantRange<RTLightingPushConstantBlock>((VkShaderStageFlagBits)(VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))};
-
-    std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_RAY_TRACING),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA)};
-
-    m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
-    builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(2);
-    VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
-
-    VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(),
-                                                    VK_NULL_HANDLE,
-                                                    VK_NULL_HANDLE,
-                                                    1,
-                                                    &createInfo,
-                                                    nullptr,
-                                                    &m_pipeline));
-
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), rayGenShdr, nullptr);
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShdr, nullptr);
-    //vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShadowShdr, nullptr);
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), chitShdr, nullptr);
-}
 
 AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode& sceneNode, VkAccelerationStructureCreateFlagsKHR flags)
 {
@@ -229,79 +180,7 @@ uint32_t RayTracingSceneManager::AlignUp(uint32_t nSize, uint32_t nAlignment)
     return (nSize + nAlignment - 1) / nAlignment * nAlignment;
 }
 
-void RayTracingSceneManager::AllocateShaderBindingTable()
-{
-    // https://www.willusher.io/graphics/2019/11/20/the-sbt-three-ways
-    // https://nvpro-samples.github.io/vk_raytracing_tutorial_KHR/#shaderbindingtable
 
-    uint32_t nMissGroupCount = 1;
-    uint32_t nHitGroupCount = 1;
-    uint32_t nRayGenGroupCount = 1;      // can have only one
-
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {};
-    GetRenderDevice()->GetPhysicalDeviceProperties(raytracingProperties);
-
-    uint32_t nHandleSize = raytracingProperties.shaderGroupHandleSize;
-    uint32_t nHandleSizeAligned = AlignUp(nHandleSize, raytracingProperties.shaderGroupHandleAlignment);
-
-
-    // ray gen shader takes a shader group base alignment
-    // There should be just 1 ray gen shader
-    VkStridedDeviceAddressRegionKHR& rgenRegion = m_aSBTRegions[SBT_REGION_RAY_GEN];
-    rgenRegion.stride = AlignUp(nHandleSizeAligned, raytracingProperties.shaderGroupBaseAlignment);
-    rgenRegion.size = rgenRegion.stride;
-
-    VkStridedDeviceAddressRegionKHR& hitRegion = m_aSBTRegions[SBT_REGION_RAY_HIT];
-    hitRegion.stride = nHandleSizeAligned;
-    hitRegion.size = AlignUp(nHitGroupCount * nHandleSizeAligned, raytracingProperties.shaderGroupBaseAlignment);
-
-    VkStridedDeviceAddressRegionKHR& missRegion = m_aSBTRegions[SBT_REGION_RAY_MISS];
-    missRegion.stride = nHandleSizeAligned;
-    missRegion.size = AlignUp(nMissGroupCount * nHandleSizeAligned, raytracingProperties.shaderGroupBaseAlignment);
-
-    uint32_t sbtSize = rgenRegion.size + hitRegion.size + missRegion.size;
-
-
-    uint32_t nHandleCount = nRayGenGroupCount + nMissGroupCount + nHitGroupCount;
-    uint32_t nDataSize = nHandleCount * nHandleSize;
-    std::vector<uint8_t> handleBuffer(nDataSize);
-    (VkExt::vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nHandleCount, nDataSize, handleBuffer.data()));
-    ShaderBindingTableBuffer *pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", sbtSize);
-
-    // Copy handles to GPU
-    VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(pSBTBuffer->buffer());
-    rgenRegion.deviceAddress = SBTAddress;
-    missRegion.deviceAddress = SBTAddress + rgenRegion.size;
-    hitRegion.deviceAddress = missRegion.deviceAddress + missRegion.size;
-
-    uint8_t* pRayGenHandleGPU = (uint8_t*)pSBTBuffer->Map();
-    uint32_t nHandleOffset = 0;
-
-    // copy ray gen at begining of the handle data
-    memcpy(pRayGenHandleGPU, handleBuffer.data(), nHandleSize);
-
-
-    // copy miss
-    nHandleOffset += nHandleSize;
-    uint8_t* pRayMissHandleGPU = pRayGenHandleGPU + rgenRegion.size;
-    for (uint32_t i = 0; i < nMissGroupCount; i++)
-    {
-        memcpy(pRayMissHandleGPU, &(handleBuffer[nHandleOffset]), nHandleSize);
-        nHandleOffset += nHandleSize;
-        pRayMissHandleGPU += missRegion.stride;
-    }
-
-    // Copy Hit
-    uint8_t* pRayHitHandleGPU = pRayGenHandleGPU + rgenRegion.size + missRegion.size;
-    for (uint32_t i = 0; i < nHitGroupCount; i++)
-    {
-        memcpy(pRayHitHandleGPU, &(handleBuffer[nHandleOffset]), nHandleSize);
-        nHandleOffset += nHandleSize;
-        pRayHitHandleGPU += hitRegion.stride;
-    }
-
-    pSBTBuffer->Unmap();
-}
 
 void RayTracingSceneManager::BuildScene(const std::vector<const SceneNode*>& vpGeometries)
 {
@@ -324,14 +203,7 @@ void RayTracingSceneManager::BuildScene(const std::vector<const SceneNode*>& vpG
 
     BuildTLAS(vInstances);
 
-    // Allocate Ray Tracing descriptor layouts
-    GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureManager()->GetTextures().size());
     // Allocate primitive description buffer
     GetRenderResourceManager()->GetStorageBuffer("primitive descs", m_vPrimitiveDescs);
 }
 
-void RayTracingSceneManager::DestroyPipeline()
-{
-    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-}

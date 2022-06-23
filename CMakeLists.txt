@@ -140,11 +140,12 @@ add_executable( helloVulkan
     src/SceneManager.cpp
     #src/RayTracingUtils.cpp
     src/RayTracingSceneManager.cpp
-    src/ImageStorageResource.cpp
+    src/StorageImageResource.cpp
     src/ResourceBarrier.cpp
     src/RenderPassAO.cpp
     src/RenderPassRayTracing.cpp
     src/VkExtFuncsLoader.cpp
+    src/RenderPassParameters.cpp
     )
 
 target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)

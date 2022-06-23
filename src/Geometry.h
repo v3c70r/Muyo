@@ -79,7 +79,7 @@ public:
     void SetWorldMatrix(const glm::mat4 &mObjectToWorld)
     {
         assert(m_mWorldMatrixBuffer != nullptr);
-        m_mWorldMatrixBuffer->setData(mObjectToWorld);
+        m_mWorldMatrixBuffer->SetData(mObjectToWorld);
         m_mWorldMatrix = mObjectToWorld;
     }
 

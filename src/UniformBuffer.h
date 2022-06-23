@@ -26,21 +26,14 @@ public:
                          VMA_MEMORY_USAGE_CPU_TO_GPU)
 
     {
-        if (GetRenderDevice()->IsRayTracingSupported())
-        {
-
-
-        }
         const size_t size = sizeof(T);
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
                                              "Uniform Buffer");
+        m_nSize = size;
     }
-    void setData(const T& buffer)
+    void SetData(const T& buffer)
     {
-        void* pMappedMemory = nullptr;
-        GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedMemory);
-        memcpy(pMappedMemory, (void*)&buffer, sizeof(T));
-        GetMemoryAllocator()->UnmapBuffer(m_allocation);
+        BufferResource::SetData(&buffer, sizeof(T));
     }
 };
