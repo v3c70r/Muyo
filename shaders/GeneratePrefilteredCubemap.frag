@@ -2,6 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 #include "brdf.h"
+#include "random.h"
 
 layout(location = 0) in vec3 localPos;
 layout(location = 0) out vec4 outIrradiance;

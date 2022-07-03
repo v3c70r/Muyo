@@ -27,7 +27,7 @@ struct PerViewData
     glm::vec3 vRB = glm::vec3(0.0);
     float m_fFar = 1.0f;
 
-    uint32_t nFrameId = 0;
+    uint32_t uFrameId = 0;
     float fAperture = 3.0f;
     float fFocalDistance = 10.0f;
     float fLeftSplitScreenRatio = 0.5f;
@@ -94,9 +94,9 @@ public:
         m_perViewData.fFocalDistance = fDistance;
     }
     
-    void SetFrameId(uint32_t nFrameId)
+    void SetFrameId(uint32_t uFrameId)
     {
-        m_perViewData.nFrameId = nFrameId;
+        m_perViewData.uFrameId = uFrameId;
     }
     void SetLeftSplitScreenRatio(float ratio)
     {
@@ -107,8 +107,14 @@ public:
         return m_perViewData.fLeftSplitScreenRatio;
     }
 
+    bool IsTransforationUpdated() const
+    {
+        return m_bIsTransformationUpdated;
+    }
+
 protected:
     PerViewData m_perViewData;
+    mutable bool m_bIsTransformationUpdated = false;
 };
 
 class Arcball : public Camera
@@ -144,6 +150,15 @@ public:
 
     bool IsDragging() const
     {
+        // Hack: Set transformation updated when dragging
+        if (mIsDragging)
+        {
+            m_bIsTransformationUpdated = true;
+        }
+        else
+        {
+            m_bIsTransformationUpdated = false;
+        }
         return mIsDragging;
     }
     void UpdateDrag(glm::vec2 screenCoord)

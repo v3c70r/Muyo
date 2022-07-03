@@ -43,7 +43,7 @@ void main()
   ray.uRandomSeed = InitRandomSeed(InitRandomSeed(gl_LaunchIDEXT.x, gl_LaunchIDEXT.y), uboCamera.uFrameId);
   for (uint nSample = 0; nSample < NUM_SAMPLES; nSample++)
   {
-      const uint MAX_DEPTH = 3;
+      const uint MAX_DEPTH = 2;
       vec3 vRayColor = vec3(1.0f);
       vec3 vOrigin = originWorld.xyz;
       vec3 vDirection = directionWorld.xyz;
@@ -73,7 +73,7 @@ void main()
                       0                      // payload (location = 0)
           );
           const vec3 hitColor = ray.vColorAndDistance.rgb;
-          const float t = ray.vColorAndDistance.r;
+          const float t = ray.vColorAndDistance.a;
           const bool bIsScattered = ray.vScatterDirection.w > 0;
 
           vRayColor *= hitColor;
@@ -89,5 +89,23 @@ void main()
       vPixelColor += vRayColor;
   }
 
-  imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(vPixelColor.xyz, 1.0));
+  bool bIsAccumulated = (uboCamera.uFrameId != 1);
+
+  //const vec3 vAccumulatedColor = (bIsAccumulated ? imageLoad(accumulatedImage, ivec2(gl_LaunchIDEXT.xy)).rgb : vec3(0.0, 0.0, 0.0)) + vPixelColor;
+  //vPixelColor = vAccumulatedColor / uboCamera.uFrameId;
+
+  if (!bIsAccumulated)
+  {
+      imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(vPixelColor, 0.0));
+  }
+  else
+  {
+      const vec3 vPreviousOutput = imageLoad(outputImage, ivec2(gl_LaunchIDEXT.xy)).rgb;
+      const float ratio = (uboCamera.uFrameId - 1.0) / uboCamera.uFrameId;
+      const vec3 vAccumulatedColor = (vPreviousOutput * ratio) + vPixelColor / uboCamera.uFrameId;
+      imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(vAccumulatedColor, 1.0));
+  }
+
+  //imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(vPixelColor.xyz, 1.0));
+  //imageStore(accumulatedImage, ivec2(gl_LaunchIDEXT.xy), vec4(vAccumulatedColor.xyz, 1.0));
 }

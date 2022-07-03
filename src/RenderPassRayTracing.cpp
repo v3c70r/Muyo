@@ -132,6 +132,7 @@ void RenderPassRayTracing::RecordCommandBuffer()
         {
             // Transit output image to general layout using Image memory barrier 2
 
+            StorageImageResource* pAccumulatedStorage = GetRenderResourceManager()->GetResource<StorageImageResource>("Ray Tracing Accumulated");
             VkImage outputImage = pOutputImage->getImage();
 #ifdef FEATURE_SYNCHRONIZATION2
             VkImageMemoryBarrier2KHR imgBarrier = {
@@ -156,10 +157,9 @@ void RenderPassRayTracing::RecordCommandBuffer()
                 },
             };
 
-            StorageImageResource* pAccumulatedStorage = GetRenderResourceManager()->GetResource<StorageImageResource>("Ray Tracing Accumulated");
             VkImageMemoryBarrier2KHR accumulatedImageBarrier = imgBarrier;
             accumulatedImageBarrier.image = pAccumulatedStorage->getImage();
-            accumulatedImageBarrier.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
+            accumulatedImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 
             std::array<VkImageMemoryBarrier2KHR, 2> barriers = { imgBarrier, accumulatedImageBarrier };
             VkDependencyInfoKHR dependency =
@@ -177,7 +177,7 @@ void RenderPassRayTracing::RecordCommandBuffer()
             VkExt::vkCmdPipelineBarrier2KHR(m_commandBuffer, &dependency);
 #else
             ImageResourceBarrier barrier(outputImage, VK_IMAGE_LAYOUT_GENERAL);
-            ImageResourceBarrier accumulatedImageBarrier(pAccumulatedStorage->getImage, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL);
+            ImageResourceBarrier accumulatedImageBarrier(pAccumulatedStorage->getImage, VK_IMAGE_LAYOUT_GENERAL);
             GetRenderDevice()->AddResourceBarrier(m_commandBuffer, barrier);
             GetRenderDevice()->AddResourceBarrier(m_commandBuffer, accumulatedImageBarrier);
 #endif
@@ -195,24 +195,6 @@ void RenderPassRayTracing::RecordCommandBuffer()
             &m_aSBTRegions[SBT_REGION_RAY_HIT],
             &callable,
             m_imageSize.width, m_imageSize.height, 1);
-
-        // Copy current output to accumulated output
-        VkImageCopy copyInfo = {};
-        copyInfo.extent.height = m_imageSize.height;
-        copyInfo.extent.width = m_imageSize.width;
-        copyInfo.extent.depth = 1;
-        copyInfo.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copyInfo.srcSubresource.layerCount = 1;
-        copyInfo.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        copyInfo.dstSubresource.layerCount = 1;
-        
-        ImageResourceBarrier accumulatedImageBarrierCopy(pAccumulatedStorage->getImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        GetRenderDevice()->AddResourceBarrier(m_commandBuffer, accumulatedImageBarrierCopy);
-
-        vkCmdCopyImage(m_commandBuffer,
-                pOutputImage->getImage(), VK_IMAGE_LAYOUT_GENERAL,
-                pAccumulatedStorage->getImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                1, &copyInfo);
 
 
         };

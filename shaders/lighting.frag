@@ -64,7 +64,7 @@ void main() {
     // Add IBL
     vec3 V = normalize(-vViewPos);
     const float MAX_REFLECTION_LOD = 7.0;
-    vec3 R = reflect(V, vFaceNormal);
+    vec3 R = -normalize(uboCamera.viewInv * vec4(reflect(V, vFaceNormal), 0.0)).xyz;
     vec3 vPrefilteredColor = textureLod(prefilteredMap, R, fRoughness * MAX_REFLECTION_LOD).rgb;
     vec3 F = fresnelSchlickRoughness(max(dot(vFaceNormal, V), 0.0), vF0, fRoughness);
     vec2 vEnvBRDF  = texture(specularBrdfLut, vec2(max(dot(vFaceNormal, V), 0.0), fRoughness)).rg;
@@ -76,14 +76,14 @@ void main() {
     vec3 vDiffuse = vAlbedo * irradiance;
     vec3 diffuse = irradiance * vAlbedo;
 
-    vec3 vAmbient = (kD * vDiffuse + specular) * fAO;
+    vec3 vAmbient = (kD * vDiffuse + specular);// * fAO;
 
     vec3 vColor = vLo + vAmbient;
     //vec3 vColor = vLo;
 
     // Gamma correction
-    vColor = vColor / (vColor + vec3(1.0));
-    vColor = pow(vColor, vec3(1.0 / 2.2));
+    //vColor = vColor / (vColor + vec3(1.0));
+    //vColor = pow(vColor, vec3(1.0 / 2.2));
 
     outColor = vec4(vColor, 1.0);
     outColor.a = 1.0;

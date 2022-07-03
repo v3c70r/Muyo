@@ -37,6 +37,11 @@ void RenderPassManager::CreateSwapchain(const VkSurfaceKHR &swapchainSurface)
 void RenderPassManager::BeginFrame()
 {
 
+    if(m_pCamera->IsTransforationUpdated())
+    {
+        // Hack: Use frame id to track number of frame without transformation
+        m_temporalInfo.nFrameId = 1;
+    }
     m_pCamera->SetFrameId(m_temporalInfo.nFrameId);
     m_temporalInfo.nFrameId++;
     m_temporalInfo.nFrameNoCameraMove++;
@@ -199,8 +204,6 @@ void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
         // Reallocate depth target
         GetRenderResourceManager()->RemoveResource("depthTarget");
         RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", {uWidth, uHeight});
-
-        // Recreate swap chian
 
         // Recreate dependent render passes
         static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);

@@ -13,5 +13,5 @@ void main()
 {
     // Fetch skybox radiance when hitting the skybox
     const vec3 vSkyboxColor = texture(environmentMap, normalize(ray.vScatterDirection.xyz)).rgb;
-    ray.vColorAndDistance = vec4(vSkyboxColor, 1.0);
+    ray.vColorAndDistance = vec4(vSkyboxColor, -1.0);
 }

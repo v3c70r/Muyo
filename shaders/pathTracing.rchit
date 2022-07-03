@@ -37,6 +37,15 @@ struct Vertex
     vec4 textureCoord;
 };
 
+struct Material
+{
+    vec3 vAlbedo;
+    float fAO;
+    float fMetalness;
+    float fRoughness;
+    vec3 vEmissive;
+};
+
 CAMERA_UBO(0)
 layout(set = 0, binding = 1) uniform accelerationStructureEXT topLevelAS;
 layout(set = 0, binding = 4, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
@@ -110,6 +119,7 @@ vec2 InterpolateBarycentric(vec2 p0, vec2 p1, vec2 p2, vec3 vBarycentrics)
 
 Vertex InterpolateVertex(Vertex v0, Vertex v1, Vertex v2, vec3 vBarycentrics)
 {
+    
     Vertex v;
     v.pos = InterpolateBarycentric(v0.pos, v1.pos, v2.pos, vBarycentrics);
     v.normal = InterpolateBarycentric(v0.normal, v1.normal, v2.normal, vBarycentrics);
@@ -118,16 +128,82 @@ Vertex InterpolateVertex(Vertex v0, Vertex v1, Vertex v2, vec3 vBarycentrics)
     return v;
 }
 
-RayPayload ScatteryRay(const vec3 vDirection, const vec3 vNormal, const vec3 vAlbedo, const float fRoughness, const float t, inout uint nSeed)
+RayPayload ScatterDiffuse(const vec3 vDirection, const vec3 vNormal, const Material material, const float t, inout uint nSeed)
+{
+    vec3 vSampleDir = RandomInHemiSphere(nSeed, vNormal);
+
+    // TODO: Check why here is not divided by PI
+    const vec3 vColor = material.vAlbedo * dot(vDirection * -1.0, vNormal) * 2.0;
+        
+    return RayPayload(vec4(vColor, t), vec4(vSampleDir, 1.0f), nSeed);
+}
+
+RayPayload ScatterSpecular(const vec3 vDirection, const vec3 vNormal, const Material material, const float t, inout uint nSeed)
+{
+    vec3 vSampleDir = RandomInHemiSphere(nSeed, vNormal);
+
+    const vec3 V = vDirection * -1.0;
+    const vec3 vF0 = mix(vec3(0.04), material.vAlbedo, material.fMetalness);
+    const vec3 L = vSampleDir;
+    const vec3 H = normalize(L + V);
+
+    // cook-torrance brdf
+    const float NDF = DistributionGGX(vNormal, H, material.fRoughness);
+    const float G = GeometrySmith(vNormal, V, L, material.fRoughness);
+    const vec3 F = fresnelSchlick(max(dot(H, V), 0.0), vF0);
+    const vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+    kD *= 1.0 - material.fMetalness;
+
+    const vec3 vColor = PI * 0.5 * NDF * G * F / dot(vDirection * -1.0, vNormal);
+
+
+    return RayPayload(vec4(vColor, t), vec4(vSampleDir, 1.0), nSeed);
+}
+
+RayPayload ScatterBRDF(const vec3 vDirection, const vec3 vNormal, const Material material, const float t, inout uint nSeed)
+{
+    if (material.fMetalness == 0.0)
+    {
+        return ScatterDiffuse(vDirection, vNormal, material, t, nSeed);
+    }
+    else
+    {
+        return ScatterSpecular(vDirection, vNormal, material, t, nSeed);
+    }
+}
+
+RayPayload ScatterRay(const vec3 vDirection, const vec3 vNormal, const Material material, const float t, inout uint nSeed)
+{
+    const vec3 vReflected = reflect(vDirection, vNormal);
+    const bool bIsScattered = dot(vReflected, vNormal) > 0;
+    const vec3 vF0 = mix(vec3(0.04), material.vAlbedo, material.fMetalness);
+    vec3 F = fresnelSchlickRoughness(max(dot(vNormal, -vDirection), 0.0), vF0, material.fRoughness);
+    vec3 fKs = F;
+    vec3 fKd = vec3(1.0f) - fKs;
+    if (bIsScattered)
+    {
+        return RandomFloat(nSeed) < fKs.x ? ScatterSpecular(vDirection, vNormal, material, t, nSeed)
+                                                   : ScatterDiffuse(vDirection, vNormal, material, t, nSeed);
+    }
+    else
+    {
+        return RayPayload(vec4(0.0f), vec4(0.0f, 0.0f, 0.0f, 0.0f), 0);
+    }
+}
+
+RayPayload ScatterRay(const vec3 vDirection, const vec3 vNormal, const vec3 vAlbedo, const float fRoughness, const float t, inout uint nSeed)
 {
     const vec3 vReflected = reflect(vDirection, vNormal);
     const bool bIsScattered = dot(vReflected, vNormal) > 0;
 
-    const vec4 vColorAndDistance = vec4(vAlbedo, t);
+    const vec4 vColorAndDistance = vec4(vAlbedo * dot(vReflected, vNormal), t);
     const vec4 vScatter = vec4(vReflected + fRoughness * RandomInUnitSphere(nSeed), bIsScattered ? 1 : 0);
 
     return RayPayload(vColorAndDistance, vScatter, nSeed);
 }
+
+
 
 RayPayload IntegrateSkylightRay(const vec3 vNormal)
 {
@@ -143,25 +219,6 @@ RayPayload ScatterDiffuseLight(const vec3 vEmissive, const float t, inout uint s
 
 	return RayPayload(colorAndDistance, scatter, seed);
 }
-
-// Dielectric
-//RayPayload ScatterDieletric(const Material m, const vec3 direction, const vec3 normal, const vec2 texCoord, const float t, inout uint seed)
-//{
-//	const float dot = dot(direction, normal);
-//	const vec3 outwardNormal = dot > 0 ? -normal : normal;
-//	const float niOverNt = dot > 0 ? m.RefractionIndex : 1 / m.RefractionIndex;
-//	const float cosine = dot > 0 ? m.RefractionIndex * dot : -dot;
-//
-//	const vec3 refracted = refract(direction, outwardNormal, niOverNt);
-//	const float reflectProb = refracted != vec3(0) ? Schlick(cosine, m.RefractionIndex) : 1;
-//
-//	const vec4 texColor = m.DiffuseTextureId >= 0 ? texture(TextureSamplers[nonuniformEXT(m.DiffuseTextureId)], texCoord) : vec4(1);
-//	
-//	return RandomFloat(seed) < reflectProb
-//		? RayPayload(vec4(texColor.rgb, t), vec4(reflect(direction, normal), 1), seed)
-//		: RayPayload(vec4(texColor.rgb, t), vec4(refracted, 1), seed);
-//}
-
 
 void main()
 {
@@ -211,12 +268,24 @@ void main()
     const float fMetalness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_METALNESS])], vTexCoords[UVIndices[TEX_METALNESS]]).r * pbrFactors.fMetalness;
     const vec3 vEmissive = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.vEmissiveFactor;
 
+    Material material;
+    // Fill material structure
+    material.vAlbedo = vAlbedo;
+    material.fAO = fAO;
+    material.fMetalness = fMetalness;
+    material.fRoughness = 0.1;
+    material.vEmissive = vEmissive;
+
+    
+
     const vec3 vViewPos = (uboCamera.view * vec4(vWorldPos, 1.0)).xyz;
     const vec3 vFaceNormal = normalize((uboCamera.view * vec4(vWorldNormal, 0.0)).xyz);
 
     if (abs(length(vEmissive)) < 0.01)
     {
-        ray = ScatteryRay(gl_WorldRayDirectionEXT, vWorldNormal, vAlbedo, fRoughness, gl_HitTEXT, ray.uRandomSeed);
+        //  ray = ScatterRay(gl_WorldRayDirectionEXT, vWorldNormal, vAlbedo, fRoughness, gl_HitTEXT, ray.uRandomSeed);
+        //ray = ScatterRay(gl_WorldRayDirectionEXT, vWorldNormal, material, gl_HitTEXT, ray.uRandomSeed);
+        ray = ScatterBRDF(gl_WorldRayDirectionEXT, vWorldNormal, material, gl_HitTEXT, ray.uRandomSeed);
     }
     else
     {
