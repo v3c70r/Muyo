@@ -6,7 +6,7 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_GOOGLE_include_directive : enable
 
-#include "brdf.h"
+#include "directLighting.h"
 #include "Camera.h"
 #include "lights.h"
 
@@ -138,6 +138,13 @@ void main()
     const float fMetalness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_METALNESS])], vTexCoords[UVIndices[TEX_METALNESS]]).r * pbrFactors.fMetalness;
     const vec3 vEmissive = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.vEmissiveFactor;
 
+    Material material;
+    // populate material struct with material properties
+    material.vAlbedo = vAlbedo;
+    material.fAO = fAO;
+    material.fMetalness = fMetalness;
+    material.fRoughness = fRoughness;
+    material.vEmissive = vec3(0.0);
 
     const vec3 vViewPos = (uboCamera.view * vec4(vWorldPos, 1.0)).xyz;
 
@@ -172,15 +179,13 @@ void main()
         //        );
 
         //if (!bIsShadowed)
-        {
-            vLo += ComputeDirectLighting(
-                light.vPosition,
-                light.vColor * light.fIntensity,
-                vViewPos,
-                vFaceNormal,
-                vAlbedo,
-                fMetalness,
-                fRoughness);
+        {  
+            // Convert light position to view space
+            const vec4 lightPosition = uboCamera.view * vec4(light.vPosition, 1.0);
+            light.vPosition = lightPosition.xyz / lightPosition.w;
+            light.vDirection = (uboCamera.view * vec4(light.vDirection, 0.0)).xyz;
+
+            vLo += ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
         }
     }
 

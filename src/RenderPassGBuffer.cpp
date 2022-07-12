@@ -158,13 +158,13 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    //assert(mCommandBuffer == VK_NULL_HANDLE &&
+    //assert(m_commandBuffer == VK_NULL_HANDLE &&
     //       "Command buffer has been created");
 
-    VkCommandBuffer mCommandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
-    vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
+    m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
+    vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
-        SCOPED_MARKER(mCommandBuffer, "Opaque Lighting Pass");
+        SCOPED_MARKER(m_commandBuffer, "Opaque Lighting Pass");
         // Build render pass
         RenderPassBeginInfoBuilder rpbiBuilder;
         std::vector<VkClearValue> vClearValeus(
@@ -178,7 +178,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
             .setClearValues(vClearValeus)
             .Build();
 
-        vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
+        vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo,
             VK_SUBPASS_CONTENTS_INLINE);
 
         // Allocate perview constant buffer
@@ -189,7 +189,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
             GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView);
 
         {
-            SCOPED_MARKER(mCommandBuffer, "GBuffer Pass");
+            SCOPED_MARKER(m_commandBuffer, "GBuffer Pass");
             // Handle Geometires
             for (const Geometry* pGeometry : vpGeometries)
             {
@@ -214,24 +214,24 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                     VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
                     VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
                     uint32_t nIndexCount = pPrimitive->getIndexCount();
-                    vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
+                    vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                            &offset);
-                    vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
+                    vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
                                          VK_INDEX_TYPE_UINT32);
-                    vkCmdBindPipeline(mCommandBuffer,
+                    vkCmdBindPipeline(m_commandBuffer,
                                       VK_PIPELINE_BIND_POINT_GRAPHICS,
                                       mGBufferPipeline);
                     vkCmdBindDescriptorSets(
-                        mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
                         vGBufferDescSets.data(), 0, nullptr);
-                    vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+                    vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
                 }
             }
         }
-        vkCmdNextSubpass(mCommandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdNextSubpass(m_commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
         {
-            SCOPED_MARKER(mCommandBuffer, "Lighting Pass");
+            SCOPED_MARKER(m_commandBuffer, "Lighting Pass");
             // Create gbuffer render target views
             GBufferViews vGBufferRTViews = {
                 GetRenderResourceManager()
@@ -277,24 +277,23 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
             VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
             uint32_t nIndexCount = prim->getIndexCount();
 
-            vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
+            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                    &offset);
-            vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
+            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
                                  VK_INDEX_TYPE_UINT32);
-            vkCmdBindPipeline(mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               mLightingPipeline);
             vkCmdBindDescriptorSets(
-                mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 mLightingPipelineLayout, 0, lightingDescSets.size(),
                 lightingDescSets.data(), 0, nullptr);
-            vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
         }
-        vkCmdEndRenderPass(mCommandBuffer);
+        vkCmdEndRenderPass(m_commandBuffer);
     }
-    vkEndCommandBuffer(mCommandBuffer);
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
+    vkEndCommandBuffer(m_commandBuffer);
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "OpaqueLighting");
-    m_vCommandBuffers.push_back(mCommandBuffer);
 }
 
 void RenderPassGBuffer::createGBufferViews(VkExtent2D size)

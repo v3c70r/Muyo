@@ -2,6 +2,7 @@
 #include "Scene.h"
 #include <unordered_map>
 #include <string>
+struct LightData;
 class SceneManager
 {
     using SceneMap = std::unordered_map<std::string, Scene>;

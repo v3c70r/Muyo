@@ -1,19 +1,20 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
-#include "brdf.h"
+#include "directLighting.h"
 #include "material.h"
 #include "Camera.h"
 
 // Light informations
-const int LIGHT_COUNT = 4;
+// TODO: use light uniforms
+const int TMP_LIGHT_COUNT = 4;
 const int USED_LIGHT_COUNT = 4;
-const vec3 lightPositions[LIGHT_COUNT] = vec3[]( vec3(1.0, 1.0, 0.0),
+const vec3 lightPositions[TMP_LIGHT_COUNT] = vec3[]( vec3(1.0, 1.0, 0.0),
     vec3(0.0, 1.0, 0.0),
     vec3(0.0, 0.0, 1.0),
     vec3(1.0, 1.0, 0.0)
 );
-const vec3 lightColors[LIGHT_COUNT] = vec3[](
+const vec3 lightColors[TMP_LIGHT_COUNT] = vec3[](
     vec3(1.0, 1.0, 1.0),
     vec3(0.0, 1.0, 0.0),
     vec3(0.0, 0.0, 1.0),
@@ -46,25 +47,28 @@ void main()
     vec3 vTextureNormal = texture(texPBR[TEX_NORMAL], inTexCoords[UVIndices[TEX_NORMAL]]).xyz;
     vec3 vWorldNormal = normalize(inWorldNormal.xyz + vTextureNormal);
 
-    const vec4 baseColor = texture(texPBR[TEX_ALBEDO], inTexCoords[UVIndices[TEX_ALBEDO]]) * factors.vBaseColorFactors;
-    const float fMetallic = texture(texPBR[TEX_METALNESS], inTexCoords[UVIndices[TEX_METALNESS]]).r * factors.fMetalness;
+    const vec4 vAlbedo = texture(texPBR[TEX_ALBEDO], inTexCoords[UVIndices[TEX_ALBEDO]]) * factors.vBaseColorFactors;
+    const float fMetalness = texture(texPBR[TEX_METALNESS], inTexCoords[UVIndices[TEX_METALNESS]]).r * factors.fMetalness;
     const float fRoughness = texture(texPBR[TEX_ROUGHNESS], inTexCoords[UVIndices[TEX_ROUGHNESS]]).g * factors.fRoughness;
+
+    Material material;
+    // populate material struct with material properties
+    material.vAlbedo = vAlbedo.xyz;
+    material.fAO = 1.0;
+    material.fMetalness = fMetalness;
+    material.fRoughness = fRoughness;
+    material.vEmissive = vec3(0.0);
+
 
     vec3 vLo = vec3(0.0);
     const vec3 vViewPos = (uboCamera.view * inWorldPos).xyz;
     const vec3 vNormal = (uboCamera.view * vec4(vWorldNormal, 0.0)).xyz;
     for(int i = 0; i < USED_LIGHT_COUNT; ++i)
     {
-        vLo += ComputeDirectLighting(
-                lightPositions[i],
-                lightColors[i],
-                vViewPos,
-                vNormal,
-                baseColor.xyz,
-                fMetallic,
-                fRoughness);
+        // TODO: Bind light uniforms and finish transparent lighting
+
     }
 
-    outColor = vec4(vLo, baseColor.a);
+    outColor = vec4(vAlbedo);
 }
 

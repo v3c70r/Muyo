@@ -7,7 +7,7 @@
 #include <string>
 #include "Swapchain.h"
 
-class RenderPass;
+class IRenderPass;
 class RayTracingSceneManager;
 class Camera;
 struct DrawLists;
@@ -43,7 +43,6 @@ public:
     void Unintialize();
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
     void RecordDynamicCmdBuffers();
-    std::vector<VkCommandBuffer> GetCommandBuffers(uint32_t uImgIdx);
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
     VkExtent2D GetViewportSize() const {return VkExtent2D({m_uWidth, m_uHeight});}
 
@@ -68,7 +67,7 @@ private:
     const VkPresentModeKHR PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
 
 private:
-    std::array<std::unique_ptr<RenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    std::array<std::unique_ptr<IRenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     uint32_t m_uWidth = 0;
     uint32_t m_uHeight = 0;
     bool m_bIsIrradianceGenerated = false;

@@ -8,7 +8,7 @@ public:
     RenderPassAO();
     ~RenderPassAO() override;
     void RecordCommandBuffer();
-    VkCommandBuffer GetCommandBuffer(size_t idx = 0) const override
+    VkCommandBuffer GetCommandBuffer() const override
     {
         return m_cmdBuf;
     }

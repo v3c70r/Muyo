@@ -4,153 +4,59 @@
 #include "PipelineStateBuilder.h"
 #include "DescriptorManager.h"
 #include "Debug.h"
+#include "SamplerManager.h"
 #include <cassert>
-
-RenderPassSkybox::RenderPassSkybox()
-{
-    CreateRenderPass();
-}
 
 RenderPassSkybox::~RenderPassSkybox()
 {
-    DestroyRenderPass();
-}
-
-void RenderPassSkybox::CreateRenderPass()
-{
-    std::array<VkAttachmentDescription, 2> attDescs;
+    if (m_pipeline != VK_NULL_HANDLE)
     {
-        VkAttachmentDescription& attDesc = attDescs[0];
-        attDesc = {};
-        attDesc.samples = VK_SAMPLE_COUNT_1_BIT;
-        attDesc.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        attDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        attDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        attDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attDesc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        attDesc.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        attDesc.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
+        m_pipeline = VK_NULL_HANDLE;
     }
-    {
-        VkAttachmentDescription& attDesc = attDescs[1];
-        attDesc = {};
-        attDesc.samples = VK_SAMPLE_COUNT_1_BIT;
-        attDesc.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        attDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        attDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        attDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attDesc.initialLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
-        attDesc.finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
-        attDesc.format = VK_FORMAT_D32_SFLOAT;
-    }
-
-    VkAttachmentReference colorAttachment = {0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    VkAttachmentReference depthAttachment = {1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-
-   // Subpass
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachment;
-    subpass.pDepthStencilAttachment = &depthAttachment;
-
-   // Subpass dependency
-    VkSubpassDependency subpassDep = {};
-    subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpassDep.dstSubpass = 0;
-    subpassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDep.srcAccessMask = 0;
-    subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo = {};
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &subpassDep;
-
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attDescs.size());
-    renderPassInfo.pAttachments = attDescs.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &subpassDep;
-
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
-                              nullptr, &renderPass) == VK_SUCCESS);
-
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(renderPass),
-                            VK_OBJECT_TYPE_RENDER_PASS, "Skybox Pass");
-
-    m_vRenderPasses.push_back(renderPass);
 }
 
-void RenderPassSkybox::DestroyRenderPass()
+void RenderPassSkybox::PrepareRenderPass()
 {
-    for (auto& renderPass : m_vRenderPasses)
-    {
-        vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderPass, nullptr);
-    }
-    DestroyFramebuffer();
-    DestroyPipeline();
+    // Resources should have been created
+
+    // color attachment
+    RenderTarget* colorTarget = GetRenderResourceManager()->GetResource<RenderTarget>("LIGHTING_OUTPUT");
+    m_renderPassParameters.AddAttachment(colorTarget, colorTarget->GetImageFormat(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
+
+    // depth attachment
+    RenderTarget* depthTarget = GetRenderResourceManager()->GetResource<RenderTarget>("GBUFFER_DEPTH");
+    m_renderPassParameters.AddAttachment(depthTarget, depthTarget->GetImageFormat(), VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, false);
+
+    // Binding 0: Per view data
+    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+
+    // Binding 1: skybox texture
+    m_renderPassParameters.AddImageParameter(
+        GetRenderResourceManager()->GetColorTarget("irr_cube_map", {0, 0}, VK_FORMAT_B8G8R8A8_UNORM, 1, 6),
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
+
+    m_renderPassParameters.Finalize("Render pass skybox");
+
+    CreatePipeline();
+
 }
 
-void RenderPassSkybox::CreateFramebuffer(uint32_t uWidth, uint32_t uHeight)
-{
-    VkExtent2D vp = {uWidth, uHeight};
-
-    std::array<VkImageView, 2> views = {
-        GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", vp)->getView(),
-        GetRenderResourceManager()->GetDepthTarget("GBUFFER_DEPTH", vp)->getView()};
-
-    VkFramebufferCreateInfo framebufferInfo = {};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = m_vRenderPasses.back();
-    framebufferInfo.attachmentCount = static_cast<uint32_t>(views.size());
-    framebufferInfo.pAttachments = views.data();
-    framebufferInfo.width = uWidth;
-    framebufferInfo.height = uHeight;
-    framebufferInfo.layers = 1;
-    assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo,
-                               nullptr, &m_frameBuffer) == VK_SUCCESS);
-    m_renderArea = vp;
-}
-
-void RenderPassSkybox::DestroyFramebuffer()
-{
-    vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_frameBuffer, nullptr);
-    m_frameBuffer = VK_NULL_HANDLE;
-}
 
 void RenderPassSkybox::CreatePipeline()
 {
     ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(m_renderArea).Build();
+    VkViewport viewport = vpBuilder.setWH(m_renderPassParameters.GetRenderArea()).Build();
     VkRect2D scissorRect;
     scissorRect.offset = {0, 0};
-    scissorRect.extent = m_renderArea;
+    scissorRect.extent = m_renderPassParameters.GetRenderArea();
 
-    // Descriptor layouts
-    std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+    VkPipelineLayout pipelineLayout = m_renderPassParameters.GetPipelineLayout();
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Skybox");
 
-    std::vector<VkPushConstantRange> pushConstants;
-
-    m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
-
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Skybox");
-
-    //TODO : Write a shader for transparent pass
-    VkShaderModule vertShdr =
-        CreateShaderModule(ReadSpv("shaders/Skybox.vert.spv"));
-    VkShaderModule fragShdr =
-        CreateShaderModule(ReadSpv("shaders/Skybox.frag.spv"));
+    VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/Skybox.vert.spv"));
+    VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/Skybox.frag.spv"));
 
     InputAssemblyStateCIBuilder iaBuilder;
     RasterizationStateCIBuilder rsBuilder;
@@ -165,21 +71,19 @@ void RenderPassSkybox::CreatePipeline()
 
     PipelineStateBuilder builder;
 
-    // TODO: Enable depth test, disable depth write
-    m_pipeline =
-        builder.setShaderModules({vertShdr, fragShdr})
-            .setVertextInfo({Vertex::getBindingDescription()},
-                            Vertex::getAttributeDescriptions())
-            .setAssembly(iaBuilder.Build())
-            .setViewport(viewport, scissorRect)
-            .setRasterizer(rsBuilder.Build())
-            .setMSAA(msBuilder.Build())
-            .setColorBlending(blendBuilder.Build())
-            .setPipelineLayout(m_pipelineLayout)
-            .setDepthStencil(depthStencilBuilder.Build())
-            .setRenderPass(m_vRenderPasses.back())
-            .setSubpassIndex(0)
-            .Build(GetRenderDevice()->GetDevice());
+    m_pipeline = builder.setShaderModules({vertShdr, fragShdr})
+                     .setVertextInfo({Vertex::getBindingDescription()},
+                                     Vertex::getAttributeDescriptions())
+                     .setAssembly(iaBuilder.Build())
+                     .setViewport(viewport, scissorRect)
+                     .setRasterizer(rsBuilder.Build())
+                     .setMSAA(msBuilder.Build())
+                     .setColorBlending(blendBuilder.Build())
+                     .setPipelineLayout(pipelineLayout)
+                     .setDepthStencil(depthStencilBuilder.Build())
+                     .setRenderPass(m_renderPassParameters.GetRenderPass())
+                     .setSubpassIndex(0)
+                     .Build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
                           nullptr);
@@ -191,14 +95,6 @@ void RenderPassSkybox::CreatePipeline()
                             VK_OBJECT_TYPE_PIPELINE, "Skybox");
 }
 
-void RenderPassSkybox::DestroyPipeline()
-{
-    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-    m_pipelineLayout = VK_NULL_HANDLE;
-    m_pipeline = VK_NULL_HANDLE;
-}
-
 void RenderPassSkybox::RecordCommandBuffers()
 {
     VkCommandBufferBeginInfo beginInfo = {};
@@ -206,44 +102,35 @@ void RenderPassSkybox::RecordCommandBuffers()
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
-    if (m_vCommandBuffers.empty())
+    if (m_commandBuffer == VK_NULL_HANDLE)
     {
-        m_vCommandBuffers.push_back(GetRenderDevice()->AllocateStaticPrimaryCommandbuffer());
+        m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     }
     else
     {
-        vkResetCommandBuffer(m_vCommandBuffers[0], VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandBuffer(m_commandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
     }
-    VkCommandBuffer& mCommandBuffer = m_vCommandBuffers[0];
+    VkCommandBuffer& mCommandBuffer = m_commandBuffer;
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
     {
         SCOPED_MARKER(mCommandBuffer, "Skybox Pass");
         // Build render pass
         RenderPassBeginInfoBuilder rpbiBuilder;
-        std::vector<VkClearValue> vClearValeus = {{{.color = {0.0f, 0.0f, 0.0f, 0.0f}},
+        std::vector<VkClearValue> vClearValeus = {{{.color = {{0.0f, 0.0f, 0.0f, 0.0f}}},
                                                    {.depthStencil = {1.0f, 0}}}};
 
         VkRenderPassBeginInfo renderPassBeginInfo =
-            rpbiBuilder.setRenderArea(m_renderArea)
-                .setRenderPass(m_vRenderPasses.back())
-                .setFramebuffer(m_frameBuffer)
+            rpbiBuilder.setRenderArea(m_renderPassParameters.GetRenderArea())
+                .setRenderPass(m_renderPassParameters.GetRenderPass())
+                .setFramebuffer(m_renderPassParameters.GetFramebuffer())
                 .setClearValues(vClearValeus)
                 .Build();
 
         vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        // Allocate perview constant buffer
-        const UniformBuffer<PerViewData>* perView =
-            GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
 
-        std::vector<VkDescriptorSet> vDescSets = {
-            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView),
-            GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
-                GetRenderResourceManager()
-                    ->GetColorTarget("irr_cube_map", {0, 0},
-                                     VK_FORMAT_B8G8R8A8_UNORM, 1, 6)
-                    ->getView())};
+        VkDescriptorSet descSet = m_renderPassParameters.AllocateDescriptorSet("skybox");
 
         {
             // Draw skybox cube
@@ -261,8 +148,8 @@ void RenderPassSkybox::RecordCommandBuffers()
                               m_pipeline);
             vkCmdBindDescriptorSets(
                 mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_pipelineLayout, 0, (uint32_t)vDescSets.size(),
-                vDescSets.data(), 0, nullptr);
+                m_renderPassParameters.GetPipelineLayout(), 0, 1,
+                &descSet, 0, nullptr);
             vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
         }
         vkCmdEndRenderPass(mCommandBuffer);
@@ -272,7 +159,3 @@ void RenderPassSkybox::RecordCommandBuffers()
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "Skybox");
 }
 
-VkCommandBuffer RenderPassSkybox::GetCommandBuffer(size_t idx) const
-{
-    return m_vCommandBuffers.back();
-}

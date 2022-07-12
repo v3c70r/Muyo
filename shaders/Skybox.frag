@@ -4,7 +4,7 @@
 layout(location = 0) in vec3 vTexCoords;
 layout(location = 0) out vec4 vOutColor;
 
-layout(set = 1, binding = 0) uniform samplerCube environmentMap;
+layout(set = 0, binding = 1) uniform samplerCube environmentMap;
 
 void main()
 {

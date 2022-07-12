@@ -67,15 +67,6 @@ public:
     std::array<std::vector<const SceneNode*>, DL_COUNT> m_aDrawLists;
 };
 
-struct LightData
-{
-    uint32_t LightType = 0;
-    glm::vec3 vPosition = glm::vec3(0.0f);
-    glm::vec3 vColor = glm::vec3(0.0f);
-    float fIntensity = 0.0f;
-    glm::vec4 vMetaData = glm::vec4(0.0f);
-};
-
 template<typename T> class StorageBuffer;
 
 class Scene

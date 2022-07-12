@@ -49,7 +49,7 @@ StorageBuffer<LightData>* SceneManager::ConstructLightBufferFromDrawLists(const 
     // Add a dummy light
     if (lightData.size() == 0)
     {
-		lightData.push_back({ 0, glm::vec3(0.0), glm::vec3(0.0), 0.0f });
+        lightData.push_back(LightData());
     }
     return GetRenderResourceManager()->GetStorageBuffer("light data", lightData);
 }

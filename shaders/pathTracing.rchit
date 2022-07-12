@@ -37,15 +37,6 @@ struct Vertex
     vec4 textureCoord;
 };
 
-struct Material
-{
-    vec3 vAlbedo;
-    float fAO;
-    float fMetalness;
-    float fRoughness;
-    vec3 vEmissive;
-};
-
 CAMERA_UBO(0)
 layout(set = 0, binding = 1) uniform accelerationStructureEXT topLevelAS;
 layout(set = 0, binding = 4, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;

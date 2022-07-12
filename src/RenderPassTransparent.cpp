@@ -74,22 +74,17 @@ void RenderPassTransparent::CreateRenderPasses()
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
 
-    VkRenderPass renderPass = VK_NULL_HANDLE;
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
-                              nullptr, &renderPass) == VK_SUCCESS);
+                              nullptr, &m_renderPass) == VK_SUCCESS);
 
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(renderPass),
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass),
                             VK_OBJECT_TYPE_RENDER_PASS, "Transparent Pass");
 
-    m_vRenderPasses.push_back(renderPass);
 }
 
 RenderPassTransparent::~RenderPassTransparent()
 {
-    for (auto& renderPass : m_vRenderPasses)
-    {
-        vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderPass, nullptr);
-    }
+    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
     DestroyFramebuffer();
     DestroyPipeline();
 }
@@ -103,7 +98,7 @@ void RenderPassTransparent::CreateFramebuffer(uint32_t uWidth, uint32_t uHeight)
 
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = m_vRenderPasses.back();
+    framebufferInfo.renderPass = m_renderPass;
     framebufferInfo.attachmentCount = static_cast<uint32_t>(views.size());
     framebufferInfo.pAttachments = views.data();
     framebufferInfo.width = uWidth;
@@ -173,7 +168,7 @@ void RenderPassTransparent::CreatePipeline()
             .setColorBlending(blendBuilder.Build())
             .setPipelineLayout(m_pipelineLayout)
             .setDepthStencil(depthStencilBuilder.Build())
-            .setRenderPass(m_vRenderPasses.back())
+            .setRenderPass(m_renderPass)
             .setSubpassIndex(0)
             .Build(GetRenderDevice()->GetDevice());
 
@@ -203,15 +198,15 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    if (m_vCommandBuffers.empty())
+    if (m_commandBuffer == VK_NULL_HANDLE)
     {
-        m_vCommandBuffers.push_back(GetRenderDevice()->AllocateStaticPrimaryCommandbuffer());
+        m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     }
     else
     {
-        vkResetCommandBuffer(m_vCommandBuffers.back(), VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
+        vkResetCommandBuffer(m_commandBuffer, VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT);
     }
-    VkCommandBuffer mCommandBuffer = m_vCommandBuffers.back();
+    VkCommandBuffer mCommandBuffer = m_commandBuffer;
     vkBeginCommandBuffer(mCommandBuffer, &beginInfo);
     {
         SCOPED_MARKER(mCommandBuffer, "Transparent Pass");
@@ -222,7 +217,7 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
 
         VkRenderPassBeginInfo renderPassBeginInfo =
             rpbiBuilder.setRenderArea(m_renderArea)
-                .setRenderPass(m_vRenderPasses.back())
+                .setRenderPass(m_renderPass)
                 .setFramebuffer(m_frameBuffer)
                 .setClearValues(vClearValeus)
                 .Build();

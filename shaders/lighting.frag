@@ -1,7 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
-#include "brdf.h"
+#include "directLighting.h"
 #include "Camera.h"
 #include "lights.h"
 
@@ -39,10 +39,18 @@ void main() {
     const vec3 vWorldNormal = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).xyz;
     const vec3 vFaceNormal = normalize((uboCamera.view * vec4(vWorldNormal, 0.0)).xyz);
     const float fRoughness = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).w;
-    const float fMetallic = subpassLoad(inGBuffer_MATELNESS_TRANSLUCENCY).r;
+    const float fMetalness = subpassLoad(inGBuffer_MATELNESS_TRANSLUCENCY).r;
     //TODO: Read transmittence and translucency if necessary
 
-    vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetallic);
+    Material material;
+    // populate material struct with material properties
+    material.vAlbedo = vAlbedo;
+    material.fAO = fAO;
+    material.fMetalness = fMetalness;
+    material.fRoughness = fRoughness;
+    material.vEmissive = vec3(0.0);
+
+
     vec3 vLo = vec3(0.0);
 
     // For each light source
@@ -50,18 +58,30 @@ void main() {
     for (int i = 0; i < numLights.nNumLights; ++i)
     {
         LightData light = lightDatas.i[i];
+        // Convert light position to view space
+        const vec4 lightPosition = uboCamera.view * vec4(light.vPosition, 1.0);
+        light.vPosition = lightPosition.xyz / lightPosition.w;
+        light.vDirection = (uboCamera.view * vec4(light.vDirection, 0.0)).xyz;
+
+        vLo += ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
+
+        /*
         const vec3 vLightViewPos = (uboCamera.view * vec4(light.vPosition, 1.0)).xyz;
+
         vLo += ComputeDirectLighting(
             vLightViewPos,
             light.vColor * light.fIntensity,
             vViewPos.xyz,
             vFaceNormal,
             vAlbedo,
-            fMetallic,
+            fMetalness,
             fRoughness);
+        */
     }
 
     // Add IBL
+    
+    const vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetalness);
     vec3 V = normalize(-vViewPos);
     const float MAX_REFLECTION_LOD = 7.0;
     vec3 R = -normalize(uboCamera.viewInv * vec4(reflect(V, vFaceNormal), 0.0)).xyz;
@@ -71,7 +91,7 @@ void main() {
     vec3 specular = vPrefilteredColor * (F * vEnvBRDF.x + vEnvBRDF.y);
     vec3 kS = F;
     vec3 kD = vec3(1.0) - kS;
-    kD *= 1.0 - fMetallic;
+    kD *= 1.0 - fMetalness;
     vec3 irradiance = texture(irradianceMap, vWorldNormal).xyz;
     vec3 vDiffuse = vAlbedo * irradiance;
     vec3 diffuse = irradiance * vAlbedo;

@@ -35,6 +35,8 @@ public:
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_image),
                                 GetVkObjectType(), sName.c_str());
     }
+    VkFormat GetImageFormat() const { return m_imageInfo.format; }
+
 protected:
 
     void CreateImageInternal(const VmaMemoryUsage &memoryUsage)

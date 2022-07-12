@@ -2,6 +2,18 @@
 #define BRDF_H
 #extension GL_GOOGLE_include_directive : enable
 #include "random.h"
+#include "lights.h"
+
+struct Material
+{
+    vec3 vAlbedo;
+    float fAO;
+    float fMetalness;
+    float fRoughness;
+    vec3 vEmissive;
+};
+
+
 //===============
 // PBR functions
 const float PI = 3.14159265359;
@@ -93,40 +105,31 @@ vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - cosTheta, 5.0);
 }   
 
-vec3 ComputeDirectLighting(
-        vec3 vLightPos,     // Light pos in view space
-        vec3 vLightColor,
-        vec3 vViewPos,
-        vec3 vNormal,
-        vec3 vAlbedo,
-        float fMetallic,
-        float fRoughness
-        )
+// Evaluate Cook Torrance BRDF
+vec3 EvalBRDF(
+    vec3 vWi,
+    vec3 vWo,
+    vec3 vN,
+    Material material)
 {
-    const vec3 V = normalize(-vViewPos);
-    const vec3 vF0 = mix(vec3(0.04), vAlbedo, fMetallic);
-    const vec3 L = normalize(vLightPos - vViewPos);
-    const vec3 H = normalize(L + V);
-    const float distance = length(vLightPos - vViewPos);
-    const float attenuation = 1.0 / (distance * distance);
-    const vec3 radiance = vLightColor * attenuation;
+    const vec3 vF0 = mix(vec3(0.04), material.vAlbedo, material.fMetalness);
+    const vec3 vH = normalize(vWi + vWo);
 
     // cook-torrance brdf
-    const float NDF = DistributionGGX(vNormal, H, fRoughness);
-    const float G = GeometrySmith(vNormal, V, L, fRoughness);
-    const vec3 F = fresnelSchlick(max(dot(H, V), 0.0), vF0);
-    const vec3 kS = F;
-    vec3 kD = vec3(1.0) - kS;
-    kD *= 1.0 - fMetallic;
+    const float fNDF = DistributionGGX(vN, vH, material.fRoughness);
+    const float fG = GeometrySmith(vN, vWo, vWi, material.fRoughness);
+    const vec3 vF = fresnelSchlick(max(dot(vH, vWo), 0.0), vF0);
+    const vec3 vkS = vF;
+    vec3 vkD = vec3(1.0) - vkS;
+    vkD *= 1.0 - material.fMetalness;
 
-    vec3 numerator = NDF * G * F;
-    float denominator = 4.0 * max(dot(vNormal, V), 0.0) *
-                        max(dot(vNormal, L), 0.0);
-    vec3 specular = numerator / max(denominator, 0.001);
+    vec3 vNumerator = fNDF * fG * vF;
+    float fDenominator = 4.0 * max(dot(vN, vWo), 0.0) * max(dot(vN, vWi), 0.0);
+    vec3 vSpecular = vNumerator / max(fDenominator, 0.001);
 
     // add to outgoing radiance Lo
-    float NdotL = max(dot(vNormal, L), 0.0);
-    return (kD * vAlbedo / PI + specular) * radiance * NdotL;
+    float fNdotL = max(dot(vN, vWi), 0.0);
+    return (vkD * material.vAlbedo / PI + vSpecular) * fNdotL;
 }
 
 vec2 IntegrateBRDF(float NdotV, float roughness)

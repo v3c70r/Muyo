@@ -91,7 +91,7 @@ public:
     void removeGBufferViews();
     void CreatePipeline() override;
 
-    VkCommandBuffer GetCommandBuffer(size_t idx) const override { return m_vCommandBuffers[0]; }
+    VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
 private:
     LightingAttachments mAttachments;
@@ -106,4 +106,10 @@ private:
 
     VkDescriptorSet mPerViewDescSet;
     VkDescriptorSet mMaterialDescSet;
+
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+
+    // TODO: Use render pass parameters instead
+    std::vector<VkRenderPass> m_vRenderPasses;
+    VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
 };

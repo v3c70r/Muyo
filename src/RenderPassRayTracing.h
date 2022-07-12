@@ -2,14 +2,14 @@
 #include "DescriptorManager.h"
 #include "RenderPass.h"
 
-class RenderPassRayTracing : public RenderPass
+class RenderPassRayTracing : public IRenderPass
 {
 public:
     RenderPassRayTracing(VkExtent2D imageSize) : m_imageSize(imageSize) {}
     virtual ~RenderPassRayTracing() { DestroyPipeline(); }
     virtual void CreatePipeline() override;
     virtual void PrepareRenderPass() override;
-    virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const override
+    virtual VkCommandBuffer GetCommandBuffer() const 
     {
         return m_commandBuffer;
     }
@@ -41,4 +41,5 @@ private:
 
     };
     std::array<VkStridedDeviceAddressRegionKHR, SBT_REGION_COUNT> m_aSBTRegions;
+    RenderPassParameters m_renderPassParameters;
 };

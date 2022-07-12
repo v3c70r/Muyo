@@ -51,17 +51,30 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         }
                         else if (gltfNode.extensions.find(LIGHT_EXT_NAME) != gltfNode.extensions.end() && gltfNode.extensions.at(LIGHT_EXT_NAME).Has("light"))
                         {
+                            // Check gltf Lights
+                            // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md
                             int nLightIdx = gltfNode.extensions.at(LIGHT_EXT_NAME).Get("light").Get<int>();
                             tinygltf::Light light = model.lights[nLightIdx];
 
                             glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
-                            uint32_t nLightType = LIGHT_TYPE_POINT;
-                            if (light.type == "SPOT")
+                            if (light.type == "point")
                             {
-                                nLightType = LIGHT_TYPE_POINT;
+                                // TODO: Figure out how to get radius from gltf
+                                pSceneNode = new PointLightNode(lightColor, (float)light.intensity);
+                            }
+                            else if (light.type == "spot")
+                            {
+                                pSceneNode = new SpotLightNode(lightColor, (float)light.intensity, (float)light.spot.innerConeAngle, (float)light.spot.outerConeAngle);
+                            }
+                            else if (light.type == "directional")
+                            {
+                                pSceneNode = new DirectionalLightNode(lightColor, (float)light.intensity);
+                            }
+                            else
+                            {
+                                assert(false);
                             }
 
-                            pSceneNode = new PointLightNode(lightColor, (float)light.intensity);
                             CopyGLTFNode(*pSceneNode, gltfNode);
                         }
                         else

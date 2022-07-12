@@ -52,6 +52,9 @@ void RenderPassManager::BeginFrame()
 
     m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailable);
 
+    static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->SetCurrentSwapchainImageIndex(m_uImageIdx2Present);
+    static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_UI].get())->SetCurrentSwapchainImageIndex(m_uImageIdx2Present);
+
     // Wait for previous command renders to current swaphchain image to finish
     vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &m_aGPUExecutionFence[m_uImageIdx2Present], VK_TRUE, std::numeric_limits<uint64_t>::max());
     vkResetFences(GetRenderDevice()->GetDevice(), 1, &m_aGPUExecutionFence[m_uImageIdx2Present]);
@@ -108,7 +111,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     // Transparent pass
     m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>();
     // Skybox pass
-    m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>();
+    m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(vp);
     // AO pass
     m_vpRenderPasses[RENDERPASS_AO] = std::make_unique<RenderPassAO>();
 #ifdef FEATURE_RAY_TRACING
@@ -179,9 +182,6 @@ void RenderPassManager::SetSwapchainImageViews(const std::vector<VkImageView> &v
     static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
     static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
 
-    static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreateFramebuffer(m_uWidth, m_uHeight);
-    static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get())->CreatePipeline();
-
 }
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
@@ -208,6 +208,8 @@ void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
         // Recreate dependent render passes
         static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
         static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
+
+        m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(VkExtent2D({m_uWidth, m_uHeight}));
 
         // Update arcball tracking
         m_pCamera->Resize(glm::vec2((float)uWidth, (float)uHeight));
@@ -287,26 +289,6 @@ void RenderPassManager::RecordDynamicCmdBuffers()
     pUIPass->RecordCommandBuffer(vpExtent, m_uImageIdx2Present);
 }
 
-std::vector<VkCommandBuffer> RenderPassManager::GetCommandBuffers(uint32_t uImgIdx)
-{
-    std::vector<VkCommandBuffer> vCmdBufs;
-    for (size_t i = 0; i < RENDERPASS_COUNT; i++)
-    {
-        if (m_bIsIrradianceGenerated && i == RENDERPASS_IBL)
-        {
-            continue;
-        }
-        auto &pass = m_vpRenderPasses[i];
-        VkCommandBuffer cmdBuf = pass->GetCommandBuffer(uImgIdx);
-        if (cmdBuf != VK_NULL_HANDLE)
-        {
-            vCmdBufs.push_back(cmdBuf);
-        }
-        m_bIsIrradianceGenerated = true;
-    }
-    return vCmdBufs;
-}
-
 void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
 {
     RenderLayerIBL *pIBLPass = static_cast<RenderLayerIBL *>(m_vpRenderPasses[RENDERPASS_IBL].get());
@@ -325,12 +307,12 @@ void RenderPassManager::SubmitCommandBuffers()
 
     if (!m_bIsIrradianceGenerated)
     {
-        vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_IBL]->GetCommandBuffer(m_uImageIdx2Present));
+        vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_IBL]->GetCommandBuffer());
         m_bIsIrradianceGenerated = true;
     }
 
     // Submit graphics queue to signal depth ready semaphore
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer(m_uImageIdx2Present));
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer());
     vSignalSemaphores.push_back(m_depthReady);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
 
@@ -338,16 +320,16 @@ void RenderPassManager::SubmitCommandBuffers()
     vSignalSemaphores.clear();
 
     // Submit other graphics tasks
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer(m_uImageIdx2Present));
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer(m_uImageIdx2Present));
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer());
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer());
 #ifdef FEATURE_RAY_TRACING
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_RAY_TRACING]->GetCommandBuffer(m_uImageIdx2Present));
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_RAY_TRACING]->GetCommandBuffer());
 #endif
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
 
     vCmdBufs.clear();
     // Submit compute tasks
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_AO]->GetCommandBuffer(m_uImageIdx2Present));
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_AO]->GetCommandBuffer());
     vWaitForSemaphores.push_back(m_depthReady);
     vSignalSemaphores.push_back(m_aoReady);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
@@ -358,12 +340,12 @@ void RenderPassManager::SubmitCommandBuffers()
     vSignalSemaphores.clear();
     vWaitStages.clear();
     // Submit passes to swapchain
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_FINAL]->GetCommandBuffer(m_uImageIdx2Present));
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_FINAL]->GetCommandBuffer());
 
-    VkCommandBuffer uiCmdBuffer = m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer(m_uImageIdx2Present);
+    VkCommandBuffer uiCmdBuffer = m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer();
     if (uiCmdBuffer != VK_NULL_HANDLE)  // it's possible there's no UI to draw
     {
-        vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer(m_uImageIdx2Present));
+        vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer());
     }
     vWaitForSemaphores.push_back(m_imageAvailable);
     vWaitForSemaphores.push_back(m_aoReady);

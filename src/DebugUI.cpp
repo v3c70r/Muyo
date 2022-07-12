@@ -197,9 +197,19 @@ void LightsDebugPage::Render() const
     ImGui::Begin("Lights");
     for (const LightSceneNode* pLightNode : m_vpLightNodes)
     {
-        static const std::array<std::string, 1> TYPE_NAMES = {"Point"};
+        switch(pLightNode->GetLightType())
+        {
+            case LIGHT_TYPE_POINT:
+                ImGui::Text("%s\tPoint Light", pLightNode->GetName().c_str());
+                break;
+            case LIGHT_TYPE_SPOT:
+                ImGui::Text("%s\tSpot Light", pLightNode->GetName().c_str());
+                break;
+            case LIGHT_TYPE_DIRECTIONAL:
+                ImGui::Text("%s\tDirectional Light", pLightNode->GetName().c_str());
+                break;
+        }
         pLightNode->GetColor();
-        ImGui::Text("%s\t%s\t", pLightNode->GetName().c_str(), TYPE_NAMES[pLightNode->GetLightType()].c_str());
         ImGui::ColorEdit3("MyColor##1", (float*)glm::value_ptr(pLightNode->GetColor()));
     }
     ImGui::End();

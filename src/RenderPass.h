@@ -13,25 +13,25 @@ class Geometry;
 
 class IRenderPass
 {
-    virtual ~IRenderPass();
+public:
+    virtual ~IRenderPass() {};
     virtual VkCommandBuffer GetCommandBuffer() const = 0;
+    virtual void CreatePipeline() = 0;
+    virtual void PrepareRenderPass() = 0;
 };
 
-class RenderPass
+class RenderPass : public IRenderPass
 {
 public:
-    virtual ~RenderPass() {}
-    virtual VkCommandBuffer GetCommandBuffer(size_t idx = 0) const  = 0;
-    virtual void CreatePipeline() = 0;
-    virtual void PrepareRenderPass() {};
+    virtual void PrepareRenderPass() override {};
 protected:
-    std::vector<VkCommandBuffer> m_vCommandBuffers;
-    std::vector<VkRenderPass> m_vRenderPasses;
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
     RenderPassParameters m_renderPassParameters;
 };
 
+
 // The pass render to swap chain
-class RenderPassFinal : public RenderPass
+class RenderPassFinal : public IRenderPass
 {
 public:
     RenderPassFinal(VkFormat swapChainFormat, bool bClearAttachments = true);
@@ -44,17 +44,15 @@ public:
     virtual void Resize(const std::vector<VkImageView>& vImageViews, VkImageView depthImageView, uint32_t uWidth, uint32_t uHeight);
 
     // Getters
-    VkFramebuffer& GetFramebuffer(size_t idx)
+    virtual VkCommandBuffer GetCommandBuffer() const override
     {
-        assert(idx < m_vFramebuffers.size());
-        return m_vFramebuffers[idx];
-    }
-    virtual VkCommandBuffer GetCommandBuffer(size_t idx) const override
-    {
-        assert(idx < m_vFramebuffers.size());
-        return m_vCommandBuffers[idx];
+        assert(m_nCurrentSwapchainImageIndex < m_vFramebuffers.size());
+        return m_vCommandBuffers[m_nCurrentSwapchainImageIndex];
     }
     virtual void CreatePipeline() override;
+
+    void SetCurrentSwapchainImageIndex(uint32_t nIndex) {m_nCurrentSwapchainImageIndex = nIndex;}
+    void PrepareRenderPass() override {};
 
 protected:
     std::vector<VkFramebuffer> m_vFramebuffers;  // Each framebuffer bind to a swapchain image
@@ -64,6 +62,10 @@ protected:
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
 
+    std::vector<VkCommandBuffer> m_vCommandBuffers;
+    std::vector<VkRenderPass> m_vRenderPasses;
+
 private:
     void DestroyFramebuffers();
+    uint32_t m_nCurrentSwapchainImageIndex = 0;
 };

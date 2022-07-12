@@ -51,6 +51,7 @@ void RenderPassRayTracing::PrepareRenderPass()
         GetRenderResourceManager()->GetResource<RenderTarget>("env_cube_map"),
         VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
 
+    m_renderPassParameters.Finalize("Render Pass Raytracing");
     CreatePipeline();
 }
 
@@ -73,7 +74,6 @@ void RenderPassRayTracing::CreatePipeline()
 
     // pipeline layout
     std::vector<VkPushConstantRange> pushConstants = {};
-     m_renderPassParameters.CreateDescriptorSetLayout();
 
     std::vector<VkDescriptorSetLayout> descLayouts = {
         m_renderPassParameters.GetDescriptorSetLayout(),
@@ -177,7 +177,7 @@ void RenderPassRayTracing::RecordCommandBuffer()
             VkExt::vkCmdPipelineBarrier2KHR(m_commandBuffer, &dependency);
 #else
             ImageResourceBarrier barrier(outputImage, VK_IMAGE_LAYOUT_GENERAL);
-            ImageResourceBarrier accumulatedImageBarrier(pAccumulatedStorage->getImage, VK_IMAGE_LAYOUT_GENERAL);
+            ImageResourceBarrier accumulatedImageBarrier(pAccumulatedStorage->getImage(), VK_IMAGE_LAYOUT_GENERAL);
             GetRenderDevice()->AddResourceBarrier(m_commandBuffer, barrier);
             GetRenderDevice()->AddResourceBarrier(m_commandBuffer, accumulatedImageBarrier);
 #endif

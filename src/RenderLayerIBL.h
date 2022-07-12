@@ -19,7 +19,7 @@ public:
     void DestroyFramebuffer();
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
 
-    VkCommandBuffer GetCommandBuffer(size_t idx) const override
+    VkCommandBuffer GetCommandBuffer() const override
     {
         return m_commandBuffer;
     }
@@ -88,5 +88,8 @@ private:
 
     const std::array<std::string, RENDERPASS_COUNT> m_aRenderPassNames = {
         "Load cubemap", "Compute irradiance cubemap", "Compute prefiltered cubmap", "Compute specular brdf lut"};
+
+    // TODO: Move this to render pass parameters
+    std::vector<VkRenderPass> m_vRenderPasses;
 };
 

@@ -126,7 +126,7 @@ void RenderPassParameters::CreateDescriptorSetLayout()
     descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     descriptorSetLayoutInfo.bindingCount = (uint32_t)m_vBindings.size();
     descriptorSetLayoutInfo.pBindings = m_vBindings.data();
-    assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &descriptorSetLayoutInfo, nullptr, &m_descSetLayout) == VK_SUCCESS);
+    VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &descriptorSetLayoutInfo, nullptr, &m_descSetLayout));
 }
 
 VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& sDescSetName)
@@ -138,7 +138,7 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     allocInfo.descriptorPool = GetDescriptorManager()->GetDescriptorPool();
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_descSetLayout;
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName.c_str());
     for (size_t i = 0; i < m_vWriteDescSet.size(); ++i)
     {
@@ -164,3 +164,133 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), m_vWriteDescSet.size(), m_vWriteDescSet.data(), 0, nullptr);
     return descriptorSet;
 }
+
+void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkFormat format, VkImageLayout initialLayout, VkImageLayout finalLayout, bool bClearAttachment)
+{
+
+    // Create attachment description
+    VkAttachmentDescription attachmentDesc = {};
+    attachmentDesc.format = format;
+    attachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
+    attachmentDesc.loadOp = bClearAttachment ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    attachmentDesc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    attachmentDesc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    attachmentDesc.initialLayout = initialLayout;
+    attachmentDesc.finalLayout = finalLayout;
+
+    m_vAttachmentDescriptions.push_back(attachmentDesc);
+
+    // Create attachment reference
+    VkAttachmentReference attachmentRef = {};
+    // check if format is depth format
+    // TODO: add more depth foramts if we started to use them
+    attachmentRef.attachment = (uint32_t)m_vAttachmentDescriptions.size() - 1;
+    if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
+    {
+        attachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        assert(m_depthAttachmentReference.attachment != VK_ATTACHMENT_UNUSED);
+        m_depthAttachmentReference = attachmentRef;
+    }
+    else
+    {
+        attachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        m_vColorAttachmentReferences.push_back(attachmentRef);
+    }
+
+    m_vAttachmentResources.push_back(pResource);
+}
+
+void RenderPassParameters::CreatePipelineLayout()
+{
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_descSetLayout;
+
+    if (m_vPushConstantRanges.size() > 0)
+    {
+        pipelineLayoutInfo.pushConstantRangeCount = m_vPushConstantRanges.size();
+        pipelineLayoutInfo.pPushConstantRanges = m_vPushConstantRanges.data();
+    }
+
+    VK_ASSERT(vkCreatePipelineLayout(GetRenderDevice()->GetDevice(), &pipelineLayoutInfo, nullptr, &m_pipelineLayout));
+
+}
+
+void RenderPassParameters::CreateRenderPass()
+{
+   // Subpass
+    VkSubpassDescription subpass = {};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = (uint32_t)m_vColorAttachmentReferences.size();
+    subpass.pColorAttachments = m_vColorAttachmentReferences.data();
+    subpass.pDepthStencilAttachment = &m_depthAttachmentReference;
+
+   // Subpass dependency
+    VkSubpassDependency subpassDep = {};
+    subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
+    subpassDep.dstSubpass = 0;
+    subpassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDep.srcAccessMask = 0;
+    subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo renderPassInfo = {};
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &subpassDep;
+
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(m_vAttachmentDescriptions.size());
+    renderPassInfo.pAttachments = m_vAttachmentDescriptions.data();
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &subpassDep;
+
+    VK_ASSERT(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr, &m_renderPass));
+
+}
+
+void RenderPassParameters::CreateFrameBuffer()
+{
+    std::vector<VkImageView> attachments;
+    for (const auto& attachment : m_vAttachmentResources)
+    {
+        attachments.push_back(attachment->getView());
+    }
+    VkFramebufferCreateInfo framebufferInfo = {};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = m_renderPass;
+    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    framebufferInfo.pAttachments = attachments.data();
+    framebufferInfo.width = m_renderArea.width;
+    framebufferInfo.height = m_renderArea.height;
+    framebufferInfo.layers = 1;
+    VK_ASSERT(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo, nullptr, &m_framebuffer));
+}
+
+void RenderPassParameters::Finalize(const std::string& sPassName)
+{
+    if (!m_vBindings.empty())
+    {
+        CreateDescriptorSetLayout();
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_descSetLayout), VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, sPassName.c_str());
+    }
+    CreatePipelineLayout();
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, sPassName.c_str());
+
+    if (!m_vAttachmentResources.empty())
+    {
+        CreateRenderPass();
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass), VK_OBJECT_TYPE_RENDER_PASS, sPassName.c_str());
+        CreateFrameBuffer();
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_framebuffer), VK_OBJECT_TYPE_FRAMEBUFFER, sPassName.c_str());
+    }
+
+    m_bIsFinalized = true;
+}
+

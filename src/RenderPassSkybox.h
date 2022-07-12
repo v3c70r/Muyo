@@ -1,25 +1,27 @@
 #pragma once
 #include "RenderPass.h"
+#include "RenderPassParameters.h"
 
-class RenderPassSkybox : public RenderPass
+class RenderPassSkybox : public IRenderPass
 {
 public:
-    void SetCubemap();
+    RenderPassSkybox(VkExtent2D imageSize)
+    {
+        m_renderPassParameters.SetRenderArea(imageSize);
+        PrepareRenderPass();
+    }
+    void PrepareRenderPass() override;
+
     RenderPassSkybox();
     ~RenderPassSkybox() override;
-    VkCommandBuffer GetCommandBuffer(size_t idx = 0) const override;
-    void CreateFramebuffer(uint32_t uWidth, uint32_t uHeight);
+    VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
     void CreatePipeline() override;
     void RecordCommandBuffers();
-    void DestroyFramebuffer();
 
 private:
-    void CreateRenderPass();
-    void DestroyRenderPass();
-    void DestroyPipeline();
-private:
     VkPipeline m_pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
-    VkExtent2D m_renderArea = {0, 0};
-    VkFramebuffer m_frameBuffer = VK_NULL_HANDLE;
+
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+    RenderPassParameters m_renderPassParameters;
+
 };
