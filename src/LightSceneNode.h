@@ -1,28 +1,6 @@
 #include "Scene.h"
 #include "glm/geometric.hpp"
-
-enum LightType
-{
-    LIGHT_TYPE_POINT = 0,
-    LIGHT_TYPE_SPOT,
-    LIGHT_TYPE_DIRECTIONAL,
-    LIGHT_TYPE_LINEAR,
-    LIGHT_TYPE_POLYGON,
-    LIGHT_TYPE_COUNT
-};
-
-struct LightData
-{
-    uint32_t LightType = 0;
-    glm::vec3 vPosition = glm::vec3(0.0f);
-    glm::vec3 vDirection = glm::vec3(1.0f); // can be vec3 if needed, use vec4 for alignment
-    float fRange = 0.0f;
-    glm::vec3 vColor = glm::vec3(0.0f);
-    float fIntensity = 0.0f;
-    glm::vec4 vMetaData = glm::vec4(0.0f);
-};
-
-
+#include "SharedStructures.h"
 
 class LightSceneNode : public SceneNode
 {

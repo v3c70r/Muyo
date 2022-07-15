@@ -64,19 +64,6 @@ void main() {
         light.vDirection = (uboCamera.view * vec4(light.vDirection, 0.0)).xyz;
 
         vLo += ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
-
-        /*
-        const vec3 vLightViewPos = (uboCamera.view * vec4(light.vPosition, 1.0)).xyz;
-
-        vLo += ComputeDirectLighting(
-            vLightViewPos,
-            light.vColor * light.fIntensity,
-            vViewPos.xyz,
-            vFaceNormal,
-            vAlbedo,
-            fMetalness,
-            fRoughness);
-        */
     }
 
     // Add IBL
