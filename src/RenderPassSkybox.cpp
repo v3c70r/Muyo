@@ -5,7 +5,6 @@
 #include "DescriptorManager.h"
 #include "Debug.h"
 #include "SamplerManager.h"
-#include <cassert>
 
 RenderPassSkybox::~RenderPassSkybox()
 {

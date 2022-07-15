@@ -1,28 +1,32 @@
 #include "RenderPassParameters.h"
 #include "DescriptorManager.h"
 
-void RenderPassParameters::AddParameter(const IRenderResource* pResource, VkDescriptorType type, VkShaderStageFlags stages)
+void RenderPassParameters::AddParameter(const IRenderResource* pResource, VkDescriptorType type, VkShaderStageFlags stages, uint32_t nDescSetIdx)
 {
-    AddBinding(type, 1, stages);
-    AddDescriptorWrite(pResource, type);
+    AddBinding(type, 1, stages, nDescSetIdx);
+    AddDescriptorWrite(pResource, type, nDescSetIdx);
 }
 
-void RenderPassParameters::AddImageParameter(const ImageResource* pResource, VkDescriptorType type, VkShaderStageFlags stages, VkImageLayout imageLayout, VkSampler sampler)
+void RenderPassParameters::AddImageParameter(const ImageResource* pResource, VkDescriptorType type, VkShaderStageFlags stages, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
 {
-    AddBinding(type, 1, stages);
-    AddImageDescriptorWrite(pResource, type, imageLayout, sampler);
+    AddBinding(type, 1, stages, nDescSetIdx);
+    AddImageDescriptorWrite(pResource, type, imageLayout, sampler, nDescSetIdx);
 }
-void RenderPassParameters::AddImageParameter(std::vector<const ImageResource*>& vpResource, VkDescriptorType type, VkShaderStageFlags stages, VkImageLayout imageLayout, VkSampler sampler)
+void RenderPassParameters::AddImageParameter(std::vector<const ImageResource*>& vpResource, VkDescriptorType type, VkShaderStageFlags stages, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
 {
-    AddBinding(type, vpResource.size(), stages);
-    AddImageDescriptorWrite(vpResource, type, imageLayout, sampler);
+    AddBinding(type, vpResource.size(), stages, nDescSetIdx);
+    AddImageDescriptorWrite(vpResource, type, imageLayout, sampler, nDescSetIdx);
 }
-void RenderPassParameters::AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler)
+void RenderPassParameters::AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
 {
+    if (m_vWriteDescSet.size() <= nDescSetIdx)
+    {
+        m_vWriteDescSet.resize(nDescSetIdx + 1);
+    }
     VkWriteDescriptorSet write = {};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = VK_NULL_HANDLE; // This is set later
-    write.dstBinding = m_vWriteDescSet.size();
+    write.dstBinding = m_vWriteDescSet[nDescSetIdx].size();
     write.dstArrayElement = 0;
     write.descriptorCount = 1;
     write.descriptorType = type;
@@ -34,68 +38,96 @@ void RenderPassParameters::AddImageDescriptorWrite(const ImageResource* pResourc
         imageInfo.sampler = sampler;
     }
 
-    m_vDescriptorInfoIndex.push_back(m_vImageInfos.size());
+    if (m_vDescriptorInfoIndex.size() <= nDescSetIdx)
+    {
+        m_vDescriptorInfoIndex.resize(nDescSetIdx + 1);
+    }
+    m_vDescriptorInfoIndex[nDescSetIdx].push_back(m_vImageInfos.size());
 
     m_vImageInfos.push_back(imageInfo);
-    m_vWriteDescSet.push_back(write);
+
+    
+    m_vWriteDescSet[nDescSetIdx].push_back(write);
 }
 
-void RenderPassParameters::AddImageDescriptorWrite(const std::vector<const ImageResource*> vpResources, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler)
+void RenderPassParameters::AddImageDescriptorWrite(const std::vector<const ImageResource*> vpResources, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
 {
+    if (m_vWriteDescSet.size() <= nDescSetIdx)
+    {
+        m_vWriteDescSet.resize(nDescSetIdx + 1);
+    }
+
     VkWriteDescriptorSet write = {};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = VK_NULL_HANDLE; // This is set later
-    write.dstBinding = m_vWriteDescSet.size();
+    write.dstBinding = m_vWriteDescSet[nDescSetIdx].size();
     write.dstArrayElement = 0;
     write.descriptorCount = static_cast<uint32_t>(vpResources.size());
     write.descriptorType = type;
 
-    m_vDescriptorInfoIndex.push_back(m_vImageInfos.size());
+    if (m_vDescriptorInfoIndex.size() <= nDescSetIdx)
+    {
+        m_vDescriptorInfoIndex.resize(nDescSetIdx + 1);
+    }
+    m_vDescriptorInfoIndex[nDescSetIdx].push_back(m_vImageInfos.size());
 
     for (const auto* pImageResource : vpResources)
     {
         VkDescriptorImageInfo imageInfo = {sampler, pImageResource->getView(), imageLayout};
         m_vImageInfos.push_back(imageInfo);
     }
-    m_vWriteDescSet.push_back(write);
+
+    m_vWriteDescSet[nDescSetIdx].push_back(write);
 }
 
-void RenderPassParameters::AddDescriptorWrite(const IRenderResource* pResource, VkDescriptorType type)
+void RenderPassParameters::AddDescriptorWrite(const IRenderResource* pResource, VkDescriptorType type, uint32_t nDescSetIdx)
 {
+    if (m_vDescriptorInfoIndex.size() <= nDescSetIdx)
+    {
+        m_vDescriptorInfoIndex.resize(nDescSetIdx + 1);
+    }
+
+    if (m_vWriteDescSet.size() <= nDescSetIdx)
+    {
+        m_vWriteDescSet.resize(nDescSetIdx + 1);
+    }
+
     VkWriteDescriptorSet write = {};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dstSet = VK_NULL_HANDLE; // This is set later
-    write.dstBinding = m_vWriteDescSet.size();
+    write.dstBinding = m_vWriteDescSet[nDescSetIdx].size();
     write.dstArrayElement = 0;
     write.descriptorCount = 1;
     write.descriptorType = type;
 
-
-
-
     if (type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
     {
 
-        m_vDescriptorInfoIndex.push_back(m_vAccelerationStructureWrites.size());
+        m_vDescriptorInfoIndex[nDescSetIdx].push_back(m_vAccelerationStructureWrites.size());
 
         VkWriteDescriptorSetAccelerationStructureKHR accDesc = {};
         accDesc.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-        accDesc.accelerationStructureCount = 1;
         accDesc.accelerationStructureCount = 1;
         accDesc.pAccelerationStructures = &(static_cast<const AccelerationStructure*>(pResource)->GetAccelerationStructure());
         m_vAccelerationStructureWrites.push_back(accDesc);
     }
     else if (type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
     {
-        m_vDescriptorInfoIndex.push_back(m_vBufferInfos.size());
-
-        const BufferResource* pBufferResource = dynamic_cast<const BufferResource*>(pResource);
-        assert(pBufferResource);
+        m_vDescriptorInfoIndex[nDescSetIdx].push_back(m_vBufferInfos.size());
 
         VkDescriptorBufferInfo bufferInfo = {};
-        bufferInfo.buffer = pBufferResource->buffer();
+        if (pResource)
+        {
+            const BufferResource* pBufferResource = dynamic_cast<const BufferResource*>(pResource);
+            bufferInfo.buffer = pBufferResource->buffer();
+            bufferInfo.range = pBufferResource->GetSize();
+        }
+        else
+        {
+            bufferInfo.buffer = VK_NULL_HANDLE;
+            bufferInfo.range = 0;
+        }
         bufferInfo.offset = 0;
-        bufferInfo.range = pBufferResource->GetSize();
         m_vBufferInfos.push_back(bufferInfo);
     }
     else
@@ -103,33 +135,44 @@ void RenderPassParameters::AddDescriptorWrite(const IRenderResource* pResource, 
         assert(false && u8"Unhandled descriptor type");
     }
 
-    m_vWriteDescSet.push_back(write);
+    m_vWriteDescSet[nDescSetIdx].push_back(write);
 }
 
-void RenderPassParameters::AddBinding(VkDescriptorType type, uint32_t count, VkShaderStageFlags stages)
+void RenderPassParameters::AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx)
 {
+    if (m_vBindings.size() <= nDescSetIdx)
+    {
+        m_vBindings.resize(nDescSetIdx + 1);
+    }
+
     VkDescriptorSetLayoutBinding bindingInfo = {};
-    bindingInfo.binding = m_vBindings.size();
+    bindingInfo.binding = m_vBindings[nDescSetIdx].size();
     bindingInfo.descriptorType = type;
-    bindingInfo.descriptorCount = count;
+    bindingInfo.descriptorCount = nCount;
     bindingInfo.stageFlags = stages;
-    m_vBindings.push_back(bindingInfo);
+    m_vBindings[nDescSetIdx].push_back(bindingInfo);
 }
 
-const VkDescriptorSetLayout& RenderPassParameters::GetDescriptorSetLayout() const
+const VkDescriptorSetLayout& RenderPassParameters::GetDescriptorSetLayout(uint32_t nDescSetIdx) const
 {
-    return m_descSetLayout;
+    return m_vDescSetLayouts[nDescSetIdx];
 }
 void RenderPassParameters::CreateDescriptorSetLayout()
 {
-    VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
-    descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    descriptorSetLayoutInfo.bindingCount = (uint32_t)m_vBindings.size();
-    descriptorSetLayoutInfo.pBindings = m_vBindings.data();
-    VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &descriptorSetLayoutInfo, nullptr, &m_descSetLayout));
+    std::for_each(m_vBindings.begin(), m_vBindings.end(), [this](const std::vector<VkDescriptorSetLayoutBinding>& vBindings)
+    {
+        VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.pBindings = vBindings.data();
+        layoutInfo.bindingCount = static_cast<uint32_t>(vBindings.size());
+
+        VkDescriptorSetLayout layout;
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &layoutInfo, nullptr, &layout));
+        m_vDescSetLayouts.push_back(layout);
+    });
 }
 
-VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& sDescSetName)
+VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& sDescSetName, uint32_t nDescSetIdx)
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     // Create descriptor sets
@@ -137,31 +180,79 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     allocInfo.descriptorPool = GetDescriptorManager()->GetDescriptorPool();
     allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_descSetLayout;
+    allocInfo.pSetLayouts = &m_vDescSetLayouts[nDescSetIdx];
     VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName.c_str());
-    for (size_t i = 0; i < m_vWriteDescSet.size(); ++i)
+    std::vector<VkWriteDescriptorSet>& vWriteDescriptorSets = m_vWriteDescSet[nDescSetIdx];
+    std::vector<size_t>& vDescriptorInfoIndex = m_vDescriptorInfoIndex[nDescSetIdx];
+    for (size_t i = 0; i < vWriteDescriptorSets.size(); ++i)
     {
-        m_vWriteDescSet[i].dstSet = descriptorSet;
+        vWriteDescriptorSets[i].dstSet = descriptorSet;
         // Resolve write descriptor set info
-        if (m_vWriteDescSet[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || m_vWriteDescSet[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
         {
-            m_vWriteDescSet[i].pBufferInfo = &m_vBufferInfos[m_vDescriptorInfoIndex[i]];
+            vWriteDescriptorSets[i].pBufferInfo = &m_vBufferInfos[vDescriptorInfoIndex[i]];
         }
-        else if (m_vWriteDescSet[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || m_vWriteDescSet[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
         {
-            m_vWriteDescSet[i].pImageInfo = &m_vImageInfos[m_vDescriptorInfoIndex[i]];
+            vWriteDescriptorSets[i].pImageInfo = &m_vImageInfos[vDescriptorInfoIndex[i]];
         }
-        else if (m_vWriteDescSet[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
         {
-            m_vWriteDescSet[i].pNext = &m_vAccelerationStructureWrites[m_vDescriptorInfoIndex[i]];
+            vWriteDescriptorSets[i].pNext = &m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]];
         }
         else
         {
             assert(false && u8"Unhandled descriptor type");
         }
     }
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), m_vWriteDescSet.size(), m_vWriteDescSet.data(), 0, nullptr);
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), vWriteDescriptorSets.size(), vWriteDescriptorSets.data(), 0, nullptr);
+    return descriptorSet;
+}
+
+VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& sDescSetName, const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx)
+{
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
+    // Create descriptor sets
+    VkDescriptorSetAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = GetDescriptorManager()->GetDescriptorPool();
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_vDescSetLayouts[nDescSetIdx];
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName.c_str());
+
+    std::vector<VkWriteDescriptorSet>& vWriteDescriptorSets = m_vWriteDescSet[nDescSetIdx];
+    std::vector<size_t>& vDescriptorInfoIndex = m_vDescriptorInfoIndex[nDescSetIdx];
+    assert(vpResources.size() == vWriteDescriptorSets.size());
+
+    for (size_t i = 0; i < vWriteDescriptorSets.size(); ++i)
+    {
+        vWriteDescriptorSets[i].dstSet = descriptorSet;
+        // Resolve write descriptor set info
+        if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        {
+            m_vBufferInfos[vDescriptorInfoIndex[i]].buffer = static_cast<const BufferResource*>(vpResources[i])->buffer();
+            m_vBufferInfos[vDescriptorInfoIndex[i]].range = static_cast<const BufferResource*>(vpResources[i])->GetSize();
+            vWriteDescriptorSets[i].pBufferInfo = &m_vBufferInfos[vDescriptorInfoIndex[i]];
+        }
+        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+        {
+            m_vImageInfos[vDescriptorInfoIndex[i]].imageView = static_cast<const ImageResource*>(vpResources[i])->getView();
+            vWriteDescriptorSets[i].pImageInfo = &m_vImageInfos[vDescriptorInfoIndex[i]];
+        }
+        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+        {
+            m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]].accelerationStructureCount = 1;
+            m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]].pAccelerationStructures = &static_cast<const AccelerationStructure*>(vpResources[i])->GetAccelerationStructure();
+            vWriteDescriptorSets[i].pNext = &m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]];
+        }
+        else
+        {
+            assert(false && u8"Unhandled descriptor type");
+        }
+    }
+    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), vWriteDescriptorSets.size(), vWriteDescriptorSets.data(), 0, nullptr);
     return descriptorSet;
 }
 
@@ -205,8 +296,8 @@ void RenderPassParameters::CreatePipelineLayout()
 {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_descSetLayout;
+    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(m_vDescSetLayouts.size());
+    pipelineLayoutInfo.pSetLayouts = m_vDescSetLayouts.data();
 
     if (m_vPushConstantRanges.size() > 0)
     {
@@ -278,7 +369,7 @@ void RenderPassParameters::Finalize(const std::string& sPassName)
     if (!m_vBindings.empty())
     {
         CreateDescriptorSetLayout();
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_descSetLayout), VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, sPassName.c_str());
+        //setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_descSetLayout), VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, sPassName.c_str());
     }
     CreatePipelineLayout();
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, sPassName.c_str());

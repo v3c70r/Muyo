@@ -15,6 +15,7 @@ struct DrawLists;
 enum RenderPassNames
 {
     // Order matters
+    RENDERPASS_SHADOW,
     RENDERPASS_IBL,
     RENDERPASS_GBUFFER,
     RENDERPASS_SKYBOX,

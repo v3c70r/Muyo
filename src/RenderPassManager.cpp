@@ -12,6 +12,7 @@
 #include "RenderPassUI.h"
 #include "RenderResourceManager.h"
 #include "RenderPassRayTracing.h"
+#include "RenderPassShadow.h"
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
@@ -78,6 +79,9 @@ void RenderPassManager::Present()
 
 void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSurfaceKHR &swapchainSurface)
 {
+
+    m_vpRenderPasses[RENDERPASS_SHADOW] = std::make_unique<RenderPassShadow>(VkExtent2D({1024, 1024}));
+
     m_uWidth = uWidth;
     m_uHeight = uHeight;
 
@@ -237,6 +241,19 @@ void RenderPassManager::Unintialize()
 void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 {
     {
+        RenderPassShadow *pShadowPass = static_cast<RenderPassShadow *>(m_vpRenderPasses[RENDERPASS_SHADOW].get());
+        pShadowPass->PrepareRenderPass();
+        const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
+        std::vector<const Geometry *> vpGeometries;
+        vpGeometries.reserve(opaqueDrawList.size());
+        for (const SceneNode *pNode : opaqueDrawList)
+        {
+            vpGeometries.push_back(
+                static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
+        }
+        pShadowPass->RecordCommandBuffers(vpGeometries);
+    }
+    {
         RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         std::vector<const Geometry *> vpGeometries;
@@ -310,6 +327,9 @@ void RenderPassManager::SubmitCommandBuffers()
         vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_IBL]->GetCommandBuffer());
         m_bIsIrradianceGenerated = true;
     }
+
+    // Shadow pass
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
 
     // Submit graphics queue to signal depth ready semaphore
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer());

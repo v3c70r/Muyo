@@ -2,7 +2,7 @@
 #include "RenderPass.h"
 #include "RenderPassParameters.h"
 
-class RenderPassSkybox : public IRenderPass
+class RenderPassSkybox : public RenderPass
 {
 public:
     RenderPassSkybox(VkExtent2D imageSize)
@@ -19,9 +19,5 @@ public:
     void RecordCommandBuffers();
 
 private:
-    VkPipeline m_pipeline = VK_NULL_HANDLE;
-
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
-    RenderPassParameters m_renderPassParameters;
-
 };

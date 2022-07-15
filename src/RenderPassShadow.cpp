@@ -1,69 +1,40 @@
 #include "RenderPassShadow.h"
+#include "Camera.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
+#include "DescriptorManager.h"
 #include "Geometry.h"
 
-void RenderPassShadow::PrepareRenderPass()
-{
-    // Depth attachments
-    VkAttachmentDescription depthAttachment = {};
-    depthAttachment.format = VK_FORMAT_D32_SFLOAT;
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-
-    // Attachment reference
-    VkAttachmentReference depthAttachmentRef = {};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // Create Subpass
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-    // subpass dependency
-    VkSubpassDependency subpassDep = {};
-    subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpassDep.dstSubpass = 0;
-    subpassDep.srcStageMask = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    subpassDep.srcAccessMask = 0;
-    subpassDep.dstStageMask = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    subpassDep.dstAccessMask =  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-    VkRenderPassCreateInfo renderPassInfo = {};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &depthAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &subpassDep;
-    VK_ASSERT(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr, &m_renderPass));
-
-    // Create output resources
-    VkImageView shadowMapView = GetRenderResourceManager()->GetDepthTarget("ShadowMap", m_shadowMapSize, VK_FORMAT_D32_SFLOAT)->getView();
-
-    VkFramebufferCreateInfo framebufferInfo = {};
-    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    framebufferInfo.renderPass = m_renderPass;
-    framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &shadowMapView;
-    framebufferInfo.width = m_shadowMapSize.width;
-    framebufferInfo.height = m_shadowMapSize.height;
-    framebufferInfo.layers = 1;
-    VK_ASSERT(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &framebufferInfo, nullptr, &m_frameBuffer));
-}
 
 RenderPassShadow::~RenderPassShadow()
 {
-    vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_frameBuffer, nullptr);
-    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
+    if (m_pipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
+        m_pipeline = VK_NULL_HANDLE;
+    }
+}
+
+void RenderPassShadow::PrepareRenderPass()
+{
+    m_renderPassParameters.SetRenderArea(m_shadowMapSize);
+
+    RenderTarget* shadowMap = GetRenderResourceManager()->GetDepthTarget(m_shadowCasterName, m_shadowMapSize);
+    // Depth attachments
+    m_renderPassParameters.AddAttachment(shadowMap, shadowMap->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, true);
+
+
+    // Binding 0
+    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+
+    m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    
+    // Set 1, Binding 0
+    m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
+
+    m_renderPassParameters.Finalize("Render pass shadow");
+
+    CreatePipeline();
 }
 
 void RenderPassShadow::CreatePipeline()
@@ -73,12 +44,10 @@ void RenderPassShadow::CreatePipeline()
 
     std::vector<VkPushConstantRange> pushConstants;
 
-    m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
+    VkPipelineLayout pipelineLayout = m_renderPassParameters.GetPipelineLayout();
 
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Shadow map pass");
-
-    VkShaderModule vertexShader = CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
-    VkShaderModule fragShader = CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
+    VkShaderModule vertexShader = CreateShaderModule(ReadSpv("shaders/shadow.vert.spv"));
+    VkShaderModule fragShader = CreateShaderModule(ReadSpv("shaders/shadow.frag.spv"));
 
     ViewportBuilder vpBuilder;
     VkViewport viewport = vpBuilder.setWH(m_shadowMapSize).Build();
@@ -93,7 +62,6 @@ void RenderPassShadow::CreatePipeline()
     blendBuilder.setAttachments(1);
     DepthStencilCIBuilder depthStencilBuilder;
     PipelineStateBuilder builder;
-    std::vector<VkDynamicState> vDynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
     m_pipeline =
         builder.setShaderModules({vertexShader, fragShader})
@@ -104,10 +72,9 @@ void RenderPassShadow::CreatePipeline()
             .setRasterizer(rsBuilder.Build())
             .setMSAA(msBuilder.Build())
             .setColorBlending(blendBuilder.Build())
-            .setPipelineLayout(m_pipelineLayout)
+            .setPipelineLayout(pipelineLayout)
             .setDepthStencil(depthStencilBuilder.Build())
-            .setRenderPass(m_renderPass)
-            .setDynamicStates(vDynamicStates)
+            .setRenderPass(m_renderPassParameters.GetRenderPass())
             .Build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertexShader, nullptr);
@@ -115,4 +82,62 @@ void RenderPassShadow::CreatePipeline()
 
     // Set debug name for the pipeline
     setDebugUtilsObjectName( reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Shadow pass");
+}
+
+void RenderPassShadow::RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries)
+{
+    VkCommandBufferBeginInfo beginInfo = {};
+
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+    beginInfo.pInheritanceInfo = nullptr;
+
+    m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
+    vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
+    {
+        RenderPassBeginInfoBuilder builder;
+        std::vector<VkClearValue> clearValue = {
+            {.depthStencil = {1.0, 0}}};
+        VkRenderPassBeginInfo renderPassBeginInfo =
+            builder.setRenderPass(m_renderPassParameters.GetRenderPass())
+                .setFramebuffer(m_renderPassParameters.GetFramebuffer())
+                .setRenderArea(m_shadowMapSize)
+                .setClearValues(clearValue)
+                .Build();
+
+        vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        SCOPED_MARKER(m_commandBuffer, "Shadow pass");
+        for (const Geometry* pGeometry : vpGeometries)
+        {
+            for (const auto& pPrimitive : pGeometry->getPrimitives())
+            {
+                const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
+                assert(worldMatrixBuffer != nullptr && "Buffer must be valid");
+
+                std::vector<VkDescriptorSet> vGBufferDescSets = {
+                    m_renderPassParameters.AllocateDescriptorSet(""),
+                    m_renderPassParameters.AllocateDescriptorSet("world matrix", {worldMatrixBuffer}, 1)};
+
+                VkDeviceSize offset = 0;
+                VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
+                VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
+                uint32_t nIndexCount = pPrimitive->getIndexCount();
+                vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
+                                       &offset);
+                vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                                     VK_INDEX_TYPE_UINT32);
+                vkCmdBindPipeline(m_commandBuffer,
+                                  VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                  m_pipeline);
+                vkCmdBindDescriptorSets(
+                    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_renderPassParameters.GetPipelineLayout(), 0, vGBufferDescSets.size(),
+                    vGBufferDescSets.data(), 0, nullptr);
+                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            }
+        }
+        vkCmdEndRenderPass(m_commandBuffer);
+    }
+    vkEndCommandBuffer(m_commandBuffer);
 }
