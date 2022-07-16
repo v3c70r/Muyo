@@ -89,15 +89,15 @@ elseif(MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W4")
 endif()
 
-
-#link_directories(${VK_LIBRARY_PATH};${VK_BIN_PATH})
-
+# Headers that shared between shader and cpp 
+set (SHARED_HEADER_DIR "${CMAKE_SOURCE_DIR}/shaders/Shared")
 
 include_directories(
     ${Vulkan_INCLUDE_DIR}
     ${GLFW3_INCLUDE_DIR}
     ${GLM_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIRS}
+    ${SHARED_HEADER_DIR}
     )
 
 add_library(imgui
@@ -163,7 +163,8 @@ file(GLOB_RECURSE GLSL_SOURCE_FILES
 
 file(GLOB_RECURSE GLSL_HEADER_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.h"
-)
+    "${SHARED_HEADER_DIR}/*.h"
+    )
 
 
 message(STATUS "Shaders: ${GLSL_SOURCE_FILES}")
@@ -173,7 +174,7 @@ foreach (GLSL_SOURCE_FILE ${GLSL_SOURCE_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.2 -g -V ${GLSL_SOURCE_FILE} -o ${SPIRV}
+        COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.2 -DSHADER_CODE -g -V ${GLSL_SOURCE_FILE} -o ${SPIRV}
         DEPENDS ${GLSL_SOURCE_FILE} ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()
