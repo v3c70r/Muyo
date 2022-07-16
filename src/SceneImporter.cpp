@@ -148,8 +148,8 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode,
         if (gltfNode.scale.size() > 0)
         {
             vS.x = (float)gltfNode.scale[0];
-            vS.x = (float)gltfNode.scale[1];
-            vS.x = (float)gltfNode.scale[2];
+            vS.y = (float)gltfNode.scale[1];
+            vS.z = (float)gltfNode.scale[2];
         }
 
         glm::mat4 mMat(1.0);
@@ -355,7 +355,14 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         vPrimitives.emplace_back(std::make_unique<Primitive>(sPrimitiveName, vVertices, vIndices));
 
         //  =========Material
-        const tinygltf::Material &gltfMaterial = model.materials[primitive.material];
+        //
+        // Use default material if primitive has no material
+        tinygltf::Material gltfMaterial;
+        gltfMaterial.name = "default material";
+        if (primitive.material > -1)
+        {
+            gltfMaterial = model.materials.at(primitive.material);
+        }
         auto materialIter = GetMaterialManager()->m_mMaterials.find(gltfMaterial.name);
         Material* pMaterial = nullptr;
 
