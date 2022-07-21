@@ -54,6 +54,7 @@ protected:
     uint32_t m_uFlag = 0;
 };
 
+using DrawList = std::vector<const SceneNode*>;
 struct DrawLists
 {
 public:
@@ -64,7 +65,7 @@ public:
         DL_LIGHT,
         DL_COUNT
     };
-    std::array<std::vector<const SceneNode*>, DL_COUNT> m_aDrawLists;
+    std::array<DrawList, DL_COUNT> m_aDrawLists;
 };
 
 template<typename T> class StorageBuffer;

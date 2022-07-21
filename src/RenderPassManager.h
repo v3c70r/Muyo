@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include "Swapchain.h"
+#include "ShadowPassManager.h"
 
 class IRenderPass;
 class RayTracingSceneManager;
@@ -15,7 +16,6 @@ struct DrawLists;
 enum RenderPassNames
 {
     // Order matters
-    RENDERPASS_SHADOW,
     RENDERPASS_IBL,
     RENDERPASS_GBUFFER,
     RENDERPASS_SKYBOX,
@@ -94,6 +94,8 @@ private:
         uint32_t nFrameId = 0;
         uint32_t nFrameNoCameraMove = 0;
     } m_temporalInfo;
+
+    std::unique_ptr<ShadowPassManager> m_pShadowPassManager;
 };
 
 RenderPassManager* GetRenderPassManager();

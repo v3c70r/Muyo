@@ -6,6 +6,7 @@
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
 #include "Geometry.h"
+#include "SamplerManager.h"
 
 RenderPassGBuffer::LightingAttachments::LightingAttachments()
 {
@@ -158,8 +159,8 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    //assert(m_commandBuffer == VK_NULL_HANDLE &&
-    //       "Command buffer has been created");
+    // assert(m_commandBuffer == VK_NULL_HANDLE &&
+    //        "Command buffer has been created");
 
     m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
@@ -173,13 +174,13 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
 
         VkRenderPassBeginInfo renderPassBeginInfo =
             rpbiBuilder.setRenderArea(mRenderArea)
-            .setRenderPass(m_vRenderPasses.back())
-            .setFramebuffer(mFramebuffer)
-            .setClearValues(vClearValeus)
-            .Build();
+                .setRenderPass(m_vRenderPasses.back())
+                .setFramebuffer(mFramebuffer)
+                .setClearValues(vClearValeus)
+                .Build();
 
         vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo,
-            VK_SUBPASS_CONTENTS_INLINE);
+                             VK_SUBPASS_CONTENTS_INLINE);
 
         // Allocate perview constant buffer
         const UniformBuffer<PerViewData>* perView =
@@ -270,7 +271,16 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                         ->GetColorTarget("specular_brdf_lut", {0, 0}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
                         ->getView()),
                 // Light data buffer
-                GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)};
+                GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer),
+
+            };
+
+            // Hack: Another hack to test if we have shadow map. No pipeline layout if no Finalize called
+            if (m_renderPassParameters.GetPipelineLayout() != VK_NULL_HANDLE)
+            {
+                lightingDescSets.push_back(m_renderPassParameters.AllocateDescriptorSet("shadow map desc", m_nShadowMapDescriptorSetIndex));
+            }
+
             const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
@@ -330,7 +340,7 @@ void RenderPassGBuffer::removeGBufferViews()
     DestroyFramebuffer();
 }
 
-void RenderPassGBuffer::CreatePipeline()
+void RenderPassGBuffer::CreatePipeline(const std::vector<RenderTarget*> vpShadowMaps)
 {
     // Pipeline should be created after mRenderArea been updated
     ViewportBuilder vpBuilder;
@@ -405,6 +415,23 @@ void RenderPassGBuffer::CreatePipeline()
             GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL),            // Irradiance map
             GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA),     // Irradiance map
         };
+
+        if (vpShadowMaps.size() > 0)
+        {
+            // Hack: Create shadow map desc set on last descset with render pass parameters
+            std::vector<const ImageResource*> vpImageResources;
+            std::for_each(vpShadowMaps.begin(), vpShadowMaps.end(),
+                          [&vpImageResources](const RenderTarget* pShadowMap)
+                          {
+                              vpImageResources.push_back(static_cast<const ImageResource*>(pShadowMap));
+                          });
+
+            // Create on 4th descriptor set
+            m_renderPassParameters.AddImageParameter(vpImageResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), m_nShadowMapDescriptorSetIndex);
+            m_renderPassParameters.Finalize("GBuffer");
+
+            descLayouts.push_back(m_renderPassParameters.GetDescriptorSetLayout(m_nShadowMapDescriptorSetIndex));  // shadow map desc set
+        }
 
         std::vector<VkPushConstantRange> pushConstants;
 

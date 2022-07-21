@@ -79,9 +79,6 @@ void RenderPassManager::Present()
 
 void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSurfaceKHR &swapchainSurface)
 {
-
-    m_vpRenderPasses[RENDERPASS_SHADOW] = std::make_unique<RenderPassShadow>(VkExtent2D({1024, 1024}));
-
     m_uWidth = uWidth;
     m_uHeight = uHeight;
 
@@ -93,7 +90,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
         m_vpRenderPasses[RENDERPASS_GBUFFER] = std::make_unique<RenderPassGBuffer>();
         RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
         pGBufferPass->createGBufferViews(vp);
-        pGBufferPass->CreatePipeline();
     }
     // Final pass
     m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(m_pSwapchain->GetImageFormat());
@@ -222,6 +218,7 @@ void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
 
 void RenderPassManager::Unintialize()
 {
+    m_pShadowPassManager = nullptr;
     for (auto &pPass : m_vpRenderPasses)
     {
         pPass = nullptr;
@@ -240,9 +237,11 @@ void RenderPassManager::Unintialize()
 
 void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 {
+    // Prepare shadow pass
     {
-        RenderPassShadow *pShadowPass = static_cast<RenderPassShadow *>(m_vpRenderPasses[RENDERPASS_SHADOW].get());
-        pShadowPass->PrepareRenderPass();
+        m_pShadowPassManager = std::make_unique<ShadowPassManager>();
+        m_pShadowPassManager->SetLights(drawLists.m_aDrawLists[DrawLists::DL_LIGHT]);
+        m_pShadowPassManager->PrepareRenderPasses();
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         std::vector<const Geometry *> vpGeometries;
         vpGeometries.reserve(opaqueDrawList.size());
@@ -251,9 +250,10 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
             vpGeometries.push_back(
                 static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
         }
-        pShadowPass->RecordCommandBuffers(vpGeometries);
+        m_pShadowPassManager->RecordCommandBuffers(vpGeometries);
     }
     {
+
         RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         std::vector<const Geometry *> vpGeometries;
@@ -263,6 +263,7 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
             vpGeometries.push_back(
                 static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
         }
+        pGBufferPass->CreatePipeline(m_pShadowPassManager->GetShadowMaps());
         pGBufferPass->RecordCommandBuffer(vpGeometries);
     }
     {
@@ -329,7 +330,9 @@ void RenderPassManager::SubmitCommandBuffers()
     }
 
     // Shadow pass
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
+    //vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
+    auto vShadowPassCmds = m_pShadowPassManager->GetCommandBuffers();
+    vCmdBufs.insert(std::end(vCmdBufs), std::begin(vShadowPassCmds), std::end(vShadowPassCmds));
 
     // Submit graphics queue to signal depth ready semaphore
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer());

@@ -21,16 +21,18 @@ void RenderPassShadow::PrepareRenderPass()
 
     RenderTarget* shadowMap = GetRenderResourceManager()->GetDepthTarget(m_shadowCasterName, m_shadowMapSize);
     // Depth attachments
-    m_renderPassParameters.AddAttachment(shadowMap, shadowMap->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, true);
+    m_renderPassParameters.AddAttachment(shadowMap, shadowMap->GetImageFormat(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
 
-    // Binding 0
-    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    // Set0, Binding 0
+    StorageBuffer<LightData>* lightDataStorageBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
+    m_renderPassParameters.AddParameter(lightDataStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);
 
-    m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-    
     // Set 1, Binding 0
     m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
+
+    // Push constants for light index
+    m_renderPassParameters.AddPushConstantParameter<uint32_t>(VK_SHADER_STAGE_VERTEX_BIT);
 
     m_renderPassParameters.Finalize("Render pass shadow");
 
@@ -107,7 +109,9 @@ void RenderPassShadow::RecordCommandBuffers(const std::vector<const Geometry*>& 
 
         vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        SCOPED_MARKER(m_commandBuffer, "Shadow pass");
+        vkCmdPushConstants(m_commandBuffer, m_renderPassParameters.GetPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(uint32_t), &m_nLightIndex);
+
+        SCOPED_MARKER(m_commandBuffer, "Shadow pass: " + m_shadowCasterName);
         for (const Geometry* pGeometry : vpGeometries)
         {
             for (const auto& pPrimitive : pGeometry->getPrimitives())
@@ -140,4 +144,9 @@ void RenderPassShadow::RecordCommandBuffers(const std::vector<const Geometry*>& 
         vkCmdEndRenderPass(m_commandBuffer);
     }
     vkEndCommandBuffer(m_commandBuffer);
+}
+
+RenderTarget* RenderPassShadow::GetShadowMap()
+{
+    return GetRenderResourceManager()->GetResource<RenderTarget>(m_shadowCasterName);
 }

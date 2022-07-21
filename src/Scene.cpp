@@ -40,6 +40,7 @@ const DrawLists &Scene::GatherDrawLists()
         {
             dl.clear();
         }
+        uint32_t nShadowMapIndex = 0;
         std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &, DrawLists&)>
             FlattenTreeRecursive = [&](const std::unique_ptr<SceneNode> &pNode,
                                        const glm::mat4 &mCurrentTrans, DrawLists& drawLists) {
@@ -61,6 +62,13 @@ const DrawLists &Scene::GatherDrawLists()
                 // Gather light sources
                 else if (LightSceneNode* pLightSceneNode = dynamic_cast<LightSceneNode*>(pNode.get()))
                 {
+                    // Hack: Set shadow map index on the spot lights
+                    if (pLightSceneNode->GetLightType() == LIGHT_TYPE_SPOT)
+                    {
+                        pLightSceneNode->SetShadowMapIndex(nShadowMapIndex);
+                        nShadowMapIndex++;
+                    }
+
                     drawLists.m_aDrawLists[DrawLists::DL_LIGHT].push_back(pLightSceneNode);
                     pLightSceneNode->SetWorldMatrix(mWorldMatrix);
                 }

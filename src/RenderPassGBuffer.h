@@ -89,7 +89,8 @@ public:
                               uint32_t nWidth, uint32_t nHeight);
     void createGBufferViews(VkExtent2D size);
     void removeGBufferViews();
-    void CreatePipeline() override;
+    void CreatePipeline() override {}
+    void CreatePipeline(const std::vector<RenderTarget*> vpShadowMap);
 
     VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
@@ -112,4 +113,8 @@ private:
     // TODO: Use render pass parameters instead
     std::vector<VkRenderPass> m_vRenderPasses;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+
+    // Hack: Use parameters for shadow map set only.
+    RenderPassParameters m_renderPassParameters;
+    const uint32_t m_nShadowMapDescriptorSetIndex = 4;
 };

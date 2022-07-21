@@ -1,9 +1,11 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 #include "directLighting.h"
 #include "Camera.h"
 #include "lights.h"
+#include "shadows.h"
 
 
 // GBuffer texture indices
@@ -29,6 +31,8 @@ layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
 layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
 
 LIGHTS_UBO(3)
+
+layout(set = 4, binding = 0) uniform sampler2D[] shadowMaps;
 
 void main() {
     // GBuffer info
@@ -57,14 +61,38 @@ void main() {
     //
     for (int i = 0; i < numLights.nNumLights; ++i)
     {
+        // Hack: Compute visibility of light source
+        float fVisible = 1.0;
         LightData light = lightDatas.i[i];
+        if (light.vLightData.w >= 0.0)
+        {
+            // Transform pixel position to light space
+            vec4 vLightNDCPos = light.mLightViewProjection * vec4(vWorldPos, 1.0);
+
+            // Covert from NDC to UV
+            vLightNDCPos = vLightNDCPos / vLightNDCPos.w;
+            vLightNDCPos.xy = 0.5 * vLightNDCPos.xy + 0.5;
+            float fBias = max(0.01 * (1.0 - dot(vWorldNormal, light.vPosition - vWorldPos)), 0.001);
+
+            fVisible = PCFShadowVisibililty(vLightNDCPos.xyz, 1.0 / 512, 15, fBias, shadowMaps[int(light.vLightData.w)]);
+            //float fShadowDepth = texture(shadowMaps[int(light.vLightData.w)], vLightNDCPos.xy).r;
+            //if (vLightNDCPos.z - fShadowDepth > fBias)
+            //{
+            //    fVisible = 0.0;
+            //}
+            //else
+            //{
+            //    fVisible = 1.0;
+            //}
+        }
         // Convert light position to view space
         const vec4 lightPosition = uboCamera.view * vec4(light.vPosition, 1.0);
         light.vPosition = lightPosition.xyz / lightPosition.w;
         light.vDirection = (uboCamera.view * vec4(light.vDirection, 0.0)).xyz;
 
-        vLo += ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
+        vLo += fVisible * ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
     }
+
 
     // Add IBL
     

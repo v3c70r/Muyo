@@ -1,3 +1,6 @@
+// This file contains structures that shared between shaders and c++ code
+// SHADER_CODE defines the shader code, which is passed in while compiling the shader in CMakeLists.txt
+// -------------------------------------------------------------------------------------------------------------
 #ifndef SHARED_STRUCTURES_H
 #define SHARED_STRUCTURES_H
 
@@ -22,6 +25,7 @@ struct LightData
     vec3 vColor;
     float fIntensity;
     vec4 vLightData;
+    mat4 mLightViewProjection;
 };
 
 

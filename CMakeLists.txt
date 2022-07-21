@@ -147,6 +147,7 @@ add_executable( helloVulkan
     src/VkExtFuncsLoader.cpp
     src/RenderPassParameters.cpp
     src/RenderPassShadow.cpp
+    src/ShadowPassManager.cpp
     )
 
 target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
