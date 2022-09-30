@@ -414,7 +414,7 @@ public:
     RenderPassBeginInfoBuilder& setClearValues(
         const std::vector<VkClearValue>& values)
     {
-        m_info.clearValueCount = values.size();
+        m_info.clearValueCount = static_cast<uint32_t>(values.size());
         m_info.pClearValues = values.data();
         return *this;
     }

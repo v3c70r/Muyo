@@ -21,11 +21,11 @@ void RenderPassSkybox::PrepareRenderPass()
 
     // color attachment
     RenderTarget* colorTarget = GetRenderResourceManager()->GetResource<RenderTarget>("LIGHTING_OUTPUT");
-    m_renderPassParameters.AddAttachment(colorTarget, colorTarget->GetImageFormat(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
+    m_renderPassParameters.AddAttachment(colorTarget, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
 
     // depth attachment
     RenderTarget* depthTarget = GetRenderResourceManager()->GetResource<RenderTarget>("GBUFFER_DEPTH");
-    m_renderPassParameters.AddAttachment(depthTarget, depthTarget->GetImageFormat(), VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, false);
+    m_renderPassParameters.AddAttachment(depthTarget, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, false);
 
     // Binding 0: Per view data
     UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");

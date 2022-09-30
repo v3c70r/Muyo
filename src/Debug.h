@@ -55,7 +55,4 @@ private:
     auto TOKENPASTE2(scoped_marker_,__LINE__) = ScopedMarker(OBJ, MESSAGE)
 
 // Assertion for vulkan function calls
-static void VK_ASSERT(VkResult result) {
-    assert(result == VK_SUCCESS);
-}
-
+void VK_ASSERT(VkResult result);

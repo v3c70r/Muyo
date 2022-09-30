@@ -466,15 +466,15 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             }
 
             // PBR factors
-            Material::PBRFactors pbrFactors = {
-                {(float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
-                 (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3]},  // Base Color
-                (float)gltfMaterial.pbrMetallicRoughness.metallicFactor,                                                                     // Metallic
-                (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,                                                                    // Roughness
-                {aUVIndices[0], aUVIndices[1],                                                                                               // UVs
+            PBRFactors pbrFactors = {
+                glm::vec4((float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
+                          (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3]),  // Base Color
+                (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,                                                                             // Roughness
+                (float)gltfMaterial.pbrMetallicRoughness.metallicFactor,                                                                              // Metallic
+                {aUVIndices[0], aUVIndices[1],                                                                                                        // UVs
                  aUVIndices[2], aUVIndices[3],
-                 aUVIndices[4], aUVIndices[4]},
-                {(float)gltfMaterial.emissiveFactor[0], (float)gltfMaterial.emissiveFactor[1], (float)gltfMaterial.emissiveFactor[2]},
+                 aUVIndices[4], aUVIndices[5]},
+                glm::vec3((float)gltfMaterial.emissiveFactor[0], (float)gltfMaterial.emissiveFactor[1], (float)gltfMaterial.emissiveFactor[2]),
                 0.0f};
 
             pMaterial->LoadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);

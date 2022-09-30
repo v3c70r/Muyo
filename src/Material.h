@@ -9,6 +9,7 @@
 
 #include "Texture.h"
 #include "UniformBuffer.h"
+#include "SharedStructures.h"
 
 class Material
 {
@@ -25,15 +26,6 @@ public:
         TEX_COUNT
     };
 
-    struct PBRFactors
-    {
-        float m_aBaseColorFactor[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-        float m_fMetalicFactor = 1.0;
-        float m_fRoughnessFactor = 1.0;
-        uint32_t m_aUVIndices[TEX_COUNT] = {0, 0, 0, 0, 0, 0};
-        float m_vEmissiveFactor[3] = {0.0, 0.0, 0.0};
-        float m_fPadding1 = 0.0;
-    };
     struct MaterialParameters
     {
         std::array<const Texture *, TEX_COUNT> m_apTextures;

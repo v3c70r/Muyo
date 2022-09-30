@@ -265,8 +265,8 @@ int main(int argc, char** argv)
             //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_emissive/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spotlight/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/balls/scene.gltf");
-            GetSceneManager()->LoadSceneFromFile("assets/Cars/scene.gltf");
+            GetSceneManager()->LoadSceneFromFile("assets/balls/scene.gltf");
+            //GetSceneManager()->LoadSceneFromFile("assets/Cars/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/Emissive/scene.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_Emissive/untitled.gltf");
             //GetSceneManager()->LoadSceneFromFile("assets/Cornell_box/scene.gltf");

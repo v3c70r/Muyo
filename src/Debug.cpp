@@ -63,8 +63,8 @@ const char* GetValidationLayerName()
 
 static VkBool32 debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT messageType,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+    VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
     Color::Modifier red(Color::BG_RED);
     Color::Modifier normal(Color::BG_DEFAULT);
@@ -173,7 +173,7 @@ VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
 }
 
 // specialization for VkQueue and VkCommandBuffer
-void beginMarker(VkQueue queue, std::string&& name, uint64_t color)
+void beginMarker(VkQueue queue, std::string&& name, uint64_t)
 {
     VkDebugUtilsLabelEXT labelInfo = {};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
@@ -192,7 +192,7 @@ void endMarker(VkQueue queue)
 }
 
 // specialization for VkQueue and VkCommandBuffer
-void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t color)
+void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t)
 {
     VkDebugUtilsLabelEXT labelInfo = {};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
@@ -209,3 +209,9 @@ void endMarker(VkCommandBuffer cmd)
         GetRenderDevice()->GetDevice(), "vkCmdEndDebugUtilsLabelEXT");
     func(cmd);
 }
+
+void VK_ASSERT(VkResult result)
+{
+	assert(result == VK_SUCCESS);
+}
+

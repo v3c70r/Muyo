@@ -1,5 +1,6 @@
 #include "RenderPassParameters.h"
 #include "DescriptorManager.h"
+#include <string>
 
 void RenderPassParameters::AddParameter(const IRenderResource* pResource, VkDescriptorType type, VkShaderStageFlags stages, uint32_t nDescSetIdx)
 {
@@ -17,37 +18,11 @@ void RenderPassParameters::AddImageParameter(std::vector<const ImageResource*>& 
     AddBinding(type, vpResource.size(), stages, nDescSetIdx);
     AddImageDescriptorWrite(vpResource, type, imageLayout, sampler, nDescSetIdx);
 }
+
 void RenderPassParameters::AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
 {
-    if (m_vWriteDescSet.size() <= nDescSetIdx)
-    {
-        m_vWriteDescSet.resize(nDescSetIdx + 1);
-    }
-    VkWriteDescriptorSet write = {};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = VK_NULL_HANDLE; // This is set later
-    write.dstBinding = m_vWriteDescSet[nDescSetIdx].size();
-    write.dstArrayElement = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = type;
-
-
-    VkDescriptorImageInfo imageInfo = {VK_NULL_HANDLE, pResource->getView(), imageLayout};
-    if (type == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-    {
-        imageInfo.sampler = sampler;
-    }
-
-    if (m_vDescriptorInfoIndex.size() <= nDescSetIdx)
-    {
-        m_vDescriptorInfoIndex.resize(nDescSetIdx + 1);
-    }
-    m_vDescriptorInfoIndex[nDescSetIdx].push_back(m_vImageInfos.size());
-
-    m_vImageInfos.push_back(imageInfo);
-
-    
-    m_vWriteDescSet[nDescSetIdx].push_back(write);
+    const std::vector<const ImageResource*> vpImageResources {pResource};
+    AddImageDescriptorWrite(vpImageResources, type, imageLayout, sampler, nDescSetIdx);
 }
 
 void RenderPassParameters::AddImageDescriptorWrite(const std::vector<const ImageResource*> vpResources, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
@@ -55,6 +30,7 @@ void RenderPassParameters::AddImageDescriptorWrite(const std::vector<const Image
     if (m_vWriteDescSet.size() <= nDescSetIdx)
     {
         m_vWriteDescSet.resize(nDescSetIdx + 1);
+        m_vpResources.resize(nDescSetIdx + 1);
     }
 
     VkWriteDescriptorSet write = {};
@@ -73,8 +49,10 @@ void RenderPassParameters::AddImageDescriptorWrite(const std::vector<const Image
 
     for (const auto* pImageResource : vpResources)
     {
-        VkDescriptorImageInfo imageInfo = {sampler, pImageResource->getView(), imageLayout};
+        // Image resources are populated later
+        VkDescriptorImageInfo imageInfo = {sampler, VK_NULL_HANDLE, imageLayout};
         m_vImageInfos.push_back(imageInfo);
+        m_vpResources[nDescSetIdx].push_back(pImageResource);
     }
 
     m_vWriteDescSet[nDescSetIdx].push_back(write);
@@ -90,6 +68,7 @@ void RenderPassParameters::AddDescriptorWrite(const IRenderResource* pResource, 
     if (m_vWriteDescSet.size() <= nDescSetIdx)
     {
         m_vWriteDescSet.resize(nDescSetIdx + 1);
+        m_vpResources.resize(nDescSetIdx + 1);
     }
 
     VkWriteDescriptorSet write = {};
@@ -116,17 +95,11 @@ void RenderPassParameters::AddDescriptorWrite(const IRenderResource* pResource, 
         m_vDescriptorInfoIndex[nDescSetIdx].push_back(m_vBufferInfos.size());
 
         VkDescriptorBufferInfo bufferInfo = {};
-        if (pResource)
-        {
-            const BufferResource* pBufferResource = dynamic_cast<const BufferResource*>(pResource);
-            bufferInfo.buffer = pBufferResource->buffer();
-            bufferInfo.range = pBufferResource->GetSize();
-        }
-        else
-        {
-            bufferInfo.buffer = VK_NULL_HANDLE;
-            bufferInfo.range = 0;
-        }
+
+        // buffer info is populated later in descriptor set update
+        bufferInfo.buffer = VK_NULL_HANDLE;
+        bufferInfo.range = 0;
+
         bufferInfo.offset = 0;
         m_vBufferInfos.push_back(bufferInfo);
     }
@@ -136,6 +109,7 @@ void RenderPassParameters::AddDescriptorWrite(const IRenderResource* pResource, 
     }
 
     m_vWriteDescSet[nDescSetIdx].push_back(write);
+    m_vpResources[nDescSetIdx].push_back(pResource);
 }
 
 void RenderPassParameters::AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx)
@@ -157,6 +131,7 @@ const VkDescriptorSetLayout& RenderPassParameters::GetDescriptorSetLayout(uint32
 {
     return m_vDescSetLayouts[nDescSetIdx];
 }
+
 void RenderPassParameters::CreateDescriptorSetLayout()
 {
     std::for_each(m_vBindings.begin(), m_vBindings.end(), [this](const std::vector<VkDescriptorSetLayoutBinding>& vBindings)
@@ -183,30 +158,10 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     allocInfo.pSetLayouts = &m_vDescSetLayouts[nDescSetIdx];
     VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName.c_str());
-    std::vector<VkWriteDescriptorSet>& vWriteDescriptorSets = m_vWriteDescSet[nDescSetIdx];
-    std::vector<size_t>& vDescriptorInfoIndex = m_vDescriptorInfoIndex[nDescSetIdx];
-    for (size_t i = 0; i < vWriteDescriptorSets.size(); ++i)
-    {
-        vWriteDescriptorSets[i].dstSet = descriptorSet;
-        // Resolve write descriptor set info
-        if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-        {
-            vWriteDescriptorSets[i].pBufferInfo = &m_vBufferInfos[vDescriptorInfoIndex[i]];
-        }
-        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-        {
-            vWriteDescriptorSets[i].pImageInfo = &m_vImageInfos[vDescriptorInfoIndex[i]];
-        }
-        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
-        {
-            vWriteDescriptorSets[i].pNext = &m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]];
-        }
-        else
-        {
-            assert(false && u8"Unhandled descriptor type");
-        }
-    }
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), vWriteDescriptorSets.size(), vWriteDescriptorSets.data(), 0, nullptr);
+
+    bool bUpdated = UpdateDescriptorSet(m_vpResources[nDescSetIdx], nDescSetIdx, descriptorSet);
+    assert(bUpdated);
+
     return descriptorSet;
 }
 
@@ -222,43 +177,90 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName.c_str());
 
+    bool bUpdated = UpdateDescriptorSet(vpResources, nDescSetIdx, descriptorSet);
+    assert(bUpdated);
+
+    // Update resource array
+    m_vpResources[nDescSetIdx] = vpResources;
+
+    return descriptorSet;
+}
+
+bool RenderPassParameters::UpdateDescriptorSet(const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx, VkDescriptorSet descriptorSet)
+{
     std::vector<VkWriteDescriptorSet>& vWriteDescriptorSets = m_vWriteDescSet[nDescSetIdx];
     std::vector<size_t>& vDescriptorInfoIndex = m_vDescriptorInfoIndex[nDescSetIdx];
-    assert(vpResources.size() == vWriteDescriptorSets.size());
+
+    size_t nResourceIdx = 0; // track resources in vpResources vector
+    bool bShouldExeUpdate = true;  // Execute update when all the resources are ready.
 
     for (size_t i = 0; i < vWriteDescriptorSets.size(); ++i)
     {
-        vWriteDescriptorSets[i].dstSet = descriptorSet;
+        VkWriteDescriptorSet &writeDescSet = vWriteDescriptorSets[i];
+        writeDescSet.dstSet = descriptorSet;
         // Resolve write descriptor set info
-        if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+        if (writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
         {
-            m_vBufferInfos[vDescriptorInfoIndex[i]].buffer = static_cast<const BufferResource*>(vpResources[i])->buffer();
-            m_vBufferInfos[vDescriptorInfoIndex[i]].range = static_cast<const BufferResource*>(vpResources[i])->GetSize();
-            vWriteDescriptorSets[i].pBufferInfo = &m_vBufferInfos[vDescriptorInfoIndex[i]];
+            assert(writeDescSet.descriptorCount == 1);
+            const BufferResource* pBufferResource = static_cast<const BufferResource*>(vpResources[nResourceIdx++]);
+            if (pBufferResource != nullptr)
+            {
+                m_vBufferInfos[vDescriptorInfoIndex[i]].buffer = pBufferResource->buffer();
+                m_vBufferInfos[vDescriptorInfoIndex[i]].range = pBufferResource->GetSize();
+            }
+            else
+            {
+                m_vBufferInfos[vDescriptorInfoIndex[i]].buffer = VK_NULL_HANDLE;
+                m_vBufferInfos[vDescriptorInfoIndex[i]].range = 0;
+                bShouldExeUpdate = false;
+            }
+            writeDescSet.pBufferInfo = &m_vBufferInfos[vDescriptorInfoIndex[i]];
         }
-        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+        else if (writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER || writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
         {
-            m_vImageInfos[vDescriptorInfoIndex[i]].imageView = static_cast<const ImageResource*>(vpResources[i])->getView();
-            vWriteDescriptorSets[i].pImageInfo = &m_vImageInfos[vDescriptorInfoIndex[i]];
+            for (uint32_t descIdx = 0; descIdx < writeDescSet.descriptorCount; ++descIdx)
+            {
+                VkDescriptorImageInfo& imageInfo = m_vImageInfos[vDescriptorInfoIndex[i] + descIdx];
+
+                const ImageResource* pImageResource = static_cast<const ImageResource*>(vpResources[nResourceIdx++]);
+                if (pImageResource)
+                {
+                    imageInfo.imageView = pImageResource->getView();
+                }
+                else
+                {
+                    imageInfo.imageView = VK_NULL_HANDLE;
+                    bShouldExeUpdate = false;
+                }
+            }
+			writeDescSet.pImageInfo = &m_vImageInfos[vDescriptorInfoIndex[i]];
         }
-        else if (vWriteDescriptorSets[i].descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+        else if (writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
         {
+            assert(writeDescSet.descriptorCount == 1);
+            const AccelerationStructure* pAccStruct = static_cast<const AccelerationStructure*>(vpResources[nResourceIdx++]);
+            // Acceleration structure should be ready from the begining
+            assert(pAccStruct);
             m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]].accelerationStructureCount = 1;
-            m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]].pAccelerationStructures = &static_cast<const AccelerationStructure*>(vpResources[i])->GetAccelerationStructure();
-            vWriteDescriptorSets[i].pNext = &m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]];
+            m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]].pAccelerationStructures = &(pAccStruct->GetAccelerationStructure());
+            writeDescSet.pNext = &m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]];
         }
         else
         {
             assert(false && u8"Unhandled descriptor type");
         }
     }
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), vWriteDescriptorSets.size(), vWriteDescriptorSets.data(), 0, nullptr);
-    return descriptorSet;
+    if (bShouldExeUpdate)
+    {
+        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), vWriteDescriptorSets.size(), vWriteDescriptorSets.data(), 0, nullptr);
+    }
+    return bShouldExeUpdate;
 }
 
-void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkFormat format, VkImageLayout initialLayout, VkImageLayout finalLayout, bool bClearAttachment)
+void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImageLayout initialLayout, VkImageLayout finalLayout, bool bClearAttachment)
 {
 
+    VkFormat format = pResource->GetImageFormat();
     // Create attachment description
     VkAttachmentDescription attachmentDesc = {};
     attachmentDesc.format = format;
@@ -275,7 +277,7 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkForma
     // Create attachment reference
     VkAttachmentReference attachmentRef = {};
     // check if format is depth format
-    // TODO: add more depth foramts if we started to use them
+    // TODO: add more depth foramts if we start to use them
     attachmentRef.attachment = (uint32_t)m_vAttachmentDescriptions.size() - 1;
     if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
     {
@@ -369,8 +371,8 @@ void RenderPassParameters::Finalize(const std::string& sPassName)
     if (!m_vBindings.empty())
     {
         CreateDescriptorSetLayout();
-        //setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_descSetLayout), VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT, sPassName.c_str());
     }
+
     CreatePipelineLayout();
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, sPassName.c_str());
 

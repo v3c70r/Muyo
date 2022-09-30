@@ -21,7 +21,7 @@ Geometry* GeometryManager::GetQuad()
 
         static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
         Geometry *pGeometry = new Geometry(std::make_unique<Primitive>("simple_quad", VERTICES, INDICES));
-        m_nQuadIdx = vpGeometries.size();
+        m_nQuadIdx = static_cast<int>(vpGeometries.size());
         vpGeometries.emplace_back(pGeometry);
     }
     return vpGeometries[m_nQuadIdx].get();
@@ -31,7 +31,7 @@ Geometry* GeometryManager::GetCube()
 {
     if (m_nCubeIdx == -1)
     {
-        m_nCubeIdx = vpGeometries.size();
+        m_nCubeIdx = static_cast<int>(vpGeometries.size());
         vpGeometries.push_back(loadObj("assets/cube.obj"));
     }
     return vpGeometries[m_nCubeIdx].get();

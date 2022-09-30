@@ -16,6 +16,13 @@ public:
     RenderTarget* GetShadowMap();
 
 private:
+    struct PushConstant
+    {
+        uint32_t nLightIndex;
+        uint32_t nShadowMapSize;
+    };
+
+private:
     VkPipeline m_pipeline = VK_NULL_HANDLE;
 
     VkExtent2D m_shadowMapSize = {0, 0};

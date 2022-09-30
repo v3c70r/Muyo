@@ -47,10 +47,10 @@ void VkRenderDevice::Initialize(
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledExtensionCount = vExtensionNames.size();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(vExtensionNames.size());
     createInfo.ppEnabledExtensionNames = vExtensionNames.data();
 
-    createInfo.enabledLayerCount = vLayerNames.size();
+    createInfo.enabledLayerCount = static_cast<uint32_t>(vLayerNames.size());
     createInfo.ppEnabledLayerNames = vLayerNames.data();
 
     assert(vkCreateInstance(&createInfo, nullptr, &m_instance) == VK_SUCCESS);
@@ -559,12 +559,12 @@ VkPipelineLayout VkRenderDevice::CreatePipelineLayout(
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
         pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
 
         if (pushConstantRanges.size() > 0)
         {
-            pipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
+            pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size());
             pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
         }
 

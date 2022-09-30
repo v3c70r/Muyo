@@ -21,7 +21,7 @@ void MaterialManager::CreateDefaultMaterial()
         pMaterial->LoadTexture( Material::TEX_EMISSIVE, "assets/Materials/white5x5.png", "defaultOcclusion");
 
         // Load PBR Factors
-        Material::PBRFactors pbrFactors;
+        PBRFactors pbrFactors;
         pMaterial->SetMaterialParameterFactors(pbrFactors, sDefaultName);
 
         pMaterial->AllocateDescriptorSet();

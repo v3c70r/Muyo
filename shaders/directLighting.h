@@ -7,8 +7,9 @@
 
 float SquareFalloffAttenuation(float fDistanceToLight, float fLightAffectedRadius)
 {
+    const float fLightInvRadius = 1.0 / fLightAffectedRadius;
     const float fDistanceSquare = fDistanceToLight * fDistanceToLight;
-    const float fFactor = fDistanceSquare * fLightAffectedRadius * fLightAffectedRadius;
+    const float fFactor = fDistanceSquare * fLightInvRadius * fLightInvRadius;
     const float fSmoothFactor = max(1.0 - fFactor * fFactor, 0.0);
     return (fSmoothFactor * fSmoothFactor) / max(fDistanceSquare, 1e-4);
 }
@@ -53,7 +54,7 @@ vec3 ComputeDirectLighting(
             fAttenuation = SquareFalloffAttenuation(fDistance, light.fRange);
             if (light.LightType == LIGHT_TYPE_SPOT)
             {
-                fAttenuation *= SpotAngleAttenuation(vPosToLight, light.vDirection, cos(light.vLightData.x), cos(light.vLightData.y));
+                fAttenuation *= SpotAngleAttenuation(vPosToLight, light.vDirection, cos(light.vLightData.y), cos(light.vLightData.z));
             }
 
             // Project irradiance onto shading surface

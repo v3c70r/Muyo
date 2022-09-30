@@ -12,20 +12,28 @@ layout (set = 1, binding = 0) uniform WorldMatrix {
     mat4 mWorldMatrix;
 } worldMatrix;
 
-layout (push_constant) uniform LightIndex {
+layout (push_constant) uniform PushConstant {
     uint nLightIndex;
-} lightIndex;
+    uint nShadowMapSize;
+} pushConstant;
 
 layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNormal;
 layout (location = 2) in vec4 inTexCoord;
 
+
+layout (location = 0) out vec4 outWorldPos;
+layout (location = 1) out vec4 outWorldNormal;
+
 out gl_PerVertex {
     vec4 gl_Position;
 };
 
-void main() {
-    const mat4 mLightViewProj = lightData.i[lightIndex.nLightIndex].mLightViewProjection;
+void main() 
+{
+    outWorldPos = worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
+    outWorldNormal = normalize(worldMatrix.mWorldMatrix * vec4(inNormal, 0.0));
+    const mat4 mLightViewProj = lightData.i[pushConstant.nLightIndex].mLightViewProjection;
     gl_Position = mLightViewProj * worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
 }
 

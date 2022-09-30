@@ -2,6 +2,21 @@
 #include "VkRenderDevice.h"
 #include <algorithm>
 
+/*
+ * RenderPassParameters creates render pass info.
+ * 1. While preparing render pass.
+ *      a. Call AddParameter/AddImageParameter/AddPushConstantParameter to prepare descriptor sets with resources. Or simiply pass in
+ *         a nullptr so the resource will be updated later
+ *
+ *         Descriptor create info and update writes will be created. As well as resource infos required .
+ *
+ *      b. Call AddAttachment to setup render pass outputs.
+ *
+ *      c. Call finalize to create renderpass
+ *
+ *      d. Allocate descriptor set when using the resources in the pass.
+ */
+
 class IRenderResource;
 class ImageResource;
 
@@ -22,7 +37,7 @@ public:
     void AddImageParameter(std::vector<const ImageResource*>& vpResource, VkDescriptorType type, VkShaderStageFlags stages, VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE, uint32_t nDescSetIdx = 0);
 
     // Color and depth outputs
-    void AddAttachment(const ImageResource* pResource, VkFormat format, VkImageLayout initialLayout, VkImageLayout finalLayout, bool bClearAttachment);
+    void AddAttachment(const ImageResource* pResource, VkImageLayout initialLayout, VkImageLayout finalLayout, bool bClearAttachment);
 
     template <class T>
     void AddPushConstantParameter(VkShaderStageFlags stages = VK_SHADER_STAGE_ALL)
@@ -46,7 +61,7 @@ public:
     VkPipelineLayout GetPipelineLayout() {return m_pipelineLayout;}
     VkRenderPass GetRenderPass() {return m_renderPass;}
     VkFramebuffer GetFramebuffer() {return m_framebuffer;}
-
+    
 private:
     void AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx);
     void AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE, uint32_t nDescSetIdx = 0);
@@ -58,9 +73,20 @@ private:
     void CreateRenderPass();
     void CreateFrameBuffer();
 
+    /** Update descriptor with resources at nDescSetIdx
+     * return true if descriptor update is executed
+     */
+    bool UpdateDescriptorSet(const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx, VkDescriptorSet descriptorSet);
+
+
 private:
+
     // [DescSetIndex][BindingIndex]
+    // Descriptor writes for each descriptor set and binding
     std::vector<std::vector<VkWriteDescriptorSet>> m_vWriteDescSet;
+    // Resource for each descriptor set and binding
+    std::vector<std::vector<const IRenderResource*>> m_vpResources;
+
     std::vector<std::vector<size_t>> m_vDescriptorInfoIndex;  // store index of descriptor info in corresponding write descriptor info array
     std::vector<std::vector<VkDescriptorSetLayoutBinding>> m_vBindings;
 

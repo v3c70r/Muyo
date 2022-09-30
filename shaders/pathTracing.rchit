@@ -11,16 +11,7 @@
 #include "lights.h"
 #include "pathTracingPayload.h"
 #include "random.h"
-
-
-// Materials
-const uint TEX_ALBEDO = 0;
-const uint TEX_NORMAL = 1;
-const uint TEX_METALNESS = 2;
-const uint TEX_ROUGHNESS = 3;
-const uint TEX_AO = 4;
-const uint TEX_EMISSIVE = 5;
-const uint TEX_COUNT = 6;
+#include "shared/SharedStructures.h"
 
 struct PrimitiveDesc
 {
@@ -45,56 +36,12 @@ layout(set = 2, binding = 6) uniform samplerCube environmentMap;
 // Light data
 LIGHTS_UBO(1)
 
-layout(buffer_reference, scalar) buffer Vertices {Vertex v[]; }; // Positions of an object
-layout(buffer_reference, scalar) buffer Indices {ivec3 i[]; }; // Triangle indices
-layout(buffer_reference, scalar) buffer PBRFactors {
-    vec4 vBaseColorFactors;
-    float fMetalness;
-    float fRoughness;
-    uint UVIndices0;
-    uint UVIndices1;
-    uint UVIndices2;
-    uint UVIndices3;
-    uint UVIndices4;
-    uint UVIndices5;
-    vec3 vEmissiveFactor;
-    float padding0;
-};
-
-
-
+layout(buffer_reference, scalar) readonly buffer Vertices {Vertex v[]; }; // Positions of an object
+layout(buffer_reference, scalar) readonly buffer Indices {ivec3 i[]; }; // Triangle indices
+layout(buffer_reference, scalar) readonly buffer PBRFactorBuffer { PBRFactors factors; } pbrFactors;
 
 layout(location = 0) rayPayloadInEXT RayPayload ray;
 hitAttributeEXT vec2 vHitAttribs;
-
-
-// integrate environment diffuse lighting
-vec3 IntegrateEnvironmentDiffuse(vec3 vNormal)
-{
-    const float PI = 3.14159265359;
-    vec3 vIrradiance = vec3(0.0f);
-    vec3 vUp = vec3(0.0, 1.0, 0.0);
-    vec3 vRight = cross(vUp, vNormal);
-    vUp = cross(vRight, vNormal);
-
-    float fSampleDelta = 0.5f;
-    float fNumSamples = 0.0f;
-
-    for (float fPhi = 0.0; fPhi < 2.0 * PI; fPhi += fSampleDelta)
-    {
-        for (float fTheta = 0.0; fTheta < PI; fTheta += fSampleDelta)
-        {
-            vec3 vSampleDirTangent = vec3(sin(fTheta) * cos(fPhi), sin(fTheta) * sin(fPhi), cos(fTheta));
-            vec3 vSampleDir = vSampleDirTangent * vRight + vSampleDirTangent.y * vUp + vSampleDirTangent.z * vNormal;
-            vSampleDir = normalize(vSampleDir);
-            vIrradiance += texture(environmentMap, vSampleDir).rgb * cos(fTheta) * sin(fTheta);
-            fNumSamples += 1.0f;
-        }
-    }
-    return PI * vIrradiance / fNumSamples;
-}
-
-
 
 // Helper functions
 vec3 InterpolateBarycentric(vec3 p0, vec3 p1, vec3 p2, vec3 vBarycentrics)
@@ -183,25 +130,6 @@ RayPayload ScatterRay(const vec3 vDirection, const vec3 vNormal, const Material 
     }
 }
 
-RayPayload ScatterRay(const vec3 vDirection, const vec3 vNormal, const vec3 vAlbedo, const float fRoughness, const float t, inout uint nSeed)
-{
-    const vec3 vReflected = reflect(vDirection, vNormal);
-    const bool bIsScattered = dot(vReflected, vNormal) > 0;
-
-    const vec4 vColorAndDistance = vec4(vAlbedo * dot(vReflected, vNormal), t);
-    const vec4 vScatter = vec4(vReflected + fRoughness * RandomInUnitSphere(nSeed), bIsScattered ? 1 : 0);
-
-    return RayPayload(vColorAndDistance, vScatter, nSeed);
-}
-
-
-
-RayPayload IntegrateSkylightRay(const vec3 vNormal)
-{
-    const vec3 vColor = IntegrateEnvironmentDiffuse(vNormal);
-    return RayPayload(vec4(vColor, 1.0), vec4(0.0, 0.0, 0.0, 0.0), 0);
-}
-
 // Diffuse Light
 RayPayload ScatterDiffuseLight(const vec3 vEmissive, const float t, inout uint seed)
 {
@@ -211,12 +139,13 @@ RayPayload ScatterDiffuseLight(const vec3 vEmissive, const float t, inout uint s
 	return RayPayload(colorAndDistance, scatter, seed);
 }
 
+
 void main()
 {
     PrimitiveDesc primDesc = primDescs.i[gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT];
     Indices indices = Indices(primDesc.indexAddress);
     Vertices vertices = Vertices(primDesc.vertexAddress);
-    PBRFactors pbrFactors = PBRFactors(primDesc.pbrFactorsAddress);
+    //PBRFactors pbrFactors.factors = PBRFactorBuffer(primDesc.pbrFactorsAddress);
 
     uint texPBRIndieces[TEX_COUNT];
     for (int i = 0 ; i < TEX_COUNT; i++)
@@ -239,11 +168,11 @@ void main()
     vTexCoords[1] = v.textureCoord.zw;
 
     uint UVIndices[TEX_COUNT];
-    UVIndices[0] = pbrFactors.UVIndices0;
-    UVIndices[1] = pbrFactors.UVIndices1;
-    UVIndices[2] = pbrFactors.UVIndices2;
-    UVIndices[3] = pbrFactors.UVIndices3;
-    UVIndices[4] = pbrFactors.UVIndices4;
+    UVIndices[0] = pbrFactors.factors.UVIndices[0];
+    UVIndices[1] = pbrFactors.factors.UVIndices[1];
+    UVIndices[2] = pbrFactors.factors.UVIndices[2];
+    UVIndices[3] = pbrFactors.factors.UVIndices[3];
+    UVIndices[4] = pbrFactors.factors.UVIndices[4];
 
 
     // Computing the coordinates of the hit position
@@ -253,11 +182,11 @@ void main()
     const vec3 vTextureNormal = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_NORMAL])], vTexCoords[UVIndices[TEX_NORMAL]]).xyz;
     vec3 vWorldNormal = normalize((gl_ObjectToWorldEXT * vec4(v.normal, 0.0)).xyz + vTextureNormal);
 
-    const vec3 vAlbedo = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.vBaseColorFactors.xyz;;
+    const vec3 vAlbedo = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.factors.vBaseColorFactors.xyz;;
     const float fAO = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_AO])], vTexCoords[UVIndices[TEX_AO]]).r;
-    const float fRoughness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ROUGHNESS])], vTexCoords[UVIndices[TEX_ROUGHNESS]]).r * pbrFactors.fRoughness;
-    const float fMetalness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_METALNESS])], vTexCoords[UVIndices[TEX_METALNESS]]).r * pbrFactors.fMetalness;
-    const vec3 vEmissive = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.vEmissiveFactor;
+    const float fRoughness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ROUGHNESS])], vTexCoords[UVIndices[TEX_ROUGHNESS]]).r * pbrFactors.factors.fRoughness;
+    const float fMetalness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_METALNESS])], vTexCoords[UVIndices[TEX_METALNESS]]).r * pbrFactors.factors.fMetalness;
+    const vec3 vEmissive = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.factors.vEmissiveFactor;
 
     Material material;
     // Fill material structure
@@ -266,7 +195,6 @@ void main()
     material.fMetalness = fMetalness;
     material.fRoughness = 0.1;
     material.vEmissive = vEmissive;
-
     
 
     const vec3 vViewPos = (uboCamera.view * vec4(vWorldPos, 1.0)).xyz;
@@ -274,8 +202,6 @@ void main()
 
     if (abs(length(vEmissive)) < 0.01)
     {
-        //  ray = ScatterRay(gl_WorldRayDirectionEXT, vWorldNormal, vAlbedo, fRoughness, gl_HitTEXT, ray.uRandomSeed);
-        //ray = ScatterRay(gl_WorldRayDirectionEXT, vWorldNormal, material, gl_HitTEXT, ray.uRandomSeed);
         ray = ScatterBRDF(gl_WorldRayDirectionEXT, vWorldNormal, material, gl_HitTEXT, ray.uRandomSeed);
     }
     else

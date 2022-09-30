@@ -17,7 +17,7 @@ void RenderLayerIBL::setupRenderPass()
         0b111111};
     VkRenderPassMultiviewCreateInfo multiViewCI = {};
     multiViewCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
-    multiViewCI.subpassCount = viewMasks.size();
+    multiViewCI.subpassCount = static_cast<uint32_t>(viewMasks.size());
     multiViewCI.pViewMasks = viewMasks.data();
 
     // Create two render passes for equirectangle cube map and irradiance map
@@ -131,8 +131,7 @@ void RenderLayerIBL::CreatePipeline()
     {
         // Viewport
         ViewportBuilder vpBuilder;
-        VkViewport viewport =
-            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).Build();
+        VkViewport viewport = vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -550,8 +549,8 @@ void RenderLayerIBL::RecordCommandBuffer()
             for (uint32_t uMip = 0; uMip < NUM_PREFILTERED_CUBEMAP_MIP; uMip++)
             {
                 SCOPED_MARKER(m_commandBuffer, "Prefiltered cubemap mips");
-                unsigned int uMipWidth = PREFILTERED_CUBE_DIM * std::pow(0.5f, uMip);
-                unsigned int uMipHeight = PREFILTERED_CUBE_DIM * std::pow(0.5f, uMip);
+                unsigned int uMipWidth = PREFILTERED_CUBE_DIM * std::powf(0.5f, uMip);
+                unsigned int uMipHeight = PREFILTERED_CUBE_DIM * std::powf(0.5f, uMip);
 
                 vkCmdBeginRenderPass(m_commandBuffer,
                                      &aRenderpassBeginInfos[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP],
@@ -633,13 +632,13 @@ void RenderLayerIBL::RecordCommandBuffer()
 
             const auto &prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
-            VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
-            uint32_t nIndexCount = prim->getIndexCount();
+            VkBuffer quadVertexBuffer = prim->getVertexDeviceBuffer();
+            VkBuffer quadIndexBuffer = prim->getIndexDeviceBuffer();
+            uint32_t nQuadIndexCount = prim->getIndexCount();
 
-            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
+            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &quadVertexBuffer,
                                    &offset);
-            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+            vkCmdBindIndexBuffer(m_commandBuffer, quadIndexBuffer, 0,
                                  VK_INDEX_TYPE_UINT32);
             vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               m_specularBrdfLutPipeline);
@@ -647,7 +646,7 @@ void RenderLayerIBL::RecordCommandBuffer()
             //    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             //    mLightingPipelineLayout, 0, lightingDescSets.size(),
             //    lightingDescSets.data(), 0, nullptr);
-            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
             vkCmdEndRenderPass(m_commandBuffer);
         }
     }

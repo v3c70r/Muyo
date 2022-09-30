@@ -276,6 +276,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
             };
 
             // Hack: Another hack to test if we have shadow map. No pipeline layout if no Finalize called
+            // Since we only use RenderPassParameter to track shadow map bindings only
             if (m_renderPassParameters.GetPipelineLayout() != VK_NULL_HANDLE)
             {
                 lightingDescSets.push_back(m_renderPassParameters.AllocateDescriptorSet("shadow map desc", m_nShadowMapDescriptorSetIndex));

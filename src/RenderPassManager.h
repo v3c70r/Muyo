@@ -68,6 +68,7 @@ private:
     const VkPresentModeKHR PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
 
 private:
+    // TODO: Probably try variant here
     std::array<std::unique_ptr<IRenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     uint32_t m_uWidth = 0;
     uint32_t m_uHeight = 0;

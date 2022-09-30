@@ -2,10 +2,13 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_KHR_shader_subgroup_clustered : enable
+#extension GL_KHR_shader_subgroup_quad : enable
 #include "directLighting.h"
 #include "Camera.h"
 #include "lights.h"
 #include "shadows.h"
+#include "random.h"
 
 
 // GBuffer texture indices
@@ -57,33 +60,18 @@ void main() {
 
     vec3 vLo = vec3(0.0);
 
+    //uint nSeed = InitRandomSeed(InitRandomSeed(uint(gl_FragCoord.x * uboCamera.screenExtent.x), uint(gl_FragCoord.y * uboCamera.screenExtent.y)), uboCamera.uFrameId);
+    uint nSeed = InitRandomSeed(uint(gl_FragCoord.x * uboCamera.screenExtent.x), uint(gl_FragCoord.y * uboCamera.screenExtent.y));
     // For each light source
     //
     for (int i = 0; i < numLights.nNumLights; ++i)
     {
-        // Hack: Compute visibility of light source
         float fVisible = 1.0;
         LightData light = lightDatas.i[i];
         if (light.vLightData.w >= 0.0)
         {
-            // Transform pixel position to light space
-            vec4 vLightNDCPos = light.mLightViewProjection * vec4(vWorldPos, 1.0);
-
-            // Covert from NDC to UV
-            vLightNDCPos = vLightNDCPos / vLightNDCPos.w;
-            vLightNDCPos.xy = 0.5 * vLightNDCPos.xy + 0.5;
             float fBias = max(0.01 * (1.0 - dot(vWorldNormal, light.vPosition - vWorldPos)), 0.001);
-
-            fVisible = PCFShadowVisibililty(vLightNDCPos.xyz, 1.0 / 512, 15, fBias, shadowMaps[int(light.vLightData.w)]);
-            //float fShadowDepth = texture(shadowMaps[int(light.vLightData.w)], vLightNDCPos.xy).r;
-            //if (vLightNDCPos.z - fShadowDepth > fBias)
-            //{
-            //    fVisible = 0.0;
-            //}
-            //else
-            //{
-            //    fVisible = 1.0;
-            //}
+            fVisible = PCFShadowVisibililty(vWorldPos, light.vPosition - vWorldPos, 100, 0.05, nSeed, fBias, shadowMaps[int(light.vLightData.w)], light.mLightViewProjection);
         }
         // Convert light position to view space
         const vec4 lightPosition = uboCamera.view * vec4(light.vPosition, 1.0);
@@ -122,4 +110,6 @@ void main() {
 
     outColor = vec4(vColor, 1.0);
     outColor.a = 1.0;
+
+    outColor = subgroupQuadSwapDiagonal(outColor);
 }
