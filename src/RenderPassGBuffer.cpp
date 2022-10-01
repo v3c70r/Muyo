@@ -341,7 +341,7 @@ void RenderPassGBuffer::removeGBufferViews()
     DestroyFramebuffer();
 }
 
-void RenderPassGBuffer::CreatePipeline(const std::vector<RenderTarget*> vpShadowMaps)
+void RenderPassGBuffer::CreatePipeline(const std::vector<ShadowMapResources>& vpShadowMaps)
 {
     // Pipeline should be created after mRenderArea been updated
     ViewportBuilder vpBuilder;
@@ -420,15 +420,28 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RenderTarget*> vpShadow
         if (vpShadowMaps.size() > 0)
         {
             // Hack: Create shadow map desc set on last descset with render pass parameters
-            std::vector<const ImageResource*> vpImageResources;
+            std::vector<const ImageResource*> vpDepthResources;
+            std::vector<const ImageResource*> vpNormalResources;
+            std::vector<const ImageResource*> vpPositionResources;
+            std::vector<const ImageResource*> vpFluxResources;
+
             std::for_each(vpShadowMaps.begin(), vpShadowMaps.end(),
-                          [&vpImageResources](const RenderTarget* pShadowMap)
+                          [&vpDepthResources,
+                           &vpNormalResources,
+                           &vpPositionResources,
+                           &vpFluxResources](const ShadowMapResources& pShadowMap)
                           {
-                              vpImageResources.push_back(static_cast<const ImageResource*>(pShadowMap));
+                              vpDepthResources.push_back(pShadowMap.pDepth);
+                              vpNormalResources.push_back(pShadowMap.pNormal);
+                              vpPositionResources.push_back(pShadowMap.pPosition);
+                              vpFluxResources.push_back(pShadowMap.pFlux);
                           });
 
             // Create on 4th descriptor set
-            m_renderPassParameters.AddImageParameter(vpImageResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), m_nShadowMapDescriptorSetIndex);
+            m_renderPassParameters.AddImageParameter(vpDepthResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), m_nShadowMapDescriptorSetIndex);
+            m_renderPassParameters.AddImageParameter(vpNormalResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), m_nShadowMapDescriptorSetIndex);
+            m_renderPassParameters.AddImageParameter(vpPositionResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), m_nShadowMapDescriptorSetIndex);
+            m_renderPassParameters.AddImageParameter(vpFluxResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), m_nShadowMapDescriptorSetIndex);
             m_renderPassParameters.Finalize("GBuffer");
 
             descLayouts.push_back(m_renderPassParameters.GetDescriptorSetLayout(m_nShadowMapDescriptorSetIndex));  // shadow map desc set

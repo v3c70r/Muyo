@@ -4,6 +4,7 @@
 
 #include "Geometry.h"
 #include "RenderPass.h"
+#include "RenderPassShadow.h"   // ShadowMapR
 
 class RenderPassGBuffer : public RenderPass
 {
@@ -90,7 +91,7 @@ public:
     void createGBufferViews(VkExtent2D size);
     void removeGBufferViews();
     void CreatePipeline() override {}
-    void CreatePipeline(const std::vector<RenderTarget*> vpShadowMap);
+    void CreatePipeline(const std::vector<ShadowMapResources>& vpShadowMap);
 
     VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 

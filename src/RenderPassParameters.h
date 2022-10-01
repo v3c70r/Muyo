@@ -84,7 +84,9 @@ private:
     // [DescSetIndex][BindingIndex]
     // Descriptor writes for each descriptor set and binding
     std::vector<std::vector<VkWriteDescriptorSet>> m_vWriteDescSet;
-    // Resource for each descriptor set and binding
+    // Resource for each descriptor set and binding.
+    // If there's an array the binding will have more than 1 resource.
+    // Resources are flatten for eaching descriptor set and tracked by number of descriptors in each Write Descriptor Sets.
     std::vector<std::vector<const IRenderResource*>> m_vpResources;
 
     std::vector<std::vector<size_t>> m_vDescriptorInfoIndex;  // store index of descriptor info in corresponding write descriptor info array

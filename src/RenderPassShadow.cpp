@@ -21,21 +21,20 @@ void RenderPassShadow::PrepareRenderPass()
 {
     m_renderPassParameters.SetRenderArea(m_shadowMapSize);
 
-    RenderTarget* shadowMap = GetRenderResourceManager()->GetDepthTarget(m_shadowCasterName, m_shadowMapSize);
-
     // Depth attachments
+    RenderTarget* shadowMap = GetRenderResourceManager()->GetDepthTarget(m_aShadowMapNames[SHADOW_MAP_DEPTH], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowMap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Shadow Normal
-    RenderTarget* shadowNormal = GetRenderResourceManager()->GetColorTarget(m_shadowCasterName + "_normal", m_shadowMapSize);
+    RenderTarget* shadowNormal = GetRenderResourceManager()->GetColorTarget(m_aShadowMapNames[SHADOW_MAP_NORMAL], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowNormal, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Shadow position
-    RenderTarget* shadowPosition = GetRenderResourceManager()->GetColorTarget(m_shadowCasterName + "_position", m_shadowMapSize);
+    RenderTarget* shadowPosition = GetRenderResourceManager()->GetColorTarget(m_aShadowMapNames[SHADOW_MAP_POSITION], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowPosition, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Shadow flux
-    RenderTarget* shadowFlux = GetRenderResourceManager()->GetColorTarget(m_shadowCasterName + "_flux", m_shadowMapSize);
+    RenderTarget* shadowFlux = GetRenderResourceManager()->GetColorTarget(m_aShadowMapNames[SHADOW_MAP_FLUX], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowFlux, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Set0, Binding 0
@@ -183,7 +182,11 @@ void RenderPassShadow::RecordCommandBuffers(const std::vector<const Geometry*>& 
     vkEndCommandBuffer(m_commandBuffer);
 }
 
-RenderTarget* RenderPassShadow::GetShadowMap()
+ShadowMapResources RenderPassShadow::GetShadowMap()
 {
-    return GetRenderResourceManager()->GetResource<RenderTarget>(m_shadowCasterName);
+    return {
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_DEPTH]),
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_NORMAL]),
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_POSITION]),
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_FLUX])};
 }

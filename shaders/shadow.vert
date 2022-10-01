@@ -22,8 +22,10 @@ layout (location = 1) in vec3 inNormal;
 layout (location = 2) in vec4 inTexCoord;
 
 
-layout (location = 0) out vec4 outWorldPos;
-layout (location = 1) out vec4 outWorldNormal;
+layout (location = 0) out vec2 outTexCoords0;
+layout (location = 1) out vec2 outTexCoords1;
+layout (location = 2) out vec4 outWorldPos;
+layout (location = 3) out vec4 outWorldNormal;
 
 out gl_PerVertex {
     vec4 gl_Position;
@@ -31,6 +33,8 @@ out gl_PerVertex {
 
 void main() 
 {
+    outTexCoords0 = inTexCoord.xy;
+    outTexCoords1 = inTexCoord.zw;
     outWorldPos = worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
     outWorldNormal = normalize(worldMatrix.mWorldMatrix * vec4(inNormal, 0.0));
     const mat4 mLightViewProj = lightData.i[pushConstant.nLightIndex].mLightViewProjection;

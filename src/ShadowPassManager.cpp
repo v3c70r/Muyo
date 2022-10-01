@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include "LightSceneNode.h"
-#include "RenderPassShadow.h"
 
 void ShadowPassManager::SetLights(const DrawList& lightList)
 {
@@ -13,7 +12,7 @@ void ShadowPassManager::SetLights(const DrawList& lightList)
         if (pLight)
         {
             // Shadow map index is set when gethring the light from draw list.
-            m_vpShadowPasses.emplace_back(std::make_unique<RenderPassShadow>(pLight->GetName(), VkExtent2D{1024, 1024}, static_cast<uint32_t>(i)));
+            m_vpShadowPasses.emplace_back(std::make_unique<RenderPassShadow>(pLight->GetName(), VkExtent2D{256, 256}, static_cast<uint32_t>(i)));
         }
     }
 }
@@ -40,9 +39,10 @@ std::vector<VkCommandBuffer> ShadowPassManager::GetCommandBuffers() const
     return vCommandBuffers;
 }
 
-std::vector<RenderTarget*> ShadowPassManager::GetShadowMaps()
+std::vector<ShadowMapResources> ShadowPassManager::GetShadowMaps()
 {
-    std::vector<RenderTarget*> vpShadowMaps;
+    std::vector<ShadowMapResources> vpShadowMaps;
+
     std::for_each(m_vpShadowPasses.begin(), m_vpShadowPasses.end(), [&vpShadowMaps](const std::unique_ptr<RenderPassShadow>& pShadowPass)
                   { vpShadowMaps.push_back(pShadowPass->GetShadowMap()); });
     return vpShadowMaps;
