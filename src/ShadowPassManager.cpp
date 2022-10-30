@@ -12,7 +12,7 @@ void ShadowPassManager::SetLights(const DrawList& lightList)
         if (pLight)
         {
             // Shadow map index is set when gethring the light from draw list.
-            m_vpShadowPasses.emplace_back(std::make_unique<RenderPassShadow>(pLight->GetName(), VkExtent2D{256, 256}, static_cast<uint32_t>(i)));
+            m_vpShadowPasses.emplace_back(std::make_unique<RenderPassShadow>(pLight->GetName(), VkExtent2D{32, 32}, static_cast<uint32_t>(i)));
         }
     }
 }

@@ -2,8 +2,6 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_KHR_shader_subgroup_clustered : enable
-#extension GL_KHR_shader_subgroup_quad : enable
 #include "directLighting.h"
 #include "Camera.h"
 #include "lights.h"
@@ -86,7 +84,8 @@ void main() {
         vLo += fVisible * ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
 
         // Add to RSM irradiance
-        const float fStep = 0.1;
+        const int nShadwMapSize = 32;
+        const float fStep = 1.0 / nShadwMapSize;
         for (float fx = 0.0; fx < 1.0; fx += fStep)
         {
             for (float fy = 0.0; fy < 1.0; fy += fStep)
@@ -99,8 +98,9 @@ void main() {
                 const float fLength = length(vXtoXp);
                 const float fDominator = 1.0 / (fLength * fLength * fLength * fLength);
 
+                const vec3 vBRDF = EvalBRDF(normalize(vXtoXp), normalize(vViewPos), vWorldNormal, material);
                 // Remove the hack of attenuation value
-                vRSMIrridiance += vFlux * max(dot(vWorldNormal, vXtoXp), 0.0) * max(dot(vNormal, -vXtoXp), 0.0) * fDominator * 0.0002;
+                vRSMIrridiance += vFlux * max(dot(vWorldNormal, vXtoXp), 0.0) * max(dot(vNormal, -vXtoXp), 0.0) * fDominator * vBRDF * 0.001;
             }
         }
     }
@@ -135,6 +135,4 @@ void main() {
 
     outColor = vec4(vColor, 1.0);
     outColor.a = 1.0;
-
-    outColor = subgroupQuadSwapDiagonal(outColor);
 }

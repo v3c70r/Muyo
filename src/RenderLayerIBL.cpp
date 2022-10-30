@@ -426,7 +426,7 @@ void RenderLayerIBL::setupDescriptorSets()
             m_uniformBuffer);
 
     // Environment map sampler descriptor set
-    VkImageView envMapView = GetRenderResourceManager()->GetTexture("EnvMap", "assets/hdr/HDR_Free_City_Night_Lights_Ref.hdr")->getView();
+    VkImageView envMapView = GetRenderResourceManager()->GetTexture("EnvMap", "assets/hdr/black.hdr")->getView();
     m_envMapDescriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(envMapView);
 
     // Environment cube map descriptor set
