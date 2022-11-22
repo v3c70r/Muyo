@@ -146,7 +146,7 @@ add_executable( helloVulkan
     src/RenderPassRayTracing.cpp
     src/VkExtFuncsLoader.cpp
     src/RenderPassParameters.cpp
-    src/RenderPassShadow.cpp
+    src/RenderPassRSM.cpp
     src/ShadowPassManager.cpp
     )
 

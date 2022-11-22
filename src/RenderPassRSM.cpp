@@ -1,4 +1,4 @@
-#include "RenderPassShadow.h"
+#include "RenderPassRSM.h"
 
 #include "Camera.h"
 #include "DescriptorManager.h"
@@ -8,7 +8,7 @@
 #include "SamplerManager.h"
 #include "vulkan/vulkan_core.h"
 
-RenderPassShadow::~RenderPassShadow()
+RenderPassRSM::~RenderPassRSM()
 {
     if (m_pipeline != VK_NULL_HANDLE)
     {
@@ -17,24 +17,24 @@ RenderPassShadow::~RenderPassShadow()
     }
 }
 
-void RenderPassShadow::PrepareRenderPass()
+void RenderPassRSM::PrepareRenderPass()
 {
     m_renderPassParameters.SetRenderArea(m_shadowMapSize);
 
     // Depth attachments
-    RenderTarget* shadowMap = GetRenderResourceManager()->GetDepthTarget(m_aShadowMapNames[SHADOW_MAP_DEPTH], m_shadowMapSize);
+    RenderTarget* shadowMap = GetRenderResourceManager()->GetDepthTarget(m_aRSMNames[SHADOW_MAP_DEPTH], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowMap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Shadow Normal
-    RenderTarget* shadowNormal = GetRenderResourceManager()->GetColorTarget(m_aShadowMapNames[SHADOW_MAP_NORMAL], m_shadowMapSize);
+    RenderTarget* shadowNormal = GetRenderResourceManager()->GetColorTarget(m_aRSMNames[SHADOW_MAP_NORMAL], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowNormal, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Shadow position
-    RenderTarget* shadowPosition = GetRenderResourceManager()->GetColorTarget(m_aShadowMapNames[SHADOW_MAP_POSITION], m_shadowMapSize);
+    RenderTarget* shadowPosition = GetRenderResourceManager()->GetColorTarget(m_aRSMNames[SHADOW_MAP_POSITION], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowPosition, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Shadow flux
-    RenderTarget* shadowFlux = GetRenderResourceManager()->GetColorTarget(m_aShadowMapNames[SHADOW_MAP_FLUX], m_shadowMapSize);
+    RenderTarget* shadowFlux = GetRenderResourceManager()->GetColorTarget(m_aRSMNames[SHADOW_MAP_FLUX], m_shadowMapSize);
     m_renderPassParameters.AddAttachment(shadowFlux, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Set0, Binding 0
@@ -60,7 +60,7 @@ void RenderPassShadow::PrepareRenderPass()
     CreatePipeline();
 }
 
-void RenderPassShadow::CreatePipeline()
+void RenderPassRSM::CreatePipeline()
 {
     VkDescriptorSetLayout descLayout = m_renderPassParameters.GetDescriptorSetLayout();
     std::vector<VkDescriptorSetLayout> descLayouts = { descLayout };
@@ -107,7 +107,7 @@ void RenderPassShadow::CreatePipeline()
     setDebugUtilsObjectName( reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Shadow pass");
 }
 
-void RenderPassShadow::RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries)
+void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -182,11 +182,11 @@ void RenderPassShadow::RecordCommandBuffers(const std::vector<const Geometry*>& 
     vkEndCommandBuffer(m_commandBuffer);
 }
 
-ShadowMapResources RenderPassShadow::GetShadowMap()
+RSMResources RenderPassRSM::GetRSM()
 {
     return {
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_DEPTH]),
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_NORMAL]),
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_POSITION]),
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aShadowMapNames[SHADOW_MAP_FLUX])};
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_DEPTH]),
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_NORMAL]),
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_POSITION]),
+        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_FLUX])};
 }

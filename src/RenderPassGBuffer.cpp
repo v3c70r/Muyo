@@ -341,7 +341,7 @@ void RenderPassGBuffer::removeGBufferViews()
     DestroyFramebuffer();
 }
 
-void RenderPassGBuffer::CreatePipeline(const std::vector<ShadowMapResources>& vpShadowMaps)
+void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadowMaps)
 {
     // Pipeline should be created after mRenderArea been updated
     ViewportBuilder vpBuilder;
@@ -429,7 +429,7 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<ShadowMapResources>& vp
                           [&vpDepthResources,
                            &vpNormalResources,
                            &vpPositionResources,
-                           &vpFluxResources](const ShadowMapResources& pShadowMap)
+                           &vpFluxResources](const RSMResources& pShadowMap)
                           {
                               vpDepthResources.push_back(pShadowMap.pDepth);
                               vpNormalResources.push_back(pShadowMap.pNormal);

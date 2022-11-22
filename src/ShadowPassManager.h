@@ -2,9 +2,9 @@
 
 #include "Scene.h"
 #include "UniformBuffer.h"
-#include "RenderPassShadow.h"
+#include "RenderPassRSM.h"
 
-class RenderPassShadow;
+class RenderPassRSM;
 class RenderTarget;
 class ShadowPassManager
 {
@@ -15,7 +15,7 @@ public:
     void PrepareRenderPasses();
     void RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries);
     std::vector<VkCommandBuffer> GetCommandBuffers() const;
-    std::vector<ShadowMapResources> GetShadowMaps();
+    std::vector<RSMResources> GetShadowMaps();
 private:
-    std::vector<std::unique_ptr<RenderPassShadow>> m_vpShadowPasses;
+    std::vector<std::unique_ptr<RenderPassRSM>> m_vpShadowPasses;
 };

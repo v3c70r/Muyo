@@ -12,7 +12,7 @@ void ShadowPassManager::SetLights(const DrawList& lightList)
         if (pLight)
         {
             // Shadow map index is set when gethring the light from draw list.
-            m_vpShadowPasses.emplace_back(std::make_unique<RenderPassShadow>(pLight->GetName(), VkExtent2D{32, 32}, static_cast<uint32_t>(i)));
+            m_vpShadowPasses.emplace_back(std::make_unique<RenderPassRSM>(pLight->GetName(), VkExtent2D{32, 32}, static_cast<uint32_t>(i)));
         }
     }
 }
@@ -39,11 +39,11 @@ std::vector<VkCommandBuffer> ShadowPassManager::GetCommandBuffers() const
     return vCommandBuffers;
 }
 
-std::vector<ShadowMapResources> ShadowPassManager::GetShadowMaps()
+std::vector<RSMResources> ShadowPassManager::GetShadowMaps()
 {
-    std::vector<ShadowMapResources> vpShadowMaps;
+    std::vector<RSMResources> vpShadowMaps;
 
-    std::for_each(m_vpShadowPasses.begin(), m_vpShadowPasses.end(), [&vpShadowMaps](const std::unique_ptr<RenderPassShadow>& pShadowPass)
-                  { vpShadowMaps.push_back(pShadowPass->GetShadowMap()); });
+    std::for_each(m_vpShadowPasses.begin(), m_vpShadowPasses.end(), [&vpShadowMaps](const std::unique_ptr<RenderPassRSM>& pShadowPass)
+                  { vpShadowMaps.push_back(pShadowPass->GetRSM()); });
     return vpShadowMaps;
 }

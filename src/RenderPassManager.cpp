@@ -12,7 +12,7 @@
 #include "RenderPassUI.h"
 #include "RenderResourceManager.h"
 #include "RenderPassRayTracing.h"
-#include "RenderPassShadow.h"
+#include "RenderPassRSM.h"
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
