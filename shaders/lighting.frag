@@ -100,7 +100,7 @@ void main() {
 
                 const vec3 vBRDF = EvalBRDF(normalize(vXtoXp), normalize(vViewPos), vWorldNormal, material);
                 // Remove the hack of attenuation value
-                vRSMIrridiance += vFlux * max(dot(vWorldNormal, vXtoXp), 0.0) * max(dot(vNormal, -vXtoXp), 0.0) * fDominator * vBRDF * 0.001;
+                vRSMIrridiance += vFlux * max(dot(vWorldNormal, vXtoXp), 0.0) * max(dot(vNormal, -vXtoXp), 0.0) * fDominator * vBRDF * fStep * fStep;
             }
         }
     }

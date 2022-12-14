@@ -1,6 +1,7 @@
 #pragma once
 #include "VkRenderDevice.h"
 #include "Debug.h"
+#include "vulkan/vulkan_core.h"
 #include <vulkan/vulkan.h>
 #include <array>
 #include <cassert>
@@ -34,9 +35,9 @@ public:
         samplerInfo.minFilter = VK_FILTER_LINEAR;
 
         // Wrapping
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 
         // Anistropic filter
         samplerInfo.anisotropyEnable = VK_FALSE;
