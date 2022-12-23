@@ -1,6 +1,7 @@
 #include "RenderPassAO.h"
 #include "PipelineStateBuilder.h"
 #include "DescriptorManager.h"
+#include "ResourceBarrier.h"
 #include "Debug.h"
 
 RenderPassAO::RenderPassAO()
@@ -49,7 +50,10 @@ void RenderPassAO::RecordCommandBuffer()
     RenderTarget* pDepthTarget = GetRenderResourceManager()->GetResource<RenderTarget>("GBUFFER_DEPTH");
     VkDescriptorSet inputImageDescSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(pDepthTarget->getView());
     VkExtent2D linearDepthImageSize = {800, 600};
-    VkDescriptorSet outputImageDescSet = GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(GetRenderResourceManager()->GetStorageImageResource("linear_depth", linearDepthImageSize, VK_FORMAT_R16_SFLOAT)->getView());
+
+    StorageImageResource* pLinearDepth = GetRenderResourceManager()->GetStorageImageResource("linear_depth", linearDepthImageSize, VK_FORMAT_R16_SFLOAT);
+
+    VkDescriptorSet outputImageDescSet = GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(pLinearDepth->getView());
 
     std::vector<VkDescriptorSet> vDescSets = {
         inputImageDescSet, outputImageDescSet};
@@ -75,6 +79,9 @@ void RenderPassAO::RecordCommandBuffer()
     assert(vkBeginCommandBuffer(m_cmdBuf, &beginInfo) == VK_SUCCESS);
     {
         SCOPED_MARKER(m_cmdBuf, "AO");
+
+        ImageResourceBarrier barrier(pLinearDepth->getImage(), VK_IMAGE_LAYOUT_GENERAL);
+        GetRenderDevice()->AddResourceBarrier(m_cmdBuf, barrier);
 
         vkCmdBindPipeline(m_cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipeline);
         vkCmdBindDescriptorSets(m_cmdBuf, VK_PIPELINE_BIND_POINT_COMPUTE, m_pipelineLayout, 0, (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);

@@ -158,10 +158,6 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 
-#ifdef FEATURE_SYNCHRONIZATION2
-        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
-#endif
-
 #ifdef FEATURE_RAY_TRACING
         // Ray tracing extensions
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -221,11 +217,6 @@ int main(int argc, char** argv)
         features.push_back(&rayTracingFeature);
         features.push_back(&accStructFeature);
     }
-#ifdef FEATURE_SYNCHRONIZATION2
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR sync2Feature = {};
-    sync2Feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
-	features.push_back(&sync2Feature);
-#endif
 
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
                                     std::vector<const char *>(),    // Layers

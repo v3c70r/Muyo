@@ -138,7 +138,6 @@ add_executable( helloVulkan
     src/RenderPassTransparent.cpp
     src/DebugUI.cpp
     src/SceneManager.cpp
-    #src/RayTracingUtils.cpp
     src/RayTracingSceneManager.cpp
     src/StorageImageResource.cpp
     src/ResourceBarrier.cpp
@@ -175,7 +174,7 @@ foreach (GLSL_SOURCE_FILE ${GLSL_SOURCE_FILES})
     add_custom_command(
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
-        COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.2 -DSHADER_CODE -g -V ${GLSL_SOURCE_FILE} -o ${SPIRV}
+        COMMAND ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE} --target-env vulkan1.3 -DSHADER_CODE -g -V ${GLSL_SOURCE_FILE} -o ${SPIRV}
         DEPENDS ${GLSL_SOURCE_FILE} ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()

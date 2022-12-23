@@ -12,10 +12,12 @@ enum Code
     FG_RED = 31,
     FG_GREEN = 32,
     FG_BLUE = 34,
+    FG_YELLOW = 33,
     FG_DEFAULT = 39,
     BG_RED = 41,
     BG_GREEN = 42,
     BG_BLUE = 44,
+    BG_YELLOW = 43,
     BG_DEFAULT = 49
 };
 class Modifier
@@ -66,9 +68,9 @@ static VkBool32 debugCallback(
     VkDebugUtilsMessageTypeFlagsEXT,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
-    Color::Modifier red(Color::BG_RED);
+    Color::Modifier red(Color::FG_RED);
     Color::Modifier normal(Color::BG_DEFAULT);
-    Color::Modifier blue(Color::BG_BLUE);
+    Color::Modifier yellow(Color::FG_YELLOW);
 
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
@@ -88,7 +90,7 @@ static VkBool32 debugCallback(
     }
     else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
     {
-        std::cerr << blue << "[WARNING]:" << pCallbackData->pMessage << normal
+        std::cerr << yellow << "[WARNING]:" << pCallbackData->pMessage << normal
                   << std::endl;
     }
 

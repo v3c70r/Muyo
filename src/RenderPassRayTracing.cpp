@@ -13,8 +13,8 @@
 void RenderPassRayTracing::PrepareRenderPass()
 {
     // Prepare render pass parameters
-    StorageBuffer<PrimitiveDescription>* pPrimDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<PrimitiveDescription>>("primitive descs");
 
+    // Set 0
     // Binding 0: PerViewData
     UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView");
     m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
@@ -34,6 +34,7 @@ void RenderPassRayTracing::PrepareRenderPass()
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, VK_IMAGE_LAYOUT_GENERAL);
 
     // Binding 4: Primitive descriptions
+    StorageBuffer<PrimitiveDescription>* pPrimDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<PrimitiveDescription>>("primitive descs");
     m_renderPassParameters.AddParameter(pPrimDescBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // Binding 5: All of textures in materials
@@ -81,7 +82,7 @@ void RenderPassRayTracing::CreatePipeline()
 
     m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
-    builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(2);
+    builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(1);
     VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
 
     VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(),

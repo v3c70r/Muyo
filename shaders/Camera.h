@@ -1,4 +1,5 @@
-
+#ifndef CAMERA_H
+#define CAMERA_H
 // Macro to quickly define a camera UBO at binding 0, with name uboCamera and a given SET
 #define CAMERA_UBO(SET) \
     CAMERA_UBO_SET_BINDING(SET, 0)
@@ -22,3 +23,4 @@
         float fLeftSplitScreenRatio;                                         \
     }                                                                        \
     uboCamera;
+#endif // CAMERA_H
