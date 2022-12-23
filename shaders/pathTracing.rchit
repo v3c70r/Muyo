@@ -33,12 +33,13 @@ layout(set = 0, binding = 1) uniform accelerationStructureEXT topLevelAS;
 layout(set = 0, binding = 4, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
 layout(set = 0, binding = 5) uniform sampler2D AllTextures[];
 layout(set = 2, binding = 6) uniform samplerCube environmentMap;
+
 // Light data
 LIGHTS_UBO(1)
 
 layout(buffer_reference, scalar) readonly buffer Vertices {Vertex v[]; }; // Positions of an object
 layout(buffer_reference, scalar) readonly buffer Indices {ivec3 i[]; }; // Triangle indices
-layout(buffer_reference, scalar) readonly buffer PBRFactorBuffer { PBRFactors factors; } pbrFactors;
+layout(buffer_reference, scalar) readonly buffer PBRFactorBuffer { PBRFactors factors; };
 
 layout(location = 0) rayPayloadInEXT RayPayload ray;
 hitAttributeEXT vec2 vHitAttribs;
@@ -143,9 +144,9 @@ RayPayload ScatterDiffuseLight(const vec3 vEmissive, const float t, inout uint s
 void main()
 {
     PrimitiveDesc primDesc = primDescs.i[gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT];
-    Indices indices = Indices(primDesc.indexAddress);
     Vertices vertices = Vertices(primDesc.vertexAddress);
-    //PBRFactors pbrFactors.factors = PBRFactorBuffer(primDesc.pbrFactorsAddress);
+    Indices indices = Indices(primDesc.indexAddress);
+    PBRFactors pbrFactors = PBRFactorBuffer(primDesc.pbrFactorsAddress).factors;
 
     uint texPBRIndieces[TEX_COUNT];
     for (int i = 0 ; i < TEX_COUNT; i++)
@@ -168,11 +169,11 @@ void main()
     vTexCoords[1] = v.textureCoord.zw;
 
     uint UVIndices[TEX_COUNT];
-    UVIndices[0] = pbrFactors.factors.UVIndices[0];
-    UVIndices[1] = pbrFactors.factors.UVIndices[1];
-    UVIndices[2] = pbrFactors.factors.UVIndices[2];
-    UVIndices[3] = pbrFactors.factors.UVIndices[3];
-    UVIndices[4] = pbrFactors.factors.UVIndices[4];
+    UVIndices[0] = pbrFactors.UVIndices[0];
+    UVIndices[1] = pbrFactors.UVIndices[1];
+    UVIndices[2] = pbrFactors.UVIndices[2];
+    UVIndices[3] = pbrFactors.UVIndices[3];
+    UVIndices[4] = pbrFactors.UVIndices[4];
 
 
     // Computing the coordinates of the hit position
@@ -182,11 +183,11 @@ void main()
     const vec3 vTextureNormal = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_NORMAL])], vTexCoords[UVIndices[TEX_NORMAL]]).xyz;
     vec3 vWorldNormal = normalize((gl_ObjectToWorldEXT * vec4(v.normal, 0.0)).xyz + vTextureNormal);
 
-    const vec3 vAlbedo = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.factors.vBaseColorFactors.xyz;;
+    const vec3 vAlbedo = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.vBaseColorFactors.xyz;;
     const float fAO = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_AO])], vTexCoords[UVIndices[TEX_AO]]).r;
-    const float fRoughness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ROUGHNESS])], vTexCoords[UVIndices[TEX_ROUGHNESS]]).r * pbrFactors.factors.fRoughness;
-    const float fMetalness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_METALNESS])], vTexCoords[UVIndices[TEX_METALNESS]]).r * pbrFactors.factors.fMetalness;
-    const vec3 vEmissive = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.factors.vEmissiveFactor;
+    const float fRoughness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ROUGHNESS])], vTexCoords[UVIndices[TEX_ROUGHNESS]]).r * pbrFactors.fRoughness;
+    const float fMetalness = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_METALNESS])], vTexCoords[UVIndices[TEX_METALNESS]]).r * pbrFactors.fMetalness;
+    const vec3 vEmissive = texture(AllTextures[nonuniformEXT(texPBRIndieces[TEX_ALBEDO])], vTexCoords[UVIndices[TEX_ALBEDO]]).xyz * pbrFactors.vEmissiveFactor;
 
     Material material;
     // Fill material structure
