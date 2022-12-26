@@ -53,7 +53,7 @@ void VkRenderDevice::Initialize(
     createInfo.enabledLayerCount = static_cast<uint32_t>(vLayerNames.size());
     createInfo.ppEnabledLayerNames = vLayerNames.data();
 
-    assert(vkCreateInstance(&createInfo, nullptr, &m_instance) == VK_SUCCESS);
+    VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &m_instance));
 
     // Create
 
@@ -305,7 +305,7 @@ void VkRenderDevice::CreateDevice(
     createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
     createInfo.ppEnabledLayerNames = layers.data();
 
-    assert(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device) == VK_SUCCESS);
+    VK_ASSERT(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device));
 
     {
 
@@ -506,8 +506,7 @@ VkCommandBuffer VkRenderDevice::AllocatePrimaryCommandbuffer(CommandPools pool)
     cmdAllocInfo.commandPool = m_aCommandPools[pool];
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdAllocInfo.commandBufferCount = 1;
-    assert(vkAllocateCommandBuffers(m_device, &cmdAllocInfo, &commandBuffer) ==
-           VK_SUCCESS);
+    VK_ASSERT(vkAllocateCommandBuffers(m_device, &cmdAllocInfo, &commandBuffer));
     return commandBuffer;
 }
 
@@ -531,7 +530,7 @@ void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuff
     submitInfo.signalSemaphoreCount = (uint32_t)signalSemaphores.size();
     submitInfo.pSignalSemaphores = signalSemaphores.data();
 
-    assert(vkQueueSubmit(queue, 1, &submitInfo, signalFence) == VK_SUCCESS);
+    VK_ASSERT(vkQueueSubmit(queue, 1, &submitInfo, signalFence));
 }
 
 void VkRenderDevice::SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers)
@@ -541,8 +540,8 @@ void VkRenderDevice::SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& v
     submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
     submitInfo.pCommandBuffers = vCmdBuffers.data();
 
-    assert(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo, nullptr) == VK_SUCCESS);
-    assert(vkQueueWaitIdle(GetGraphicsQueue()) == VK_SUCCESS);
+    VK_ASSERT(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo, nullptr));
+    VK_ASSERT(vkQueueWaitIdle(GetGraphicsQueue()));
 }
 
 

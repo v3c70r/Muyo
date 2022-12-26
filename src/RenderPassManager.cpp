@@ -130,14 +130,14 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     //
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_depthReady) == VK_SUCCESS);
-    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_aoReady) == VK_SUCCESS);
+    VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_depthReady));
+    VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_aoReady));
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_depthReady), VK_OBJECT_TYPE_SEMAPHORE, "Depth Ready");
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aoReady), VK_OBJECT_TYPE_SEMAPHORE, "AO Ready");
 
-    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailable) == VK_SUCCESS);
-    assert(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinished) == VK_SUCCESS);
+    VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailable));
+    VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinished));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_imageAvailable), VK_OBJECT_TYPE_SEMAPHORE, "Swapchian ImageAvailable");
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderFinished), VK_OBJECT_TYPE_SEMAPHORE, "Render Finished");
 
@@ -147,7 +147,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
     for (auto &fence : m_aGPUExecutionFence)
     {
-        assert(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence) == VK_SUCCESS);
+        VK_ASSERT(vkCreateFence(GetRenderDevice()->GetDevice(), &fenceInfo, nullptr, &fence));
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(fence), VK_OBJECT_TYPE_FENCE, "renderFinished");
     }
 

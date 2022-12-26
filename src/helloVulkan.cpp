@@ -341,7 +341,7 @@ int main(int argc, char** argv)
             // Handle resizing
             {
                 // TODO: Resizing doesn't work properly, need to investigate
-                assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
+                VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
                 int width, height;
                 std::tie(width, height) = Window::GetWindowSize();
                 VkExtent2D currentVp = GetRenderPassManager()->GetViewportSize();
@@ -357,7 +357,7 @@ int main(int argc, char** argv)
         }
         std::cout << "Closing window, wait for device to finish..."
                   << std::endl;
-        assert(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
+        VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
         std::cout << "Device finished" << std::endl;
 
         // Destroy managers

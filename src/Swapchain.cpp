@@ -54,8 +54,7 @@ void Swapchain::CreateSwapchain(
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    assert(vkCreateSwapchainKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &m_swapchain) ==
-           VK_SUCCESS);
+    VK_ASSERT(vkCreateSwapchainKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &m_swapchain));
 
     // Get swap chain images;
     vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, nullptr);

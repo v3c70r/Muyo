@@ -27,7 +27,7 @@ void RenderPassAO::CreatePipeline()
 	ComputePipelineBuilder builder;
 	builder.AddShaderModule(linearizeDepthShdr).SetPipelineLayout(m_pipelineLayout);
     VkComputePipelineCreateInfo pipelineCreateInfo = builder.Build();
-    assert(vkCreateComputePipelines(GetRenderDevice()->GetDevice(), VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &m_pipeline) == VK_SUCCESS);
+    VK_ASSERT(vkCreateComputePipelines(GetRenderDevice()->GetDevice(), VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &m_pipeline));
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), linearizeDepthShdr, nullptr);
 }
@@ -76,7 +76,7 @@ void RenderPassAO::RecordCommandBuffer()
     };
 
     //vkQueueWaitIdle(GetRenderDevice()->GetComputeQueue());
-    assert(vkBeginCommandBuffer(m_cmdBuf, &beginInfo) == VK_SUCCESS);
+    VK_ASSERT(vkBeginCommandBuffer(m_cmdBuf, &beginInfo));
     {
         SCOPED_MARKER(m_cmdBuf, "AO");
 
