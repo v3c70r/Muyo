@@ -11,6 +11,7 @@
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <functional>
+#include <ImGuizmo.h>
 
 void ResourceManagerDebugPage::Render() const
 {
@@ -27,15 +28,38 @@ void ResourceManagerDebugPage::Render() const
 
 void SceneDebugPage::Render() const 
 {
+
     ImGui::Begin(m_sName.c_str());
     {
+        ImGuizmo::BeginFrame();
+        ImGuizmo::SetRect(0.0f, 0.0f, GetRenderPassManager()->GetViewportSize().width, GetRenderPassManager()->GetViewportSize().height);
+
+        glm::mat4 mProj = GetRenderPassManager()->GetCamera()->GetProjMat();
+        glm::mat4 mView = GetRenderPassManager()->GetCamera()->GetViewMat();
+        mProj[1][1] *= -1.0f;
+
         const auto& sceneMap = GetSceneManager()->GetAllScenes();
         for (const auto& scenePair : sceneMap)
         {
             const auto& pRoot = scenePair.second.GetRoot();
-            std::function<void(const SceneNode*)>
-                DisplayNodesRecursive = [&](const SceneNode* pSceneNode) {
-                    if (ImGui::TreeNode(pSceneNode->GetName().c_str()))
+            std::function<void(const SceneNode*,const glm::mat4&)>
+                DisplayNodesRecursive = [&](const SceneNode* pSceneNode, const glm::mat4& mCurrentTrans) {
+
+                    glm::mat4 mWorld = mCurrentTrans * pSceneNode->GetMatrix();
+                    static ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+
+                    bool bIsTreeOpened = ImGui::TreeNodeEx(pSceneNode->GetName().c_str(), base_flags);
+                    bool bIsTreeNodeSelected = ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen();
+                    if(bIsTreeNodeSelected)
+                    {
+                        m_pSelectedNode = pSceneNode;
+                    }
+                    if (m_pSelectedNode == pSceneNode)
+                    {
+                        DrawGizmoOnSceneNode(pSceneNode, mWorld, mView, mProj);
+                    }
+
+                    if (bIsTreeOpened)
                     {
                         // Display info for leaves
                         if (pSceneNode->GetChildren().size() == 0)
@@ -44,12 +68,12 @@ void SceneDebugPage::Render() const
                         }
                         for (const auto& child : pSceneNode->GetChildren())
                         {
-                            DisplayNodesRecursive(child.get());
+                            DisplayNodesRecursive(child.get(), mWorld);
                         }
                         ImGui::TreePop();
                     }
                 };
-            DisplayNodesRecursive(pRoot.get());
+            DisplayNodesRecursive(pRoot.get(), pRoot->GetMatrix());
         }
     }
     ImGui::End();
@@ -71,6 +95,33 @@ void SceneDebugPage::DisplaySceneNodeInfo(const SceneNode& sceneNode) const
     ImGui::InputFloat3("AABB Min", glm::value_ptr(AABBMin), "%.3f", ImGuiInputTextFlags_ReadOnly);
     ImGui::InputFloat3("AABB Max", glm::value_ptr(AABBMax), "%.3f", ImGuiInputTextFlags_ReadOnly);
 }
+
+void SceneDebugPage::DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4&mProj) const
+{
+    if (const GeometrySceneNode *pGeometryNode = dynamic_cast<const GeometrySceneNode *>(pSceneNode))
+    {
+        // construct bound
+        auto AABB = pSceneNode->GetAABB();
+        float bounds[6] =
+        {
+            AABB.vMin.x,
+            AABB.vMin.y,
+            AABB.vMin.z,
+            AABB.vMax.x,
+            AABB.vMax.y,
+            AABB.vMax.z,
+        };
+
+        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL , ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, bounds, NULL);
+    }
+    else if (const LightSceneNode *pLightNode = dynamic_cast<const LightSceneNode *>(pSceneNode))
+    {
+        //ImGuizmo::DrawCubes(glm::value_ptr(mView), glm::value_ptr(mProj), glm::value_ptr(mWorld), 1);
+        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL , ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, NULL, NULL);
+
+    }
+}
+
 
 void DemoDebugPage::Render() const
 {

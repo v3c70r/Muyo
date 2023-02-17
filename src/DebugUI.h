@@ -3,6 +3,8 @@
 #include <imgui.h>
 #include <filesystem>
 #include <vector>
+#include <glm/glm.hpp>
+
 // ImGui Debug UI pages
 class SceneNode;
 class Camera;
@@ -38,7 +40,9 @@ public:
     ~SceneDebugPage() override{};
 private:
     void DisplaySceneNodeInfo(const SceneNode& sceneNode) const;
-};
+    void DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4&mProj) const;
+    mutable const SceneNode* m_pSelectedNode = nullptr;
+    };
 
 class DemoDebugPage : public IDebugUIPage
 {

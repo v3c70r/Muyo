@@ -50,7 +50,19 @@ if (NOT ${glm_FOUND})
     set(GLM_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/glm)
 endif()
 
+## imgui
 set(IMGUI_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/imgui)
+add_library(imgui
+    thirdparty/imgui/imgui.cpp
+    thirdparty/imgui/imgui_demo.cpp
+    thirdparty/imgui/imgui_draw.cpp
+    thirdparty/imgui/imgui_widgets.cpp
+    thirdparty/imgui/imgui_tables.cpp
+    )
+
+## ImGuizmo
+set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo)
+add_library(imguizmo thirdparty/ImGuizmo/ImGuizmo.cpp)
 
 ## VULKAN
 if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
@@ -98,15 +110,9 @@ include_directories(
     ${GLM_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIRS}
     ${SHARED_HEADER_DIR}
+    ${IMGUIZMO_INCLUDE_DIRS}
     )
 
-add_library(imgui
-    thirdparty/imgui/imgui.cpp
-    thirdparty/imgui/imgui_demo.cpp
-    thirdparty/imgui/imgui_draw.cpp
-    thirdparty/imgui/imgui_widgets.cpp
-    thirdparty/imgui/imgui_tables.cpp
-    )
     
 #Enable CPPCHECK
 # set(CMAKE_CXX_CPPCHECK "cppcheck")
@@ -149,7 +155,7 @@ add_executable( helloVulkan
     src/ShadowPassManager.cpp
     )
 
-target_link_libraries(helloVulkan imgui ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
+target_link_libraries(helloVulkan imgui ImGuizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES
