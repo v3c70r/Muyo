@@ -197,9 +197,9 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             vAABBMin.y = std::min(vAABBMin.y, (float)minValue[1]);
             vAABBMin.z = std::min(vAABBMin.z, (float)minValue[2]);
 
-            vAABBMax.x = std::min(vAABBMax.x, (float)maxValue[0]);
-            vAABBMax.y = std::min(vAABBMax.y, (float)maxValue[1]);
-            vAABBMax.z = std::min(vAABBMax.z, (float)maxValue[2]);
+            vAABBMax.x = std::max(vAABBMax.x, (float)maxValue[0]);
+            vAABBMax.y = std::max(vAABBMax.y, (float)maxValue[1]);
+            vAABBMax.z = std::max(vAABBMax.z, (float)maxValue[2]);
 
             assert(accessor.type == TINYGLTF_TYPE_VEC3);
             assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
