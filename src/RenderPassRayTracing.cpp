@@ -38,7 +38,7 @@ void RenderPassRayTracing::PrepareRenderPass()
     m_renderPassParameters.AddParameter(pPrimDescBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // Binding 5: All of textures in materials
-    const auto& vpUniquePtrTextures = GetTextureManager()->GetTextures();
+    const auto& vpUniquePtrTextures = GetTextureResourceManager()->GetTextures();
     std::vector<const ImageResource*> vpTextures;
     vpTextures.reserve(vpUniquePtrTextures.size());
     for (const auto& pTexture : vpUniquePtrTextures)

@@ -59,6 +59,6 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage,
     m_imageViewInfo.subresourceRange.layerCount = numLayers;
     CreateImageViewInternal();
 
-    Texture::sTransitionImageLayout(m_image, VK_IMAGE_LAYOUT_UNDEFINED,
+    TextureResource::sTransitionImageLayout(m_image, VK_IMAGE_LAYOUT_UNDEFINED,
                                     imageLayout);
 }

@@ -182,7 +182,6 @@ void EnvironmentMapDebugPage::Render() const
 
         // Draw environmap texture
         {
-            //Texture* pEnvMapTexture = GetRenderResourceManager()->GetResource<Texture>("EnvMap");
             ImGuiIO& io = ImGui::GetIO();
             ImTextureID my_tex_id = (void*)GetDescriptorManager()->GetImGuiTextureId("EnvMap");
             float my_tex_w = 512.0f;

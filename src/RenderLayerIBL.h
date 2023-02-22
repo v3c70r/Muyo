@@ -44,7 +44,7 @@ private:
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
     std::unique_ptr<Geometry> m_pSkybox = nullptr;
 
-    Texture m_texEnvCupMap;
+    TextureResource m_texEnvCupMap;
 
     VkPipeline m_envCubeMapPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_envCubeMapPipelineLayout = VK_NULL_HANDLE;

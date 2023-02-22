@@ -28,7 +28,7 @@ public:
 
     struct MaterialParameters
     {
-        std::array<const Texture *, TEX_COUNT> m_apTextures;
+        std::array<const TextureResource *, TEX_COUNT> m_apTextures;
         std::array<uint32_t, TEX_COUNT> m_aTextureIndices;
         UniformBuffer<PBRFactors> *m_pFactors = nullptr;
     };
@@ -41,8 +41,8 @@ public:
 
     void LoadTexture(TextureType type, const std::string& path, const std::string& name)
     {
-        m_materialParameters.m_apTextures[type] = GetTextureManager()->CreateAndLoadOrGetTexture(name, path);
-        m_materialParameters.m_aTextureIndices[type] = GetTextureManager()->GetTextureIndex(name);
+        m_materialParameters.m_apTextures[type] = GetTextureResourceManager()->CreateAndLoadOrGetTexture(name, path);
+        m_materialParameters.m_aTextureIndices[type] = GetTextureResourceManager()->GetTextureIndex(name);
     }
 
     void FillPbrTextureIndices(std::array<uint32_t, TEX_COUNT>& aIndices) const

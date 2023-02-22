@@ -705,7 +705,7 @@ size_t DescriptorManager::GetImGuiTextureId(const std::string& sResourceName)
 {
     if (m_mImGuiTextureIds.find(sResourceName) == m_mImGuiTextureIds.end())
     {
-        Texture* pTexture = GetRenderResourceManager()->GetResource<Texture>(sResourceName);
+        TextureResource* pTexture = GetRenderResourceManager()->GetResource<TextureResource>(sResourceName);
         if (pTexture)
         {
             // Allocate a descriptor for this resource.
@@ -719,7 +719,7 @@ size_t DescriptorManager::GetImGuiTextureId(const std::string& sResourceName)
         // It's a little bit overkill but not too bad for UI render.
         // We should only update the descriptoer set when the texture view is changed on the resource.
         // This update takes 0.01ms on GTX 1070 card. Not cheap
-        VkImageView textureView = GetRenderResourceManager()->GetResource<Texture>(sResourceName)->getView();
+        VkImageView textureView = GetRenderResourceManager()->GetResource<TextureResource>(sResourceName)->getView();
         GetDescriptorManager()->UpdateSingleSamplerDescriptorSet(m_vImGuiTextureDescriptorSets[m_mImGuiTextureIds[sResourceName]], textureView);
     }
     return m_mImGuiTextureIds[sResourceName];

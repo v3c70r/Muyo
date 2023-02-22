@@ -1,16 +1,16 @@
 #include "Texture.h"
 #include "../thirdparty/stb/stb_image.h"
 
-static TextureManager s_textureManager;
+static TextureResourceManager s_textureManager;
 
-TextureManager *GetTextureManager()
+TextureResourceManager *GetTextureResourceManager()
 {
     return &s_textureManager;
 }
 
-Texture::Texture() : m_textureSampler(VK_NULL_HANDLE) {}
+TextureResource::TextureResource() : m_textureSampler(VK_NULL_HANDLE) {}
 
-Texture::~Texture()
+TextureResource::~TextureResource()
 {
     if (GetRenderDevice()->GetDevice() != VK_NULL_HANDLE)
     {
@@ -18,7 +18,7 @@ Texture::~Texture()
     }
 }
 
-void Texture::LoadPixels(void *pixels, int width, int height)
+void TextureResource::LoadPixels(void *pixels, int width, int height)
 {
     // Upload pixels to staging buffer
     const size_t BUFFER_SIZE = width * height * 4;
@@ -56,7 +56,7 @@ void Texture::LoadPixels(void *pixels, int width, int height)
     mInitSampler();
 }
 
-void Texture::LoadImage(const std::string path)
+void TextureResource::LoadImage(const std::string path)
 {
 
     int width, height, channels;
