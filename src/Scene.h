@@ -7,6 +7,7 @@
 #include <vector>
 
 static const uint32_t TRANSPARENT_FLAG = 1;
+static const uint32_t EMISSIVE_FLAG = 1 << 1;
 
 struct AABB
 {
@@ -105,12 +106,28 @@ protected:
     bool m_bAreDrawListsDirty = true;
 };
 
+
+enum class GeometryLightSourceType
+{
+    NONE,    // Not a light source
+    AREA,
+    TUBE,
+    SPHERE
+};
+
 class Geometry;
 class GeometrySceneNode : public SceneNode
 {
 public:
     void SetTransparent() { m_uFlag |= TRANSPARENT_FLAG; }
     bool IsTransparent() const { return m_uFlag & TRANSPARENT_FLAG; }
+
+    void SetEmissive() { m_uFlag |= EMISSIVE_FLAG; }
+    bool IsEmissive() const { return m_uFlag & EMISSIVE_FLAG; }
+
+    void SetLightSourceType(GeometryLightSourceType type) {m_lightSourceType = type;}
+    GeometryLightSourceType GetLightSourceType() const { return m_lightSourceType; }
+
     void SetGeometry(Geometry* pGeometry)
     {
         m_pGeometry = pGeometry;
@@ -126,5 +143,6 @@ public:
 
 protected:
     Geometry* m_pGeometry;
+    GeometryLightSourceType m_lightSourceType = GeometryLightSourceType::NONE;
 };
 

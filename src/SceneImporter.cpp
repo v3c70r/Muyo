@@ -168,6 +168,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
 {
     std::vector<std::unique_ptr<Primitive>> vPrimitives;
     bool bIsMeshTransparent =false;
+    bool bIsMeshEmissive = false;
 
     // Keep track of local bounding box
     glm::vec3 vAABBMin(std::numeric_limits<float>::max());
@@ -465,6 +466,27 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 sEmissiveTexName = model.images[emissiveTexture.source].uri;
             }
 
+            const glm::vec3 vEmissiveFactors((float)gltfMaterial.emissiveFactor[0], (float)gltfMaterial.emissiveFactor[1], (float)gltfMaterial.emissiveFactor[2]);
+
+            bIsMeshEmissive = (vEmissiveFactors != glm::vec3(0.0f));
+
+            if (bIsMeshEmissive)
+            {
+                // Mesh is possibly a light source
+                if (geomNode.GetName().starts_with("LIGHT_RECT"))
+                {
+                    geomNode.SetLightSourceType(GeometryLightSourceType::AREA);
+                }
+                else if (geomNode.GetName().starts_with("LIGHT_TUBE"))
+                {
+                    geomNode.SetLightSourceType(GeometryLightSourceType::TUBE);
+                }
+                else if (geomNode.GetName().starts_with("LIGHT_SPHERE"))
+                {
+                    geomNode.SetLightSourceType(GeometryLightSourceType::SPHERE);
+                }
+            }
+
             // PBR factors
             PBRFactors pbrFactors = {
                 glm::vec4((float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
@@ -474,7 +496,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 {aUVIndices[0], aUVIndices[1],                                                                                                        // UVs
                  aUVIndices[2], aUVIndices[3],
                  aUVIndices[4], aUVIndices[5]},
-                glm::vec3((float)gltfMaterial.emissiveFactor[0], (float)gltfMaterial.emissiveFactor[1], (float)gltfMaterial.emissiveFactor[2]),
+                 vEmissiveFactors,
                 0.0f};
 
             pMaterial->LoadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
@@ -521,5 +543,9 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     if (bIsMeshTransparent)
     {
         geomNode.SetTransparent();
+    }
+    if (bIsMeshEmissive)
+    {
+        geomNode.SetEmissive();
     }
 }

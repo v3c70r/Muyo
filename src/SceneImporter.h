@@ -25,6 +25,11 @@ public:
 class GLTFImporter : public ISceneImporter
 {
 public:
+    // Import GLTF
+    // Area lights are constructed from emissive geometries, hinted by their name
+    // Rectangle light starts with LIGHT_RECT
+    // Sphere light starts with LIGHT_SPHERE
+    // tube light starts with LIGHT_TUBE
     virtual std::vector<Scene> ImportScene(const std::string& sSceneFile) override;
 
 private:
