@@ -16,7 +16,8 @@ const uint LIGHT_TYPE_SPOT = 1;
 const uint LIGHT_TYPE_DIRECTIONAL = 2;
 const uint LIGHT_TYPE_LINEAR = 3;
 const uint LIGHT_TYPE_POLYGON = 4;
-const uint LIGHT_TYPE_COUNT = 5;
+const uint LIGHT_TYPE_RECT = 5;
+const uint LIGHT_TYPE_COUNT = 6;
 
 struct LightData
 {

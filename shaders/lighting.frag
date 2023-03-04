@@ -84,7 +84,7 @@ void main() {
         vLo += fVisible * ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
 
         // Add to RSM irradiance
-        const int nShadwMapSize = 32;
+        const int nShadwMapSize = 8;
         const float fStep = 1.0 / nShadwMapSize;
         for (float fx = 0.0; fx < 1.0; fx += fStep)
         {

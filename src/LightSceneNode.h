@@ -181,3 +181,30 @@ public:
     }
 };
 
+class RectLightSceneNode : public LightSceneNode
+{
+    public: 
+        RectLightSceneNode(const glm::vec3 &vColor, const float &fPower, float fWidth, float fHeight)
+            : LightSceneNode(LIGHT_TYPE_RECT, vColor, fPower),
+            m_fWidth(fWidth),
+            m_fHeight(fHeight)
+        {
+        }
+
+        LightData ConstructLightData() const override
+        {
+            return {
+                LIGHT_TYPE_RECT,
+                GetWorldPosition(),
+                GetWorldDirection(),
+                GetRange(),
+                GetColor(),
+                GetIntensity(),
+                glm::vec4(0.0f, 0.0f, 0.0f, float(GetShadowMapIndex())),
+                GetLightViewProjectionMatrix()};
+        }
+
+    private:
+        float m_fWidth = 0;
+        float m_fHeight = 0;
+};
