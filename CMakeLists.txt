@@ -117,44 +117,63 @@ include_directories(
 #Enable CPPCHECK
 # set(CMAKE_CXX_CPPCHECK "cppcheck")
 
-add_executable( helloVulkan
-    src/helloVulkan.cpp
+include_directories(
+    "src/RenderDevice"
+    "src/RenderPasses"
+    "src/RenderResources"
+    "src/Scene"
+    "src/Debug"
+    "src"
+    )
 
-    src/PipelineStateBuilder.cpp
-    src/Texture.cpp
-    src/VkRenderDevice.cpp
-    src/VkMemoryAllocator.cpp
-    src/RenderPass.cpp
-    src/RenderPassGBuffer.cpp
-    src/Swapchain.cpp
-    src/RenderTargetResource.cpp
-    src/RenderResourceManager.cpp
-    src/RenderPassUI.cpp
-    src/RenderPassSkybox.cpp
-    src/DescriptorManager.cpp
-    src/SamplerManager.cpp
-    src/Debug.cpp
-    src/Geometry.cpp
-    src/Material.cpp
-    src/RenderLayerIBL.cpp
-    src/SceneImporter.cpp
-    src/Scene.cpp
-    src/RenderPassManager.cpp
-    src/RenderPassTransparent.cpp
-    src/DebugUI.cpp
-    src/SceneManager.cpp
-    src/RayTracingSceneManager.cpp
-    src/StorageImageResource.cpp
-    src/ResourceBarrier.cpp
-    src/RenderPassAO.cpp
-    src/RenderPassRayTracing.cpp
-    src/VkExtFuncsLoader.cpp
-    src/RenderPassParameters.cpp
-    src/RenderPassRSM.cpp
-    src/ShadowPassManager.cpp
+file(GLOB RenderDevice_SRC
+    "src/RenderDevice/*.h"
+    "src/RenderDevice/*.cpp"
+    )
+
+add_library(RenderDevice ${RenderDevice_SRC})
+
+file(GLOB RenderPasses_SRC
+    "src/RenderPasses/*.h"
+    "src/RenderPasses/*.cpp"
+    )
+
+add_library(RenderPasses ${RenderPasses_SRC})
+
+file(GLOB RenderResources_SRC
+    "src/RenderResources/*.h"
+    "src/RenderResources/*.cpp"
+    )
+
+add_library(RenderResources ${RenderResources_SRC})
+
+file(GLOB Scene_SRC
+    "src/Scene/*.h"
+    "src/Scene/*.cpp"
+    )
+
+add_library(Scene ${Scene_SRC})
+
+file(GLOB Debug_SRC
+    "src/Debug/*.h"
+    "src/Debug/*.cpp"
+    )
+
+add_library(Debug ${Debug_SRC})
+
+file(GLOB main_SRC
+    "src/*.h"
+    "src/*.cpp"
+    )
+
+
+add_executable( helloVulkan
+    ${main_SRC}
     )
 
 target_link_libraries(helloVulkan imgui ImGuizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
+
+target_link_libraries(helloVulkan RenderDevice RenderPasses RenderResources Scene Debug)
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES
