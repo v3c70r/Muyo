@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+namespace Muyo
+{
 static const uint32_t TRANSPARENT_FLAG = 1;
 static const uint32_t EMISSIVE_FLAG = 1 << 1;
 
@@ -69,7 +71,8 @@ public:
     std::array<DrawList, DL_COUNT> m_aDrawLists;
 };
 
-template<typename T> class StorageBuffer;
+template <typename T>
+class StorageBuffer;
 
 class Scene
 {
@@ -106,10 +109,9 @@ protected:
     bool m_bAreDrawListsDirty = true;
 };
 
-
 enum class GeometryLightSourceType
 {
-    NONE,    // Not a light source
+    NONE,  // Not a light source
     AREA,
     TUBE,
     SPHERE
@@ -125,7 +127,7 @@ public:
     void SetEmissive() { m_uFlag |= EMISSIVE_FLAG; }
     bool IsEmissive() const { return m_uFlag & EMISSIVE_FLAG; }
 
-    void SetLightSourceType(GeometryLightSourceType type) {m_lightSourceType = type;}
+    void SetLightSourceType(GeometryLightSourceType type) { m_lightSourceType = type; }
     GeometryLightSourceType GetLightSourceType() const { return m_lightSourceType; }
 
     void SetGeometry(Geometry* pGeometry)
@@ -146,3 +148,4 @@ protected:
     GeometryLightSourceType m_lightSourceType = GeometryLightSourceType::NONE;
 };
 
+}  // namespace Muyo

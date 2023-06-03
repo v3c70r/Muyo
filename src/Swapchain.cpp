@@ -1,7 +1,12 @@
 #include "Swapchain.h"
-#include "VkRenderDevice.h"
+
 #include <cassert>
 #include <limits>
+
+#include "VkRenderDevice.h"
+
+namespace Muyo
+{
 
 Swapchain::~Swapchain()
 {
@@ -140,3 +145,4 @@ Swapchain::SwapchainSupportDetails Swapchain::QuerySwapchainSupport()
     return details;
 }
 
+}  // namespace Muyo

@@ -1,11 +1,15 @@
 #pragma once
-#include "VkRenderDevice.h"
-#include "Debug.h"
-#include "vulkan/vulkan_core.h"
 #include <vulkan/vulkan.h>
+
 #include <array>
 #include <cassert>
 #include <cmath>
+
+#include "Debug.h"
+#include "VkRenderDevice.h"
+#include "vulkan/vulkan_core.h"
+namespace Muyo
+{
 enum SamplerTypes
 {
     SAMPLER_1_MIPS,
@@ -58,7 +62,7 @@ public:
         samplerInfo.maxLod = 1.0f;
 
         // full screen texture sampler
-        for (int i = 0; i<SAMPLER_TYPE_COUNT; i++)
+        for (int i = 0; i < SAMPLER_TYPE_COUNT; i++)
         {
             samplerInfo.maxLod = std::powf(2, static_cast<float>(i));
             assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
@@ -79,8 +83,10 @@ public:
         assert(m_aSamplers[type] != VK_NULL_HANDLE);
         return m_aSamplers[type];
     }
+
 private:
     std::array<VkSampler, SAMPLER_TYPE_COUNT> m_aSamplers;
 };
 
 SamplerManager* GetSamplerManager();
+}  // namespace Muyo

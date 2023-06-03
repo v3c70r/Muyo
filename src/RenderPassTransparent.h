@@ -1,6 +1,9 @@
 #pragma once
+
 #include "RenderPass.h"
 
+namespace Muyo
+{
 class RenderPassTransparent : public RenderPass
 {
 public:
@@ -12,6 +15,7 @@ public:
     void DestroyPipeline();
     void CreateFramebuffer(uint32_t uWidth, uint32_t uHeight);
     void DestroyFramebuffer();
+
 private:
     void CreateRenderPasses();
     VkFramebuffer m_frameBuffer = VK_NULL_HANDLE;
@@ -23,6 +27,6 @@ private:
     // TODO: move these to renderpass parameter
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
-    
 };
 
+}  // namespace Muyo

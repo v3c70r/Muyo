@@ -4,6 +4,9 @@
 
 #include "LightSceneNode.h"
 
+namespace Muyo
+{
+
 void ShadowPassManager::SetLights(const DrawList& lightList)
 {
     for (size_t i = 0; i < lightList.size(); ++i)
@@ -16,13 +19,11 @@ void ShadowPassManager::SetLights(const DrawList& lightList)
         }
     }
 }
- 
+
 void ShadowPassManager::PrepareRenderPasses()
 {
     std::for_each(m_vpShadowPasses.begin(), m_vpShadowPasses.end(), [](auto& pShadowPass)
-                  {
-                      pShadowPass->PrepareRenderPass();
-                  });
+                  { pShadowPass->PrepareRenderPass(); });
 }
 
 void ShadowPassManager::RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries)
@@ -47,3 +48,5 @@ std::vector<RSMResources> ShadowPassManager::GetShadowMaps()
                   { vpShadowMaps.push_back(pShadowPass->GetRSM()); });
     return vpShadowMaps;
 }
+
+}  // namespace Muyo

@@ -1,14 +1,18 @@
 #include "RenderPassUI.h"
-#include "DescriptorManager.h"
-#include "VkRenderDevice.h"
-#include "DescriptorManager.h"
+
 #include "Debug.h"
-#include "RenderResourceManager.h"
+#include "DescriptorManager.h"
+#include "ImGuiControl.h"
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
-#include "ImGuiControl.h"
+#include "RenderResourceManager.h"
+#include "VkRenderDevice.h"
 
-void ImGuiResource::createResources(uint32_t numSwapchainBuffers) { 
+namespace Muyo
+{
+
+void ImGuiResource::createResources(uint32_t numSwapchainBuffers)
+{
     ImGuiIO& io = ImGui::GetIO();
 
     // Enable docking
@@ -25,22 +29,18 @@ void ImGuiResource::createResources(uint32_t numSwapchainBuffers) {
 
     vpVertexBuffers.resize(numSwapchainBuffers);
     vpIndexBuffers.resize(numSwapchainBuffers);
-	std::vector<ImDrawVert> vDummyVert = { ImDrawVert{
-		{0.0, 0.0},
-		{0.0, 0.0},
-		0
-		}
-	};
-    std::vector<ImDrawIdx> vDummpyIndex = { 0 };
-    //ImDrawIdx
-    for (uint32_t i = 0; i< numSwapchainBuffers; i++)
+    std::vector<ImDrawVert> vDummyVert = {ImDrawVert{
+        {0.0, 0.0},
+        {0.0, 0.0},
+        0}};
+    std::vector<ImDrawIdx> vDummpyIndex = {0};
+    // ImDrawIdx
+    for (uint32_t i = 0; i < numSwapchainBuffers; i++)
     {
-        vpVertexBuffers[i] = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertex_buffer_"+std::to_string(i),vDummyVert, false);
+        vpVertexBuffers[i] = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertex_buffer_" + std::to_string(i), vDummyVert, false);
         vpIndexBuffers[i] = GetRenderResourceManager()->GetIndexBuffer("UIIndex_buffer_" + std::to_string(i), vDummpyIndex, false);
     }
 }
-
-
 
 RenderPassUI::RenderPassUI(VkFormat swapChainFormat)
     : RenderPassFinal(swapChainFormat, false)
@@ -165,8 +165,8 @@ void RenderPassUI::updateBuffers(uint32_t nSwapchainBufferIndex)
     for (int n = 0; n < imDrawData->CmdListsCount; n++)
     {
         const ImDrawList* cmd_list = imDrawData->CmdLists[n];
-		memcpy(vtxDst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.size_in_bytes());
-		memcpy(idxDst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.size_in_bytes());
+        memcpy(vtxDst, cmd_list->VtxBuffer.Data, cmd_list->VtxBuffer.size_in_bytes());
+        memcpy(idxDst, cmd_list->IdxBuffer.Data, cmd_list->IdxBuffer.size_in_bytes());
         vtxDst += cmd_list->VtxBuffer.size();
         idxDst += cmd_list->IdxBuffer.size();
     }
@@ -288,3 +288,4 @@ void RenderPassUI::RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nSwapch
     }
 }
 
+}  // namespace Muyo

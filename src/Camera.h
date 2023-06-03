@@ -11,6 +11,8 @@
 #include "UniformBuffer.h"
 #include "glm/ext/quaternion_common.hpp"
 #include "glm/matrix.hpp"
+namespace Muyo
+{
 
 // Make sure this structure is consistant with the one in Camera.h in shader
 struct PerViewData
@@ -83,17 +85,17 @@ public:
     {
         ubo->SetData(m_perViewData);
     };
-    
+
     void SetAperture(float fAperture)
     {
         m_perViewData.fAperture = fAperture;
     }
-    
+
     void SetFocalDistance(float fDistance)
     {
         m_perViewData.fFocalDistance = fDistance;
     }
-    
+
     void SetFrameId(uint32_t uFrameId)
     {
         m_perViewData.uFrameId = uFrameId;
@@ -230,9 +232,9 @@ private:
         P.y = P.y;
         float OP_squared = P.x * P.x + P.y * P.y;
         if (OP_squared <= 1 * 1)
-            P.z = sqrt(1 * 1 - OP_squared); // Pythagoras
+            P.z = sqrt(1 * 1 - OP_squared);  // Pythagoras
         else
-            P = glm::normalize(P); // nearest point
+            P = glm::normalize(P);  // nearest point
         return P;
     }
 };
@@ -271,3 +273,4 @@ private:
 //     float mForward;
 //     glm::vec3 mEyeVector;
 // };
+}  // namespace Muyo

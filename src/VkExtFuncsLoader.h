@@ -1,6 +1,9 @@
 #pragma once
+
 #include <vulkan/vulkan.h>
 
+namespace Muyo
+{
 class VkExt
 {
 public:
@@ -20,3 +23,4 @@ public:
     static void LoadInstanceFunctions(VkInstance instance);
 };
 
+}  // namespace Muyo

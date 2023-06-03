@@ -1,15 +1,19 @@
 #include "RenderLayerIBL.h"
 
 #include "DescriptorManager.h"
+#include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
-#include "PipelineStateBuilder.h"
 #include "glm/gtc/matrix_transform.hpp"
+
+namespace Muyo
+{
+
 void RenderLayerIBL::setupRenderPass()
 {
     m_vRenderPasses.resize(RENDERPASS_COUNT);
-    //1. Create two attachments, one for env cube map, another for diffuse irradiance map
+    // 1. Create two attachments, one for env cube map, another for diffuse irradiance map
     std::array<VkAttachmentDescription, RENDERPASS_COUNT> attachments;
 
     // 2 Create multiview info
@@ -353,7 +357,7 @@ void RenderLayerIBL::CreatePipeline()
             VK_OBJECT_TYPE_PIPELINE, "prefiltered cube map");
     }
 
-    // 4. Specular BRDF lookup 
+    // 4. Specular BRDF lookup
     {
         // Viewport
         ViewportBuilder vpBuilder;
@@ -376,7 +380,7 @@ void RenderLayerIBL::CreatePipeline()
         blendStateBuilder.setAttachments(1, false);
         // DS
         DepthStencilCIBuilder depthStencilBuilder;
-        depthStencilBuilder.setDepthTestEnabled(false) .setDepthWriteEnabled(false);
+        depthStencilBuilder.setDepthTestEnabled(false).setDepthWriteEnabled(false);
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {};
@@ -431,7 +435,7 @@ void RenderLayerIBL::setupDescriptorSets()
 
     // Environment cube map descriptor set
     m_irrMapDescriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
-        GetRenderResourceManager() ->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM}, TEX_FORMAT, 1, 6) ->getView());
+        GetRenderResourceManager()->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM}, TEX_FORMAT, 1, 6)->getView());
 }
 
 void RenderLayerIBL::RecordCommandBuffer()
@@ -465,11 +469,11 @@ void RenderLayerIBL::RecordCommandBuffer()
         RenderPassBeginInfoBuilder beginInfoBuilder;
         aRenderpassBeginInfos[passIdx] =
             beginInfoBuilder
-			.setRenderArea(VkExtent2D({ m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx] }))
-			.setRenderPass(m_vRenderPasses[passIdx])
-			.setClearValues(clearValues)
-			.setFramebuffer(m_aFramebuffers[passIdx])
-			.Build();
+                .setRenderArea(VkExtent2D({m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx]}))
+                .setRenderPass(m_vRenderPasses[passIdx])
+                .setClearValues(clearValues)
+                .setFramebuffer(m_aFramebuffers[passIdx])
+                .Build();
 
         ViewportBuilder vpBuilder;
         aViewports[passIdx] =
@@ -642,10 +646,10 @@ void RenderLayerIBL::RecordCommandBuffer()
                                  VK_INDEX_TYPE_UINT32);
             vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               m_specularBrdfLutPipeline);
-            //vkCmdBindDescriptorSets(
-            //    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            //    mLightingPipelineLayout, 0, lightingDescSets.size(),
-            //    lightingDescSets.data(), 0, nullptr);
+            // vkCmdBindDescriptorSets(
+            //     m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            //     mLightingPipelineLayout, 0, lightingDescSets.size(),
+            //     lightingDescSets.data(), 0, nullptr);
             vkCmdDrawIndexed(m_commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
             vkCmdEndRenderPass(m_commandBuffer);
         }
@@ -683,8 +687,6 @@ RenderLayerIBL::~RenderLayerIBL()
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_specularBrdfLutPipeline, nullptr);
 }
 
-
-
 void RenderLayerIBL::DestroyFramebuffer()
 {
     for (auto framebuffer : m_aFramebuffers)
@@ -694,7 +696,7 @@ void RenderLayerIBL::DestroyFramebuffer()
     }
 }
 
-void RenderLayerIBL::ReloadEnvironmentMap(const std::string& sNewEnvMapPath)
+void RenderLayerIBL::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
 {
     // Destroy and reload env map resource
     GetRenderResourceManager()->RemoveResource("EnvMap");
@@ -704,3 +706,5 @@ void RenderLayerIBL::ReloadEnvironmentMap(const std::string& sNewEnvMapPath)
     GetDescriptorManager()->UpdateSingleSamplerDescriptorSet(m_envMapDescriptorSet, envMapView);
     RecordCommandBuffer();
 }
+
+}  // namespace Muyo

@@ -1,7 +1,13 @@
 #include "PipelineStateBuilder.h"
+
+#include <vulkan/vulkan_core.h>
+
 #include <array>
 #include <cassert>
-#include <vulkan/vulkan_core.h>
+
+namespace Muyo
+{
+
 PipelineStateBuilder& PipelineStateBuilder::setShaderModules(
     const std::vector<VkShaderModule>& shaderModules)
 {
@@ -25,8 +31,6 @@ PipelineStateBuilder& PipelineStateBuilder::setShaderModules(
     m_vShaderStageInfos = {vertShaderStageInfo, fragShaderStageInfo};
     return *this;
 }
-
-
 
 PipelineStateBuilder& PipelineStateBuilder::setVertextInfo(
     const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
@@ -187,3 +191,5 @@ std::vector<char> ReadSpv(const std::string& fileName)
 
     return buffer;
 }
+
+}  // namespace Muyo

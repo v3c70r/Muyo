@@ -1,9 +1,11 @@
 #pragma once
 
+#include "RenderPassRSM.h"
 #include "Scene.h"
 #include "UniformBuffer.h"
-#include "RenderPassRSM.h"
 
+namespace Muyo
+{
 class RenderPassRSM;
 class RenderTarget;
 class ShadowPassManager
@@ -16,6 +18,8 @@ public:
     void RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries);
     std::vector<VkCommandBuffer> GetCommandBuffers() const;
     std::vector<RSMResources> GetShadowMaps();
+
 private:
     std::vector<std::unique_ptr<RenderPassRSM>> m_vpShadowPasses;
 };
+}  // namespace Muyo

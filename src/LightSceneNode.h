@@ -5,6 +5,8 @@
 #include "glm/geometric.hpp"
 #include "glm/trigonometric.hpp"
 
+namespace Muyo
+{
 class LightSceneNode : public SceneNode
 {
 public:
@@ -69,8 +71,6 @@ public:
         return m_nShadowMapIndex;
     }
 
-    
-
     virtual glm::mat4 GetLightViewProjectionMatrix() const = 0;
 
     virtual LightData ConstructLightData() const = 0;
@@ -128,8 +128,8 @@ public:
         // Get shadow matrix of spot light
         const glm::vec3 vWorldPosition = GetWorldPosition();
         // Hack: Fix shadowmap range
-        //const float fShadowViewportHalfSize = fShadowMapRange * glm::tan(m_fOuterConeAngle);
-        //auto mProjection = glm::ortho(-fShadowViewportHalfSize, fShadowViewportHalfSize, -fShadowViewportHalfSize, fShadowViewportHalfSize, -fShadowMapRange, fShadowMapRange);
+        // const float fShadowViewportHalfSize = fShadowMapRange * glm::tan(m_fOuterConeAngle);
+        // auto mProjection = glm::ortho(-fShadowViewportHalfSize, fShadowViewportHalfSize, -fShadowViewportHalfSize, fShadowViewportHalfSize, -fShadowMapRange, fShadowMapRange);
         auto mProjection = glm::perspective(m_fOuterConeAngle * 2.0f, 1.0f, m_fRadius, GetShadowMapRange());
         return mProjection * glm::lookAt(vWorldPosition, vWorldPosition + GetWorldDirection(), glm::vec3(0.0, 1.0, 0.0));
     }
@@ -183,28 +183,29 @@ public:
 
 class RectLightSceneNode : public LightSceneNode
 {
-    public: 
-        RectLightSceneNode(const glm::vec3 &vColor, const float &fPower, float fWidth, float fHeight)
-            : LightSceneNode(LIGHT_TYPE_RECT, vColor, fPower),
-            m_fWidth(fWidth),
-            m_fHeight(fHeight)
-        {
-        }
+public:
+    RectLightSceneNode(const glm::vec3 &vColor, const float &fPower, float fWidth, float fHeight)
+        : LightSceneNode(LIGHT_TYPE_RECT, vColor, fPower),
+          m_fWidth(fWidth),
+          m_fHeight(fHeight)
+    {
+    }
 
-        LightData ConstructLightData() const override
-        {
-            return {
-                LIGHT_TYPE_RECT,
-                GetWorldPosition(),
-                GetWorldDirection(),
-                GetRange(),
-                GetColor(),
-                GetIntensity(),
-                glm::vec4(0.0f, 0.0f, 0.0f, float(GetShadowMapIndex())),
-                GetLightViewProjectionMatrix()};
-        }
+    LightData ConstructLightData() const override
+    {
+        return {
+            LIGHT_TYPE_RECT,
+            GetWorldPosition(),
+            GetWorldDirection(),
+            GetRange(),
+            GetColor(),
+            GetIntensity(),
+            glm::vec4(0.0f, 0.0f, 0.0f, float(GetShadowMapIndex())),
+            GetLightViewProjectionMatrix()};
+    }
 
-    private:
-        float m_fWidth = 0;
-        float m_fHeight = 0;
+private:
+    float m_fWidth = 0;
+    float m_fHeight = 0;
 };
+}  // namespace Muyo

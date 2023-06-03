@@ -1,27 +1,26 @@
 #pragma once
 #include <imgui.h>
-#include "EventSystem.h"
 
+#include "EventSystem.h"
 
 namespace ImGui
 {
-static uint32_t               g_Time = 0.0;
+static uint32_t g_Time = 0.0;
 
 static void installEventHandlers()
 {
-   //install callbacks
-    auto pChar = EventSystem::sys()->globalEvent<EventType::CHAR,
-                                                 GlobalCharEvent>();
-    pChar->Watch([](uint32_t timestamp, unsigned int c) {
+    // install callbacks
+    auto pChar = EventSystem::sys()->globalEvent<EventType::CHAR, GlobalCharEvent>();
+    pChar->Watch([](uint32_t timestamp, unsigned int c)
+                 {
         ImGuiIO& io = ImGui::GetIO();
         io.AddInputCharacter(c);
-        g_Time = timestamp;
-    });
+        g_Time = timestamp; });
 
-    auto pKey = EventSystem::sys()->globalEvent<EventType::KEY,
-                                                GlobalKeyEvent>();
+    auto pKey = EventSystem::sys()->globalEvent<EventType::KEY, GlobalKeyEvent>();
     pKey->Watch([](uint32_t timestamp, Input::Key key, uint16_t mods,
-                   EventState state) {
+                   EventState state)
+                {
         ImGuiIO& io = ImGui::GetIO();
         if (io.WantCaptureKeyboard) {
             io.KeysDown[key] = (state == EventState::PRESSED) ? true : false;
@@ -34,37 +33,33 @@ static void installEventHandlers()
             io.KeySuper = (mods & Input::MOD_META);
 #endif
         }
-        g_Time = timestamp;
-    });
+        g_Time = timestamp; });
 
-    auto pScroll = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL,
-                                                   GlobalWheelEvent>();
-    pScroll->Watch([](uint32_t timestamp, float xoffset, float yoffset) {
+    auto pScroll = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
+    pScroll->Watch([](uint32_t timestamp, float xoffset, float yoffset)
+                   {
         ImGuiIO& io = ImGui::GetIO();
         if (io.WantCaptureMouse) {
             io.MouseWheelH += (float)xoffset;
             io.MouseWheel += (float)yoffset;
         }
-        g_Time = timestamp;
-    });
+        g_Time = timestamp; });
 
-    auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON,
-                                                GlobalButtonEvent>();
-    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state) {
+    auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON, GlobalButtonEvent>();
+    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state)
+                {
         ImGuiIO& io = ImGui::GetIO();
         if (io.WantCaptureMouse) {
             io.MouseDown[btn] = (state == EventState::PRESSED) ? true : false;
         }
-        g_Time = timestamp;
-    });
+        g_Time = timestamp; });
 
-    auto pMotion = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION,
-                                                   GlobalMotionEvent>();
-    pMotion->Watch([](uint32_t timestamp, float sx, float sy) {
+    auto pMotion = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION, GlobalMotionEvent>();
+    pMotion->Watch([](uint32_t timestamp, float sx, float sy)
+                   {
         ImGuiIO& io = ImGui::GetIO();
         io.MousePos = ImVec2(sx, sy);
-        g_Time = timestamp;
-    });
+        g_Time = timestamp; });
 }
 
 static bool Init()
@@ -73,9 +68,9 @@ static bool Init()
 
     // Setup back-end capabilities flags
     ImGuiIO& io = ImGui::GetIO();
-    io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;         // We can honor GetMouseCursor() values (optional)
-    io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos;          // We can honor io.WantSetMousePos requests (optional, rarely used)
-    //io.BackendPlatformName = "imgui_impl_glfw";
+    io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;  // We can honor GetMouseCursor() values (optional)
+    io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos;   // We can honor io.WantSetMousePos requests (optional, rarely used)
+    // io.BackendPlatformName = "imgui_impl_glfw";
 
     // Keyboard mapping. ImGui will use those indices to peek into the io.KeysDown[] array.
     io.KeyMap[ImGuiKey_Tab] = Input::KEY_TAB;
@@ -93,7 +88,7 @@ static bool Init()
     io.KeyMap[ImGuiKey_Space] = Input::KEY_SPACE;
     io.KeyMap[ImGuiKey_Enter] = Input::KEY_RETURN;
     io.KeyMap[ImGuiKey_Escape] = Input::KEY_ESCAPE;
-    //io.KeyMap[ImGuiKey_KeyPadEnter] = GLFW_KEY_KP_ENTER;
+    // io.KeyMap[ImGuiKey_KeyPadEnter] = GLFW_KEY_KP_ENTER;
     io.KeyMap[ImGuiKey_A] = Input::KEY_A;
     io.KeyMap[ImGuiKey_C] = Input::KEY_C;
     io.KeyMap[ImGuiKey_V] = Input::KEY_V;
@@ -120,16 +115,18 @@ static void UpdateMouseCursor()
         return;
 
     ImGuiMouseCursor type = ImGui::GetMouseCursor();
-    auto pCursor = EventSystem::sys()->globalEvent<EventType::CURSORSET,
-                                                   GlobalCursorSetEvent>();
-    if (type == ImGuiMouseCursor_None || io.MouseDrawCursor) {
-        pCursor->Emit(g_Time, Input::Cursor::CURSOR_NONE); //use the last time
-    } else if (type < ImGuiMouseCursor_COUNT)  {
+    auto pCursor = EventSystem::sys()->globalEvent<EventType::CURSORSET, GlobalCursorSetEvent>();
+    if (type == ImGuiMouseCursor_None || io.MouseDrawCursor)
+    {
+        pCursor->Emit(g_Time, Input::Cursor::CURSOR_NONE);  // use the last time
+    }
+    else if (type < ImGuiMouseCursor_COUNT)
+    {
         pCursor->Emit(g_Time, (Input::Cursor)type);
     }
 }
 
-//Dont have a joystick, couldn't test
+// Dont have a joystick, couldn't test
 static void UpdateGamepads()
 {
     // ImGuiIO& io = ImGui::GetIO();
@@ -172,4 +169,5 @@ static void Update()
     UpdateMouseCursor();
     UpdateGamepads();
 }
-}; // namespace ImGui
+};  // namespace ImGui
+

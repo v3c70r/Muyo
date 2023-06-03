@@ -2,6 +2,8 @@
 
 #include "RenderPass.h"
 
+namespace Muyo
+{
 class RenderTarget;
 struct RSMResources
 {
@@ -13,18 +15,19 @@ struct RSMResources
 class RenderPassRSM : public RenderPass
 {
 public:
-    RenderPassRSM(const std::string& sCasterName, VkExtent2D shadowMapSize, uint32_t nLightIndex) : m_shadowMapSize(shadowMapSize), m_shadowCasterName(sCasterName), m_nLightIndex(nLightIndex), m_aRSMNames(
+    RenderPassRSM(const std::string& sCasterName, VkExtent2D shadowMapSize, uint32_t nLightIndex) : m_shadowMapSize(shadowMapSize), m_shadowCasterName(sCasterName), m_nLightIndex(nLightIndex), m_aRSMNames({
+                                                                                                                                                                                                     sCasterName + "_depth",
+                                                                                                                                                                                                     sCasterName + "_normal",
+                                                                                                                                                                                                     sCasterName + "_position",
+                                                                                                                                                                                                     sCasterName + "_flux",
+                                                                                                                                                                                                 })
     {
-        sCasterName + "_depth",
-        sCasterName + "_normal",
-        sCasterName + "_position",
-        sCasterName + "_flux",
-    }){}
+    }
     ~RenderPassRSM() override;
     virtual void CreatePipeline() override;
     virtual void PrepareRenderPass() override;
     void RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries);
-    VkCommandBuffer GetCommandBuffer() const override  {return m_commandBuffer;}
+    VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
     RSMResources GetRSM();
 
@@ -54,3 +57,4 @@ private:
     };
     const std::array<std::string, 4> m_aRSMNames;
 };
+}  // namespace Muyo

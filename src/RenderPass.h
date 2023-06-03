@@ -9,12 +9,14 @@
 
 #include "RenderPassParameters.h"
 
+namespace Muyo
+{
 class Geometry;
 
 class IRenderPass
 {
 public:
-    virtual ~IRenderPass() {};
+    virtual ~IRenderPass(){};
     virtual VkCommandBuffer GetCommandBuffer() const = 0;
     virtual void CreatePipeline() = 0;
     virtual void PrepareRenderPass() = 0;
@@ -23,12 +25,12 @@ public:
 class RenderPass : public IRenderPass
 {
 public:
-    virtual void PrepareRenderPass() override {};
+    virtual void PrepareRenderPass() override{};
+
 protected:
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     RenderPassParameters m_renderPassParameters;
 };
-
 
 // The pass render to swap chain
 class RenderPassFinal : public IRenderPass
@@ -51,8 +53,8 @@ public:
     }
     virtual void CreatePipeline() override;
 
-    void SetCurrentSwapchainImageIndex(uint32_t nIndex) {m_nCurrentSwapchainImageIndex = nIndex;}
-    void PrepareRenderPass() override {};
+    void SetCurrentSwapchainImageIndex(uint32_t nIndex) { m_nCurrentSwapchainImageIndex = nIndex; }
+    void PrepareRenderPass() override{};
 
 protected:
     std::vector<VkFramebuffer> m_vFramebuffers;  // Each framebuffer bind to a swapchain image
@@ -69,3 +71,4 @@ private:
     void DestroyFramebuffers();
     uint32_t m_nCurrentSwapchainImageIndex = 0;
 };
+}  // namespace Muyo

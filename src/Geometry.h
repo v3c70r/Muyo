@@ -4,9 +4,11 @@
 #include <unordered_map>
 
 #include "MeshVertex.h"
+#include "RenderResourceManager.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
-#include "RenderResourceManager.h"
+namespace Muyo
+{
 class Material;
 class Primitive
 {
@@ -14,9 +16,9 @@ public:
     Primitive(const std::string& sName, const std::vector<Vertex>& vertices,
               const std::vector<Index>& indices)
     {
-        m_pVertexBuffer = GetRenderResourceManager()->GetVertexBuffer<Vertex>(sName+ "_vertex", vertices);
+        m_pVertexBuffer = GetRenderResourceManager()->GetVertexBuffer<Vertex>(sName + "_vertex", vertices);
         m_nVertexCount = (uint32_t)vertices.size();
-        m_pIndexBuffer = GetRenderResourceManager()->GetIndexBuffer(sName+"_index", indices);
+        m_pIndexBuffer = GetRenderResourceManager()->GetIndexBuffer(sName + "_index", indices);
         m_nIndexCount = (uint32_t)indices.size();
     }
     VkBuffer getVertexDeviceBuffer() const
@@ -76,7 +78,7 @@ public:
     {
         return m_vPrimitives;
     }
-    void SetWorldMatrix(const glm::mat4 &mObjectToWorld)
+    void SetWorldMatrix(const glm::mat4& mObjectToWorld)
     {
         assert(m_mWorldMatrixBuffer != nullptr);
         m_mWorldMatrixBuffer->SetData(mObjectToWorld);
@@ -101,7 +103,7 @@ public:
 private:
     std::vector<std::unique_ptr<Primitive>> m_vPrimitives;
     UniformBuffer<glm::mat4>* m_mWorldMatrixBuffer = nullptr;
-    glm::mat4 m_mWorldMatrix = glm::mat4(1.0);       // Cached world matrix
+    glm::mat4 m_mWorldMatrix = glm::mat4(1.0);  // Cached world matrix
 };
 
 class GeometryManager
@@ -111,10 +113,10 @@ public:
     void Destroy() { vpGeometries.clear(); }
     Geometry* GetQuad();
     Geometry* GetCube();
+
 private:
     int m_nQuadIdx = -1;  // Quad geometry idx
     int m_nCubeIdx = -1;  // Cube geometry idx
-
 };
 
 GeometryManager* GetGeometryManager();
@@ -123,3 +125,4 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
 
 std::unique_ptr<Geometry> getSkybox();
 
+}  // namespace Muyo

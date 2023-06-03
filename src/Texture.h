@@ -1,22 +1,26 @@
 #pragma once
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
-#include "RenderResource.h"
+
+#include <cassert>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include <memory>
-#include <cassert>
-#include "VkRenderDevice.h"
-#include "VkMemoryAllocator.h"
 
+#include "RenderResource.h"
+#include "VkMemoryAllocator.h"
+#include "VkRenderDevice.h"
+
+namespace Muyo
+{
 class TextureResource : public ImageResource
 {
 public:
     TextureResource();
     ~TextureResource();
 
-    void LoadPixels(void *pixels, int width, int height);
+    void LoadPixels(void* pixels, int width, int height);
 
     void LoadImage(const std::string path);
 
@@ -42,7 +46,6 @@ public:
         m_imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         m_imageInfo.flags = 0;
         CreateImageInternal(memoryUsage);
-
     }
 
     // TODO: Move this barrier out of the function
@@ -123,7 +126,8 @@ public:
         }
 
         GetRenderDevice()->ExecuteImmediateCommand(
-            [&](VkCommandBuffer commandBuffer) {
+            [&](VkCommandBuffer commandBuffer)
+            {
                 vkCmdPipelineBarrier(commandBuffer, sourceStage,
                                      /*srcStage*/ destinationStage, /*dstStage*/
                                      0, 0, nullptr, 0, nullptr, 1, &barrier);
@@ -146,7 +150,8 @@ private:
         region.imageExtent = {width, height, 1};
 
         GetRenderDevice()->ExecuteImmediateCommand(
-            [&](VkCommandBuffer commandBuffer) {
+            [&](VkCommandBuffer commandBuffer)
+            {
                 vkCmdCopyBufferToImage(commandBuffer, buffer, image,
                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                                        &region);
@@ -205,33 +210,35 @@ private:
 class TextureResourceManager
 {
 public:
-	const TextureResource* CreateAndLoadOrGetTexture(const std::string& name, const std::string& path)
-	{
-		if (m_mTextureIndices.find(name) == m_mTextureIndices.end())
-		{
-			m_mTextureIndices[name] = (uint32_t)m_vpTextures.size();
-			m_vpTextures.emplace_back(std::make_unique<TextureResource>());
-			m_vpTextures.back()->LoadImage(path);
-			m_vpTextures.back()->SetDebugName(name);
-			return m_vpTextures.back().get();
-		}
-		else
-		{
-			return m_vpTextures[m_mTextureIndices[name]].get();
-		}
-	}
+    const TextureResource* CreateAndLoadOrGetTexture(const std::string& name, const std::string& path)
+    {
+        if (m_mTextureIndices.find(name) == m_mTextureIndices.end())
+        {
+            m_mTextureIndices[name] = (uint32_t)m_vpTextures.size();
+            m_vpTextures.emplace_back(std::make_unique<TextureResource>());
+            m_vpTextures.back()->LoadImage(path);
+            m_vpTextures.back()->SetDebugName(name);
+            return m_vpTextures.back().get();
+        }
+        else
+        {
+            return m_vpTextures[m_mTextureIndices[name]].get();
+        }
+    }
     uint32_t GetTextureIndex(const std::string& name) const
     {
         return m_mTextureIndices.at(name);
     }
     const std::vector<std::unique_ptr<TextureResource>>& GetTextures() const { return m_vpTextures; }
-	void Destroy()
-	{
-		m_vpTextures.clear();
-		m_mTextureIndices.clear();
-	}
+    void Destroy()
+    {
+        m_vpTextures.clear();
+        m_mTextureIndices.clear();
+    }
+
 private:
-	std::vector<std::unique_ptr<TextureResource>> m_vpTextures;
-	std::unordered_map<std::string, uint32_t> m_mTextureIndices;
+    std::vector<std::unique_ptr<TextureResource>> m_vpTextures;
+    std::unordered_map<std::string, uint32_t> m_mTextureIndices;
 };
 TextureResourceManager* GetTextureResourceManager();
+}  // namespace Muyo

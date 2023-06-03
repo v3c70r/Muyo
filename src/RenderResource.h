@@ -1,13 +1,16 @@
 #pragma once
 #include <vk_mem_alloc.h>
-#include <cassert>
 #include <vulkan/vulkan_core.h>
 
+#include <cassert>
+
 #include "Debug.h"
+#include "VkExtFuncsLoader.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
-#include "VkExtFuncsLoader.h"
 
+namespace Muyo
+{
 class IRenderResource
 {
 public:
@@ -38,8 +41,7 @@ public:
     VkFormat GetImageFormat() const { return m_imageInfo.format; }
 
 protected:
-
-    void CreateImageInternal(const VmaMemoryUsage &memoryUsage)
+    void CreateImageInternal(const VmaMemoryUsage& memoryUsage)
     {
         GetMemoryAllocator()->AllocateImage(
             &m_imageInfo, memoryUsage, m_image, m_allocation);
@@ -149,7 +151,8 @@ public:
 
             // Submit the copy immedietly
             GetRenderDevice()->ExecuteImmediateCommand(
-                [&](VkCommandBuffer commandBuffer) {
+                [&](VkCommandBuffer commandBuffer)
+                {
                     VkBufferCopy copyRegion = {};
                     copyRegion.size = size;
                     vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1,
@@ -191,7 +194,7 @@ public:
         GetMemoryAllocator()->UnmapBuffer(m_allocation);
     }
 
-	uint32_t GetSize() const { return m_nSize; }
+    uint32_t GetSize() const { return m_nSize; }
 
 protected:
     VkBuffer m_buffer = VK_NULL_HANDLE;
@@ -201,33 +204,27 @@ protected:
     const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_UNKNOWN;
 };
 
-
 // Ray tracing related buffers
 class AccelerationStructureBuffer : public BufferResource
 {
 public:
     AccelerationStructureBuffer(uint32_t size)
-		: BufferResource(
-			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT
-			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR
-			| VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-			VMA_MEMORY_USAGE_GPU_ONLY)
-	{
+        : BufferResource(
+              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+              VMA_MEMORY_USAGE_GPU_ONLY)
+    {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
                                              "AccelerationStrucutre");
     }
 
-	AccelerationStructureBuffer(const void* pData, uint32_t size)
-		: BufferResource(
-			VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT
-			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR
-			| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
-			| VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-			VMA_MEMORY_USAGE_GPU_ONLY)
-	{
-		GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-			m_buffer, m_allocation,
+    AccelerationStructureBuffer(const void* pData, uint32_t size)
+        : BufferResource(
+              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+              VMA_MEMORY_USAGE_GPU_ONLY)
+    {
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
+                                             m_buffer, m_allocation,
                                              "AccelerationStrucutre");
         SetData(pData, size);
     }
@@ -314,7 +311,9 @@ public:
         SetData((void*)buffer, nSize);
         m_nNumStructs = nNumStructs;
     }
-    uint32_t GetNumStructs() const { return m_nNumStructs;}
+    uint32_t GetNumStructs() const { return m_nNumStructs; }
+
 private:
     uint32_t m_nNumStructs = 0;
 };
+}  // namespace Muyo

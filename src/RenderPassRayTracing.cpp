@@ -10,6 +10,9 @@
 #include "SamplerManager.h"
 #include "Scene.h"
 
+namespace Muyo
+{
+
 void RenderPassRayTracing::PrepareRenderPass()
 {
     // Prepare render pass parameters
@@ -110,8 +113,6 @@ void RenderPassRayTracing::DestroyPipeline()
 
 void RenderPassRayTracing::RecordCommandBuffer()
 {
-
-
     const StorageBuffer<LightData>* lightDataBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
 
     std::vector<VkDescriptorSet> vDescSets =
@@ -120,7 +121,6 @@ void RenderPassRayTracing::RecordCommandBuffer()
             GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)};
 
     m_commandBuffer = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
-
 
     {
         StorageImageResource* pOutputImage = GetRenderResourceManager()->GetResource<StorageImageResource>("Ray Tracing Output");
@@ -137,24 +137,24 @@ void RenderPassRayTracing::RecordCommandBuffer()
             VkImage outputImage = pOutputImage->getImage();
 #ifdef FEATURE_SYNCHRONIZATION2
             VkImageMemoryBarrier2KHR imgBarrier = {
-                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR,  //VkStructureType             sType;
-                nullptr,                                       //const void*                 pNext;
-                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,             //VkPipelineStageFlags2KHR    srcStageMask;
-                0,                                             //VkAccessFlags2KHR           srcAccessMask;
-                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,  //VkPipelineStageFlags2KHR    dstStageMask;
-                0,                                             //VkAccessFlags2KHR           dstAccessMask;
-                VK_IMAGE_LAYOUT_UNDEFINED,                     //VkImageLayout               oldLayout;
-                VK_IMAGE_LAYOUT_GENERAL,                       //VkImageLayout               newLayout;
-                VK_QUEUE_FAMILY_IGNORED,                       //uint32_t                    srcQueueFamilyIndex;
-                VK_QUEUE_FAMILY_IGNORED,                       //uint32_t                    dstQueueFamilyIndex;
-                outputImage,                                   //VkImage                     image;
+                VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR,  // VkStructureType             sType;
+                nullptr,                                       // const void*                 pNext;
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,             // VkPipelineStageFlags2KHR    srcStageMask;
+                0,                                             // VkAccessFlags2KHR           srcAccessMask;
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,  // VkPipelineStageFlags2KHR    dstStageMask;
+                0,                                             // VkAccessFlags2KHR           dstAccessMask;
+                VK_IMAGE_LAYOUT_UNDEFINED,                     // VkImageLayout               oldLayout;
+                VK_IMAGE_LAYOUT_GENERAL,                       // VkImageLayout               newLayout;
+                VK_QUEUE_FAMILY_IGNORED,                       // uint32_t                    srcQueueFamilyIndex;
+                VK_QUEUE_FAMILY_IGNORED,                       // uint32_t                    dstQueueFamilyIndex;
+                outputImage,                                   // VkImage                     image;
                 {
-                    //VkImageSubresourceRange     subresourceRange;
-                    VK_IMAGE_ASPECT_COLOR_BIT,  //VkImageAspectFlags    aspectMask;
-                    0,                          //uint32_t              baseMipLevel;
-                    1,                          //uint32_t              levelCount;
-                    0,                          //uint32_t              baseArrayLayer;
-                    1,                          //uint32_t              layerCount;
+                    // VkImageSubresourceRange     subresourceRange;
+                    VK_IMAGE_ASPECT_COLOR_BIT,  // VkImageAspectFlags    aspectMask;
+                    0,                          // uint32_t              baseMipLevel;
+                    1,                          // uint32_t              levelCount;
+                    0,                          // uint32_t              baseArrayLayer;
+                    1,                          // uint32_t              layerCount;
                 },
             };
 
@@ -162,7 +162,7 @@ void RenderPassRayTracing::RecordCommandBuffer()
             accumulatedImageBarrier.image = pAccumulatedStorage->getImage();
             accumulatedImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-            std::array<VkImageMemoryBarrier2KHR, 2> barriers = { imgBarrier, accumulatedImageBarrier };
+            std::array<VkImageMemoryBarrier2KHR, 2> barriers = {imgBarrier, accumulatedImageBarrier};
             VkDependencyInfoKHR dependency =
                 {
                     VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,   // sType;
@@ -183,26 +183,23 @@ void RenderPassRayTracing::RecordCommandBuffer()
             GetRenderDevice()->AddResourceBarrier(m_commandBuffer, accumulatedImageBarrier);
 #endif
 
-        SCOPED_MARKER(m_commandBuffer, "Trace Ray");
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
-        vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);
+            SCOPED_MARKER(m_commandBuffer, "Trace Ray");
+            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
+            vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);
 
-        VkStridedDeviceAddressRegionKHR callable = {};
+            VkStridedDeviceAddressRegionKHR callable = {};
 
-        VkExt::vkCmdTraceRaysKHR(
-            m_commandBuffer,
-            &m_aSBTRegions[SBT_REGION_RAY_GEN],
-            &m_aSBTRegions[SBT_REGION_RAY_MISS],
-            &m_aSBTRegions[SBT_REGION_RAY_HIT],
-            &callable,
-            m_imageSize.width, m_imageSize.height, 1);
-
-
+            VkExt::vkCmdTraceRaysKHR(
+                m_commandBuffer,
+                &m_aSBTRegions[SBT_REGION_RAY_GEN],
+                &m_aSBTRegions[SBT_REGION_RAY_MISS],
+                &m_aSBTRegions[SBT_REGION_RAY_HIT],
+                &callable,
+                m_imageSize.width, m_imageSize.height, 1);
         };
         vkEndCommandBuffer(m_commandBuffer);
     }
 }
-
 
 uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment)
 {
@@ -216,14 +213,13 @@ void RenderPassRayTracing::AllocateShaderBindingTable()
 
     uint32_t nMissGroupCount = 1;
     uint32_t nHitGroupCount = 1;
-    uint32_t nRayGenGroupCount = 1;      // can have only one
+    uint32_t nRayGenGroupCount = 1;  // can have only one
 
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {};
     GetRenderDevice()->GetPhysicalDeviceProperties(raytracingProperties);
 
     uint32_t nHandleSize = raytracingProperties.shaderGroupHandleSize;
     uint32_t nHandleSizeAligned = AlignUp(nHandleSize, raytracingProperties.shaderGroupHandleAlignment);
-
 
     // ray gen shader takes a shader group base alignment
     // There should be just 1 ray gen shader
@@ -241,12 +237,11 @@ void RenderPassRayTracing::AllocateShaderBindingTable()
 
     uint32_t sbtSize = rgenRegion.size + hitRegion.size + missRegion.size;
 
-
     uint32_t nHandleCount = nRayGenGroupCount + nMissGroupCount + nHitGroupCount;
     uint32_t nDataSize = nHandleCount * nHandleSize;
     std::vector<uint8_t> handleBuffer(nDataSize);
     (VkExt::vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nHandleCount, nDataSize, handleBuffer.data()));
-    ShaderBindingTableBuffer *pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", sbtSize);
+    ShaderBindingTableBuffer* pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", sbtSize);
 
     // Copy handles to GPU
     VkDeviceAddress SBTAddress = GetRenderDevice()->GetBufferDeviceAddress(pSBTBuffer->buffer());
@@ -259,7 +254,6 @@ void RenderPassRayTracing::AllocateShaderBindingTable()
 
     // copy ray gen at begining of the handle data
     memcpy(pRayGenHandleGPU, handleBuffer.data(), nHandleSize);
-
 
     // copy miss
     nHandleOffset += nHandleSize;
@@ -282,3 +276,5 @@ void RenderPassRayTracing::AllocateShaderBindingTable()
 
     pSBTBuffer->Unmap();
 }
+
+}  // namespace Muyo

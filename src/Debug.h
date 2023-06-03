@@ -1,15 +1,18 @@
 #pragma once
 #include <vulkan/vulkan.h>
-#include <vector>
-#include <string>
+
 #include <cassert>
+#include <string>
+#include <vector>
 
-
+namespace Muyo
+{
 class DebugUtilsMessenger
 {
 public:
     void Initialize(const VkInstance& instance);
     void Uninitialize(const VkInstance& instance);
+
 private:
     VkDebugUtilsMessengerEXT m_debugUtilsMessenger = VK_NULL_HANDLE;
 };
@@ -21,7 +24,6 @@ const char* GetValidationLayerName();
 
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
                                  const char* sName);
-
 
 // Scoped markers
 void beginMarker(VkQueue queue, std::string&& name, uint64_t color);
@@ -44,15 +46,20 @@ public:
     {
         endMarker(m_markedVkObject);
     }
+
 private:
     T m_markedVkObject = VK_NULL_HANDLE;
 };
 
-// Create a macro to generate local variables 
-#define TOKENPASTE(x, y) x ## y
-#define TOKENPASTE2(x, y) TOKENPASTE(x, y)
-#define SCOPED_MARKER(OBJ, MESSAGE)\
-    auto TOKENPASTE2(scoped_marker_,__LINE__) = ScopedMarker(OBJ, MESSAGE)
-
 // Assertion for vulkan function calls
 void VK_ASSERT(VkResult result);
+}  // namespace Muyo
+
+// Create a macro to generate local variables
+#define TOKENPASTE(x, y) x##y
+#define TOKENPASTE2(x, y) TOKENPASTE(x, y)
+
+#define SCOPED_MARKER(OBJ, MESSAGE) \
+    auto TOKENPASTE2(scoped_marker_, __LINE__) = ScopedMarker(OBJ, MESSAGE)
+
+

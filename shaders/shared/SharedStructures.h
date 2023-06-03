@@ -7,7 +7,9 @@
 #ifndef SHADER_CODE
 #include <glm/glm.hpp>
 using namespace glm;
-#endif // SHADER_CODE
+namespace Muyo
+{
+#endif  // SHADER_CODE
 
 // Light data
 
@@ -50,4 +52,8 @@ struct PBRFactors
     vec3 vEmissiveFactor;
     float padding0;
 };
-#endif // SHARED_STRUCTURES_H
+
+#ifndef SHADER_CODE
+}  // namespace Muyo
+#endif  // SHADER_CODE
+#endif  // SHARED_STRUCTURES_H

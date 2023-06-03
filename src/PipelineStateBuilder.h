@@ -1,14 +1,16 @@
 #pragma once
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <cassert>
 #include <fstream>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan_core.h>
 
 #include "VkRenderDevice.h"
 
+namespace Muyo
+{
 // Fluent builder
 template <typename T>
 class VertexBuffer;
@@ -138,6 +140,7 @@ public:
         return *this;
     }
     ComputePipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage = VK_SHADER_STAGE_COMPUTE_BIT);
+
 private:
     VkPipelineShaderStageCreateInfo m_shaderStageInfo = {};
 };
@@ -425,7 +428,7 @@ public:
     }
 };
 
-
 VkShaderModule CreateShaderModule(const std::vector<char>& code);
 std::vector<char> ReadSpv(const std::string& fileName);
 
+}  // namespace Muyo

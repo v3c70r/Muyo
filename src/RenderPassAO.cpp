@@ -1,8 +1,12 @@
 #include "RenderPassAO.h"
-#include "PipelineStateBuilder.h"
-#include "DescriptorManager.h"
-#include "ResourceBarrier.h"
+
 #include "Debug.h"
+#include "DescriptorManager.h"
+#include "PipelineStateBuilder.h"
+#include "ResourceBarrier.h"
+
+namespace Muyo
+{
 
 RenderPassAO::RenderPassAO()
 {
@@ -10,22 +14,22 @@ RenderPassAO::RenderPassAO()
 }
 void RenderPassAO::CreatePipeline()
 {
-	// 1. Linearize depth
-	std::vector<VkDescriptorSetLayout> vDescLayouts =
-	{
-		GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
-		GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE),
-	};
-	
-	std::vector<VkPushConstantRange> vPushConstants;
-	m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(vDescLayouts, vPushConstants);
+    // 1. Linearize depth
+    std::vector<VkDescriptorSetLayout> vDescLayouts =
+        {
+            GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
+            GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE),
+        };
+
+    std::vector<VkPushConstantRange> vPushConstants;
+    m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(vDescLayouts, vPushConstants);
 
     // Shader module
     VkShaderModule linearizeDepthShdr = CreateShaderModule(ReadSpv("shaders/linearizeDepth.comp.spv"));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(linearizeDepthShdr), VK_OBJECT_TYPE_SHADER_MODULE, "linearizeDepth.comp.spv");
 
-	ComputePipelineBuilder builder;
-	builder.AddShaderModule(linearizeDepthShdr).SetPipelineLayout(m_pipelineLayout);
+    ComputePipelineBuilder builder;
+    builder.AddShaderModule(linearizeDepthShdr).SetPipelineLayout(m_pipelineLayout);
     VkComputePipelineCreateInfo pipelineCreateInfo = builder.Build();
     VK_ASSERT(vkCreateComputePipelines(GetRenderDevice()->GetDevice(), VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &m_pipeline));
 
@@ -33,7 +37,6 @@ void RenderPassAO::CreatePipeline()
 }
 void RenderPassAO::CreateRenderPass()
 {
-
 }
 
 RenderPassAO::~RenderPassAO()
@@ -68,14 +71,13 @@ void RenderPassAO::RecordCommandBuffer()
     }
 
     VkCommandBufferBeginInfo beginInfo =
-    {
-        VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        nullptr,
-        VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
-        nullptr
-    };
+        {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            nullptr,
+            VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
+            nullptr};
 
-    //vkQueueWaitIdle(GetRenderDevice()->GetComputeQueue());
+    // vkQueueWaitIdle(GetRenderDevice()->GetComputeQueue());
     VK_ASSERT(vkBeginCommandBuffer(m_cmdBuf, &beginInfo));
     {
         SCOPED_MARKER(m_cmdBuf, "AO");
@@ -89,3 +91,5 @@ void RenderPassAO::RecordCommandBuffer()
     }
     vkEndCommandBuffer(m_cmdBuf);
 }
+
+}  // namespace Muyo

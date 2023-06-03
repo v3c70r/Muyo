@@ -1,6 +1,5 @@
 #pragma once
 
-
 namespace Input
 {
 
@@ -24,6 +23,5 @@ enum Cursor
     CURSOR_HAND,
     CURSOR_COUNT,
 };
+}  // namespace Input
 
-
-}

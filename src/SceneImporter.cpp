@@ -4,15 +4,18 @@
 
 #include <cassert>
 #include <functional>
-#include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <sstream> // std::stringstream
+#include <glm/gtc/quaternion.hpp>
+#include <sstream>  // std::stringstream
 
 #include "Geometry.h"
-#include "Material.h"
-#include "SceneImporter.h"
-#include "RenderResourceManager.h"
 #include "LightSceneNode.h"
+#include "Material.h"
+#include "RenderResourceManager.h"
+#include "SceneImporter.h"
+
+namespace Muyo
+{
 
 std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
 {
@@ -37,63 +40,64 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
             for (int nNodeIdx : tinyScene.nodes)
             {
                 std::function<void(SceneNode **, const tinygltf::Node &)>
-                    ConstructTreeFromGLTF = [&](SceneNode **ppSceneNode, const tinygltf::Node &gltfNode) {
-                        // Copy current node
-                        SceneNode *pSceneNode = nullptr;
-                        static const std::string LIGHT_EXT_NAME = "KHR_lights_punctual";
+                    ConstructTreeFromGLTF = [&](SceneNode **ppSceneNode, const tinygltf::Node &gltfNode)
+                {
+                    // Copy current node
+                    SceneNode *pSceneNode = nullptr;
+                    static const std::string LIGHT_EXT_NAME = "KHR_lights_punctual";
 
-                        if (gltfNode.mesh != -1)
+                    if (gltfNode.mesh != -1)
+                    {
+                        const tinygltf::Mesh mesh = model.meshes[gltfNode.mesh];
+                        pSceneNode = new GeometrySceneNode;
+                        CopyGLTFNode(*pSceneNode, gltfNode);
+                        ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
+                    }
+                    else if (gltfNode.extensions.find(LIGHT_EXT_NAME) != gltfNode.extensions.end() && gltfNode.extensions.at(LIGHT_EXT_NAME).Has("light"))
+                    {
+                        // Check gltf Lights
+                        // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md
+                        int nLightIdx = gltfNode.extensions.at(LIGHT_EXT_NAME).Get("light").Get<int>();
+                        tinygltf::Light light = model.lights[nLightIdx];
+
+                        glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
+                        if (light.type == "point")
                         {
-                            const tinygltf::Mesh mesh = model.meshes[gltfNode.mesh];
-                            pSceneNode = new GeometrySceneNode;
-                            CopyGLTFNode(*pSceneNode, gltfNode);
-                            ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
+                            // TODO: Figure out how to get radius from gltf
+                            pSceneNode = new PointLightNode(lightColor, (float)light.intensity);
                         }
-                        else if (gltfNode.extensions.find(LIGHT_EXT_NAME) != gltfNode.extensions.end() && gltfNode.extensions.at(LIGHT_EXT_NAME).Has("light"))
+                        else if (light.type == "spot")
                         {
-                            // Check gltf Lights
-                            // https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md
-                            int nLightIdx = gltfNode.extensions.at(LIGHT_EXT_NAME).Get("light").Get<int>();
-                            tinygltf::Light light = model.lights[nLightIdx];
-
-                            glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
-                            if (light.type == "point")
-                            {
-                                // TODO: Figure out how to get radius from gltf
-                                pSceneNode = new PointLightNode(lightColor, (float)light.intensity);
-                            }
-                            else if (light.type == "spot")
-                            {
-                                pSceneNode = new SpotLightNode(lightColor, (float)light.intensity, (float)light.spot.innerConeAngle, (float)light.spot.outerConeAngle);
-                            }
-                            else if (light.type == "directional")
-                            {
-                                pSceneNode = new DirectionalLightNode(lightColor, (float)light.intensity);
-                            }
-                            else
-                            {
-                                assert(false);
-                            }
-
-                            CopyGLTFNode(*pSceneNode, gltfNode);
+                            pSceneNode = new SpotLightNode(lightColor, (float)light.intensity, (float)light.spot.innerConeAngle, (float)light.spot.outerConeAngle);
+                        }
+                        else if (light.type == "directional")
+                        {
+                            pSceneNode = new DirectionalLightNode(lightColor, (float)light.intensity);
                         }
                         else
                         {
-                            pSceneNode = new SceneNode;
-                            CopyGLTFNode(*pSceneNode, gltfNode);
+                            assert(false);
                         }
-                        assert(pSceneNode != nullptr);
 
-                        // recursively copy children
-                        for (int nNodeIdx : gltfNode.children)
-                        {
-                            SceneNode* pChild = nullptr;
-                            const tinygltf::Node &node = model.nodes[nNodeIdx];
-                            ConstructTreeFromGLTF(&(pChild), node);
-                            pSceneNode->AppendChild(pChild);
-                        }
-                        *ppSceneNode = pSceneNode;
-                    };
+                        CopyGLTFNode(*pSceneNode, gltfNode);
+                    }
+                    else
+                    {
+                        pSceneNode = new SceneNode;
+                        CopyGLTFNode(*pSceneNode, gltfNode);
+                    }
+                    assert(pSceneNode != nullptr);
+
+                    // recursively copy children
+                    for (int nNodeIdx : gltfNode.children)
+                    {
+                        SceneNode *pChild = nullptr;
+                        const tinygltf::Node &node = model.nodes[nNodeIdx];
+                        ConstructTreeFromGLTF(&(pChild), node);
+                        pSceneNode->AppendChild(pChild);
+                    }
+                    *ppSceneNode = pSceneNode;
+                };
 
                 SceneNode *pSceneNode = nullptr;
                 tinygltf::Node gltfRootNode = model.nodes[nNodeIdx];
@@ -167,7 +171,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                                          const tinygltf::Model &model)
 {
     std::vector<std::unique_ptr<Primitive>> vPrimitives;
-    bool bIsMeshTransparent =false;
+    bool bIsMeshTransparent = false;
     bool bIsMeshEmissive = false;
 
     // Keep track of local bounding box
@@ -243,30 +247,30 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                    accessor.count * nByteStride);
         }
         // vUV0s
-		{
-			const std::string sAttribkey = "TEXCOORD_0";
-			if (primitive.attributes.find(sAttribkey) != primitive.attributes.end())
-			{
-				const auto& accessor =
-					model.accessors.at(primitive.attributes.at(sAttribkey));
-				const auto& bufferView = model.bufferViews[accessor.bufferView];
-				const auto& buffer = model.buffers[bufferView.buffer];
+        {
+            const std::string sAttribkey = "TEXCOORD_0";
+            if (primitive.attributes.find(sAttribkey) != primitive.attributes.end())
+            {
+                const auto &accessor =
+                    model.accessors.at(primitive.attributes.at(sAttribkey));
+                const auto &bufferView = model.bufferViews[accessor.bufferView];
+                const auto &buffer = model.buffers[bufferView.buffer];
 
-				assert(accessor.type == TINYGLTF_TYPE_VEC2);
-				assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+                assert(accessor.type == TINYGLTF_TYPE_VEC2);
+                assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
 
-				// confirm we use the standard format
-				size_t nByteStride = 8;
-				assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
-				assert(buffer.data.size() >=
-					bufferView.byteOffset + accessor.byteOffset +
-					nByteStride * accessor.count);
-				vUV0s.resize(accessor.count);
-				memcpy(vUV0s.data(),
-					buffer.data.data() + bufferView.byteOffset +
-					accessor.byteOffset,
-					accessor.count * nByteStride);
-			}
+                // confirm we use the standard format
+                size_t nByteStride = 8;
+                assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
+                assert(buffer.data.size() >=
+                       bufferView.byteOffset + accessor.byteOffset +
+                           nByteStride * accessor.count);
+                vUV0s.resize(accessor.count);
+                memcpy(vUV0s.data(),
+                       buffer.data.data() + bufferView.byteOffset +
+                           accessor.byteOffset,
+                       accessor.count * nByteStride);
+            }
             else
             {
                 vUV0s.resize(vPositions.size());
@@ -365,7 +369,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             gltfMaterial = model.materials.at(primitive.material);
         }
         auto materialIter = GetMaterialManager()->m_mMaterials.find(gltfMaterial.name);
-        Material* pMaterial = nullptr;
+        Material *pMaterial = nullptr;
 
         if (materialIter == GetMaterialManager()->m_mMaterials.end())
         {
@@ -496,7 +500,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 {aUVIndices[0], aUVIndices[1],                                                                                                        // UVs
                  aUVIndices[2], aUVIndices[3],
                  aUVIndices[4], aUVIndices[5]},
-                 vEmissiveFactors,
+                vEmissiveFactors,
                 0.0f};
 
             pMaterial->LoadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
@@ -534,7 +538,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     // Setup world transformation uniform buffer object
     // Use pointer address as string
     std::stringstream ss;
-    ss << static_cast<void*>(pGeometry);
+    ss << static_cast<void *>(pGeometry);
     auto *worldMatBuffer = GetRenderResourceManager()->getUniformBuffer<glm::mat4>(ss.str());
     pGeometry->SetWorldMatrixUniformBuffer(worldMatBuffer);
     pGeometry->SetWorldMatrix(glm::mat4(1.0));
@@ -549,3 +553,5 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         geomNode.SetEmissive();
     }
 }
+
+}  // namespace Muyo

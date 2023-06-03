@@ -3,7 +3,10 @@
 // Probably need to inherit from a common interface of render destination
 //
 #include <vulkan/vulkan.h>
+
 #include <vector>
+namespace Muyo
+{
 
 class Swapchain
 {
@@ -19,7 +22,7 @@ public:
     VkExtent2D GetSwapchainExtent() const { return m_swapchainExtent; }
     VkSurfaceKHR GetSurface() const { return m_surface; }
     const std::vector<VkImageView>& GetImageViews() const { return m_swapchainImageViews; }
-    VkFormat GetImageFormat() const {return m_swapchainFormat.format;}
+    VkFormat GetImageFormat() const { return m_swapchainFormat.format; }
     uint32_t GetNextImage(VkSemaphore& semaphore);
     VkSwapchainKHR& GetSwapChain() { return m_swapchain; }
 
@@ -42,3 +45,4 @@ private:
     std::vector<VkImageView> m_swapchainImageViews;
 };
 
+}  // namespace Muyo

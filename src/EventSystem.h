@@ -1,15 +1,17 @@
 #pragma once
 
 #include <stdint.h>
+
 #include <cstddef>
-#include <memory>
 #include <map>
+#include <memory>
 
 #include "Event.h"
 #include "Key.h"
 #include "Mouse.h"
 
-enum EventType {
+enum EventType
+{
     KEY = 0,
     CHAR,
     MOUSEBUTTON,
@@ -20,19 +22,21 @@ enum EventType {
     COUNT,
 };
 
-enum EventState {
+enum EventState
+{
     PRESSED = true,
     RELEASED = false,
 };
 
-template<EventType ET, typename... Args>
-class GlobalEvent : public Event<Args...> {
+template <EventType ET, typename... Args>
+class GlobalEvent : public Event<Args...>
+{
 public:
     GlobalEvent<ET, Args...>() : Event<Args...>(ET) {}
     inline EventType name() const { return ET; }
 };
 
-//timestamp, key, modifier and state
+// timestamp, key, modifier and state
 typedef GlobalEvent<EventType::KEY, uint32_t, Input::Key, uint16_t, EventState>
     GlobalKeyEvent;
 
@@ -54,7 +58,8 @@ typedef GlobalEvent<EventType::WINDOWRESIZE, uint32_t, size_t, size_t>
 typedef GlobalEvent<EventType::CURSORSET, uint32_t, Input::Cursor>
     GlobalCursorSetEvent;
 
-class EventSystem {
+class EventSystem
+{
 public:
     static EventSystem* sys()
     {
@@ -62,13 +67,12 @@ public:
         return &s_EventSystem;
     }
 
-    //TODO This is not ideal, if we can directly pass GlobalEvent as template
-    //then we can avoid ET
-    template<EventType ET, typename T>
+    // TODO This is not ideal, if we can directly pass GlobalEvent as template
+    // then we can avoid ET
+    template <EventType ET, typename T>
     std::shared_ptr<T> globalEvent()
     {
-        std::shared_ptr<T> event = m_Events.find(ET) != m_Events.end() ?
-            std::static_pointer_cast<T>(m_Events.at(ET)) : nullptr;
+        std::shared_ptr<T> event = m_Events.find(ET) != m_Events.end() ? std::static_pointer_cast<T>(m_Events.at(ET)) : nullptr;
 
         if (event == nullptr)
             event = std::make_shared<T>();
@@ -76,7 +80,7 @@ public:
         return event;
     }
 
-    //TODO destructor
+    // TODO destructor
 
 private:
     std::map<EventType, std::shared_ptr<EventBase>> m_Events;

@@ -4,10 +4,12 @@
 #include <cstring>
 #include <glm/glm.hpp>
 
+#include "RenderResource.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
-#include "RenderResource.h"
 
+namespace Muyo
+{
 struct PerGeometryData
 {
     glm::mat4 model = glm::mat4(1.0);
@@ -18,11 +20,13 @@ class UniformBuffer : public BufferResource
 {
 public:
     UniformBuffer()
-        : BufferResource(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT 
+        : BufferResource(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
 #ifdef FEATURE_RAY_TRACING
-            | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+
+                             | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+
 #endif
-            ,
+                         ,
                          VMA_MEMORY_USAGE_CPU_TO_GPU)
 
     {
@@ -37,3 +41,4 @@ public:
         BufferResource::SetData(&buffer, sizeof(T));
     }
 };
+}  // namespace Muyo

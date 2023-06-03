@@ -1,12 +1,14 @@
 #pragma once
 #include <memory>
 
+#include "Camera.h"
 #include "Geometry.h"
 #include "RenderPass.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
-#include "Camera.h"
 
+namespace Muyo
+{
 class RenderLayerIBL : public RenderPass
 {
     struct IBLPassResource
@@ -24,7 +26,7 @@ public:
         return m_commandBuffer;
     }
 
-private:    // Methods
+private:  // Methods
     void setupRenderPass();
     void setupFramebuffer();
     void CreatePipeline() override;
@@ -37,8 +39,8 @@ private:
     const uint32_t PREFILTERED_CUBE_DIM = 512;
     const uint32_t SPECULAR_BRDF_LUT_DIM = 512;
     const uint32_t NUM_FACES = 6;
-    const uint32_t NUM_IRR_CUBEMAP_MIP = (uint32_t)std::floor(std::log2(ENV_CUBE_DIM))+1;
-    const uint32_t NUM_PREFILTERED_CUBEMAP_MIP = (uint32_t)std::floor(std::log2(PREFILTERED_CUBE_DIM))+1;
+    const uint32_t NUM_IRR_CUBEMAP_MIP = (uint32_t)std::floor(std::log2(ENV_CUBE_DIM)) + 1;
+    const uint32_t NUM_PREFILTERED_CUBEMAP_MIP = (uint32_t)std::floor(std::log2(PREFILTERED_CUBE_DIM)) + 1;
     const VkFormat TEX_FORMAT = VK_FORMAT_R32G32B32A32_SFLOAT;
     VkExtent2D m_renderArea = {0, 0};
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
@@ -62,7 +64,7 @@ private:
     VkDescriptorSet m_envMapDescriptorSet = VK_NULL_HANDLE;
     VkDescriptorSet m_irrMapDescriptorSet = VK_NULL_HANDLE;
 
-    std::array<VkFramebuffer, 2> m_frameBuffers = {VK_NULL_HANDLE, VK_NULL_HANDLE} ;
+    std::array<VkFramebuffer, 2> m_frameBuffers = {VK_NULL_HANDLE, VK_NULL_HANDLE};
 
     UniformBuffer<PerViewData> m_uniformBuffer;
 
@@ -83,8 +85,7 @@ private:
         ENV_CUBE_DIM,
         IRR_CUBE_DIM,
         PREFILTERED_CUBE_DIM,
-        SPECULAR_BRDF_LUT_DIM
-    };
+        SPECULAR_BRDF_LUT_DIM};
 
     const std::array<std::string, RENDERPASS_COUNT> m_aRenderPassNames = {
         "Load cubemap", "Compute irradiance cubemap", "Compute prefiltered cubmap", "Compute specular brdf lut"};
@@ -93,3 +94,4 @@ private:
     std::vector<VkRenderPass> m_vRenderPasses;
 };
 
+}  // namespace Muyo

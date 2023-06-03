@@ -1,7 +1,12 @@
 #include "Geometry.h"
-#include <cassert>
-#include <tiny_obj_loader.h>
+
 #include <tiny_gltf.h>
+#include <tiny_obj_loader.h>
+
+#include <cassert>
+
+namespace Muyo
+{
 
 static GeometryManager s_geometryManager;
 GeometryManager *GetGeometryManager()
@@ -9,7 +14,7 @@ GeometryManager *GetGeometryManager()
     return &s_geometryManager;
 }
 
-Geometry* GeometryManager::GetQuad()
+Geometry *GeometryManager::GetQuad()
 {
     if (m_nQuadIdx == -1)
     {
@@ -27,7 +32,7 @@ Geometry* GeometryManager::GetQuad()
     return vpGeometries[m_nQuadIdx].get();
 }
 
-Geometry* GeometryManager::GetCube()
+Geometry *GeometryManager::GetCube()
 {
     if (m_nCubeIdx == -1)
     {
@@ -37,7 +42,7 @@ Geometry* GeometryManager::GetCube()
     return vpGeometries[m_nCubeIdx].get();
 }
 
-std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation)
+std::unique_ptr<Geometry> loadObj(const std::string &path, glm::mat4 mTransformation)
 {
     struct TinyObjInfo
     {
@@ -68,7 +73,6 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
             std::cout << "Shape " << i << ": " << std::endl;
             tinyobj::shape_t &shape = objInfo.shapes[i];
             std::cout << "\t" << shape.mesh.indices.size() << " indices\n";
-
         }
     }
 
@@ -101,7 +105,7 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
                  {normal.x, normal.y, normal.z},
                  {objInfo.attrib.texcoords[2 * meshIdx.texcoord_index],
                   objInfo.attrib.texcoords[2 * meshIdx.texcoord_index + 1],
-                  0,0}}));
+                  0, 0}}));
         }
         std::vector<Index> indices;
         indices.reserve(objInfo.shapes[i].mesh.indices.size());
@@ -110,13 +114,14 @@ std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransforma
             indices.push_back((Index)index);
         }
 
-        primitives.emplace_back(std::make_unique<Primitive>(path+std::to_string(i), vertices, indices));
+        primitives.emplace_back(std::make_unique<Primitive>(path + std::to_string(i), vertices, indices));
     }
     return std::make_unique<Geometry>(primitives);
 }
-
 
 std::unique_ptr<Geometry> getSkybox()
 {
     return loadObj("assets/cube.obj");
 }
+
+}  // namespace Muyo

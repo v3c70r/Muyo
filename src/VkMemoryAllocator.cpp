@@ -1,7 +1,13 @@
 #include "VkMemoryAllocator.h"
-#include "VkRenderDevice.h"
+
 #include <cassert>
 #include <string>
+
+#include "VkRenderDevice.h"
+
+namespace Muyo
+{
+
 VkMemoryAllocator::VkMemoryAllocator() {}
 void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 {
@@ -16,7 +22,6 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 }
 
 void VkMemoryAllocator::Unintialize() { vmaDestroyAllocator(*m_pAllocator); }
-
 
 void VkMemoryAllocator::AllocateBuffer(size_t nSize,
                                        VkBufferUsageFlags nBufferUsageFlags,
@@ -82,10 +87,12 @@ void VkMemoryAllocator::AllocateImage(const VkImageCreateInfo* pImageInfo,
     vmaCreateImage(*m_pAllocator, pImageInfo, &allocInfo, &image, &allocation,
                    nullptr);
 }
-void VkMemoryAllocator::FreeImage(VkImage& image, VmaAllocation &allocation)
+void VkMemoryAllocator::FreeImage(VkImage& image, VmaAllocation& allocation)
 {
     vmaDestroyImage(*m_pAllocator, image, allocation);
 }
 
 static VkMemoryAllocator allocator;
 VkMemoryAllocator* GetMemoryAllocator() { return &allocator; }
+
+}  // namespace Muyo

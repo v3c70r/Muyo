@@ -1,12 +1,16 @@
 #include "DescriptorManager.h"
 
-#include <cassert>
 #include <vulkan/vulkan_core.h>
 
+#include <cassert>
+
 #include "Debug.h"
+#include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
-#include "RenderResourceManager.h"
+
+namespace Muyo
+{
 
 // Poor man's singletone
 static DescriptorManager descriptorManager;
@@ -39,7 +43,7 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-            GetUniformBufferBinding(0),      // Pre view data
+            GetUniformBufferBinding(0),    // Pre view data
             GetSamplerArrayBinding(1, 4),  // gbuffers
         };
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
@@ -65,9 +69,10 @@ void DescriptorManager::createDescriptorSetLayouts()
         std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
             GetSamplerBinding(0
 #ifdef FEATURE_RAY_TRACING
-                    , VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR
+                              ,
+                              VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR
 #endif
-                    ),
+                              ),
         };
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -106,7 +111,6 @@ void DescriptorManager::createDescriptorSetLayouts()
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
                                 "Single storage image");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE] = layout;
-   
     }
 
     // Per view layout
@@ -116,11 +120,11 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            GetUniformBufferBinding(0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT 
+            GetUniformBufferBinding(0, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
 #ifdef FEATURE_RAY_TRACING
-            | VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+                                           | VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
 #endif
-            )};
+                                    )};
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -136,8 +140,6 @@ void DescriptorManager::createDescriptorSetLayouts()
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA] = layout;
     }
 
-    
-
     // Per obj layout
     {
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
@@ -145,7 +147,7 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 1> bindings = {
-            GetUniformBufferBinding(0)};    // VERTEX and FRAGMENT !?
+            GetUniformBufferBinding(0)};  // VERTEX and FRAGMENT !?
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -169,8 +171,7 @@ void DescriptorManager::createDescriptorSetLayouts()
 
         std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
             GetSamplerArrayBinding(0, Material::TEX_COUNT),
-            GetUniformBufferBinding(1, VK_SHADER_STAGE_FRAGMENT_BIT)
-        }; // PBR material
+            GetUniformBufferBinding(1, VK_SHADER_STAGE_FRAGMENT_BIT)};  // PBR material
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -219,22 +220,22 @@ void DescriptorManager::createDescriptorSetLayouts()
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
         std::array<VkDescriptorSetLayoutBinding, 3> bindings = {
-            GetSamplerBinding(0, 
-            VK_SHADER_STAGE_FRAGMENT_BIT 
+            GetSamplerBinding(0,
+                              VK_SHADER_STAGE_FRAGMENT_BIT
 #ifdef FEATURE_RAY_TRACING
-            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+                                  | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
 #endif
-            ),    // Irradiance map
-            GetSamplerBinding(1, VK_SHADER_STAGE_FRAGMENT_BIT 
+                              ),  // Irradiance map
+            GetSamplerBinding(1, VK_SHADER_STAGE_FRAGMENT_BIT
 #ifdef FEATURE_RAY_TRACING
-            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+                                     | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
 #endif
-            ),    // prefiltered environment 
-            GetSamplerBinding(2, VK_SHADER_STAGE_FRAGMENT_BIT 
+                              ),  // prefiltered environment
+            GetSamplerBinding(2, VK_SHADER_STAGE_FRAGMENT_BIT
 #ifdef FEATURE_RAY_TRACING
-            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+                                     | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
 #endif
-            )};   // specular brdf lut
+                              )};  // specular brdf lut
 
         descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
         descriptorSetLayoutInfo.pBindings = bindings.data();
@@ -284,7 +285,6 @@ void DescriptorManager::createDescriptorSetLayouts()
     }
 }
 
-
 void DescriptorManager::destroyDescriptorSetLayouts()
 {
     for (auto& descriptorSetLayout : m_aDescriptorSetLayouts)
@@ -319,7 +319,7 @@ VkDescriptorSet DescriptorManager::AllocateMaterialDescriptorSet(const Material:
     return descSet;
 }
 
-void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters)
+void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters& materialParameters)
 {
     assert(materialParameters.m_apTextures.size() == Material::TEX_COUNT);
 
@@ -338,7 +338,7 @@ void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSe
     std::array<VkWriteDescriptorSet, 2> aWriteDescriptorSets = {};
     {
         // Material sampler views
-        VkWriteDescriptorSet &writeDescriptorSet = aWriteDescriptorSets[0];
+        VkWriteDescriptorSet& writeDescriptorSet = aWriteDescriptorSets[0];
         writeDescriptorSet = {};
         writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writeDescriptorSet.dstSet = descriptorSet;
@@ -355,8 +355,7 @@ void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSe
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(PBRFactors);
     {
-
-        VkWriteDescriptorSet &writeDescriptorSet = aWriteDescriptorSets[1];
+        VkWriteDescriptorSet& writeDescriptorSet = aWriteDescriptorSets[1];
         writeDescriptorSet = {};
         writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writeDescriptorSet.dstSet = descriptorSet;
@@ -407,13 +406,21 @@ VkDescriptorSet DescriptorManager::AllocateLightingDescriptorSet(
         // prepare image descriptor
         std::array<VkDescriptorImageInfo, 4> imageInfos = {
             // position
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), position, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+            position,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // albedo
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), albedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+            albedo,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // normal
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), normal, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+            normal,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             // UV
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), uv, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+            uv,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
 
         descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -576,7 +583,7 @@ VkDescriptorSet DescriptorManager::AllocateSingleStorageImageDescriptorSet(VkIma
 VkDescriptorSet DescriptorManager::AllocatePerviewDataDescriptorSet(
     const UniformBuffer<PerViewData>& perViewData)
 {
-	return AllocateUniformBufferDescriptorSet(perViewData, 0, m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA]);
+    return AllocateUniformBufferDescriptorSet(perViewData, 0, m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_PER_VIEW_DATA]);
 }
 
 VkDescriptorSet DescriptorManager::AllocateIBLDescriptorSet()
@@ -622,7 +629,7 @@ void DescriptorManager::UpdateIBLDescriptorSet(
     {
         VkDescriptorImageInfo& imageInfo = imageInfos[i];
         // Needs 8 mips for prefiltered env map
-        imageInfo = {GetSamplerManager()->getSampler(i == 1  ? SAMPLER_8_MIPS : SAMPLER_1_MIPS), aIBLViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        imageInfo = {GetSamplerManager()->getSampler(i == 1 ? SAMPLER_8_MIPS : SAMPLER_1_MIPS), aIBLViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
         VkWriteDescriptorSet& writeDescriptorSet = writeDescriptorSets[i];
         writeDescriptorSet = {};
@@ -637,7 +644,7 @@ void DescriptorManager::UpdateIBLDescriptorSet(
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 }
 
-    VkDescriptorSet DescriptorManager::AllocateLightDataDescriptorSet(uint32_t nNumLights, const StorageBuffer<LightData> &lightData)
+VkDescriptorSet DescriptorManager::AllocateLightDataDescriptorSet(uint32_t nNumLights, const StorageBuffer<LightData>& lightData)
 {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     // Create descriptor sets
@@ -698,9 +705,6 @@ void DescriptorManager::UpdateRayLightDataDescriptorSet(VkDescriptorSet descript
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
-
-
-
 size_t DescriptorManager::GetImGuiTextureId(const std::string& sResourceName)
 {
     if (m_mImGuiTextureIds.find(sResourceName) == m_mImGuiTextureIds.end())
@@ -727,3 +731,4 @@ size_t DescriptorManager::GetImGuiTextureId(const std::string& sResourceName)
 
 DescriptorManager* GetDescriptorManager() { return &descriptorManager; }
 
+}  // namespace Muyo

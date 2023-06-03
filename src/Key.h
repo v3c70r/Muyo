@@ -9,10 +9,10 @@
 namespace Input
 {
 
-//we only include the scancode we need, many or them are ignored, but the value
-//here is correct, based on * The values in this enumeration are based on the
-// USB usage page standard:
-// https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf
+// we only include the scancode we need, many or them are ignored, but the value
+// here is correct, based on * The values in this enumeration are based on the
+//  USB usage page standard:
+//  https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf
 enum ScanCode
 {
     SCANCODE_INVALID = 0,
@@ -35,16 +35,16 @@ enum ScanCode
 
     SCANCODE_LCTRL = 224,
     SCANCODE_LSHIFT = 225,
-    SCANCODE_LALT = 226, ///< Alt, Option
-    SCANCODE_LGUI = 227, ///< Windows, Command (Apple), Meta
+    SCANCODE_LALT = 226,  ///< Alt, Option
+    SCANCODE_LGUI = 227,  ///< Windows, Command (Apple), Meta
     SCANCODE_RCTRL = 228,
     SCANCODE_RSHIFT = 229,
-    SCANCODE_RALT = 230, ///< Alt gr, Option
-    SCANCODE_RGUI = 231, ///< Windows, Command (Apple), Meta
+    SCANCODE_RALT = 230,  ///< Alt gr, Option
+    SCANCODE_RGUI = 231,  ///< Windows, Command (Apple), Meta
 };
 
-//Imgui requires us to map all keycode within 512 indices, so we just use 256
-//for mask, this unfortuately will map scancode onto latin unicodes
+// Imgui requires us to map all keycode within 512 indices, so we just use 256
+// for mask, this unfortuately will map scancode onto latin unicodes
 constexpr unsigned
 KEYCODE_FROM_SCANCODE(enum ScanCode x) { return (x | 0x100); }
 
@@ -157,7 +157,7 @@ enum Key
     KEY_RSHIFT = KEYCODE_FROM_SCANCODE(SCANCODE_RSHIFT),
     KEY_RALT = KEYCODE_FROM_SCANCODE(SCANCODE_RALT),
     KEY_RGUI = KEYCODE_FROM_SCANCODE(SCANCODE_RGUI),
-    //The rest of the keycode are not related to us, not used here
+    // The rest of the keycode are not related to us, not used here
 };
 
 enum Modifier
@@ -173,14 +173,14 @@ inline enum Key getKeyREBTD(unsigned int key)
 {
     switch (key)
     {
-    case KEY_RETURN:
-    case KEY_ENTER:
-    case KEY_ESCAPE:
-    case KEY_TAB:
-    case KEY_DELETE:
-        return (Key)key;
-    default:
-        return KEY_UNKNOWN;
+        case KEY_RETURN:
+        case KEY_ENTER:
+        case KEY_ESCAPE:
+        case KEY_TAB:
+        case KEY_DELETE:
+            return (Key)key;
+        default:
+            return KEY_UNKNOWN;
     }
 }
 
@@ -196,9 +196,8 @@ inline enum Key keyFromScanCode(unsigned scan)
             {SCANCODE_CAPSLOCK, SCANCODE_CAPSLOCK},
             {SCANCODE_PRINTSCREEN, SCANCODE_INSERT},
             {SCANCODE_HOME, SCANCODE_UP},
-            {SCANCODE_LCTRL, SCANCODE_RGUI}
-        };
-    for (auto region: regions)
+            {SCANCODE_LCTRL, SCANCODE_RGUI}};
+    for (auto region : regions)
     {
         if (scan >= region.l && scan <= region.r)
             return (enum Key)KEYCODE_FROM_SCANCODE((enum ScanCode)scan);
@@ -206,4 +205,5 @@ inline enum Key keyFromScanCode(unsigned scan)
     return KEY_UNKNOWN;
 }
 
-}
+}  // namespace Input
+

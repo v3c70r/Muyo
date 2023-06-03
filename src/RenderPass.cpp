@@ -7,6 +7,9 @@
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
 
+namespace Muyo
+{
+
 RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
                                  bool bClearAttachments)
 {
@@ -139,7 +142,7 @@ void RenderPassFinal::CreatePipeline()
     if (m_pipeline != VK_NULL_HANDLE)
     {
         vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-		vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
+        vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
     }
     // Allocate pipeline layout
     std::vector<VkDescriptorSetLayout> descLayouts = {
@@ -212,10 +215,10 @@ void RenderPassFinal::RecordCommandBuffers()
     VkImageView imgView = GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))->getView();
 
 #ifdef FEATURE_RAY_TRACING
-    //VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({1, 1}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
+    // VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({1, 1}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
     ImageResource* pRTOutput = GetRenderResourceManager()->GetResource<ImageResource>("Ray Tracing Output");
     assert(pRTOutput);
-    VkImageView rtOutputView  = pRTOutput->getView();
+    VkImageView rtOutputView = pRTOutput->getView();
     UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView");
 
     std::vector<VkDescriptorSet>
@@ -223,8 +226,7 @@ void RenderPassFinal::RecordCommandBuffers()
             GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView),
             GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(rtOutputView),
             GetDescriptorManager()->AllocatePerviewDataDescriptorSet(
-                *perView)
-        };
+                *perView)};
 #else
     std::vector<VkDescriptorSet> descSets = {
         GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView)};
@@ -259,7 +261,6 @@ void RenderPassFinal::RecordCommandBuffers()
         vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
         VkRect2D scissor = {0, 0, mRenderArea.width, mRenderArea.height};
         vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
-
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};
         renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -325,3 +326,4 @@ void RenderPassFinal::DestroyFramebuffers()
     m_vFramebuffers.clear();
 }
 
+}  // namespace Muyo

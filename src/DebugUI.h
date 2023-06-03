@@ -1,11 +1,14 @@
 #pragma once
-#include <string>
 #include <imgui.h>
+
 #include <filesystem>
-#include <vector>
 #include <glm/glm.hpp>
+#include <string>
+#include <vector>
 
 // ImGui Debug UI pages
+namespace Muyo
+{
 class SceneNode;
 class Camera;
 class IDebugUIPage
@@ -38,11 +41,12 @@ public:
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~SceneDebugPage() override{};
+
 private:
     void DisplaySceneNodeInfo(const SceneNode& sceneNode) const;
-    void DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4&mProj) const;
+    void DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4& mProj) const;
     mutable const SceneNode* m_pSelectedNode = nullptr;
-    };
+};
 
 class DemoDebugPage : public IDebugUIPage
 {
@@ -61,6 +65,7 @@ public:
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~VerticalTabsPage() override{};
+
 private:
     // A list of tabs
     uint32_t uCurrentSelection = 0;
@@ -74,6 +79,7 @@ public:
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~DockSpace() override {}
+
 private:
     const ImGuiWindowFlags WINDOW_FLAG = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
 };
@@ -81,7 +87,8 @@ private:
 class EnvironmentMapDebugPage : public IDebugUIPage
 {
 public:
-    explicit EnvironmentMapDebugPage(const std::string& sName) : IDebugUIPage(sName) {
+    explicit EnvironmentMapDebugPage(const std::string& sName) : IDebugUIPage(sName)
+    {
         const std::string sRootPath = "assets/hdr";
         for (const auto& hdrEntry : std::filesystem::directory_iterator(sRootPath))
         {
@@ -95,13 +102,12 @@ public:
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~EnvironmentMapDebugPage() override{};
+
 private:
     std::vector<std::filesystem::path> m_vHDRImagePathes;
     std::vector<std::string> m_vHDRImagePatheStrings;
     mutable int m_nCurrentHDRIndex = 0;
-
 };
-
 
 class LightSceneNode;
 class LightsDebugPage : public IDebugUIPage
@@ -115,9 +121,9 @@ public:
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~LightsDebugPage() override {}
+
 private:
     std::vector<const LightSceneNode*> m_vpLightNodes;
-    
 };
 
 class CameraDebugPage : public IDebugUIPage
@@ -129,8 +135,8 @@ public:
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~CameraDebugPage() override {}
+
 private:
     Camera* m_pCamera = nullptr;
 };
-
-
+}  // namespace Muyo

@@ -1,17 +1,21 @@
 #include "DebugUI.h"
+
+#include "DescriptorManager.h"
+#include "LightSceneNode.h"
+#include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "SceneManager.h"
-#include "DescriptorManager.h"
-#include "RenderPassManager.h"
-
-#include "LightSceneNode.h"
 #include "imgui.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/matrix_decompose.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <functional>
 #include <ImGuizmo.h>
+
+#include <functional>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
+
+namespace Muyo
+{
 
 void ResourceManagerDebugPage::Render() const
 {
@@ -26,9 +30,8 @@ void ResourceManagerDebugPage::Render() const
     ImGui::End();
 }
 
-void SceneDebugPage::Render() const 
+void SceneDebugPage::Render() const
 {
-
     ImGui::Begin(m_sName.c_str());
     {
         ImGuizmo::BeginFrame();
@@ -42,37 +45,37 @@ void SceneDebugPage::Render() const
         for (const auto& scenePair : sceneMap)
         {
             const auto& pRoot = scenePair.second.GetRoot();
-            std::function<void(const SceneNode*,const glm::mat4&)>
-                DisplayNodesRecursive = [&](const SceneNode* pSceneNode, const glm::mat4& mCurrentTrans) {
+            std::function<void(const SceneNode*, const glm::mat4&)>
+                DisplayNodesRecursive = [&](const SceneNode* pSceneNode, const glm::mat4& mCurrentTrans)
+            {
+                glm::mat4 mWorld = mCurrentTrans * pSceneNode->GetMatrix();
+                static ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
 
-                    glm::mat4 mWorld = mCurrentTrans * pSceneNode->GetMatrix();
-                    static ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+                bool bIsTreeOpened = ImGui::TreeNodeEx(pSceneNode->GetName().c_str(), base_flags);
+                bool bIsTreeNodeSelected = ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen();
+                if (bIsTreeNodeSelected)
+                {
+                    m_pSelectedNode = pSceneNode;
+                }
+                if (m_pSelectedNode == pSceneNode)
+                {
+                    DrawGizmoOnSceneNode(pSceneNode, mWorld, mView, mProj);
+                }
 
-                    bool bIsTreeOpened = ImGui::TreeNodeEx(pSceneNode->GetName().c_str(), base_flags);
-                    bool bIsTreeNodeSelected = ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen();
-                    if(bIsTreeNodeSelected)
+                if (bIsTreeOpened)
+                {
+                    // Display info for leaves
+                    if (pSceneNode->GetChildren().size() == 0)
                     {
-                        m_pSelectedNode = pSceneNode;
+                        DisplaySceneNodeInfo(*pSceneNode);
                     }
-                    if (m_pSelectedNode == pSceneNode)
+                    for (const auto& child : pSceneNode->GetChildren())
                     {
-                        DrawGizmoOnSceneNode(pSceneNode, mWorld, mView, mProj);
+                        DisplayNodesRecursive(child.get(), mWorld);
                     }
-
-                    if (bIsTreeOpened)
-                    {
-                        // Display info for leaves
-                        if (pSceneNode->GetChildren().size() == 0)
-                        {
-                            DisplaySceneNodeInfo(*pSceneNode);
-                        }
-                        for (const auto& child : pSceneNode->GetChildren())
-                        {
-                            DisplayNodesRecursive(child.get(), mWorld);
-                        }
-                        ImGui::TreePop();
-                    }
-                };
+                    ImGui::TreePop();
+                }
+            };
             DisplayNodesRecursive(pRoot.get(), pRoot->GetMatrix());
         }
     }
@@ -96,32 +99,30 @@ void SceneDebugPage::DisplaySceneNodeInfo(const SceneNode& sceneNode) const
     ImGui::InputFloat3("AABB Max", glm::value_ptr(AABBMax), "%.3f", ImGuiInputTextFlags_ReadOnly);
 }
 
-void SceneDebugPage::DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4&mProj) const
+void SceneDebugPage::DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4& mProj) const
 {
-    if (const GeometrySceneNode *pGeometryNode = dynamic_cast<const GeometrySceneNode *>(pSceneNode))
+    if (const GeometrySceneNode* pGeometryNode = dynamic_cast<const GeometrySceneNode*>(pSceneNode))
     {
         // construct bound
         auto AABB = pSceneNode->GetAABB();
         float bounds[6] =
-        {
-            AABB.vMin.x,
-            AABB.vMin.y,
-            AABB.vMin.z,
-            AABB.vMax.x,
-            AABB.vMax.y,
-            AABB.vMax.z,
-        };
+            {
+                AABB.vMin.x,
+                AABB.vMin.y,
+                AABB.vMin.z,
+                AABB.vMax.x,
+                AABB.vMax.y,
+                AABB.vMax.z,
+            };
 
-        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL , ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, bounds, NULL);
+        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL, ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, bounds, NULL);
     }
-    else if (const LightSceneNode *pLightNode = dynamic_cast<const LightSceneNode *>(pSceneNode))
+    else if (const LightSceneNode* pLightNode = dynamic_cast<const LightSceneNode*>(pSceneNode))
     {
-        //ImGuizmo::DrawCubes(glm::value_ptr(mView), glm::value_ptr(mProj), glm::value_ptr(mWorld), 1);
-        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL , ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, NULL, NULL);
-
+        // ImGuizmo::DrawCubes(glm::value_ptr(mView), glm::value_ptr(mProj), glm::value_ptr(mWorld), 1);
+        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL, ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, NULL, NULL);
     }
 }
-
 
 void DemoDebugPage::Render() const
 {
@@ -142,7 +143,7 @@ void DockSpace::Render() const
     ImGui::SetNextWindowViewport(viewport->ID);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));   // No padding
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));  // No padding
 
     bool bOpen = true;
     ImGui::Begin(m_sName.c_str(), &bOpen, WINDOW_FLAG);
@@ -153,14 +154,12 @@ void DockSpace::Render() const
     ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
     ImGui::End();
-
 }
 
 void EnvironmentMapDebugPage::Render() const
 {
     ImGui::Begin(m_sName.c_str());
     {
-
         // Draw HDR selector
         struct Funcs
         {
@@ -237,17 +236,16 @@ LightsDebugPage::LightsDebugPage(const std::string& sName)
     const std::vector<const SceneNode*> lightNodes = dl.m_aDrawLists[DrawLists::DL_LIGHT];
     for (const SceneNode* lightNode : lightNodes)
     {
-            m_vpLightNodes.push_back(static_cast<const LightSceneNode*>(lightNode));
+        m_vpLightNodes.push_back(static_cast<const LightSceneNode*>(lightNode));
     }
 }
 
 void LightsDebugPage::Render() const
 {
-
     ImGui::Begin("Lights");
     for (const LightSceneNode* pLightNode : m_vpLightNodes)
     {
-        switch(pLightNode->GetLightType())
+        switch (pLightNode->GetLightType())
         {
             case LIGHT_TYPE_POINT:
                 ImGui::Text("%s\tPoint Light", pLightNode->GetName().c_str());
@@ -277,7 +275,7 @@ void CameraDebugPage::Render() const
         static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
         ImGui::Begin("Camera", nullptr, flags);
         ImGui::PushItemWidth(GetRenderPassManager()->GetViewportSize().width);
-        //Set ImGui slider to transparent
+        // Set ImGui slider to transparent
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0, 0, 0, 0));
@@ -295,3 +293,4 @@ void CameraDebugPage::Render() const
 
 #undef GLM_ENABLE_EXPERIMENTAL
 
+}  // namespace Muyo

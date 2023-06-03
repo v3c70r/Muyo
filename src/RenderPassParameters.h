@@ -1,6 +1,9 @@
 #pragma once
-#include "VkRenderDevice.h"
 #include <algorithm>
+
+#include "VkRenderDevice.h"
+namespace Muyo
+{
 
 /*
  * RenderPassParameters creates render pass info.
@@ -25,9 +28,8 @@ class RenderPassParameters
 public:
     ~RenderPassParameters()
     {
-        std::for_each(m_vDescSetLayouts.begin(), m_vDescSetLayouts.end(), [](VkDescriptorSetLayout layout) {
-            vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), layout, nullptr);
-        });
+        std::for_each(m_vDescSetLayouts.begin(), m_vDescSetLayouts.end(), [](VkDescriptorSetLayout layout)
+                      { vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), layout, nullptr); });
         vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
         vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_renderPass, nullptr);
         vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), m_framebuffer, nullptr);
@@ -46,9 +48,8 @@ public:
     }
 
     VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, uint32_t nDescSetIdx = 0);
-    VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx = 0); // Allocate descriptor set with resources
+    VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx = 0);  // Allocate descriptor set with resources
     const VkDescriptorSetLayout& GetDescriptorSetLayout(uint32_t nDescSetIdx = 0) const;
-
 
     // Create all the resources needed for the render pass
     void Finalize(const std::string& sPassName);
@@ -58,10 +59,10 @@ public:
     // Get render area
     VkExtent2D GetRenderArea() const { return m_renderArea; }
 
-    VkPipelineLayout GetPipelineLayout() {return m_pipelineLayout;}
-    VkRenderPass GetRenderPass() {return m_renderPass;}
-    VkFramebuffer GetFramebuffer() {return m_framebuffer;}
-    
+    VkPipelineLayout GetPipelineLayout() { return m_pipelineLayout; }
+    VkRenderPass GetRenderPass() { return m_renderPass; }
+    VkFramebuffer GetFramebuffer() { return m_framebuffer; }
+
 private:
     void AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx);
     void AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE, uint32_t nDescSetIdx = 0);
@@ -78,9 +79,7 @@ private:
      */
     bool UpdateDescriptorSet(const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx, VkDescriptorSet descriptorSet);
 
-
 private:
-
     // [DescSetIndex][BindingIndex]
     // Descriptor writes for each descriptor set and binding
     std::vector<std::vector<VkWriteDescriptorSet>> m_vWriteDescSet;
@@ -93,7 +92,7 @@ private:
     std::vector<std::vector<VkDescriptorSetLayoutBinding>> m_vBindings;
 
     // Keep track of support structures
-    
+
     // Descriptor related
     // These are the structures tracked in m_vDescriptorInfoIndex
     std::vector<VkWriteDescriptorSetAccelerationStructureKHR> m_vAccelerationStructureWrites;
@@ -118,3 +117,4 @@ private:
 
     bool m_bIsFinalized = false;
 };
+}  // namespace Muyo

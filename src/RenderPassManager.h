@@ -3,11 +3,14 @@
 
 #include <array>
 #include <memory>
-#include <vector>
 #include <string>
-#include "Swapchain.h"
-#include "ShadowPassManager.h"
+#include <vector>
 
+#include "ShadowPassManager.h"
+#include "Swapchain.h"
+
+namespace Muyo
+{
 class IRenderPass;
 class RayTracingSceneManager;
 class Camera;
@@ -37,19 +40,19 @@ public:
     void CreateSwapchain(const VkSurfaceKHR& swapchainSurface);
     void BeginFrame();
     void Present();
-        
+
     void Initialize(uint32_t uWidth, uint32_t uHeight, const VkSurfaceKHR& swapchainSurface);
-    void SetSwapchainImageViews(const std::vector<VkImageView> &vImageViews, VkImageView depthImageView);
+    void SetSwapchainImageViews(const std::vector<VkImageView>& vImageViews, VkImageView depthImageView);
     void OnResize(uint32_t uWidth, uint32_t uHeight);
     void Unintialize();
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
     void RecordDynamicCmdBuffers();
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
-    VkExtent2D GetViewportSize() const {return VkExtent2D({m_uWidth, m_uHeight});}
+    VkExtent2D GetViewportSize() const { return VkExtent2D({m_uWidth, m_uHeight}); }
 
     void SubmitCommandBuffers();
 
-    Camera* GetCamera() {return m_pCamera.get();}
+    Camera* GetCamera() { return m_pCamera.get(); }
 
 #ifdef FEATURE_RAY_TRACING
     void SetRayTracingSceneManager(const RayTracingSceneManager* pSceneManager)
@@ -77,8 +80,8 @@ private:
     // Synchronization elements required in passes
     VkSemaphore m_depthReady = VK_NULL_HANDLE;
     VkSemaphore m_aoReady = VK_NULL_HANDLE;
-    VkSemaphore m_imageAvailable= VK_NULL_HANDLE;   // Semaphores to notify the frame when the current image is ready
-    VkSemaphore m_renderFinished= VK_NULL_HANDLE;
+    VkSemaphore m_imageAvailable = VK_NULL_HANDLE;  // Semaphores to notify the frame when the current image is ready
+    VkSemaphore m_renderFinished = VK_NULL_HANDLE;
 
     std::array<VkFence, NUM_BUFFERS> m_aGPUExecutionFence;
     uint32_t m_uImageIdx2Present = 0;
@@ -87,7 +90,9 @@ private:
     std::unique_ptr<Camera> m_pCamera = nullptr;
 
 #ifdef FEATURE_RAY_TRACING
+
     const RayTracingSceneManager* m_pRayTracingSceneManager = nullptr;
+
 #endif
 
     struct TemporalInfo
@@ -100,3 +105,4 @@ private:
 };
 
 RenderPassManager* GetRenderPassManager();
+}  // namespace Muyo

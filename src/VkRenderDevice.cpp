@@ -1,11 +1,14 @@
 #include "VkRenderDevice.h"
-#include "ResourceBarrier.h"
 
 #include <cassert>
 #include <set>
 
 #include "Debug.h"
 #include "RenderResourceManager.h"
+#include "ResourceBarrier.h"
+
+namespace Muyo
+{
 
 #define DEBUG_DEVICE
 #ifdef DEBUG_DEVICE
@@ -62,12 +65,12 @@ void VkRenderDevice::Initialize(
 }
 
 void VkRenderDevice::TransitImageLayout(
-        VkCommandBuffer commandBuffer,
-        VkImage image,
-        VkImageLayout oldLayout,
-        VkImageLayout newLayout,
-        uint32_t nMipCount,
-        uint32_t nLayerCount)
+    VkCommandBuffer commandBuffer,
+    VkImage image,
+    VkImageLayout oldLayout,
+    VkImageLayout newLayout,
+    uint32_t nMipCount,
+    uint32_t nLayerCount)
 {
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
@@ -142,7 +145,8 @@ void VkRenderDevice::TransitImageLayout(
     if (commandBuffer == VK_NULL_HANDLE)
     {
         ExecuteImmediateCommand(
-            [&](VkCommandBuffer commandBuffer) {
+            [&](VkCommandBuffer commandBuffer)
+            {
                 vkCmdPipelineBarrier(commandBuffer, sourceStage,
                                      /*srcStage*/ destinationStage, /*dstStage*/
                                      0, 0, nullptr, 0, nullptr, 1, &barrier);
@@ -161,7 +165,7 @@ void VkRenderDevice::PickPhysicalDevice()
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
     assert(deviceCount != 0);
-    //assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
+    // assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
     m_physicalDevice = devices[0];
@@ -171,7 +175,7 @@ void VkRenderDevice::CreateDevice(
     const std::vector<const char*>& vDeviceExtensions,
     const std::vector<const char*>& layers,
     const VkSurfaceKHR& surface,
-    const std::vector<void*>& vpFeatures)    // surface for compatibility check
+    const std::vector<void*>& vpFeatures)  // surface for compatibility check
 {
     // Find supported queue
     uint32_t queueFamilyCount = 0;
@@ -203,7 +207,7 @@ void VkRenderDevice::CreateDevice(
             m_queueFamilyIndices.nComputeQueueFamily = nQueueFamilyIdx;
         }
 
-        if (m_queueFamilyIndices.isComplete()) 
+        if (m_queueFamilyIndices.isComplete())
         {
             break;
         }
@@ -228,7 +232,7 @@ void VkRenderDevice::CreateDevice(
     features2.pNext = &features11;
     features11.pNext = &features12;
     features12.pNext = &features13;
-    
+
     if (!vpFeatures.empty())
     {
         // build up chain of all used extension features
@@ -262,31 +266,31 @@ void VkRenderDevice::CreateDevice(
     std::set<VkDeviceQueueCreateInfo, decltype(cmp)> sQueueCreateInfos(cmp);
 
     sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,         // sType;
-                nullptr,                                            // pNext;
-                0,                                                  // flags;
-                (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,  // queueFamilyIndex;
-                1,                                                  // queueCount;
-                &fQueuePriority                                     // pQueuePriorities;
-        }));
+        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           // sType;
+        nullptr,                                              // pNext;
+        0,                                                    // flags;
+        (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,  // queueFamilyIndex;
+        1,                                                    // queueCount;
+        &fQueuePriority                                       // pQueuePriorities;
+    }));
 
     sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,         // sType;
-                nullptr,                                            // pNext;
-                0,                                                  // flags;
-                (uint32_t)m_queueFamilyIndices.nPresentQueneFamily,   // queueFamilyIndex;
-                1,                                                  // queueCount;
-                &fQueuePriority                                     // pQueuePriorities;
-        }));
+        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,          // sType;
+        nullptr,                                             // pNext;
+        0,                                                   // flags;
+        (uint32_t)m_queueFamilyIndices.nPresentQueneFamily,  // queueFamilyIndex;
+        1,                                                   // queueCount;
+        &fQueuePriority                                      // pQueuePriorities;
+    }));
 
     sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-                VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,         // sType;
-                nullptr,                                            // pNext;
-                0,                                                  // flags;
-                (uint32_t)m_queueFamilyIndices.nComputeQueueFamily,   // queueFamilyIndex;
-                1,                                                  // queueCount;
-                &fQueuePriority                                     // pQueuePriorities;
-        }));
+        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,          // sType;
+        nullptr,                                             // pNext;
+        0,                                                   // flags;
+        (uint32_t)m_queueFamilyIndices.nComputeQueueFamily,  // queueFamilyIndex;
+        1,                                                   // queueCount;
+        &fQueuePriority                                      // pQueuePriorities;
+    }));
 
     std::vector<VkDeviceQueueCreateInfo> vQueueCreateInfos(sQueueCreateInfos.begin(), sQueueCreateInfos.end());
 
@@ -308,7 +312,6 @@ void VkRenderDevice::CreateDevice(
     VK_ASSERT(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device));
 
     {
-
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.nGraphicsQueueFamily, 0, &m_graphicsQueue);
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics Queue");
 
@@ -350,7 +353,6 @@ void VkRenderDevice::DestroyDevice()
     vkDestroyDevice(m_device, nullptr);
     m_device = VK_NULL_HANDLE;
 }
-
 
 void VkRenderDevice::CreateCommandPools()
 {
@@ -493,7 +495,7 @@ VkSampler VkRenderDevice::CreateSampler()
     return sampler;
 }
 
-void VkRenderDevice::AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier &barrier)
+void VkRenderDevice::AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& barrier)
 {
     barrier.AddBarrier(cmdBuf);
 }
@@ -516,7 +518,7 @@ void VkRenderDevice::FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer,
     vkFreeCommandBuffers(m_device, m_aCommandPools[pool], 1, &commandBuffer);
 }
 
-void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore> &waitSemaphores, std::vector<VkSemaphore> &signalSemaphores, std::vector<VkPipelineStageFlags> flags, VkFence signalFence)
+void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags> flags, VkFence signalFence)
 {
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -544,7 +546,6 @@ void VkRenderDevice::SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& v
     VK_ASSERT(vkQueueWaitIdle(GetGraphicsQueue()));
 }
 
-
 VkDeviceAddress VkRenderDevice::GetBufferDeviceAddress(VkBuffer buffer) const
 {
     VkBufferDeviceAddressInfo addInfo = {};
@@ -555,28 +556,28 @@ VkDeviceAddress VkRenderDevice::GetBufferDeviceAddress(VkBuffer buffer) const
     return deviceAddress;
 }
 VkPipelineLayout VkRenderDevice::CreatePipelineLayout(
-        const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
-        const std::vector<VkPushConstantRange>& pushConstantRanges)
+    const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
+    const std::vector<VkPushConstantRange>& pushConstantRanges)
+{
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
+    pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
+
+    if (pushConstantRanges.size() > 0)
     {
-        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
-        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-        pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-
-        if (pushConstantRanges.size() > 0)
-        {
-            pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size());
-            pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
-        }
-
-        assert(vkCreatePipelineLayout(m_device,
-                                      &pipelineLayoutInfo, nullptr,
-                                      &pipelineLayout) == VK_SUCCESS);
-        return pipelineLayout;
+        pipelineLayoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size());
+        pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
     }
 
-// Debug device 
+    assert(vkCreatePipelineLayout(m_device,
+                                  &pipelineLayoutInfo, nullptr,
+                                  &pipelineLayout) == VK_SUCCESS);
+    return pipelineLayout;
+}
+
+// Debug device
 //
 void VkDebugRenderDevice::Initialize(
     const std::vector<const char*>& vExtensionNames,
@@ -593,8 +594,6 @@ void VkDebugRenderDevice::Initialize(
     m_debugMessenger.Initialize(m_instance);
 }
 
-
-
 void VkDebugRenderDevice::Unintialize()
 {
     m_debugMessenger.Uninitialize(m_instance);
@@ -609,3 +608,4 @@ void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensio
         vExtensionNames, vDebugLayerNames, surface, vpFeatures);
 }
 
+}  // namespace Muyo

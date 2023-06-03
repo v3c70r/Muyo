@@ -5,10 +5,12 @@
 
 #include "Debug.h"
 #include "RenderTargetResource.h"
+#include "StorageImageResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
-#include "StorageImageResource.h"
 #include "VertexBuffer.h"
+namespace Muyo
+{
 
 class RenderResourceManager
 {
@@ -30,7 +32,7 @@ public:
         return static_cast<VertexBuffer<T>*>(m_mResources[sName].get());
     }
 
-    template<class IndexType>
+    template <class IndexType>
     IndexBuffer* GetIndexBuffer(const std::string& sName, const std::vector<IndexType> vIndexData, bool bStagedUpoload = true)
     {
         if (m_mResources.find(sName) == m_mResources.end())
@@ -39,9 +41,7 @@ public:
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<IndexBuffer*>(m_mResources[sName].get());
-
     }
-
 
     RenderTarget* GetRenderTarget(const std::string& sName, bool bColorTarget,
                                   VkExtent2D extent, VkFormat format,
@@ -246,3 +246,4 @@ protected:
 };
 
 RenderResourceManager* GetRenderResourceManager();
+}  // namespace Muyo

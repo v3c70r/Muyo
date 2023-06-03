@@ -2,11 +2,14 @@
 
 #include "Debug.h"
 #include "DescriptorManager.h"
+#include "Geometry.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
-#include "VkRenderDevice.h"
-#include "Geometry.h"
 #include "SamplerManager.h"
+#include "VkRenderDevice.h"
+
+namespace Muyo
+{
 
 RenderPassGBuffer::LightingAttachments::LightingAttachments()
 {
@@ -40,7 +43,6 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
     aAttachmentDesc[GBUFFER_DEPTH] = desc;
     aAttachmentDesc[GBUFFER_DEPTH].format = VK_FORMAT_D32_SFLOAT;
     aAttachmentDesc[GBUFFER_DEPTH].finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
-
 }
 
 RenderPassGBuffer::RenderPassGBuffer()
@@ -93,14 +95,12 @@ RenderPassGBuffer::RenderPassGBuffer()
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
 
-
     m_vRenderPasses.resize(1, VK_NULL_HANDLE);
     assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
                               nullptr, &m_vRenderPasses.back()) == VK_SUCCESS);
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_vRenderPasses.back()),
                             VK_OBJECT_TYPE_RENDER_PASS, "Opaque Lighting");
-
 }
 
 RenderPassGBuffer::~RenderPassGBuffer()
@@ -131,8 +131,8 @@ void RenderPassGBuffer::SetGBufferImageViews(
         mFramebuffer = VK_NULL_HANDLE;
     }
     std::array<VkImageView, LightingAttachments::ATTACHMENTS_COUNT> views = {
-        positionView, albedoView,     normalView,
-        uvView,       lightingOutput, depthView};
+        positionView, albedoView, normalView,
+        uvView, lightingOutput, depthView};
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     framebufferInfo.renderPass = m_vRenderPasses.back();
@@ -360,8 +360,7 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
             GetDescriptorManager()->getDescriptorLayout(
                 DESCRIPTOR_LAYOUT_MATERIALS),
             GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_PER_OBJ_DATA)
-        };
+                DESCRIPTOR_LAYOUT_PER_OBJ_DATA)};
 
         std::vector<VkPushConstantRange> pushConstants;
 
@@ -494,3 +493,5 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
                                 VK_OBJECT_TYPE_PIPELINE, "Lighting");
     }
 }
+
+}  // namespace Muyo

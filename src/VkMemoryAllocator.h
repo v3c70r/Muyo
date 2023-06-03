@@ -1,8 +1,11 @@
 #pragma once
 #include <vk_mem_alloc.h>
+
 #include <memory>
 #include <string>
 
+namespace Muyo
+{
 class VkRenderDevice;
 
 // Wrap allocator
@@ -34,3 +37,4 @@ private:
 
 VkMemoryAllocator *GetMemoryAllocator();
 
+}  // namespace Muyo

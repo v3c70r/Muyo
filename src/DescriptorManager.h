@@ -2,28 +2,30 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
 
+#include "Camera.h"
 #include "Material.h"
 #include "RenderPassGBuffer.h"
 #include "UniformBuffer.h"
-#include "Camera.h"
+namespace Muyo
+{
 struct PrimitiveDescription;
 struct LightData;
 
 enum DescriptorLayoutType
 {
-    DESCRIPTOR_LAYOUT_LIGHTING,          // TODO: Remove this
-    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,    // A single sampler descriptor set layout at binding 0
+    DESCRIPTOR_LAYOUT_LIGHTING,        // TODO: Remove this
+    DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,  // A single sampler descriptor set layout at binding 0
     DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
-    DESCRIPTOR_LAYOUT_PER_VIEW_DATA,     // A layout contains mvp matrices at binding 0
-    DESCRIPTOR_LAYOUT_PER_OBJ_DATA,      // Per object data layout
-    DESCRIPTOR_LAYOUT_MATERIALS,         // A sampler array contains material textures
-    DESCRIPTOR_LAYOUT_GBUFFER,           // Layouts contains output of GBuffer
-    DESCRIPTOR_LAYOUT_IBL,               // IBL descriptor sets
-    DESCRIPTOR_LAYOUT_LIGHT_DATA,        // Light data layout
+    DESCRIPTOR_LAYOUT_PER_VIEW_DATA,  // A layout contains mvp matrices at binding 0
+    DESCRIPTOR_LAYOUT_PER_OBJ_DATA,   // Per object data layout
+    DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
+    DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
+    DESCRIPTOR_LAYOUT_IBL,            // IBL descriptor sets
+    DESCRIPTOR_LAYOUT_LIGHT_DATA,     // Light data layout
     DESCRIPTOR_LAYOUT_COUNT,
 };
 
@@ -37,7 +39,7 @@ public:
 
     VkDescriptorSet AllocateLightingDescriptorSet(
         const UniformBuffer<PerViewData> &perViewData, VkImageView position,
-        VkImageView albedo, VkImageView normal, VkImageView uv); // Deprecating
+        VkImageView albedo, VkImageView normal, VkImageView uv);  // Deprecating
 
     VkDescriptorSet AllocateGBufferDescriptorSet(
         const RenderPassGBuffer::GBufferViews &gbufferViews);
@@ -47,7 +49,7 @@ public:
         const RenderPassGBuffer::GBufferViews &gbufferViews);
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
-    void UpdateSingleSamplerDescriptorSet(VkDescriptorSet& descriptorSet, VkImageView textureView);
+    void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);
     VkDescriptorSet AllocateSingleStorageImageDescriptorSet(VkImageView imageView);
 
     VkDescriptorSet AllocatePerviewDataDescriptorSet(const UniformBuffer<PerViewData> &perViewData);
@@ -60,17 +62,15 @@ public:
     // IBL descriptor set
     VkDescriptorSet AllocateIBLDescriptorSet();
     VkDescriptorSet AllocateIBLDescriptorSet(
-            VkImageView irradianceMap,
-            VkImageView prefilteredEnvMap,
-            VkImageView specularBrdfLutMap
-            );
+        VkImageView irradianceMap,
+        VkImageView prefilteredEnvMap,
+        VkImageView specularBrdfLutMap);
 
     void UpdateIBLDescriptorSet(
-            VkDescriptorSet& descriptorSet,
-            VkImageView irradianceMap,
-            VkImageView prefilteredEnvMap,
-            VkImageView specularBrdfLutMap
-            );
+        VkDescriptorSet &descriptorSet,
+        VkImageView irradianceMap,
+        VkImageView prefilteredEnvMap,
+        VkImageView specularBrdfLutMap);
 
     VkDescriptorSet AllocateLightDataDescriptorSet(uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
     static void UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
@@ -119,10 +119,9 @@ public:
         return descriptorSet;
     }
 
-
     // Register or get a texture id to be used in ImGui
-    size_t GetImGuiTextureId(const std::string& sResourceName);
-    const VkDescriptorSet& GetImGuiTextureDescriptorSet(size_t nTextureId) const
+    size_t GetImGuiTextureId(const std::string &sResourceName);
+    const VkDescriptorSet &GetImGuiTextureDescriptorSet(size_t nTextureId) const
     {
         return m_vImGuiTextureDescriptorSets[nTextureId];
     }
@@ -154,7 +153,7 @@ private:
     }
 
     static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(
-		uint32_t binding, uint32_t numSamplers, int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
+        uint32_t binding, uint32_t numSamplers, int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
     {
         VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
         samplerLayoutBinding.binding = binding;
@@ -184,7 +183,6 @@ private:
 
     std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT> m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
 
-    
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
 
     const uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 500;
@@ -209,3 +207,4 @@ private:
     std::map<std::string, size_t> m_mImGuiTextureIds;
 };
 DescriptorManager *GetDescriptorManager();
+}  // namespace Muyo

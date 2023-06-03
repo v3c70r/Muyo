@@ -1,7 +1,12 @@
 #include "SceneManager.h"
-#include "SceneImporter.h"
+
 #include "LightSceneNode.h"
 #include "RenderResourceManager.h"
+#include "SceneImporter.h"
+
+namespace Muyo
+{
+
 static SceneManager s_sceneManager;
 
 SceneManager* GetSceneManager()
@@ -53,3 +58,5 @@ StorageBuffer<LightData>* SceneManager::ConstructLightBufferFromDrawLists(const 
     }
     return GetRenderResourceManager()->GetStorageBuffer("light data", lightData);
 }
+
+}  // namespace Muyo

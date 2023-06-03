@@ -62,6 +62,8 @@
 #include "RayTracingSceneManager.h"
 #endif
 
+using namespace Muyo;
+
 bool g_bWaylandExt = false;
 const int WIDTH = 1920;
 const int HEIGHT = 1080;

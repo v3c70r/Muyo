@@ -1,11 +1,14 @@
 #include "RayTracingSceneManager.h"
-#include "Scene.h"
-#include "Geometry.h"
-#include "DescriptorManager.h"
-#include "VkExtFuncsLoader.h"
 
 #include <glm/gtc/type_ptr.hpp>
 
+#include "DescriptorManager.h"
+#include "Geometry.h"
+#include "Scene.h"
+#include "VkExtFuncsLoader.h"
+
+namespace Muyo
+{
 
 AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode& sceneNode, VkAccelerationStructureCreateFlagsKHR flags)
 {
@@ -58,7 +61,7 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 
     std::vector<uint32_t> vPrimCounts;
     vPrimCounts.reserve(vRangeInfo.size());
-    for (const auto &range : vRangeInfo)
+    for (const auto& range : vRangeInfo)
     {
         vPrimCounts.push_back(range.primitiveCount);
     }
@@ -83,7 +86,7 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 
     VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &geometryBuildInfo, vPrimCounts.data(), &sizeInfo);
 
-    AccelerationStructure *pAccelerationStructure = GetRenderResourceManager()->CreateBLAS(sAccStructName, sizeInfo.accelerationStructureSize);
+    AccelerationStructure* pAccelerationStructure = GetRenderResourceManager()->CreateBLAS(sAccStructName, sizeInfo.accelerationStructureSize);
 
     geometryBuildInfo.dstAccelerationStructure = pAccelerationStructure->GetAccelerationStructure();
 
@@ -113,8 +116,7 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
                                                    vkCmdPipelineBarrier(
                                                        cmdBuf, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
                                                        VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1,
-                                                       &barrier, 0, nullptr, 0, nullptr);
-                                               });
+                                                       &barrier, 0, nullptr, 0, nullptr); });
     return pAccelerationStructure;
 }
 
@@ -149,7 +151,7 @@ AccelerationStructure* RayTracingSceneManager::BuildTLAS(const std::vector<VkAcc
     VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
     sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
     VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
-                                            VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &nCount, &sizeInfo);
+                                                   VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &nCount, &sizeInfo);
 
     static const std::string TLAS_NAME = "TLAS";
     AccelerationStructure* pTLAS = GetRenderResourceManager()->CreateTLAS(TLAS_NAME, sizeInfo.accelerationStructureSize);
@@ -157,7 +159,7 @@ AccelerationStructure* RayTracingSceneManager::BuildTLAS(const std::vector<VkAcc
     // Allocate scratch size to build the structure
     AccelerationStructureBuffer scratchBuffer(sizeInfo.buildScratchSize);
     VkDeviceAddress scratchAddress = GetRenderDevice()->GetBufferDeviceAddress(scratchBuffer.buffer());
-    buildInfo.srcAccelerationStructure =  VK_NULL_HANDLE;
+    buildInfo.srcAccelerationStructure = VK_NULL_HANDLE;
     buildInfo.dstAccelerationStructure = pTLAS->GetAccelerationStructure();
     buildInfo.scratchData.deviceAddress = scratchAddress;
 
@@ -166,21 +168,18 @@ AccelerationStructure* RayTracingSceneManager::BuildTLAS(const std::vector<VkAcc
     const VkAccelerationStructureBuildRangeInfoKHR* pBuildOffsetInfo = &buildOffsetInfo;
 
     // Build the TLAS
-    GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf) {
+    GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf)
+                                               {
         SCOPED_MARKER(cmdBuf, "Buld TLAS");
-        VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo);
-    });
+        VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo); });
 
     return pTLAS;
 }
-
 
 uint32_t RayTracingSceneManager::AlignUp(uint32_t nSize, uint32_t nAlignment)
 {
     return (nSize + nAlignment - 1) / nAlignment * nAlignment;
 }
-
-
 
 void RayTracingSceneManager::BuildScene(const std::vector<const SceneNode*>& vpGeometries)
 {
@@ -207,3 +206,4 @@ void RayTracingSceneManager::BuildScene(const std::vector<const SceneNode*>& vpG
     GetRenderResourceManager()->GetStorageBuffer("primitive descs", m_vPrimitiveDescs);
 }
 
+}  // namespace Muyo

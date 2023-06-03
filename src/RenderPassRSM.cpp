@@ -8,6 +8,9 @@
 #include "SamplerManager.h"
 #include "vulkan/vulkan_core.h"
 
+namespace Muyo
+{
+
 RenderPassRSM::~RenderPassRSM()
 {
     if (m_pipeline != VK_NULL_HANDLE)
@@ -63,7 +66,7 @@ void RenderPassRSM::PrepareRenderPass()
 void RenderPassRSM::CreatePipeline()
 {
     VkDescriptorSetLayout descLayout = m_renderPassParameters.GetDescriptorSetLayout();
-    std::vector<VkDescriptorSetLayout> descLayouts = { descLayout };
+    std::vector<VkDescriptorSetLayout> descLayouts = {descLayout};
 
     std::vector<VkPushConstantRange> pushConstants;
 
@@ -104,7 +107,7 @@ void RenderPassRSM::CreatePipeline()
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShader, nullptr);
 
     // Set debug name for the pipeline
-    setDebugUtilsObjectName( reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Shadow pass");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Shadow pass");
 }
 
 void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries)
@@ -156,8 +159,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
                     m_renderPassParameters.AllocateDescriptorSet("", 0),
                     m_renderPassParameters.AllocateDescriptorSet("world matrix", {worldMatrixBuffer}, 1),
                     // Use global material descriptor set as last descriptor set
-                    materialDescSet
-                };
+                    materialDescSet};
 
                 VkDeviceSize offset = 0;
                 VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
@@ -190,3 +192,5 @@ RSMResources RenderPassRSM::GetRSM()
         GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_POSITION]),
         GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_FLUX])};
 }
+
+}  // namespace Muyo

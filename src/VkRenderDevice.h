@@ -1,11 +1,15 @@
 #pragma once
 #include <vulkan/vulkan.h>
-#include <vector>
+
 #include <array>
-#include <memory>
 #include <cstring>  // strcmp
+#include <memory>
+#include <vector>
 
+#include "Debug.h"
 
+namespace Muyo
+{
 class IResourceBarrier;
 class RenderResourceManager;
 class VkRenderDevice
@@ -19,6 +23,7 @@ public:
         return false;
 #endif
     }
+
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers = std::vector<const char*>());
 
     virtual void Unintialize();
@@ -28,7 +33,6 @@ public:
         const std::vector<const char*>& layers,
         const VkSurfaceKHR& surface,
         const std::vector<void*>& vpFeatures = {});
-
 
     void DestroyDevice();
 
@@ -45,7 +49,7 @@ public:
     VkDevice& GetDevice() { return m_device; }
     VkPhysicalDevice& GetPhysicalDevice() { return m_physicalDevice; }
     VkQueue& GetGraphicsQueue() { return m_graphicsQueue; }
-    VkQueue& GetImmediateQueue() { return m_graphicsQueue;} // TODO: Handle copy queue
+    VkQueue& GetImmediateQueue() { return m_graphicsQueue; }  // TODO: Handle copy queue
     VkQueue& GetPresentQueue() { return m_presentQueue; }
     VkQueue& GetComputeQueue() { return m_computeQueue; }
     VkInstance& GetInstance() { return m_instance; }
@@ -106,7 +110,7 @@ public:
 
     void AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& resourceBarrier);
 
-    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore> &waitSemaphores, std::vector<VkSemaphore> &signalSemaphores, std::vector<VkPipelineStageFlags> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
+    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
     void SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers);
 
     VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;
@@ -129,7 +133,7 @@ public:
         const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
         const std::vector<VkPushConstantRange>& pushConstantRanges);
 
-private: // Private structures
+private:  // Private structures
     enum CommandPools
     {
         MAIN_CMD_POOL,
@@ -147,10 +151,10 @@ private: // Private structures
         std::vector<VkLayerProperties> m_vEnabledLayers;
 
         std::vector<VkExtensionProperties> m_vSupportedInstanceExtensions;
-        //std::vector<VkExtensionProperties> m_vEnabledInstanceExtensions;
+        // std::vector<VkExtensionProperties> m_vEnabledInstanceExtensions;
 
         std::vector<VkExtensionProperties> m_vSupportedDeviceExtensions;
-        //std::vector<VkExtensionProperties> m_vEnabledDeviceExtensions;
+        // std::vector<VkExtensionProperties> m_vEnabledDeviceExtensions;
 
         // TODO: Handle layers
 
@@ -224,7 +228,7 @@ protected:
 };
 
 // Debug device
-#include "Debug.h"
+
 class VkDebugRenderDevice : public VkRenderDevice
 {
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
@@ -236,3 +240,4 @@ private:
 };
 
 VkRenderDevice* GetRenderDevice();
+}  // namespace Muyo

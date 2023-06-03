@@ -2,18 +2,19 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <glm/glm.hpp>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <glm/glm.hpp>
 
+#include "SharedStructures.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
-#include "SharedStructures.h"
+namespace Muyo
+{
 
 class Material
 {
-
 public:
     enum TextureType
     {
@@ -28,9 +29,9 @@ public:
 
     struct MaterialParameters
     {
-        std::array<const TextureResource *, TEX_COUNT> m_apTextures;
+        std::array<const TextureResource*, TEX_COUNT> m_apTextures;
         std::array<uint32_t, TEX_COUNT> m_aTextureIndices;
-        UniformBuffer<PBRFactors> *m_pFactors = nullptr;
+        UniformBuffer<PBRFactors>* m_pFactors = nullptr;
     };
 
 public:
@@ -50,7 +51,7 @@ public:
         aIndices = m_materialParameters.m_aTextureIndices;
     }
 
-    void SetMaterialParameterFactors(const PBRFactors &factors, const std::string &sMaterialName);
+    void SetMaterialParameterFactors(const PBRFactors& factors, const std::string& sMaterialName);
 
     VkDescriptorSet GetDescriptorSet() const;
     void AllocateDescriptorSet();
@@ -73,9 +74,11 @@ public:
     void destroyMaterials() { m_mMaterials.clear(); }
     std::unordered_map<std::string, std::unique_ptr<Material>> m_mMaterials;
     void CreateDefaultMaterial();
-    const Material* GetDefaultMaterial() {return m_mMaterials[sDefaultName].get();}
+    const Material* GetDefaultMaterial() { return m_mMaterials[sDefaultName].get(); }
+
 private:
     const std::string sDefaultName = "default";
 };
 
 MaterialManager* GetMaterialManager();
+}  // namespace Muyo

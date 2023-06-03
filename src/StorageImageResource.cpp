@@ -1,6 +1,11 @@
 #include "StorageImageResource.h"
-#include "Texture.h"
+
 #include <vulkan/vulkan_core.h>
+
+#include "Texture.h"
+
+namespace Muyo
+{
 
 StorageImageResource::StorageImageResource(VkFormat format, uint32_t nWidth, uint32_t nHeight)
 {
@@ -38,3 +43,5 @@ StorageImageResource::StorageImageResource(VkFormat format, uint32_t nWidth, uin
     m_imageViewInfo.subresourceRange.layerCount = 1;
     CreateImageViewInternal();
 }
+
+}  // namespace Muyo

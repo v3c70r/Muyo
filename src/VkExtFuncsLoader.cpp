@@ -1,5 +1,8 @@
 #include "VkExtFuncsLoader.h"
 
+namespace Muyo
+{
+
 // Load extension functions
 PFN_vkCreateAccelerationStructureKHR VkExt::vkCreateAccelerationStructureKHR = nullptr;
 PFN_vkDestroyAccelerationStructureKHR VkExt::vkDestroyAccelerationStructureKHR = nullptr;
@@ -36,3 +39,5 @@ void VkExt::LoadInstanceFunctions(VkInstance instance)
         bExtensionLoaded = true;
     }
 }
+
+}  // namespace Muyo

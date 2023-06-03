@@ -6,11 +6,14 @@
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 
+namespace Muyo
+{
+
 RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage,
                            uint32_t width, uint32_t height, uint32_t numMips, uint32_t numLayers)
 {
     VkImageAspectFlags aspectMask = 0;
-    VkImageLayout imageLayout=VK_IMAGE_LAYOUT_UNDEFINED;
+    VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
     if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
     {
@@ -60,5 +63,7 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage,
     CreateImageViewInternal();
 
     TextureResource::sTransitionImageLayout(m_image, VK_IMAGE_LAYOUT_UNDEFINED,
-                                    imageLayout);
+                                            imageLayout);
 }
+
+}  // namespace Muyo

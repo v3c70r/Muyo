@@ -9,8 +9,9 @@
 #include <mutex>
 #include <vector>
 
-template<typename... Args>
-class EventHandler {
+template <typename... Args>
+class EventHandler
+{
 public:
     typedef std::function<void(Args...)> HandlerFunc;
     typedef uint32_t HandlerId;
@@ -21,13 +22,14 @@ public:
         m_Id = ++s_IdCounter;
     }
 
-    EventHandler(const EventHandler& handler) :
-        m_Id(handler.m_Id), m_HandlerFunc(handler.m_HandlerFunc)
-    {}
+    EventHandler(const EventHandler& handler) : m_Id(handler.m_Id), m_HandlerFunc(handler.m_HandlerFunc)
+    {
+    }
 
     EventHandler(EventHandler&& handler)
         : m_Id(handler.m_Id), m_HandlerFunc(handler.m_HandlerFunc)
-    {}
+    {
+    }
 
     EventHandler& operator=(EventHandler& handler)
     {
@@ -45,7 +47,8 @@ public:
 
     void operator()(Args... params)
     {
-        if (m_HandlerFunc) {
+        if (m_HandlerFunc)
+        {
             m_HandlerFunc(params...);
         }
     }
@@ -63,22 +66,26 @@ private:
     static inline std::atomic<HandlerId> s_IdCounter = 0;
 };
 
-class EventBase {
+class EventBase
+{
 protected:
     EventBase(uint32_t type) : m_Type(type) {}
     uint32_t m_Type;
 };
 
-//we will have subclass inherit on this
-template<typename ...Args>
-class Event : public EventBase {
+// we will have subclass inherit on this
+template <typename... Args>
+class Event : public EventBase
+{
     typedef EventHandler<Args...> HandlerType;
+
 public:
     Event(uint32_t type) : EventBase(type) {}
 
-    void Emit(Args ... args)
+    void Emit(Args... args)
     {
-        for (HandlerType& handler : m_Collections) {
+        for (HandlerType& handler : m_Collections)
+        {
             handler(args...);
         }
     }
@@ -101,23 +108,26 @@ public:
         std::lock_guard<std::mutex> lock(m_handlersLock);
 
         auto it = std::find(m_Collections.begin(), m_Collections.end(), handler);
-        if (it != m_Collections.end()) {
+        if (it != m_Collections.end())
+        {
             m_Collections.erase(it);
             return true;
         }
         return false;
     }
 
-    //using typename to access the dependent typename
+    // using typename to access the dependent typename
     bool Unwatch(typename HandlerType::HandlerId id)
     {
         std::lock_guard<std::mutex> lock(m_handlersLock);
 
         auto it = std::find(m_Collections.begin(), m_Collections.end(),
-                            [id](const HandlerType& it) {
+                            [id](const HandlerType& it)
+                            {
                                 return it->id() == id;
                             });
-        if (it != m_Collections.end()) {
+        if (it != m_Collections.end())
+        {
             m_Collections.erase(it);
             return true;
         }

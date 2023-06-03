@@ -2,6 +2,8 @@
 #include "DescriptorManager.h"
 #include "RenderPass.h"
 
+namespace Muyo
+{
 class RenderPassRayTracing : public IRenderPass
 {
 public:
@@ -43,3 +45,4 @@ private:
     std::array<VkStridedDeviceAddressRegionKHR, SBT_REGION_COUNT> m_aSBTRegions;
     RenderPassParameters m_renderPassParameters;
 };
+}  // namespace Muyo

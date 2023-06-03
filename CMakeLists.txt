@@ -124,7 +124,6 @@ add_executable( helloVulkan
     src/Texture.cpp
     src/VkRenderDevice.cpp
     src/VkMemoryAllocator.cpp
-    src/VertexBuffer.cpp
     src/RenderPass.cpp
     src/RenderPassGBuffer.cpp
     src/Swapchain.cpp

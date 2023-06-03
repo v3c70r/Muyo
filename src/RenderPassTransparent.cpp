@@ -8,6 +8,9 @@
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
 
+namespace Muyo
+{
+
 RenderPassTransparent::RenderPassTransparent()
 {
     CreateRenderPasses();
@@ -79,7 +82,6 @@ void RenderPassTransparent::CreateRenderPasses()
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass),
                             VK_OBJECT_TYPE_RENDER_PASS, "Transparent Pass");
-
 }
 
 RenderPassTransparent::~RenderPassTransparent()
@@ -138,7 +140,7 @@ void RenderPassTransparent::CreatePipeline()
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Transparent");
 
-    //TODO : Write a shader for transparent pass
+    // TODO : Write a shader for transparent pass
     VkShaderModule vertShdr =
         CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
     VkShaderModule fragShdr =
@@ -278,3 +280,5 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(mCommandBuffer),
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "Transparent");
 }
+
+}  // namespace Muyo

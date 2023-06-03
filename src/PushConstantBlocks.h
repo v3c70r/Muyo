@@ -1,8 +1,11 @@
 // Shared push constant blocks
 #pragma once
-#include <glm/glm.hpp>
 #include <vulkan/vulkan.h>
 
+#include <glm/glm.hpp>
+
+namespace Muyo
+{
 struct UIPushConstBlock
 {
     glm::vec2 scale;
@@ -14,8 +17,6 @@ struct SingleFloatPushConstant
     float fValue;
 };
 
-
-
 template <class T>
 VkPushConstantRange GetPushConstantRange(
     VkShaderStageFlagBits stageFlags = VK_SHADER_STAGE_ALL)
@@ -26,3 +27,4 @@ VkPushConstantRange GetPushConstantRange(
     pushConstantRange.offset = 0;
     return pushConstantRange;
 }
+}  // namespace Muyo

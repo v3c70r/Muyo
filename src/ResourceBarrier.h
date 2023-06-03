@@ -1,5 +1,8 @@
 #pragma once
+
 #include <vulkan/vulkan.h>
+namespace Muyo
+{
 
 class IResourceBarrier
 {
@@ -19,3 +22,4 @@ protected:
     VkPipelineStageFlags m_destinationStage = VK_PIPELINE_STAGE_NONE_KHR;
 };
 
+}  // namespace Muyo

@@ -1,6 +1,9 @@
 #pragma once
+
 #include "RenderPass.h"
 
+namespace Muyo
+{
 // Prototyping AO pass with compute queue
 class RenderPassAO : public RenderPass
 {
@@ -12,15 +15,14 @@ public:
     {
         return m_cmdBuf;
     }
+
 private:
     void CreateRenderPass();
 
     void CreatePipeline() override;
 
-
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkCommandBuffer m_cmdBuf = VK_NULL_HANDLE;
-
-    
 };
+}  // namespace Muyo

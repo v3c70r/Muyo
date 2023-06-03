@@ -5,6 +5,9 @@
 #include <ostream>
 #include "VkRenderDevice.h"
 
+namespace Muyo
+{
+
 namespace Color
 {
 enum Code
@@ -74,14 +77,14 @@ static VkBool32 debugCallback(
 
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
-        for (uint32_t i = 0; i<pCallbackData->queueLabelCount; i++)
+        for (uint32_t i = 0; i < pCallbackData->queueLabelCount; i++)
         {
-            std::cerr<<"Queue: "<<pCallbackData->pQueueLabels[i].pLabelName<<std::endl;
+            std::cerr << "Queue: " << pCallbackData->pQueueLabels[i].pLabelName << std::endl;
         }
 
-        for (uint32_t i = 0; i<pCallbackData->cmdBufLabelCount; i++)
+        for (uint32_t i = 0; i < pCallbackData->cmdBufLabelCount; i++)
         {
-            std::cerr<<"CmdBuffer: "<<pCallbackData->pCmdBufLabels[i].pLabelName<<std::endl;
+            std::cerr << "CmdBuffer: " << pCallbackData->pCmdBufLabels[i].pLabelName << std::endl;
         }
 
         std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << normal
@@ -93,7 +96,6 @@ static VkBool32 debugCallback(
         std::cerr << yellow << "[WARNING]:" << pCallbackData->pMessage << normal
                   << std::endl;
     }
-
 
     return VK_FALSE;
 }
@@ -124,22 +126,15 @@ void destroyDebugUtilsMessenger(VkInstance instance,
     }
 }
 
-void DebugUtilsMessenger::Initialize(const VkInstance &instance)
+void DebugUtilsMessenger::Initialize(const VkInstance& instance)
 {
     VkDebugUtilsMessengerCreateInfoEXT createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 
-    createInfo.messageType = 
-        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT 
-        | VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT
-        ;
-    createInfo.messageSeverity = 
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT
-        ;
+    createInfo.messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
     createInfo.pfnUserCallback = debugCallback;
 
     assert(createDebugUtilsMessenger(
@@ -149,7 +144,6 @@ void DebugUtilsMessenger::Initialize(const VkInstance &instance)
 
 void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
 {
-
     destroyDebugUtilsMessenger(instance, m_debugUtilsMessenger, nullptr);
 }
 
@@ -214,6 +208,7 @@ void endMarker(VkCommandBuffer cmd)
 
 void VK_ASSERT(VkResult result)
 {
-	assert(result == VK_SUCCESS);
+    assert(result == VK_SUCCESS);
 }
 
+}  // namespace Muyo

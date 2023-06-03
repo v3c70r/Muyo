@@ -7,16 +7,19 @@
 #include "RenderPass.h"
 #include "RenderPassAO.h"
 #include "RenderPassGBuffer.h"
+#include "RenderPassRSM.h"
+#include "RenderPassRayTracing.h"
 #include "RenderPassSkybox.h"
 #include "RenderPassTransparent.h"
 #include "RenderPassUI.h"
 #include "RenderResourceManager.h"
-#include "RenderPassRayTracing.h"
-#include "RenderPassRSM.h"
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
+
 #endif
+namespace Muyo
+{
 
 static RenderPassManager renderPassManager;
 
@@ -37,8 +40,7 @@ void RenderPassManager::CreateSwapchain(const VkSurfaceKHR &swapchainSurface)
 
 void RenderPassManager::BeginFrame()
 {
-
-    if(m_pCamera->IsTransforationUpdated())
+    if (m_pCamera->IsTransforationUpdated())
     {
         // Hack: Use frame id to track number of frame without transformation
         m_temporalInfo.nFrameId = 1;
@@ -49,7 +51,6 @@ void RenderPassManager::BeginFrame()
 
     UniformBuffer<PerViewData> *pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
     m_pCamera->UpdatePerViewDataUBO(pUniformBuffer);
-    
 
     m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailable);
 
@@ -121,7 +122,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = nullptr;
 #endif
 
-
     RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
 
     SetSwapchainImageViews(m_pSwapchain->GetImageViews(), pDepthResource->getView());
@@ -164,8 +164,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
         0.1f,                                      // near
         FAR,                                       // far
         (float)m_uWidth,
-        (float)m_uHeight
-    );
+        (float)m_uHeight);
     pCameraDebugPage->SetCamera(GetCamera());
 }
 
@@ -181,7 +180,6 @@ void RenderPassManager::SetSwapchainImageViews(const std::vector<VkImageView> &v
 
     static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
     static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
-
 }
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
@@ -253,7 +251,6 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         m_pShadowPassManager->RecordCommandBuffers(vpGeometries);
     }
     {
-
         RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         std::vector<const Geometry *> vpGeometries;
@@ -293,13 +290,10 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     pFinalPass->RecordCommandBuffers();
     RenderPassAO *pAOPass = static_cast<RenderPassAO *>(m_vpRenderPasses[RENDERPASS_AO].get());
     pAOPass->RecordCommandBuffer();
-
-
 }
 
 void RenderPassManager::RecordDynamicCmdBuffers()
 {
-
     VkExtent2D vpExtent = {m_uWidth, m_uHeight};
     RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
     pUIPass->newFrame(vpExtent);
@@ -330,7 +324,7 @@ void RenderPassManager::SubmitCommandBuffers()
     }
 
     // Shadow pass
-    //vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
+    // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
     auto vShadowPassCmds = m_pShadowPassManager->GetCommandBuffers();
     vCmdBufs.insert(std::end(vCmdBufs), std::begin(vShadowPassCmds), std::end(vShadowPassCmds));
 
@@ -377,3 +371,5 @@ void RenderPassManager::SubmitCommandBuffers()
     vSignalSemaphores.push_back(m_renderFinished);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetComputeQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages, m_aGPUExecutionFence[m_uImageIdx2Present]);
 }
+
+}  // namespace Muyo

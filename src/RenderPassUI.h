@@ -1,12 +1,15 @@
 #pragma once
-#include <memory>
 #include <imgui.h>
 
+#include <memory>
+
+#include "DebugUI.h"
 #include "RenderPass.h"
 #include "Texture.h"
 #include "VertexBuffer.h"
-#include "DebugUI.h"
 
+namespace Muyo
+{
 // Options and values to display/toggle from the UI
 struct UISettings
 {
@@ -29,10 +32,9 @@ struct ImGuiResource
     VkSampler sampler;
     VkDeviceMemory fontMemory = VK_NULL_HANDLE;
 
-
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
-    //VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    //VkPipeline pipeline = VK_NULL_HANDLE;
+    // VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    // VkPipeline pipeline = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     int nTotalIndexCount = 0;
 
@@ -58,7 +60,6 @@ public:
     }
     virtual void CreatePipeline() override;
 
-
 private:
     struct PushConstBlock
     {
@@ -68,3 +69,4 @@ private:
     ImGuiResource m_uiResources;
     std::vector<std::unique_ptr<IDebugUIPage>> m_vpDebugPages;
 };
+}  // namespace Muyo

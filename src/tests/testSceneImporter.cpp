@@ -1,6 +1,9 @@
 #include "../SceneImporter.h"
 #include <iostream>
 
+namespace Muyo {
+
+
 int main()
 {
 
@@ -12,3 +15,4 @@ int main()
     }
     return 0;
 }
+} // namespace Muyo

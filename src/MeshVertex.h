@@ -1,10 +1,14 @@
 #pragma once
-#include <vulkan/vulkan.h>
-#include <glm/glm.hpp>
 #include <imgui.h>  // for ImDrawVert structure
+#include <vulkan/vulkan.h>
+
+#include <glm/glm.hpp>
 #include <vector>
+namespace Muyo
+{
 using Index = uint32_t;
-struct Vertex {
+struct Vertex
+{
     glm::vec3 pos;
     glm::vec3 normal;
     glm::vec4 textureCoord;
@@ -40,7 +44,8 @@ struct Vertex {
     }
 };
 
-struct UIVertex {
+struct UIVertex
+{
     static VkVertexInputBindingDescription getBindingDescription()
     {
         VkVertexInputBindingDescription desc = {};
@@ -70,3 +75,4 @@ struct UIVertex {
         return attribDesc;
     }
 };
+}  // namespace Muyo

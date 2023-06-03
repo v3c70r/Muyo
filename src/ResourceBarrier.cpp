@@ -1,6 +1,11 @@
 #include "ResourceBarrier.h"
-#include <stdexcept>
+
 #include <vulkan/vulkan_core.h>
+
+#include <stdexcept>
+
+namespace Muyo
+{
 
 ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLayout, VkImageLayout sourceLayout, uint32_t nMipCount, uint32_t nLayerCount)
 {
@@ -88,3 +93,5 @@ void ImageResourceBarrier::AddBarrier(VkCommandBuffer cmdBuf)
 {
     vkCmdPipelineBarrier(cmdBuf, m_sourceStage, m_destinationStage, 0, 0, nullptr, 0, nullptr, 1, &m_imageBarrier);
 }
+
+}  // namespace Muyo

@@ -1,5 +1,9 @@
 #include "Texture.h"
+
 #include "../thirdparty/stb/stb_image.h"
+
+namespace Muyo
+{
 
 static TextureResourceManager s_textureManager;
 
@@ -58,10 +62,11 @@ void TextureResource::LoadPixels(void *pixels, int width, int height)
 
 void TextureResource::LoadImage(const std::string path)
 {
-
     int width, height, channels;
     stbi_uc *pixels =
         stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
     assert(pixels);
     LoadPixels((void *)pixels, width, height);
 }
+
+}  // namespace Muyo

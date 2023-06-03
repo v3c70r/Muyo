@@ -2,6 +2,8 @@
 #include "RenderPass.h"
 #include "RenderPassParameters.h"
 
+namespace Muyo
+{
 class RenderPassSkybox : public RenderPass
 {
 public:
@@ -21,3 +23,4 @@ public:
 private:
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
 };
+}  // namespace Muyo

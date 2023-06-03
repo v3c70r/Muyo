@@ -1,10 +1,14 @@
 #include "RenderPassSkybox.h"
-#include "VkRenderDevice.h"
-#include "RenderResourceManager.h"
-#include "PipelineStateBuilder.h"
-#include "DescriptorManager.h"
+
 #include "Debug.h"
+#include "DescriptorManager.h"
+#include "PipelineStateBuilder.h"
+#include "RenderResourceManager.h"
 #include "SamplerManager.h"
+#include "VkRenderDevice.h"
+
+namespace Muyo
+{
 
 RenderPassSkybox::~RenderPassSkybox()
 {
@@ -39,9 +43,7 @@ void RenderPassSkybox::PrepareRenderPass()
     m_renderPassParameters.Finalize("Render pass skybox");
 
     CreatePipeline();
-
 }
-
 
 void RenderPassSkybox::CreatePipeline()
 {
@@ -128,7 +130,6 @@ void RenderPassSkybox::RecordCommandBuffers()
         vkCmdBeginRenderPass(mCommandBuffer, &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-
         VkDescriptorSet descSet = m_renderPassParameters.AllocateDescriptorSet("skybox");
 
         {
@@ -158,3 +159,4 @@ void RenderPassSkybox::RecordCommandBuffers()
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "Skybox");
 }
 
+}  // namespace Muyo

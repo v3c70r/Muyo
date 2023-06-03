@@ -1,12 +1,13 @@
 #pragma once
-#include "Material.h"
-
-#include <vector>
-#include <array>
 #include <vulkan/vulkan.h>
+
+#include <array>
 #include <unordered_map>
+#include <vector>
 
-
+#include "Material.h"
+namespace Muyo
+{
 
 struct PrimitiveDescription
 {
@@ -27,10 +28,9 @@ private:
     std::vector<PrimitiveDescription> m_vPrimitiveDescs;
     std::unordered_map<const SceneNode*, uint32_t> m_mPrimitiveDescStartingIndices;
 
-
 private:
     AccelerationStructure* BuildBLASfromNode(const SceneNode& geometry, VkBuildAccelerationStructureFlagsKHR flags);
     AccelerationStructure* BuildTLAS(const std::vector<VkAccelerationStructureInstanceKHR>& vInstances);
     uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment);
-
 };
+}  // namespace Muyo

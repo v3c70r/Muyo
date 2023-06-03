@@ -4,8 +4,10 @@
 
 #include "Geometry.h"
 #include "RenderPass.h"
-#include "RenderPassRSM.h"   // ShadowMapR
+#include "RenderPassRSM.h"  // ShadowMapR
 
+namespace Muyo
+{
 class RenderPassGBuffer : public RenderPass
 {
 public:
@@ -26,8 +28,8 @@ public:
             GBUFFER_ATTACHMENTS_COUNT = LIGHTING_OUTPUT
         };
         const std::array<const std::string, ATTACHMENTS_COUNT> aNames = {
-            "GBUFFER_POSITION_AO", "GBUFFER_ALBEDO_TRANSMITTANCE",  "GBUFFER_NORMAL_ROUGHNESS",
-            "GBUFFER_METALNESS_TRANSLUCENCY",       "LIGHTING_OUTPUT", "GBUFFER_DEPTH"};
+            "GBUFFER_POSITION_AO", "GBUFFER_ALBEDO_TRANSMITTANCE", "GBUFFER_NORMAL_ROUGHNESS",
+            "GBUFFER_METALNESS_TRANSLUCENCY", "LIGHTING_OUTPUT", "GBUFFER_DEPTH"};
 
         static constexpr std::array<VkFormat, ATTACHMENTS_COUNT> aFormats = {
             VK_FORMAT_R16G16B16A16_SFLOAT, VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -119,3 +121,5 @@ private:
     RenderPassParameters m_renderPassParameters;
     const uint32_t m_nShadowMapDescriptorSetIndex = 4;
 };
+
+}  // namespace Muyo
