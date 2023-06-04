@@ -1,11 +1,13 @@
 #include "RenderLayerIBL.h"
 
+#include <cmath>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "DescriptorManager.h"
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
-#include "glm/gtc/matrix_transform.hpp"
 
 namespace Muyo
 {
@@ -553,8 +555,8 @@ void RenderLayerIBL::RecordCommandBuffer()
             for (uint32_t uMip = 0; uMip < NUM_PREFILTERED_CUBEMAP_MIP; uMip++)
             {
                 SCOPED_MARKER(m_commandBuffer, "Prefiltered cubemap mips");
-                unsigned int uMipWidth = PREFILTERED_CUBE_DIM * std::powf(0.5f, uMip);
-                unsigned int uMipHeight = PREFILTERED_CUBE_DIM * std::powf(0.5f, uMip);
+                unsigned int uMipWidth = PREFILTERED_CUBE_DIM * powf(0.5f, uMip);
+                unsigned int uMipHeight = PREFILTERED_CUBE_DIM * powf(0.5f, uMip);
 
                 vkCmdBeginRenderPass(m_commandBuffer,
                                      &aRenderpassBeginInfos[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP],

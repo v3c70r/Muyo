@@ -64,7 +64,7 @@ public:
         // full screen texture sampler
         for (int i = 0; i < SAMPLER_TYPE_COUNT; i++)
         {
-            samplerInfo.maxLod = std::powf(2, static_cast<float>(i));
+            samplerInfo.maxLod = powf(2, static_cast<float>(i));
             assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
                                    nullptr, &m_aSamplers[i]) == VK_SUCCESS);
             setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aSamplers[i]),

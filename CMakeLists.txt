@@ -94,7 +94,7 @@ if(NOT EXISTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE})
 endif()
 
 if (UNIX)
-    set (CMAKE_CXX_FLAGS "-std=c++17 -Wall -pthread -Wno-missing-braces -g")
+    set (CMAKE_CXX_FLAGS "-std=c++20 -Wall -pthread -Wno-missing-braces -g")
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
 elseif(MSVC)
@@ -102,7 +102,7 @@ elseif(MSVC)
 endif()
 
 # Headers that shared between shader and cpp 
-set (SHARED_HEADER_DIR "${CMAKE_SOURCE_DIR}/shaders/Shared")
+set (SHARED_HEADER_DIR "${CMAKE_SOURCE_DIR}/shaders/shared")
 
 include_directories(
     ${Vulkan_INCLUDE_DIR}
