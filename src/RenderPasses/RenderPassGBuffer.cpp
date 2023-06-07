@@ -197,12 +197,12 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                 // each geometry has their own transformation
                 // TODO: Update perViewSets buffer data based on the geometries
                 // transformation
-                for (const auto& pPrimitive : pGeometry->getPrimitives())
+                for (const auto& pSubmesh : pGeometry->getSubmeshes())
                 {
                     VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
-                    if (pPrimitive->GetMaterial() != nullptr)
+                    if (pSubmesh->GetMaterial() != nullptr)
                     {
-                        materialDescSet = pPrimitive->GetMaterial()->GetDescriptorSet();
+                        materialDescSet = pSubmesh->GetMaterial()->GetDescriptorSet();
                     }
                     const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
                     assert(worldMatrixBuffer != nullptr && "Buffer must be valid");
@@ -212,9 +212,9 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
                     VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
-                    VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
-                    uint32_t nIndexCount = pPrimitive->getIndexCount();
+                    VkBuffer vertexBuffer = pSubmesh->getVertexDeviceBuffer();
+                    VkBuffer indexBuffer = pSubmesh->getIndexDeviceBuffer();
+                    uint32_t nIndexCount = pSubmesh->getIndexCount();
                     vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                            &offset);
                     vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
@@ -282,11 +282,11 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                 lightingDescSets.push_back(m_renderPassParameters.AllocateDescriptorSet("shadow map desc", m_nShadowMapDescriptorSetIndex));
             }
 
-            const auto& prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
+            const auto& submesh = GetGeometryManager()->GetQuad()->getSubmeshes().at(0);
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
-            VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
-            uint32_t nIndexCount = prim->getIndexCount();
+            VkBuffer vertexBuffer = submesh->getVertexDeviceBuffer();
+            VkBuffer indexBuffer = submesh->getIndexDeviceBuffer();
+            uint32_t nIndexCount = submesh->getIndexCount();
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                    &offset);

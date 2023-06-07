@@ -14,25 +14,25 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 {
     const GeometrySceneNode& geometryNode = dynamic_cast<const GeometrySceneNode&>(sceneNode);
 
-    m_mPrimitiveDescStartingIndices[&sceneNode] = static_cast<uint32_t>(m_vPrimitiveDescs.size());
+    m_mSubmeshBeginIndices[&sceneNode] = static_cast<uint32_t>(m_vSubmeshDescs.size());
 
     std::vector<VkAccelerationStructureGeometryKHR> vGeometries;
     std::vector<VkAccelerationStructureBuildRangeInfoKHR> vRangeInfo;
 
-    for (const auto& primitive : geometryNode.GetGeometry()->getPrimitives())
+    for (const auto& submesh : geometryNode.GetGeometry()->getSubmeshes())
     {
         VkAccelerationStructureGeometryTrianglesDataKHR triangles = {};
         triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
         // Vertex data
         triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-        triangles.vertexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(primitive->getVertexDeviceBuffer());
+        triangles.vertexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->getVertexDeviceBuffer());
         // Index data
         triangles.vertexStride = sizeof(Vertex);
         triangles.indexType = VK_INDEX_TYPE_UINT32;
-        triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(primitive->getIndexDeviceBuffer());
+        triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->getIndexDeviceBuffer());
         // misc
         triangles.transformData = {};
-        triangles.maxVertex = primitive->getVertexCount();
+        triangles.maxVertex = submesh->getVertexCount();
 
         VkAccelerationStructureGeometryKHR geometry = {};
         geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -42,17 +42,17 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 
         VkAccelerationStructureBuildRangeInfoKHR range = {};
         range.firstVertex = 0;
-        range.primitiveCount = primitive->getIndexCount() / 3;
+        range.primitiveCount = submesh->getIndexCount() / 3;
         range.primitiveOffset = 0;
         range.transformOffset = 0;
         vGeometries.emplace_back(geometry);
         vRangeInfo.emplace_back(range);
 
-        const Material* pMaterial = primitive->GetMaterial();
+        const Material* pMaterial = submesh->GetMaterial();
         VkDeviceAddress pbrFactorAdd = pMaterial->GetPBRFactorsDeviceAdd();
-        PrimitiveDescription primDesc = {triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress, pbrFactorAdd, {}};
-        pMaterial->FillPbrTextureIndices(primDesc.m_aPbrTextureIndices);
-        m_vPrimitiveDescs.emplace_back(primDesc);
+        SubmeshDescription submeshDesc = {triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress, pbrFactorAdd, {}};
+        pMaterial->FillPbrTextureIndices(submeshDesc.m_aPbrTextureIndices);
+        m_vSubmeshDescs.emplace_back(submeshDesc);
     }
 
     // allocate memory for BLAS
@@ -192,7 +192,7 @@ void RayTracingSceneManager::BuildScene(const std::vector<const SceneNode*>& vpG
         // Create intance refer to this acceleration structure
         VkAccelerationStructureInstanceKHR instance = {};
         memcpy(&instance.transform, glm::value_ptr(glm::transpose(static_cast<const GeometrySceneNode*>(pSceneNode)->GetGeometry()->GetWorldMatrix())), sizeof(instance.transform));
-        instance.instanceCustomIndex = m_mPrimitiveDescStartingIndices.at(pSceneNode);
+        instance.instanceCustomIndex = m_mSubmeshBeginIndices.at(pSceneNode);
         instance.mask = 0xFF;
         instance.instanceShaderBindingTableRecordOffset = 0;
         instance.accelerationStructureReference = pAcc->GetAccelerationStructureAddress();
@@ -202,8 +202,8 @@ void RayTracingSceneManager::BuildScene(const std::vector<const SceneNode*>& vpG
 
     BuildTLAS(vInstances);
 
-    // Allocate primitive description buffer
-    GetRenderResourceManager()->GetStorageBuffer("primitive descs", m_vPrimitiveDescs);
+    // Allocate submesh description buffer
+    GetRenderResourceManager()->GetStorageBuffer("submesh descs", m_vSubmeshDescs);
 }
 
 }  // namespace Muyo

@@ -170,7 +170,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                                          const tinygltf::Mesh &mesh,
                                          const tinygltf::Model &model)
 {
-    std::vector<std::unique_ptr<Primitive>> vPrimitives;
+    std::vector<std::unique_ptr<Submesh>> vSubmeshes;
     bool bIsMeshTransparent = false;
     bool bIsMeshEmissive = false;
 
@@ -356,8 +356,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
 
         // Construct primitive name
 
-        std::string sPrimitiveName(mesh.name + "_" + std::to_string(nPrimitiveIndex));
-        vPrimitives.emplace_back(std::make_unique<Primitive>(sPrimitiveName, vVertices, vIndices));
+        std::string sSubmeshName(mesh.name + "_" + std::to_string(nPrimitiveIndex));
+        vSubmeshes.emplace_back(std::make_unique<Submesh>(sSubmeshName, vVertices, vIndices));
 
         //  =========Material
         //
@@ -527,13 +527,13 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             pMaterial = materialIter->second.get();
         }
 
-        vPrimitives.back()->SetMaterial(pMaterial);
+        vSubmeshes.back()->SetMaterial(pMaterial);
         if (pMaterial->IsTransparent())
         {
             bIsMeshTransparent = true;
         }
     }
-    Geometry *pGeometry = new Geometry(vPrimitives);
+    Geometry *pGeometry = new Geometry(vSubmeshes);
     geomNode.SetAABB({vAABBMin, vAABBMax});
     // Setup world transformation uniform buffer object
     // Use pointer address as string

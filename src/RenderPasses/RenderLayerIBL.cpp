@@ -444,11 +444,11 @@ void RenderLayerIBL::RecordCommandBuffer()
 {
     // Get skybox vertex data
     m_pSkybox = getSkybox();
-    PrimitiveListConstRef primitives = m_pSkybox->getPrimitives();
-    assert(primitives.size() == 1);
-    VkBuffer vertexBuffer = primitives[0]->getVertexDeviceBuffer();
-    VkBuffer indexBuffer = primitives[0]->getIndexDeviceBuffer();
-    uint32_t nIndexCount = primitives[0]->getIndexCount();
+    SubmeshListConstRef submeshes = m_pSkybox->getSubmeshes();
+    assert(submeshes.size() == 1);
+    VkBuffer vertexBuffer = submeshes[0]->getVertexDeviceBuffer();
+    VkBuffer indexBuffer = submeshes[0]->getIndexDeviceBuffer();
+    uint32_t nIndexCount = submeshes[0]->getIndexCount();
 
     VkCommandBufferBeginInfo cmdBeginInfo = {};
 
@@ -636,11 +636,11 @@ void RenderLayerIBL::RecordCommandBuffer()
             vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
             vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
 
-            const auto &prim = GetGeometryManager()->GetQuad()->getPrimitives().at(0);
+            const auto &submesh = GetGeometryManager()->GetQuad()->getSubmeshes().at(0);
             VkDeviceSize offset = 0;
-            VkBuffer quadVertexBuffer = prim->getVertexDeviceBuffer();
-            VkBuffer quadIndexBuffer = prim->getIndexDeviceBuffer();
-            uint32_t nQuadIndexCount = prim->getIndexCount();
+            VkBuffer quadVertexBuffer = submesh->getVertexDeviceBuffer();
+            VkBuffer quadIndexBuffer = submesh->getIndexDeviceBuffer();
+            uint32_t nQuadIndexCount = submesh->getIndexCount();
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &quadVertexBuffer,
                                    &offset);

@@ -9,7 +9,7 @@
 namespace Muyo
 {
 
-struct PrimitiveDescription
+struct SubmeshDescription
 {
     VkDeviceAddress m_vertexBufferAddress;
     VkDeviceAddress m_indextBufferAddress;
@@ -25,8 +25,8 @@ public:
     void BuildScene(const std::vector<const SceneNode*>& vpGeometries);
 
 private:
-    std::vector<PrimitiveDescription> m_vPrimitiveDescs;
-    std::unordered_map<const SceneNode*, uint32_t> m_mPrimitiveDescStartingIndices;
+    std::vector<SubmeshDescription> m_vSubmeshDescs;
+    std::unordered_map<const SceneNode*, uint32_t> m_mSubmeshBeginIndices;
 
 private:
     AccelerationStructure* BuildBLASfromNode(const SceneNode& geometry, VkBuildAccelerationStructureFlagsKHR flags);

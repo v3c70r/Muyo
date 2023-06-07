@@ -36,9 +36,9 @@ void RenderPassRayTracing::PrepareRenderPass()
         GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", m_imageSize, VK_FORMAT_R16G16B16A16_SFLOAT),
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, VK_IMAGE_LAYOUT_GENERAL);
 
-    // Binding 4: Primitive descriptions
-    StorageBuffer<PrimitiveDescription>* pPrimDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<PrimitiveDescription>>("primitive descs");
-    m_renderPassParameters.AddParameter(pPrimDescBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    // Binding 4: submesh descriptions
+    StorageBuffer<SubmeshDescription>* pSubmeshDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<SubmeshDescription>>("submesh descs");
+    m_renderPassParameters.AddParameter(pSubmeshDescBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // Binding 5: All of textures in materials
     const auto& vpUniquePtrTextures = GetTextureResourceManager()->GetTextures();

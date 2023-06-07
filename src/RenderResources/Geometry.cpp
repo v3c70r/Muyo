@@ -25,7 +25,7 @@ Geometry *GeometryManager::GetQuad()
             {{-1.0f, 1.0f, 0.0}, {0.0, 0.0, 1.0}, {0.0f, 1.0f, 1.0f, 0.0f}}};
 
         static const std::vector<uint32_t> INDICES = {0, 1, 2, 2, 3, 0};
-        Geometry *pGeometry = new Geometry(std::make_unique<Primitive>("simple_quad", VERTICES, INDICES));
+        Geometry *pGeometry = new Geometry(std::make_unique<Submesh>("simple_quad", VERTICES, INDICES));
         m_nQuadIdx = static_cast<int>(vpGeometries.size());
         vpGeometries.emplace_back(pGeometry);
     }
@@ -76,7 +76,7 @@ std::unique_ptr<Geometry> loadObj(const std::string &path, glm::mat4 mTransforma
         }
     }
 
-    std::vector<std::unique_ptr<Primitive>> primitives;
+    std::vector<std::unique_ptr<Submesh>> submeshes;
     const glm::mat4 mNormalTransformation = glm::transpose(glm::inverse(mTransformation));
     for (size_t i = 0; i < objInfo.shapes.size(); i++)
     {
@@ -114,9 +114,9 @@ std::unique_ptr<Geometry> loadObj(const std::string &path, glm::mat4 mTransforma
             indices.push_back((Index)index);
         }
 
-        primitives.emplace_back(std::make_unique<Primitive>(path + std::to_string(i), vertices, indices));
+        submeshes.emplace_back(std::make_unique<Submesh>(path + std::to_string(i), vertices, indices));
     }
-    return std::make_unique<Geometry>(primitives);
+    return std::make_unique<Geometry>(submeshes);
 }
 
 std::unique_ptr<Geometry> getSkybox()

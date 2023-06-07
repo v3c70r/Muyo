@@ -284,8 +284,8 @@ class ShaderBindingTableBuffer : public BufferResource
 public:
     ShaderBindingTableBuffer(uint32_t size)
         : BufferResource(
-              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
-                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+              VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
+                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT,
               VMA_MEMORY_USAGE_CPU_TO_GPU)
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,

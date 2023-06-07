@@ -142,7 +142,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
         SCOPED_MARKER(m_commandBuffer, "Shadow pass: " + m_shadowCasterName);
         for (const Geometry* pGeometry : vpGeometries)
         {
-            for (const auto& pPrimitive : pGeometry->getPrimitives())
+            for (const auto& pSubmesh : pGeometry->getSubmeshes())
             {
                 const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
                 assert(worldMatrixBuffer != nullptr && "Buffer must be valid");
@@ -150,9 +150,9 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
                 // Setup to default material
                 VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
 
-                if (pPrimitive->GetMaterial() != nullptr)
+                if (pSubmesh->GetMaterial() != nullptr)
                 {
-                    materialDescSet = pPrimitive->GetMaterial()->GetDescriptorSet();
+                    materialDescSet = pSubmesh->GetMaterial()->GetDescriptorSet();
                 }
 
                 std::vector<VkDescriptorSet> vDescSets = {
@@ -162,9 +162,9 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
                     materialDescSet};
 
                 VkDeviceSize offset = 0;
-                VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
-                VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
-                uint32_t nIndexCount = pPrimitive->getIndexCount();
+                VkBuffer vertexBuffer = pSubmesh->getVertexDeviceBuffer();
+                VkBuffer indexBuffer = pSubmesh->getIndexDeviceBuffer();
+                uint32_t nIndexCount = pSubmesh->getIndexCount();
                 vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                        &offset);
                 vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,

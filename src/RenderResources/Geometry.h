@@ -10,10 +10,10 @@
 namespace Muyo
 {
 class Material;
-class Primitive
+class Submesh
 {
 public:
-    Primitive(const std::string& sName, const std::vector<Vertex>& vertices,
+    Submesh(const std::string& sName, const std::vector<Vertex>& vertices,
               const std::vector<Index>& indices)
     {
         m_pVertexBuffer = GetRenderResourceManager()->GetVertexBuffer<Vertex>(sName + "_vertex", vertices);
@@ -53,30 +53,29 @@ private:
 };
 
 // Simplify the types
-using PrimitiveList = std::vector<std::unique_ptr<Primitive>>;
-using PrimitiveListRef = const PrimitiveList&;
-using PrimitiveListConstRef = const PrimitiveList&;
+using SubmeshList = std::vector<std::unique_ptr<Submesh>>;
+using SubmeshListConstRef = const SubmeshList&;
 class Geometry
 {
 public:
-    Geometry(std::vector<std::unique_ptr<Primitive>>& primitives)
+    Geometry(std::vector<std::unique_ptr<Submesh>>& submeshs)
     {
-        for (auto& prim : primitives)
+        for (auto& prim : submeshs)
         {
-            m_vPrimitives.push_back(std::move(prim));
+            m_vSubmeshes.push_back(std::move(prim));
         }
     }
-    Geometry(std::unique_ptr<Primitive> pPrimitive)
+    Geometry(std::unique_ptr<Submesh> pSubmesh)
     {
-        m_vPrimitives.push_back(std::move(pPrimitive));
+        m_vSubmeshes.push_back(std::move(pSubmesh));
     }
-    void appendPrimitive(std::unique_ptr<Primitive> pPrimitive)
+    void appendSubmesh(std::unique_ptr<Submesh> pSubmesh)
     {
-        m_vPrimitives.push_back(std::move(pPrimitive));
+        m_vSubmeshes.push_back(std::move(pSubmesh));
     }
-    PrimitiveListConstRef getPrimitives() const
+    SubmeshListConstRef getSubmeshes() const
     {
-        return m_vPrimitives;
+        return m_vSubmeshes;
     }
     void SetWorldMatrix(const glm::mat4& mObjectToWorld)
     {
@@ -101,7 +100,7 @@ public:
     }
 
 private:
-    std::vector<std::unique_ptr<Primitive>> m_vPrimitives;
+    std::vector<std::unique_ptr<Submesh>> m_vSubmeshes;
     UniformBuffer<glm::mat4>* m_mWorldMatrixBuffer = nullptr;
     glm::mat4 m_mWorldMatrix = glm::mat4(1.0);  // Cached world matrix
 };

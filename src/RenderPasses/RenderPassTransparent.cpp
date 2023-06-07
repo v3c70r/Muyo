@@ -241,12 +241,12 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
                 // each geometry has their own transformation
                 // TODO: Update perViewSets buffer data based on the geometries
                 // transformation
-                for (const auto& pPrimitive : pGeometry->getPrimitives())
+                for (const auto& pSubmesh : pGeometry->getSubmeshes())
                 {
                     VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
-                    if (pPrimitive->GetMaterial() != nullptr)
+                    if (pSubmesh->GetMaterial() != nullptr)
                     {
-                        materialDescSet = pPrimitive->GetMaterial()->GetDescriptorSet();
+                        materialDescSet = pSubmesh->GetMaterial()->GetDescriptorSet();
                     }
                     const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
                     assert(worldMatrixBuffer != nullptr && "Buffer must be valid");
@@ -256,9 +256,9 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
                     VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pPrimitive->getVertexDeviceBuffer();
-                    VkBuffer indexBuffer = pPrimitive->getIndexDeviceBuffer();
-                    uint32_t nIndexCount = pPrimitive->getIndexCount();
+                    VkBuffer vertexBuffer = pSubmesh->getVertexDeviceBuffer();
+                    VkBuffer indexBuffer = pSubmesh->getIndexDeviceBuffer();
+                    uint32_t nIndexCount = pSubmesh->getIndexCount();
                     vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
                                            &offset);
                     vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
