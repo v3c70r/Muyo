@@ -25,14 +25,14 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
         triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
         // Vertex data
         triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-        triangles.vertexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->getVertexDeviceBuffer());
+        triangles.vertexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->GetVertexDeviceBuffer());
         // Index data
         triangles.vertexStride = sizeof(Vertex);
         triangles.indexType = VK_INDEX_TYPE_UINT32;
-        triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->getIndexDeviceBuffer());
+        triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->GetIndexDeviceBuffer());
         // misc
         triangles.transformData = {};
-        triangles.maxVertex = submesh->getVertexCount();
+        triangles.maxVertex = submesh->GetVertexCount();
 
         VkAccelerationStructureGeometryKHR geometry = {};
         geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -42,7 +42,7 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 
         VkAccelerationStructureBuildRangeInfoKHR range = {};
         range.firstVertex = 0;
-        range.primitiveCount = submesh->getIndexCount() / 3;
+        range.primitiveCount = submesh->GetIndexCount() / 3;
         range.primitiveOffset = 0;
         range.transformOffset = 0;
         vGeometries.emplace_back(geometry);

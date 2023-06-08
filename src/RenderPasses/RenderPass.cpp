@@ -282,9 +282,9 @@ void RenderPassFinal::RecordCommandBuffers()
         for (const auto& submesh : pQuad->getSubmeshes())
         {
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = submesh->getVertexDeviceBuffer();
-            VkBuffer indexBuffer = submesh->getIndexDeviceBuffer();
-            uint32_t nIndexCount = submesh->getIndexCount();
+            VkBuffer vertexBuffer = submesh->GetVertexDeviceBuffer();
+            VkBuffer indexBuffer = submesh->GetIndexDeviceBuffer();
+            uint32_t nIndexCount = submesh->GetIndexCount();
             vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
             vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0,
                                  VK_INDEX_TYPE_UINT32);

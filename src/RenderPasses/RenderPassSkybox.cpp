@@ -136,9 +136,9 @@ void RenderPassSkybox::RecordCommandBuffers()
             // Draw skybox cube
             const auto& prim = GetGeometryManager()->GetCube()->getSubmeshes().at(0);
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = prim->getVertexDeviceBuffer();
-            VkBuffer indexBuffer = prim->getIndexDeviceBuffer();
-            uint32_t nIndexCount = prim->getIndexCount();
+            VkBuffer vertexBuffer = prim->GetVertexDeviceBuffer();
+            VkBuffer indexBuffer = prim->GetIndexDeviceBuffer();
+            uint32_t nIndexCount = prim->GetIndexCount();
 
             vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
                                    &offset);

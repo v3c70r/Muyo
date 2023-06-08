@@ -66,7 +66,7 @@ const char* GetValidationLayerName()
     return "VK_LAYER_KHRONOS_validation";
 }
 
-static VkBool32 debugCallback(
+static VkBool32 DebugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
     VkDebugUtilsMessageTypeFlagsEXT,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
@@ -101,7 +101,7 @@ static VkBool32 debugCallback(
 }
 
 // Call add callback by query the extension
-VkResult createDebugUtilsMessenger(
+VkResult CreateDebugUtilsMessenger(
     VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
     const VkAllocationCallbacks* pAllocator,
     VkDebugUtilsMessengerEXT* pCallback)
@@ -135,9 +135,9 @@ void DebugUtilsMessenger::Initialize(const VkInstance& instance)
         VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.messageSeverity =
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
-    createInfo.pfnUserCallback = debugCallback;
+    createInfo.pfnUserCallback = DebugCallback;
 
-    assert(createDebugUtilsMessenger(
+    assert(CreateDebugUtilsMessenger(
                instance, &createInfo, nullptr,
                &m_debugUtilsMessenger) == VK_SUCCESS);
 }

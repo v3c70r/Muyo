@@ -256,9 +256,9 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
                     VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pSubmesh->getVertexDeviceBuffer();
-                    VkBuffer indexBuffer = pSubmesh->getIndexDeviceBuffer();
-                    uint32_t nIndexCount = pSubmesh->getIndexCount();
+                    VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
+                    VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
+                    uint32_t nIndexCount = pSubmesh->GetIndexCount();
                     vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
                                            &offset);
                     vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,

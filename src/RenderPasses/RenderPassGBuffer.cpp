@@ -212,9 +212,9 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
                     VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pSubmesh->getVertexDeviceBuffer();
-                    VkBuffer indexBuffer = pSubmesh->getIndexDeviceBuffer();
-                    uint32_t nIndexCount = pSubmesh->getIndexCount();
+                    VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
+                    VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
+                    uint32_t nIndexCount = pSubmesh->GetIndexCount();
                     vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                            &offset);
                     vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
@@ -284,9 +284,9 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
 
             const auto& submesh = GetGeometryManager()->GetQuad()->getSubmeshes().at(0);
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = submesh->getVertexDeviceBuffer();
-            VkBuffer indexBuffer = submesh->getIndexDeviceBuffer();
-            uint32_t nIndexCount = submesh->getIndexCount();
+            VkBuffer vertexBuffer = submesh->GetVertexDeviceBuffer();
+            VkBuffer indexBuffer = submesh->GetIndexDeviceBuffer();
+            uint32_t nIndexCount = submesh->GetIndexCount();
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                    &offset);

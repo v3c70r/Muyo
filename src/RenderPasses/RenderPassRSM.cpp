@@ -162,9 +162,9 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
                     materialDescSet};
 
                 VkDeviceSize offset = 0;
-                VkBuffer vertexBuffer = pSubmesh->getVertexDeviceBuffer();
-                VkBuffer indexBuffer = pSubmesh->getIndexDeviceBuffer();
-                uint32_t nIndexCount = pSubmesh->getIndexCount();
+                VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
+                VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
+                uint32_t nIndexCount = pSubmesh->GetIndexCount();
                 vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                        &offset);
                 vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,

@@ -443,12 +443,12 @@ void RenderLayerIBL::setupDescriptorSets()
 void RenderLayerIBL::RecordCommandBuffer()
 {
     // Get skybox vertex data
-    m_pSkybox = getSkybox();
+    m_pSkybox = GetSkybox();
     SubmeshListConstRef submeshes = m_pSkybox->getSubmeshes();
     assert(submeshes.size() == 1);
-    VkBuffer vertexBuffer = submeshes[0]->getVertexDeviceBuffer();
-    VkBuffer indexBuffer = submeshes[0]->getIndexDeviceBuffer();
-    uint32_t nIndexCount = submeshes[0]->getIndexCount();
+    VkBuffer vertexBuffer = submeshes[0]->GetVertexDeviceBuffer();
+    VkBuffer indexBuffer = submeshes[0]->GetIndexDeviceBuffer();
+    uint32_t nIndexCount = submeshes[0]->GetIndexCount();
 
     VkCommandBufferBeginInfo cmdBeginInfo = {};
 
@@ -638,9 +638,9 @@ void RenderLayerIBL::RecordCommandBuffer()
 
             const auto &submesh = GetGeometryManager()->GetQuad()->getSubmeshes().at(0);
             VkDeviceSize offset = 0;
-            VkBuffer quadVertexBuffer = submesh->getVertexDeviceBuffer();
-            VkBuffer quadIndexBuffer = submesh->getIndexDeviceBuffer();
-            uint32_t nQuadIndexCount = submesh->getIndexCount();
+            VkBuffer quadVertexBuffer = submesh->GetVertexDeviceBuffer();
+            VkBuffer quadIndexBuffer = submesh->GetIndexDeviceBuffer();
+            uint32_t nQuadIndexCount = submesh->GetIndexCount();
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &quadVertexBuffer,
                                    &offset);

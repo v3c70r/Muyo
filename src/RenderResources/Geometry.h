@@ -13,6 +13,7 @@ class Material;
 class Submesh
 {
 public:
+    // Construct submesh with vertices and indices. This will generate a separated vertex buffer
     Submesh(const std::string& sName, const std::vector<Vertex>& vertices,
               const std::vector<Index>& indices)
     {
@@ -20,25 +21,37 @@ public:
         m_nVertexCount = (uint32_t)vertices.size();
         m_pIndexBuffer = GetRenderResourceManager()->GetIndexBuffer(sName + "_index", indices);
         m_nIndexCount = (uint32_t)indices.size();
+        m_nFirstIndex = 0;
+        m_nFirstVertex = 0;
     }
-    VkBuffer getVertexDeviceBuffer() const
+    VkBuffer GetVertexDeviceBuffer() const
     {
         return m_pVertexBuffer->buffer();
     }
 
-    VkBuffer getIndexDeviceBuffer() const
+    VkBuffer GetIndexDeviceBuffer() const
     {
         return m_pIndexBuffer->buffer();
     }
 
-    uint32_t getIndexCount() const
+    uint32_t GetIndexCount() const
     {
         return m_nIndexCount;
     }
 
-    uint32_t getVertexCount() const
+    uint32_t GetVertexCount() const
     {
         return m_nVertexCount;
+    }
+    
+    uint32_t GetFirstIndex() const
+    {
+        return m_nFirstIndex;
+    }
+    
+    uint32_t GetFirstVertex() const
+    {
+        return m_nFirstVertex;
     }
 
     void SetMaterial(Material* pMaterial) { m_pMaterial = pMaterial; }
@@ -47,8 +60,10 @@ public:
 private:
     VertexBuffer<Vertex>* m_pVertexBuffer = nullptr;
     IndexBuffer* m_pIndexBuffer = nullptr;
+    uint32_t m_nFirstIndex = 0;
     uint32_t m_nIndexCount = 0;
     uint32_t m_nVertexCount = 0;
+    uint32_t m_nFirstVertex = 0;
     Material* m_pMaterial = nullptr;
 };
 
@@ -120,8 +135,8 @@ private:
 
 GeometryManager* GetGeometryManager();
 
-std::unique_ptr<Geometry> loadObj(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));
+std::unique_ptr<Geometry> LoadObj(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));
 
-std::unique_ptr<Geometry> getSkybox();
+std::unique_ptr<Geometry> GetSkybox();
 
 }  // namespace Muyo

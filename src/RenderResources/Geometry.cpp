@@ -37,12 +37,12 @@ Geometry *GeometryManager::GetCube()
     if (m_nCubeIdx == -1)
     {
         m_nCubeIdx = static_cast<int>(vpGeometries.size());
-        vpGeometries.push_back(loadObj("assets/cube.obj"));
+        vpGeometries.push_back(LoadObj("assets/cube.obj"));
     }
     return vpGeometries[m_nCubeIdx].get();
 }
 
-std::unique_ptr<Geometry> loadObj(const std::string &path, glm::mat4 mTransformation)
+std::unique_ptr<Geometry> LoadObj(const std::string &path, glm::mat4 mTransformation)
 {
     struct TinyObjInfo
     {
@@ -119,9 +119,9 @@ std::unique_ptr<Geometry> loadObj(const std::string &path, glm::mat4 mTransforma
     return std::make_unique<Geometry>(submeshes);
 }
 
-std::unique_ptr<Geometry> getSkybox()
+std::unique_ptr<Geometry> GetSkybox()
 {
-    return loadObj("assets/cube.obj");
+    return LoadObj("assets/cube.obj");
 }
 
 }  // namespace Muyo
