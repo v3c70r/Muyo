@@ -89,6 +89,10 @@ add_library(tinygltf ${CMAKE_SOURCE_DIR}/thirdparty/tinygltf/tiny_gltf.cc)
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/stb)
 add_library(stb ${CMAKE_SOURCE_DIR}/thirdparty/stb/stb.cpp)
 
+## meshoptimizer
+add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer)
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/meshoptimizer/src)
+
 if(NOT EXISTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE})
     message(FATAL_ERROR "Can't find glslangValidator at ${GLSL_VALIDATOR}")
 endif()
