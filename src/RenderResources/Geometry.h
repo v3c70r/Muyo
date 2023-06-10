@@ -9,6 +9,16 @@
 #include "VertexBuffer.h"
 namespace Muyo
 {
+
+class MeshletSubmesh
+{
+public:
+private:
+    std::vector<Vertex> m_vVertices;    // All the vertices for the submesh
+    std::vector<Index> m_vIndices;      // Index into the m_vVertices
+                                        //
+    std::vector<uint8_t> m_vTraingleIndices;    // Index into each meshlet
+};
 class Material;
 class Submesh
 {
@@ -23,6 +33,10 @@ public:
         m_nIndexCount = (uint32_t)indices.size();
         m_nFirstIndex = 0;
         m_nFirstVertex = 0;
+        
+        // TODO: move instead of copy
+        m_vVertices = vertices;
+        m_vIndices = indices;
     }
     VkBuffer GetVertexDeviceBuffer() const
     {
@@ -54,8 +68,30 @@ public:
         return m_nFirstVertex;
     }
 
+    const std::vector<Index>& GetIndices() const
+    {
+        return m_vIndices;
+    }
+
+    const std::vector<Vertex>& GetVertices() const
+    {
+        return m_vVertices;
+    }
+
     void SetMaterial(Material* pMaterial) { m_pMaterial = pMaterial; }
     const Material* GetMaterial() const { return m_pMaterial; }
+
+    void SetMeshIndex(size_t index)
+    {
+        nMeshIndex = index;
+    }
+
+    size_t GetMeshIndex() const
+    {
+        return nMeshIndex;
+    }
+
+
 
 private:
     VertexBuffer<Vertex>* m_pVertexBuffer = nullptr;
@@ -65,6 +101,12 @@ private:
     uint32_t m_nVertexCount = 0;
     uint32_t m_nFirstVertex = 0;
     Material* m_pMaterial = nullptr;
+    
+    // Store vertex and index buffer info on CPU
+    std::vector<Vertex> m_vVertices;
+    std::vector<Index> m_vIndices;
+
+    size_t nMeshIndex = 0;  // Index in MeshResourceManager
 };
 
 // Simplify the types
@@ -118,6 +160,7 @@ private:
     std::vector<std::unique_ptr<Submesh>> m_vSubmeshes;
     UniformBuffer<glm::mat4>* m_mWorldMatrixBuffer = nullptr;
     glm::mat4 m_mWorldMatrix = glm::mat4(1.0);  // Cached world matrix
+
 };
 
 class GeometryManager

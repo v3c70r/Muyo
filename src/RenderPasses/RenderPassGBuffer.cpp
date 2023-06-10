@@ -415,7 +415,7 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
             GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL),            // Irradiance map
             GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA),     // Irradiance map
         };
-
+        std::string sLightingFragShader = "shaders/lighting.frag.spv";
         if (vpShadowMaps.size() > 0)
         {
             // Hack: Create shadow map desc set on last descset with render pass parameters
@@ -444,6 +444,8 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
             m_renderPassParameters.Finalize("GBuffer");
 
             descLayouts.push_back(m_renderPassParameters.GetDescriptorSetLayout(m_nShadowMapDescriptorSetIndex));  // shadow map desc set
+
+            sLightingFragShader = "shaders/lighting_rsm.frag.spv";
         }
 
         std::vector<VkPushConstantRange> pushConstants;
@@ -456,7 +458,7 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
         VkShaderModule vertShdr =
             CreateShaderModule(ReadSpv("shaders/lighting.vert.spv"));
         VkShaderModule fragShdr =
-            CreateShaderModule(ReadSpv("shaders/lighting.frag.spv"));
+            CreateShaderModule(ReadSpv(sLightingFragShader));
 
         InputAssemblyStateCIBuilder iaBuilder;
         RasterizationStateCIBuilder rsBuilder;

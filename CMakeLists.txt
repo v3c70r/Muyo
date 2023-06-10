@@ -175,7 +175,7 @@ add_executable( helloVulkan
     ${main_SRC}
     )
 
-target_link_libraries(helloVulkan imgui ImGuizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj)
+target_link_libraries(helloVulkan imgui ImGuizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj meshoptimizer)
 
 target_link_libraries(helloVulkan RenderDevice RenderPasses RenderResources Scene Debug)
 
