@@ -7,6 +7,7 @@
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "vulkan/vulkan_core.h"
+#include "MeshResourceManager.h"
 
 namespace Muyo
 {
@@ -161,10 +162,14 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
                     // Use global material descriptor set as last descriptor set
                     materialDescSet};
 
+                const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+                const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
                 VkDeviceSize offset = 0;
-                VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
-                VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
-                uint32_t nIndexCount = pSubmesh->GetIndexCount();
+                VkBuffer vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
+                VkBuffer indexBuffer = vertexResource.m_pIndexBuffer->buffer();
+                uint32_t nIndexCount = mesh.m_nIndexCount;
+                uint32_t nIndexOffset = mesh.m_nIndexOffset;
+
                 vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                        &offset);
                 vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
@@ -174,9 +179,10 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
                                   m_pipeline);
                 vkCmdBindDescriptorSets(
                     m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_renderPassParameters.GetPipelineLayout(), 0, vDescSets.size(),
+                    m_renderPassParameters.GetPipelineLayout(), 0, 
+                    static_cast<uint32_t>(vDescSets.size()),
                     vDescSets.data(), 0, nullptr);
-                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
             }
         }
         vkCmdEndRenderPass(m_commandBuffer);

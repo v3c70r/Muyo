@@ -6,6 +6,7 @@
 #include "Geometry.h"
 #include "Scene.h"
 #include "VkExtFuncsLoader.h"
+#include "MeshResourceManager.h"
 
 namespace Muyo
 {
@@ -21,18 +22,26 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 
     for (const auto& submesh : geometryNode.GetGeometry()->getSubmeshes())
     {
+        const Mesh& mesh = GetMeshResourceManager()->GetMesh(submesh->GetMeshIndex());
+        const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
+        VkDeviceSize offset = 0;
+        VkBuffer vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
+        VkBuffer indexBuffer = vertexResource.m_pIndexBuffer->buffer();
+        uint32_t nIndexCount = mesh.m_nIndexCount;
+        uint32_t nIndexOffset = mesh.m_nIndexOffset;
+
         VkAccelerationStructureGeometryTrianglesDataKHR triangles = {};
         triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
         // Vertex data
         triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-        triangles.vertexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->GetVertexDeviceBuffer());
+        triangles.vertexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(vertexBuffer);
         // Index data
         triangles.vertexStride = sizeof(Vertex);
         triangles.indexType = VK_INDEX_TYPE_UINT32;
-        triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(submesh->GetIndexDeviceBuffer());
+        triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(indexBuffer);
         // misc
         triangles.transformData = {};
-        triangles.maxVertex = submesh->GetVertexCount();
+        triangles.maxVertex = mesh.m_nVertexCount;
 
         VkAccelerationStructureGeometryKHR geometry = {};
         geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -42,8 +51,8 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 
         VkAccelerationStructureBuildRangeInfoKHR range = {};
         range.firstVertex = 0;
-        range.primitiveCount = submesh->GetIndexCount() / 3;
-        range.primitiveOffset = 0;
+        range.primitiveCount = nIndexCount / 3;
+        range.primitiveOffset = nIndexOffset / 3;
         range.transformOffset = 0;
         vGeometries.emplace_back(geometry);
         vRangeInfo.emplace_back(range);

@@ -5,6 +5,14 @@
 
 namespace Muyo
 {
+    
+enum SimpleMeshes
+{
+    SIMPLE_MESH_QUAD = 0,
+    SIMPLE_MESH_CUBE = 1,
+    SIMPLE_MESH_COUNT
+
+};
 // MeshResourceManager contains all the vertex and index buffers. As well as buffers for meshlets.
 
 struct MeshVertexResources
@@ -56,10 +64,26 @@ class MeshResourceManager
 public:
     size_t AppendMesh(const std::vector<Vertex>& vVertices, const std::vector<Index>& vIndices);
     void UploadMeshData();
+    void PrepareSimpleMeshes();
 
     const Mesh& GetMesh(size_t index) const
     {
         return m_vMeshes[index];
+    }
+    
+    const Mesh& GetQuad() const
+    {
+        return GetMesh(m_aSimpleMeshes[SIMPLE_MESH_QUAD]);
+    }
+
+    const Mesh& GetCube() const
+    {
+        return GetMesh(m_aSimpleMeshes[SIMPLE_MESH_CUBE]);
+    }
+
+    const MeshVertexResources& GetMeshVertexResources()
+    {
+        return m_MeshVertexResources;
     }
 
 private:
@@ -68,6 +92,10 @@ private:
 
     const std::string m_sVertexBufferName = "MeshVertexBuffer";
     const std::string m_sIndexBufferName = "MeshIndexBuffer";
+    
+    std::array<size_t, SIMPLE_MESH_COUNT> m_aSimpleMeshes;
+    
+    bool m_bHasUploaded = false;
 };
 
 

@@ -7,6 +7,7 @@
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
+#include "MeshResourceManager.h"
 
 namespace Muyo
 {
@@ -255,11 +256,16 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
                     std::vector<VkDescriptorSet> vGBufferDescSets = {perViewSets,
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
+
+                    const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+                    const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
                     VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
-                    VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
-                    uint32_t nIndexCount = pSubmesh->GetIndexCount();
-                    vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
+                    VkBuffer vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
+                    VkBuffer indexBuffer = vertexResource.m_pIndexBuffer->buffer();
+                    uint32_t nIndexCount = mesh.m_nIndexCount;
+                    uint32_t nIndexOffset = mesh.m_nIndexOffset;
+
+                   vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
                                            &offset);
                     vkCmdBindIndexBuffer(mCommandBuffer, indexBuffer, 0,
                                          VK_INDEX_TYPE_UINT32);
@@ -270,7 +276,7 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const Geometr
                         mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         m_pipelineLayout, 0, vGBufferDescSets.size(),
                         vGBufferDescSets.data(), 0, nullptr);
-                    vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+                    vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
                 }
             }
         }

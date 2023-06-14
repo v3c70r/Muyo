@@ -1,8 +1,8 @@
-#include "RenderPassSkybox.h"
-
 #include "Debug.h"
 #include "DescriptorManager.h"
+#include "MeshResourceManager.h"
 #include "PipelineStateBuilder.h"
+#include "RenderPassSkybox.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
@@ -134,11 +134,13 @@ void RenderPassSkybox::RecordCommandBuffers()
 
         {
             // Draw skybox cube
-            const auto& prim = GetGeometryManager()->GetCube()->getSubmeshes().at(0);
+            const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
+            const Mesh& cube = GetMeshResourceManager()->GetCube();
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = prim->GetVertexDeviceBuffer();
-            VkBuffer indexBuffer = prim->GetIndexDeviceBuffer();
-            uint32_t nIndexCount = prim->GetIndexCount();
+            VkBuffer vertexBuffer = meshVertexResources.m_pVertexBuffer->buffer();
+            VkBuffer indexBuffer = meshVertexResources.m_pIndexBuffer->buffer();
+            uint32_t nIndexCount = cube.m_nIndexCount;
+            uint32_t nIndexOffset = cube.m_nIndexOffset;
 
             vkCmdBindVertexBuffers(mCommandBuffer, 0, 1, &vertexBuffer,
                                    &offset);
@@ -150,7 +152,7 @@ void RenderPassSkybox::RecordCommandBuffers()
                 mCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_renderPassParameters.GetPipelineLayout(), 0, 1,
                 &descSet, 0, nullptr);
-            vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(mCommandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
         }
         vkCmdEndRenderPass(mCommandBuffer);
     }

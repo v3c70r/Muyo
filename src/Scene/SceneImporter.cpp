@@ -14,7 +14,7 @@
 #include "RenderResourceManager.h"
 #include "SceneImporter.h"
 #include "MeshProcessor.h"
-#include "MeshResoruceManager.h"
+#include "MeshResourceManager.h"
 
 namespace Muyo
 {
@@ -357,11 +357,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         }
 
         // Construct primitive name
-
-        std::string sSubmeshName(mesh.name + "_" + std::to_string(nPrimitiveIndex));
-        vSubmeshes.emplace_back(std::make_unique<Submesh>(sSubmeshName, vVertices, vIndices));
-
-        vSubmeshes.back()->SetMeshIndex(GetMeshResourceManager()->AppendMesh(vVertices, vIndices));
+        size_t nMeshIndex = GetMeshResourceManager()->AppendMesh(vVertices, vIndices);
+        vSubmeshes.emplace_back(std::make_unique<Submesh>(nMeshIndex));
 
         //MeshProcessor::ProcessSubmesh(*(vSubmeshes.back()));
 

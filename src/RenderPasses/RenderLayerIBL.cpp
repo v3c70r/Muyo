@@ -4,6 +4,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "DescriptorManager.h"
+#include "MeshResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
 #include "RenderResourceManager.h"
@@ -443,12 +444,13 @@ void RenderLayerIBL::setupDescriptorSets()
 void RenderLayerIBL::RecordCommandBuffer()
 {
     // Get skybox vertex data
-    m_pSkybox = GetSkybox();
-    SubmeshListConstRef submeshes = m_pSkybox->getSubmeshes();
-    assert(submeshes.size() == 1);
-    VkBuffer vertexBuffer = submeshes[0]->GetVertexDeviceBuffer();
-    VkBuffer indexBuffer = submeshes[0]->GetIndexDeviceBuffer();
-    uint32_t nIndexCount = submeshes[0]->GetIndexCount();
+    const Mesh& skyboxMesh = GetMeshResourceManager()->GetCube();
+    const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
+
+    VkBuffer vertexBuffer = meshVertexResources.m_pVertexBuffer->buffer();
+    VkBuffer indexBuffer = meshVertexResources.m_pIndexBuffer->buffer();
+    uint32_t nIndexCount = skyboxMesh.m_nIndexCount;
+    uint32_t nIndexOffset = skyboxMesh.m_nIndexOffset;
 
     VkCommandBufferBeginInfo cmdBeginInfo = {};
 
@@ -513,7 +515,7 @@ void RenderLayerIBL::RecordCommandBuffer()
 
             vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
                                  VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
             vkCmdEndRenderPass(m_commandBuffer);
         }
         // Second subpass
@@ -541,7 +543,7 @@ void RenderLayerIBL::RecordCommandBuffer()
                                    &vertexBuffer, offsets);
             vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
                                  VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
 
             vkCmdEndRenderPass(m_commandBuffer);
         }
@@ -636,11 +638,13 @@ void RenderLayerIBL::RecordCommandBuffer()
             vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
             vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
 
-            const auto &submesh = GetGeometryManager()->GetQuad()->getSubmeshes().at(0);
+            const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+            const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
-            VkBuffer quadVertexBuffer = submesh->GetVertexDeviceBuffer();
-            VkBuffer quadIndexBuffer = submesh->GetIndexDeviceBuffer();
-            uint32_t nQuadIndexCount = submesh->GetIndexCount();
+            VkBuffer quadVertexBuffer = meshVertexResources.m_pVertexBuffer->buffer();
+            VkBuffer quadIndexBuffer = meshVertexResources.m_pIndexBuffer->buffer();
+            uint32_t nQuadIndexCount = quadMesh.m_nIndexCount;
+            uint32_t nQuadIndexOffset = quadMesh.m_nIndexOffset;
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &quadVertexBuffer,
                                    &offset);
@@ -652,7 +656,7 @@ void RenderLayerIBL::RecordCommandBuffer()
             //     m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             //     mLightingPipelineLayout, 0, lightingDescSets.size(),
             //     lightingDescSets.data(), 0, nullptr);
-            vkCmdDrawIndexed(m_commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBuffer, nQuadIndexCount, 1, nQuadIndexOffset, 0, 0);
             vkCmdEndRenderPass(m_commandBuffer);
         }
     }

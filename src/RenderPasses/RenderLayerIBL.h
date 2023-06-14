@@ -44,7 +44,6 @@ private:
     const VkFormat TEX_FORMAT = VK_FORMAT_R32G32B32A32_SFLOAT;
     VkExtent2D m_renderArea = {0, 0};
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
-    std::unique_ptr<Geometry> m_pSkybox = nullptr;
 
     TextureResource m_texEnvCupMap;
 

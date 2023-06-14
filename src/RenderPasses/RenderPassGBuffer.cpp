@@ -7,7 +7,7 @@
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
-#include "MeshResoruceManager.h"
+#include "MeshResourceManager.h"
 
 namespace Muyo
 {
@@ -213,31 +213,25 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
                     const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+                    const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
+                    VkDeviceSize offset = 0;
+                    VkBuffer vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
+                    VkBuffer indexBuffer = vertexResource.m_pIndexBuffer->buffer();
+                    uint32_t nIndexCount = mesh.m_nIndexCount;
+                    uint32_t nIndexOffset = mesh.m_nIndexOffset;
 
-                 
-                    
-                        VkDeviceSize offset = 0;
-                        //VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
-                        VkBuffer vertexBuffer = GetRenderResourceManager()->GetResource<VertexBuffer<Vertex>>("MeshVertexBuffer")->buffer();
-
-                        VkBuffer indexBuffer = GetRenderResourceManager()->GetResource<IndexBuffer>("MeshIndexBuffer")->buffer();
-                        //VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
-                        //uint32_t nIndexCount = pSubmesh->GetIndexCount();
-                        uint32_t nIndexCount = mesh.m_nIndexCount;
-                        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
-                            &offset);
-                        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                            VK_INDEX_TYPE_UINT32);
-                        vkCmdBindPipeline(m_commandBuffer,
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            mGBufferPipeline);
-                        vkCmdBindDescriptorSets(
-                            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
-                            vGBufferDescSets.data(), 0, nullptr);
-                        //vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
-                        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, mesh.m_nIndexOffset, 0, 0);
-                    
+                    vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
+                                           &offset);
+                    vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                                         VK_INDEX_TYPE_UINT32);
+                    vkCmdBindPipeline(m_commandBuffer,
+                                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      mGBufferPipeline);
+                    vkCmdBindDescriptorSets(
+                        m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
+                        vGBufferDescSets.data(), 0, nullptr);
+                    vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
                 }
             }
         }
@@ -293,11 +287,13 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                 lightingDescSets.push_back(m_renderPassParameters.AllocateDescriptorSet("shadow map desc", m_nShadowMapDescriptorSetIndex));
             }
 
-            const auto& submesh = GetGeometryManager()->GetQuad()->getSubmeshes().at(0);
+            const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+            const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = submesh->GetVertexDeviceBuffer();
-            VkBuffer indexBuffer = submesh->GetIndexDeviceBuffer();
-            uint32_t nIndexCount = submesh->GetIndexCount();
+            VkBuffer vertexBuffer = meshVertexResources.m_pVertexBuffer->buffer();
+            VkBuffer indexBuffer = meshVertexResources.m_pIndexBuffer->buffer();
+            uint32_t nIndexCount = quadMesh.m_nIndexCount;
+            uint32_t nIndexOffset = quadMesh.m_nIndexOffset;
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                    &offset);
@@ -309,7 +305,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                 m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 mLightingPipelineLayout, 0, lightingDescSets.size(),
                 lightingDescSets.data(), 0, nullptr);
-            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
         }
         vkCmdEndRenderPass(m_commandBuffer);
     }

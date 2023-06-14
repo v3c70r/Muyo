@@ -24,88 +24,24 @@ class Material;
 class Submesh
 {
 public:
-    // Construct submesh with vertices and indices. This will generate a separated vertex buffer
-    Submesh(const std::string& sName, const std::vector<Vertex>& vertices,
-              const std::vector<Index>& indices)
-    {
-        m_pVertexBuffer = GetRenderResourceManager()->GetVertexBuffer<Vertex>(sName + "_vertex", vertices);
-        m_nVertexCount = (uint32_t)vertices.size();
-        m_pIndexBuffer = GetRenderResourceManager()->GetIndexBuffer(sName + "_index", indices);
-        m_nIndexCount = (uint32_t)indices.size();
-        m_nFirstIndex = 0;
-        m_nFirstVertex = 0;
-        
-        // TODO: move instead of copy
-        m_vVertices = vertices;
-        m_vIndices = indices;
-    }
-    VkBuffer GetVertexDeviceBuffer() const
-    {
-        return m_pVertexBuffer->buffer();
-    }
-
-    VkBuffer GetIndexDeviceBuffer() const
-    {
-        return m_pIndexBuffer->buffer();
-    }
-
-    uint32_t GetIndexCount() const
-    {
-        return m_nIndexCount;
-    }
-
-    uint32_t GetVertexCount() const
-    {
-        return m_nVertexCount;
-    }
-    
-    uint32_t GetFirstIndex() const
-    {
-        return m_nFirstIndex;
-    }
-    
-    uint32_t GetFirstVertex() const
-    {
-        return m_nFirstVertex;
-    }
-
-    const std::vector<Index>& GetIndices() const
-    {
-        return m_vIndices;
-    }
-
-    const std::vector<Vertex>& GetVertices() const
-    {
-        return m_vVertices;
-    }
+    Submesh(size_t nMeshIndex) : m_nMeshIndex(nMeshIndex) {}
 
     void SetMaterial(Material* pMaterial) { m_pMaterial = pMaterial; }
     const Material* GetMaterial() const { return m_pMaterial; }
 
     void SetMeshIndex(size_t index)
     {
-        nMeshIndex = index;
+        m_nMeshIndex = index;
     }
 
     size_t GetMeshIndex() const
     {
-        return nMeshIndex;
+        return m_nMeshIndex;
     }
 
 private:
-    VertexBuffer<Vertex>* m_pVertexBuffer = nullptr;
-    IndexBuffer* m_pIndexBuffer = nullptr;
-    uint32_t m_nFirstIndex = 0;
-    uint32_t m_nIndexCount = 0;
-    uint32_t m_nVertexCount = 0;
-    uint32_t m_nFirstVertex = 0;
     Material* m_pMaterial = nullptr;
-    
-    // Store vertex and index buffer info on CPU
-    std::vector<Vertex> m_vVertices;
-    std::vector<Index> m_vIndices;
-
-    size_t nMeshIndex = 0;  // Index in MeshResourceManager
+    size_t m_nMeshIndex = 0;  // Index in MeshResourceManager
     Mesh* m_pMesh = nullptr;
 };
 
@@ -168,18 +104,8 @@ class GeometryManager
 public:
     std::vector<std::unique_ptr<Geometry>> vpGeometries;
     void Destroy() { vpGeometries.clear(); }
-    Geometry* GetQuad();
-    Geometry* GetCube();
-
-private:
-    int m_nQuadIdx = -1;  // Quad geometry idx
-    int m_nCubeIdx = -1;  // Cube geometry idx
 };
 
 GeometryManager* GetGeometryManager();
-
-std::unique_ptr<Geometry> LoadObj(const std::string& path, glm::mat4 mTransformation = glm::mat4(1.0));
-
-std::unique_ptr<Geometry> GetSkybox();
 
 }  // namespace Muyo

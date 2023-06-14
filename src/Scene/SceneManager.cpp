@@ -1,5 +1,5 @@
 #include "SceneManager.h"
-#include "MeshResoruceManager.h"
+#include "MeshResourceManager.h"
 
 #include "LightSceneNode.h"
 #include "RenderResourceManager.h"
@@ -24,6 +24,7 @@ void SceneManager::LoadSceneFromFile(const std::string& sPath)
         assert(m_mScenes.find(scene.GetName()) == m_mScenes.end());
         m_mScenes[scene.GetName()] = std::move(scene);
     }
+    GetMeshResourceManager()->PrepareSimpleMeshes();
     GetMeshResourceManager()->UploadMeshData();
 }
 

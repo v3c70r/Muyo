@@ -3,6 +3,7 @@
 #include "Debug.h"
 #include "DescriptorManager.h"
 #include "Geometry.h"
+#include "MeshResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
@@ -231,9 +232,6 @@ void RenderPassFinal::RecordCommandBuffers()
     std::vector<VkDescriptorSet> descSets = {
         GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView)};
 #endif
-
-    Geometry* pQuad = GetGeometryManager()->GetQuad();
-
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -279,21 +277,25 @@ void RenderPassFinal::RecordCommandBuffers()
         vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
                              VK_SUBPASS_CONTENTS_INLINE);
 
-        for (const auto& submesh : pQuad->getSubmeshes())
         {
+            const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+            const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = submesh->GetVertexDeviceBuffer();
-            VkBuffer indexBuffer = submesh->GetIndexDeviceBuffer();
-            uint32_t nIndexCount = submesh->GetIndexCount();
+            VkBuffer vertexBuffer = meshVertexResources.m_pVertexBuffer->buffer();
+            VkBuffer indexBuffer = meshVertexResources.m_pIndexBuffer->buffer();
+            uint32_t nIndexCount = quadMesh.m_nIndexCount;
+            uint32_t nIndexOffset = quadMesh.m_nIndexOffset;
+
             vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
             vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0,
                                  VK_INDEX_TYPE_UINT32);
             vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               m_pipeline);
             vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout, 0, descSets.size(), descSets.data(), 0,
+                                    m_pipelineLayout, 0,
+                                    static_cast<uint32_t>(descSets.size()), descSets.data(), 0,
                                     nullptr);
-            vkCmdDrawIndexed(curCmdBuf, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(curCmdBuf, nIndexCount, 1, nIndexOffset, 0, 0);
         }
 
         // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
