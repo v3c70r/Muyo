@@ -7,6 +7,7 @@
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
+#include "MeshResoruceManager.h"
 
 namespace Muyo
 {
@@ -211,22 +212,32 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                     std::vector<VkDescriptorSet> vGBufferDescSets = {perViewSets,
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
-                    VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
-                    VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
-                    uint32_t nIndexCount = pSubmesh->GetIndexCount();
-                    vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
-                                           &offset);
-                    vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                                         VK_INDEX_TYPE_UINT32);
-                    vkCmdBindPipeline(m_commandBuffer,
-                                      VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                      mGBufferPipeline);
-                    vkCmdBindDescriptorSets(
-                        m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
-                        vGBufferDescSets.data(), 0, nullptr);
-                    vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+                    const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+
+                 
+                    
+                        VkDeviceSize offset = 0;
+                        //VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
+                        VkBuffer vertexBuffer = GetRenderResourceManager()->GetResource<VertexBuffer<Vertex>>("MeshVertexBuffer")->buffer();
+
+                        VkBuffer indexBuffer = GetRenderResourceManager()->GetResource<IndexBuffer>("MeshIndexBuffer")->buffer();
+                        //VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
+                        //uint32_t nIndexCount = pSubmesh->GetIndexCount();
+                        uint32_t nIndexCount = mesh.m_nIndexCount;
+                        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
+                            &offset);
+                        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                            VK_INDEX_TYPE_UINT32);
+                        vkCmdBindPipeline(m_commandBuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            mGBufferPipeline);
+                        vkCmdBindDescriptorSets(
+                            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
+                            vGBufferDescSets.data(), 0, nullptr);
+                        //vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+                        vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, mesh.m_nIndexOffset, 0, 0);
+                    
                 }
             }
         }

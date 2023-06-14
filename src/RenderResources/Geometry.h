@@ -9,6 +9,7 @@
 #include "VertexBuffer.h"
 namespace Muyo
 {
+struct Mesh;
 
 class MeshletSubmesh
 {
@@ -91,8 +92,6 @@ public:
         return nMeshIndex;
     }
 
-
-
 private:
     VertexBuffer<Vertex>* m_pVertexBuffer = nullptr;
     IndexBuffer* m_pIndexBuffer = nullptr;
@@ -107,6 +106,7 @@ private:
     std::vector<Index> m_vIndices;
 
     size_t nMeshIndex = 0;  // Index in MeshResourceManager
+    Mesh* m_pMesh = nullptr;
 };
 
 // Simplify the types

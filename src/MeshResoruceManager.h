@@ -14,8 +14,8 @@ struct MeshVertexResources
     std::vector<Index> m_vIndices;
 
     // GPU Data
-    std::unique_ptr<VertexBuffer<Vertex>> m_pVertexBuffer;
-    std::unique_ptr<IndexBuffer> m_pIndexBuffer;
+    VertexBuffer<Vertex>* m_pVertexBuffer = nullptr;
+    IndexBuffer* m_pIndexBuffer = nullptr;
 };
 
 struct MeshletDesc
@@ -47,11 +47,20 @@ struct Mesh
     uint32_t m_nIndexCount;
 };
 
+struct MeshletMesh
+{
+};
+
 class MeshResourceManager
 {
 public:
     size_t AppendMesh(const std::vector<Vertex>& vVertices, const std::vector<Index>& vIndices);
     void UploadMeshData();
+
+    const Mesh& GetMesh(size_t index) const
+    {
+        return m_vMeshes[index];
+    }
 
 private:
     std::vector<Mesh> m_vMeshes;
@@ -64,7 +73,4 @@ private:
 
 MeshResourceManager* GetMeshResourceManager();
 
-class MeshletMesh
-{
-};
 }  // namespace Muyo
