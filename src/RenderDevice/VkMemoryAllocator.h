@@ -1,7 +1,6 @@
 #pragma once
 #include <vk_mem_alloc.h>
 
-#include <memory>
 #include <string>
 
 namespace Muyo
@@ -32,7 +31,7 @@ public:
     void FreeImage(VkImage &image, VmaAllocation &allocation);
 
 private:
-    std::unique_ptr<VmaAllocator> m_pAllocator = nullptr;
+    VmaAllocator m_allocator = VK_NULL_HANDLE;
     VmaPool m_SBTPool = VK_NULL_HANDLE; // SBT pool uses another aligment, need to be allocated in a separate pool
 };
 
