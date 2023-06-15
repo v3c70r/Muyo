@@ -74,8 +74,8 @@ find_package(Vulkan REQUIRED)
 
 
 ## Vulkan Memory Allocator
-include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
-add_library(vma ${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator/vk_mem_alloc.cpp)
+add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
+include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator/include)
 
 ## tiny obj
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader)
@@ -102,7 +102,7 @@ if (UNIX)
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
 elseif(MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W4")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")
 endif()
 
 # Headers that shared between shader and cpp 
@@ -175,7 +175,7 @@ add_executable( helloVulkan
     ${main_SRC}
     )
 
-target_link_libraries(helloVulkan imgui ImGuizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} vma stb tinygltf tinyobj meshoptimizer)
+target_link_libraries(helloVulkan imgui ImGuizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 
 target_link_libraries(helloVulkan RenderDevice RenderPasses RenderResources Scene Debug)
 
