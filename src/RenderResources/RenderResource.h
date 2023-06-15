@@ -290,7 +290,7 @@ public:
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
-                                             "SBT");
+                                             "SBT", true);
     }
 };
 

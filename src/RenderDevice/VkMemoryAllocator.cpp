@@ -19,9 +19,34 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     m_pAllocator = std::make_unique<VmaAllocator>();
     vmaCreateAllocator(&allocatorInfo, m_pAllocator.get());
+    
+    // Initialize SBT pool
+    VkBufferCreateInfo bufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bufferCreateInfo.size = 4*1024*1024; // 4mb memory for SBT
+    bufferCreateInfo.usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT;
+
+    VmaAllocationCreateInfo sampleAllocCreateInfo = {};
+    sampleAllocCreateInfo.usage = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+    uint32_t memTypeIndex;
+    VK_ASSERT(vmaFindMemoryTypeIndexForBufferInfo(*m_pAllocator, &bufferCreateInfo, &sampleAllocCreateInfo, &memTypeIndex));
+
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {};
+    GetRenderDevice()->GetPhysicalDeviceProperties(raytracingProperties);
+
+    VmaPoolCreateInfo poolCreateInfo = {};
+    poolCreateInfo.minAllocationAlignment = 
+    poolCreateInfo.memoryTypeIndex = memTypeIndex;
+    poolCreateInfo.minAllocationAlignment = raytracingProperties.shaderGroupBaseAlignment;
+
+    VK_ASSERT(vmaCreatePool(*m_pAllocator, &poolCreateInfo, &m_SBTPool));
 }
 
-void VkMemoryAllocator::Unintialize() { vmaDestroyAllocator(*m_pAllocator); }
+void VkMemoryAllocator::Unintialize()
+{
+    vmaDestroyPool(*m_pAllocator, m_SBTPool);
+    vmaDestroyAllocator(*m_pAllocator);
+}
 
 void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
                                        VkBufferUsageFlags nBufferUsageFlags,
@@ -46,7 +71,8 @@ void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
                                        VmaMemoryUsage nMemoryUsageFlags,
                                        VkBuffer& buffer,
                                        VmaAllocation& allocation,
-                                       std::string bufferName)
+                                       std::string bufferName,
+                                       bool bIsSBTBuffer)
 {
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -57,6 +83,11 @@ void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
     allocInfo.usage = nMemoryUsageFlags;
     allocInfo.flags = VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
     allocInfo.pUserData = bufferName.data();
+
+    if (bIsSBTBuffer)
+    {
+        allocInfo.pool = m_SBTPool;
+    }
 
     vmaCreateBuffer(*m_pAllocator, &bufferInfo, &allocInfo, &buffer,
                     &allocation, nullptr);
