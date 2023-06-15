@@ -35,7 +35,9 @@ void SceneDebugPage::Render() const
     ImGui::Begin(m_sName.c_str());
     {
         ImGuizmo::BeginFrame();
-        ImGuizmo::SetRect(0.0f, 0.0f, GetRenderPassManager()->GetViewportSize().width, GetRenderPassManager()->GetViewportSize().height);
+        ImGuizmo::SetRect(0.0f, 0.0f,
+                          static_cast<float>(GetRenderPassManager()->GetViewportSize().width),
+                          static_cast<float>(GetRenderPassManager()->GetViewportSize().height));
 
         glm::mat4 mProj = GetRenderPassManager()->GetCamera()->GetProjMat();
         glm::mat4 mView = GetRenderPassManager()->GetCamera()->GetViewMat();
@@ -172,7 +174,7 @@ void EnvironmentMapDebugPage::Render() const
 
         int nPrevSelection = m_nCurrentHDRIndex;
 
-        ImGui::Combo("Current HDR", &m_nCurrentHDRIndex, &Funcs::ItemGetter, (void*)m_vHDRImagePatheStrings.data(), m_vHDRImagePathes.size());
+        ImGui::Combo("Current HDR", &m_nCurrentHDRIndex, &Funcs::ItemGetter, (void*)m_vHDRImagePatheStrings.data(), static_cast<int>(m_vHDRImagePathes.size()));
 
         if (nPrevSelection != m_nCurrentHDRIndex)
         {
@@ -269,12 +271,12 @@ void CameraDebugPage::Render() const
     if (m_pCamera)
     {
         ImGui::GetWindowViewport();
-        ImGui::SetNextWindowPos(ImVec2(-10, GetRenderPassManager()->GetViewportSize().height - 30));
-        ImGui::SetNextWindowSize(ImVec2(GetRenderPassManager()->GetViewportSize().width, 30));
+        ImGui::SetNextWindowPos(ImVec2(-10.0f, static_cast<float>(GetRenderPassManager()->GetViewportSize().height) - 30.0f));
+        ImGui::SetNextWindowSize(ImVec2(static_cast<float>(GetRenderPassManager()->GetViewportSize().width), 30.0f));
         float fRatio = m_pCamera->GetLeftSplitScreenRatio();
         static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
         ImGui::Begin("Camera", nullptr, flags);
-        ImGui::PushItemWidth(GetRenderPassManager()->GetViewportSize().width);
+        ImGui::PushItemWidth(static_cast<float>(GetRenderPassManager()->GetViewportSize().width));
         // Set ImGui slider to transparent
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));

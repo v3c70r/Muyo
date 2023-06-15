@@ -23,7 +23,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 
 void VkMemoryAllocator::Unintialize() { vmaDestroyAllocator(*m_pAllocator); }
 
-void VkMemoryAllocator::AllocateBuffer(size_t nSize,
+void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
                                        VkBufferUsageFlags nBufferUsageFlags,
                                        VmaMemoryUsage nMemoryUsageFlags,
                                        VkBuffer& buffer,
@@ -41,7 +41,7 @@ void VkMemoryAllocator::AllocateBuffer(size_t nSize,
                     &allocation, nullptr);
 }
 
-void VkMemoryAllocator::AllocateBuffer(size_t nSize,
+void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
                                        VkBufferUsageFlags nBufferUsageFlags,
                                        VmaMemoryUsage nMemoryUsageFlags,
                                        VkBuffer& buffer,

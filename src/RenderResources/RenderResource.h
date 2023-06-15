@@ -208,7 +208,7 @@ protected:
 class AccelerationStructureBuffer : public BufferResource
 {
 public:
-    AccelerationStructureBuffer(uint32_t size)
+    AccelerationStructureBuffer(VkDeviceSize size)
         : BufferResource(
               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
               VMA_MEMORY_USAGE_GPU_ONLY)
@@ -233,7 +233,7 @@ public:
 class AccelerationStructure : public IRenderResource
 {
 public:
-    AccelerationStructure(uint32_t size, VkAccelerationStructureTypeKHR type) : m_accelerationStructureBuffer(size)
+    AccelerationStructure(VkDeviceSize size, VkAccelerationStructureTypeKHR type) : m_accelerationStructureBuffer(size)
     {
         VkAccelerationStructureCreateInfoKHR createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
