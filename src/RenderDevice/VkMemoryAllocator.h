@@ -1,7 +1,6 @@
 #pragma once
 #include <vk_mem_alloc.h>
 
-#include <memory>
 #include <string>
 
 namespace Muyo
@@ -21,7 +20,7 @@ public:
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags,
                         VmaMemoryUsage nMemoryUsageFlags, VkBuffer &buffer,
                         VmaAllocation &allocation,
-                        std::string bufferName);
+                        std::string bufferName, bool bIsSBTBuffer = false);
     void FreeBuffer(VkBuffer &buffer, VmaAllocation &allocation);
     void MapBuffer(VmaAllocation &allocation, void **ppData);
     void UnmapBuffer(VmaAllocation &allocation);
@@ -32,7 +31,8 @@ public:
     void FreeImage(VkImage &image, VmaAllocation &allocation);
 
 private:
-    std::unique_ptr<VmaAllocator> m_pAllocator = nullptr;
+    VmaAllocator m_allocator = VK_NULL_HANDLE;
+    VmaPool m_SBTPool = VK_NULL_HANDLE; // SBT pool uses another aligment, need to be allocated in a separate pool
 };
 
 VkMemoryAllocator *GetMemoryAllocator();

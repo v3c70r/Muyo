@@ -7,6 +7,7 @@
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
+#include "MeshResourceManager.h"
 
 namespace Muyo
 {
@@ -211,10 +212,14 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                     std::vector<VkDescriptorSet> vGBufferDescSets = {perViewSets,
                                                                      materialDescSet,
                                                                      worldMatrixDescSet};
+                    const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+                    const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
                     VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pSubmesh->GetVertexDeviceBuffer();
-                    VkBuffer indexBuffer = pSubmesh->GetIndexDeviceBuffer();
-                    uint32_t nIndexCount = pSubmesh->GetIndexCount();
+                    VkBuffer vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
+                    VkBuffer indexBuffer = vertexResource.m_pIndexBuffer->buffer();
+                    uint32_t nIndexCount = mesh.m_nIndexCount;
+                    uint32_t nIndexOffset = mesh.m_nIndexOffset;
+
                     vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                            &offset);
                     vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
@@ -226,7 +231,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                         m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                         mGBufferPipelineLayout, 0, vGBufferDescSets.size(),
                         vGBufferDescSets.data(), 0, nullptr);
-                    vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+                    vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
                 }
             }
         }
@@ -282,11 +287,13 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                 lightingDescSets.push_back(m_renderPassParameters.AllocateDescriptorSet("shadow map desc", m_nShadowMapDescriptorSetIndex));
             }
 
-            const auto& submesh = GetGeometryManager()->GetQuad()->getSubmeshes().at(0);
+            const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+            const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = submesh->GetVertexDeviceBuffer();
-            VkBuffer indexBuffer = submesh->GetIndexDeviceBuffer();
-            uint32_t nIndexCount = submesh->GetIndexCount();
+            VkBuffer vertexBuffer = meshVertexResources.m_pVertexBuffer->buffer();
+            VkBuffer indexBuffer = meshVertexResources.m_pIndexBuffer->buffer();
+            uint32_t nIndexCount = quadMesh.m_nIndexCount;
+            uint32_t nIndexOffset = quadMesh.m_nIndexOffset;
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
                                    &offset);
@@ -298,7 +305,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                 m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 mLightingPipelineLayout, 0, lightingDescSets.size(),
                 lightingDescSets.data(), 0, nullptr);
-            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
+            vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
         }
         vkCmdEndRenderPass(m_commandBuffer);
     }
@@ -415,7 +422,7 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
             GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_IBL),            // Irradiance map
             GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA),     // Irradiance map
         };
-
+        std::string sLightingFragShader = "shaders/lighting.frag.spv";
         if (vpShadowMaps.size() > 0)
         {
             // Hack: Create shadow map desc set on last descset with render pass parameters
@@ -444,6 +451,8 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
             m_renderPassParameters.Finalize("GBuffer");
 
             descLayouts.push_back(m_renderPassParameters.GetDescriptorSetLayout(m_nShadowMapDescriptorSetIndex));  // shadow map desc set
+
+            sLightingFragShader = "shaders/lighting_rsm.frag.spv";
         }
 
         std::vector<VkPushConstantRange> pushConstants;
@@ -456,7 +465,7 @@ void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadow
         VkShaderModule vertShdr =
             CreateShaderModule(ReadSpv("shaders/lighting.vert.spv"));
         VkShaderModule fragShdr =
-            CreateShaderModule(ReadSpv("shaders/lighting.frag.spv"));
+            CreateShaderModule(ReadSpv(sLightingFragShader));
 
         InputAssemblyStateCIBuilder iaBuilder;
         RasterizationStateCIBuilder rsBuilder;
