@@ -10,11 +10,6 @@
 
 namespace Muyo
 {
-struct PerGeometryData
-{
-    glm::mat4 model = glm::mat4(1.0);
-};
-
 template <class T>
 class UniformBuffer : public BufferResource
 {
