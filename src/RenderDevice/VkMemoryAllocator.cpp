@@ -29,20 +29,36 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     uint32_t memTypeIndex;
     VK_ASSERT(vmaFindMemoryTypeIndexForBufferInfo(m_allocator, &bufferCreateInfo, &sampleAllocCreateInfo, &memTypeIndex));
 
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {};
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR, nullptr};
     GetRenderDevice()->GetPhysicalDeviceProperties(raytracingProperties);
 
     VmaPoolCreateInfo poolCreateInfo = {};
-    poolCreateInfo.minAllocationAlignment = 
     poolCreateInfo.memoryTypeIndex = memTypeIndex;
     poolCreateInfo.minAllocationAlignment = raytracingProperties.shaderGroupBaseAlignment;
 
     VK_ASSERT(vmaCreatePool(m_allocator, &poolCreateInfo, &m_SBTPool));
+    
+    // Initialize BVH Pool
+    bufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    bufferCreateInfo.size = 512*1024*1024; // 4mb memory for SBT
+    bufferCreateInfo.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+
+    sampleAllocCreateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    // Get BVH property
+    VkPhysicalDeviceAccelerationStructurePropertiesKHR bvhProperty = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR, nullptr};
+    GetRenderDevice()->GetPhysicalDeviceProperties(bvhProperty);
+
+    VK_ASSERT(vmaFindMemoryTypeIndexForBufferInfo(m_allocator, &bufferCreateInfo, &sampleAllocCreateInfo, &memTypeIndex));
+    poolCreateInfo.memoryTypeIndex = memTypeIndex;
+    poolCreateInfo.minAllocationAlignment = bvhProperty.minAccelerationStructureScratchOffsetAlignment;
+    VK_ASSERT(vmaCreatePool(m_allocator, &poolCreateInfo, &m_BVHPool));
 }
 
 void VkMemoryAllocator::Unintialize()
 {
     vmaDestroyPool(m_allocator, m_SBTPool);
+    vmaDestroyPool(m_allocator, m_BVHPool);
     vmaDestroyAllocator(m_allocator);
 }
 
@@ -70,7 +86,7 @@ void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
                                        VkBuffer& buffer,
                                        VmaAllocation& allocation,
                                        std::string bufferName,
-                                       bool bIsSBTBuffer)
+                                       PoolType ePoolType)
 {
     VkBufferCreateInfo bufferInfo = {};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -82,9 +98,16 @@ void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
     allocInfo.flags = VMA_ALLOCATION_CREATE_USER_DATA_COPY_STRING_BIT;
     allocInfo.pUserData = bufferName.data();
 
-    if (bIsSBTBuffer)
+    switch (ePoolType)
     {
+    case PoolType::SBT:
         allocInfo.pool = m_SBTPool;
+        break;
+    case PoolType::BVH:
+        allocInfo.pool = m_BVHPool;
+        break;
+    default:
+        break;
     }
 
     vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer,

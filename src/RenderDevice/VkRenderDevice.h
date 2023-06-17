@@ -115,17 +115,16 @@ public:
 
     VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;
 
-    // Get physical device properties, overload different structures to get specific property
-    // TODO: Possible cache all needed property at physical device creation.
-    void GetPhysicalDeviceProperties(VkPhysicalDeviceRayTracingPipelinePropertiesKHR& rtProperties)
+    // Get physical device properties, neet to manually fill the sType before passing into to this function template
+    template<typename VkPropertyType>
+    void GetPhysicalDeviceProperties(VkPropertyType& property)
     {
-        rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
-        rtProperties.pNext = nullptr;
+        assert(property.sType != 0);
         VkPhysicalDeviceProperties2 property2 =
             {
                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                (void*)&rtProperties,
-                {}};
+                (void *)&property,
+            {}};
         vkGetPhysicalDeviceProperties2(m_physicalDevice, &property2);
     }
 

@@ -24,7 +24,6 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
     {
         const Mesh& mesh = GetMeshResourceManager()->GetMesh(submesh->GetMeshIndex());
         const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
-        VkDeviceSize offset = 0;
         VkBuffer vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
         VkBuffer indexBuffer = vertexResource.m_pIndexBuffer->buffer();
         uint32_t nIndexCount = mesh.m_nIndexCount;
