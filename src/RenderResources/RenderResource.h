@@ -217,7 +217,7 @@ public:
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
-                                             "AccelerationStrucutre");
+                                             "AccelerationStrucutre", PoolType::BVH);
     }
 
     AccelerationStructureBuffer(const void* pData, uint32_t size)
@@ -227,7 +227,7 @@ public:
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
-                                             "AccelerationStrucutre");
+                                             "AccelerationStrucutre", PoolType::BVH);
         SetData(pData, size);
     }
 };
@@ -292,7 +292,7 @@ public:
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
-                                             "SBT", true);
+                                             "SBT", PoolType::SBT);
     }
 };
 
