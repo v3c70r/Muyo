@@ -1,4 +1,4 @@
-#include "../SceneImporter.h"
+#include "SceneImporter.h"
 #include <iostream>
 
 namespace Muyo {

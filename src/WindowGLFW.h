@@ -253,8 +253,7 @@ static std::pair<int, int> GetWindowSize()
     return std::make_pair(w, h);
 }
 
-template <class container>
-static size_t GetVulkanInstanceExtensions(container &c)
+static size_t GetVulkanInstanceExtensions(std::vector<const char*> &vExtensions)
 {
     uint32_t count = 0;
     const char **extensions;
@@ -262,7 +261,7 @@ static size_t GetVulkanInstanceExtensions(container &c)
     extensions = glfwGetRequiredInstanceExtensions(&count);
     for (unsigned i = 0; i < count; i++)
     {
-        c.push_back(extensions[i]);
+        vExtensions.push_back(extensions[i]);
     }
     return count;
 }

@@ -130,44 +130,11 @@ include_directories(
     "src"
     )
 
-file(GLOB RenderDevice_SRC
-    "src/RenderDevice/*.h"
-    "src/RenderDevice/*.cpp"
-    )
-
-add_library(RenderDevice ${RenderDevice_SRC})
-
-file(GLOB RenderPasses_SRC
-    "src/RenderPasses/*.h"
-    "src/RenderPasses/*.cpp"
-    )
-
-add_library(RenderPasses ${RenderPasses_SRC})
-
-file(GLOB RenderResources_SRC
-    "src/RenderResources/*.h"
-    "src/RenderResources/*.cpp"
-    )
-
-add_library(RenderResources ${RenderResources_SRC})
-
-file(GLOB Scene_SRC
-    "src/Scene/*.h"
-    "src/Scene/*.cpp"
-    )
-
-add_library(Scene ${Scene_SRC})
-
-file(GLOB Debug_SRC
-    "src/Debug/*.h"
-    "src/Debug/*.cpp"
-    )
-
-add_library(Debug ${Debug_SRC})
-
 file(GLOB main_SRC
     "src/*.h"
     "src/*.cpp"
+    "src/*/*.h"
+    "src/*/*.cpp"
     )
 
 
@@ -175,9 +142,7 @@ add_executable( helloVulkan
     ${main_SRC}
     )
 
-target_link_libraries(helloVulkan imgui ImGuizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
-
-target_link_libraries(helloVulkan RenderDevice RenderPasses RenderResources Scene Debug)
+target_link_libraries(helloVulkan imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES

@@ -32,7 +32,7 @@ template <EventType ET, typename... Args>
 class GlobalEvent : public Event<Args...>
 {
 public:
-    GlobalEvent<ET, Args...>() : Event<Args...>(ET) {}
+    GlobalEvent() : Event<Args...>(ET) {}
     inline EventType name() const { return ET; }
 };
 
