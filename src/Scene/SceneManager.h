@@ -23,5 +23,10 @@ private:
     SceneMap m_mScenes;
 };
 
+struct DrawData
+{
+
+};
+
 SceneManager* GetSceneManager();
 }  // namespace Muyo

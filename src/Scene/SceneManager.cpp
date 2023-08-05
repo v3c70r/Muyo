@@ -1,7 +1,8 @@
 #include "SceneManager.h"
-#include "MeshResourceManager.h"
 
 #include "LightSceneNode.h"
+#include "MeshResourceManager.h"
+#include "PerObjResourceManager.h"
 #include "RenderResourceManager.h"
 #include "SceneImporter.h"
 
@@ -40,6 +41,10 @@ DrawLists SceneManager::GatherDrawLists()
             auto& sceneDL = sceneDLs.m_aDrawLists[i];
             dls.m_aDrawLists[i].insert(dls.m_aDrawLists[i].end(), sceneDL.begin(), sceneDL.end());
         }
+    }
+    if (!GetPerObjResourceManager()->HasUploaded())
+    {
+        GetPerObjResourceManager()->Upload();
     }
     return dls;
 }

@@ -7,6 +7,7 @@
 #include "Geometry.h"
 #include "LightSceneNode.h"
 #include "RenderResourceManager.h"
+#include "PerObjResourceManager.h"
 
 namespace Muyo
 {
@@ -63,6 +64,8 @@ const DrawLists &Scene::GatherDrawLists()
                 }
                 Geometry *pGeometry = pGeometryNode->GetGeometry();
                 pGeometry->SetWorldMatrix(mWorldMatrix);
+                
+                
             }
             // Gather light sources
             else if (LightSceneNode *pLightSceneNode = dynamic_cast<LightSceneNode *>(pNode.get()))
@@ -77,6 +80,18 @@ const DrawLists &Scene::GatherDrawLists()
                 drawLists.m_aDrawLists[DrawLists::DL_LIGHT].push_back(pLightSceneNode);
                 pLightSceneNode->SetWorldMatrix(mWorldMatrix);
             }
+
+            // Setup per obj data
+            if (pNode->GetPerObjId() == -1)
+            {
+                pNode->SetPerObjId(
+                    static_cast<int>(GetPerObjResourceManager()->AppendPerObjData({mWorldMatrix})));
+            }
+            else
+            {
+                assert("TODO: update node date");
+            }
+
             for (const auto &pChild : pNode->GetChildren())
             {
                 FlattenTreeRecursive(pChild, mWorldMatrix, drawLists);

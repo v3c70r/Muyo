@@ -14,8 +14,6 @@ MeshResourceManager *GetMeshResourceManager()
     return &s_MeshResourceManager;
 }
 
-
-// Implement MeshResourceManager functions
 size_t MeshResourceManager::AppendMesh(const std::vector<Vertex>& vVertices, const std::vector<Index>& vIndices)
 {
     auto& meshIndices = m_MeshVertexResources.m_vIndices;

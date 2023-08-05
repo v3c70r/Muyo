@@ -53,6 +53,11 @@ struct PBRFactors
     float padding0;
 };
 
+struct PerObjData
+{
+    mat4 mWorldMatrix;
+};
+
 #ifndef SHADER_CODE
 }  // namespace Muyo
 #endif  // SHADER_CODE
