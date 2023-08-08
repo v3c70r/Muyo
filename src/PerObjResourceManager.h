@@ -15,10 +15,15 @@ public:
         m_bUploaded = true;
     }
     bool HasUploaded() const {return m_bUploaded;}
+    const StorageBuffer<PerObjData>* GetPerObjResource()
+    {
+        assert(m_bUploaded);
+        return m_pPerObjDataGPU;
+    }
 
 private:
     std::vector<PerObjData> m_vPerObjDataCPU;
-    StorageBuffer<PerObjData> *m_pPerObjDataGPU;
+    StorageBuffer<PerObjData> *m_pPerObjDataGPU = nullptr;
 
     bool m_bUploaded = false;
 };

@@ -26,9 +26,6 @@ layout (push_constant) uniform PushConstant {
     uint nShadowMapSize;
 } pushConstant;
 
-
-
-
 void main()
 {
 
@@ -55,6 +52,5 @@ void main()
 
     vec3 vAlbedo = texture(texPBR[TEX_ALBEDO], inTexCoords[factors.UVIndices[TEX_ALBEDO]]).xyz * factors.vBaseColorFactors.xyz;
 
-    
     fOutFlux = vec4(light.vColor * light.fIntensity * vAlbedo, 0.0f);
 }

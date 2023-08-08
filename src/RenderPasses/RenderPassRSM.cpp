@@ -8,6 +8,7 @@
 #include "SamplerManager.h"
 #include "vulkan/vulkan_core.h"
 #include "MeshResourceManager.h"
+#include "PerObjResourceManager.h"
 
 namespace Muyo
 {
@@ -42,12 +43,13 @@ void RenderPassRSM::PrepareRenderPass()
     m_renderPassParameters.AddAttachment(shadowFlux, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
 
     // Set0, Binding 0
-    StorageBuffer<LightData>* lightDataStorageBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
+    const StorageBuffer<LightData>* lightDataStorageBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
     m_renderPassParameters.AddParameter(lightDataStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // Set 1, Binding 0
     m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
 
+    // Set 2 parameters are going to be updated in each drawcall.
     // Set 2, Binding 0
     // Dummy vector with proper size
     std::vector<const ImageResource*> vDummyImageResources(TEX_COUNT, nullptr);
@@ -56,6 +58,8 @@ void RenderPassRSM::PrepareRenderPass()
     // Set 2, Binding 1
     m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
 
+    // Set 3, binding 0 PerObjData
+    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 3);
     // Push constants for light index
     m_renderPassParameters.AddPushConstantParameter<PushConstant>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 

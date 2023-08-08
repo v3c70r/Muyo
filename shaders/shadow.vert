@@ -12,6 +12,9 @@ layout (set = 1, binding = 0) uniform WorldMatrix {
     mat4 mWorldMatrix;
 } worldMatrix;
 
+layout(scalar, set = 3, binding = 0) buffer PerObjData_ { PerObjData i[]; }
+perObjData;
+
 layout (push_constant) uniform PushConstant {
     uint nLightIndex;
     uint nShadowMapSize;
@@ -38,7 +41,9 @@ void main()
     outWorldPos = worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
     outWorldNormal = normalize(worldMatrix.mWorldMatrix * vec4(inNormal, 0.0));
     const mat4 mLightViewProj = lightData.i[pushConstant.nLightIndex].mLightViewProjection;
-    gl_Position = mLightViewProj * worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
+    mat4 instancedWorldMatrix = perObjData.i[0].mWorldMatrix;
+    //gl_Position = mLightViewProj * worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
+    gl_Position = mLightViewProj * instancedWorldMatrix * vec4(inPos, 1.0);
 }
 
 
