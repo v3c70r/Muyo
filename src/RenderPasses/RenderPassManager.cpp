@@ -241,14 +241,7 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         m_pShadowPassManager->SetLights(drawLists.m_aDrawLists[DrawLists::DL_LIGHT]);
         m_pShadowPassManager->PrepareRenderPasses();
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
-        std::vector<const Geometry *> vpGeometries;
-        vpGeometries.reserve(opaqueDrawList.size());
-        for (const SceneNode *pNode : opaqueDrawList)
-        {
-            vpGeometries.push_back(
-                static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
-        }
-        m_pShadowPassManager->RecordCommandBuffers(vpGeometries);
+        m_pShadowPassManager->RecordCommandBuffers(opaqueDrawList);
     }
     {
         RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());

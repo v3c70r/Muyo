@@ -3,12 +3,13 @@
 #include "Camera.h"
 #include "DescriptorManager.h"
 #include "Geometry.h"
+#include "MeshResourceManager.h"
+#include "PerObjResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
+#include "Scene.h"
 #include "vulkan/vulkan_core.h"
-#include "MeshResourceManager.h"
-#include "PerObjResourceManager.h"
 
 namespace Muyo
 {
@@ -115,7 +116,7 @@ void RenderPassRSM::CreatePipeline()
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Shadow pass");
 }
 
-void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries)
+void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vpGeometryNodes)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -144,9 +145,34 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
         PushConstant pushConstant = {m_nLightIndex, m_shadowMapSize.width};
         vkCmdPushConstants(m_commandBuffer, m_renderPassParameters.GetPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &pushConstant);
 
-        SCOPED_MARKER(m_commandBuffer, "Shadow pass: " + m_shadowCasterName);
-        for (const Geometry* pGeometry : vpGeometries)
+        // Global mesh resource
+        const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
+        VkDeviceSize offset = 0;
+        const VkBuffer& vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
+        const VkBuffer& indexBuffer = vertexResource.m_pIndexBuffer->buffer();
+
+        // construct draw commands
+        std::vector<VkDrawIndexedIndirectCommand> drawCommands;
+        for (const SceneNode* pGeometryNode : vpGeometryNodes)
         {
+            const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
+            for (const auto& pSubmesh : pGeometry->getSubmeshes())
+            {
+                VkDrawIndexedIndirectCommand drawCommand;
+                const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+
+                drawCommand.indexCount = mesh.m_nIndexCount;
+                drawCommand.instanceCount = 1;
+                drawCommand.firstIndex = mesh.m_nIndexOffset;
+                drawCommand.vertexOffset = mesh.m_nVertexOffset;
+                drawCommand.firstIndex = pGeometryNode->GetPerObjId();
+            }
+        }
+
+        SCOPED_MARKER(m_commandBuffer, "Shadow pass: " + m_shadowCasterName);
+        for (const SceneNode* pGeometryNode : vpGeometryNodes)
+        {
+            const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
             for (const auto& pSubmesh : pGeometry->getSubmeshes())
             {
                 const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
@@ -164,14 +190,12 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const Geometry*>& vpG
                     m_renderPassParameters.AllocateDescriptorSet("", 0),
                     m_renderPassParameters.AllocateDescriptorSet("world matrix", {worldMatrixBuffer}, 1),
                     // Use global material descriptor set as last descriptor set
-                    materialDescSet};
+                    materialDescSet,
+                    m_renderPassParameters.AllocateDescriptorSet("", 3)
+                };
 
                 const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
-                const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
-                VkDeviceSize offset = 0;
-                VkBuffer vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
-                VkBuffer indexBuffer = vertexResource.m_pIndexBuffer->buffer();
-                uint32_t nIndexCount = mesh.m_nIndexCount;
+                                uint32_t nIndexCount = mesh.m_nIndexCount;
                 uint32_t nIndexOffset = mesh.m_nIndexOffset;
 
                 vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
