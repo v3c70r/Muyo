@@ -32,7 +32,7 @@ void RenderPassSkybox::PrepareRenderPass()
     m_renderPassParameters.AddAttachment(depthTarget, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, false);
 
     // Binding 0: Per view data
-    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
     m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // Binding 1: skybox texture

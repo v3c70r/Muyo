@@ -21,7 +21,7 @@ void ResourceManagerDebugPage::Render() const
 {
     ImGui::Begin(m_sName.c_str());
     {
-        const auto& resourceMap = GetRenderResourceManager()->getResourceMap();
+        const auto& resourceMap = GetRenderResourceManager()->GetResourceMap();
         for (const auto& resMap : resourceMap)
         {
             ImGui::Text("%s", resMap.first.c_str());

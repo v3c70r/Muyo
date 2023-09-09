@@ -185,7 +185,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
 
         // Allocate perview constant buffer
         const UniformBuffer<PerViewData>* perView =
-            GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+            GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
 
         VkDescriptorSet perViewSets =
             GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView);

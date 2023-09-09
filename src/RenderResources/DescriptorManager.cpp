@@ -665,7 +665,7 @@ VkDescriptorSet DescriptorManager::AllocateLightDataDescriptorSet(uint32_t nNumL
 void DescriptorManager::UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights, const StorageBuffer<LightData>& lightData)
 {
     // Allocate a single buffer for number of lights
-    UniformBuffer<uint32_t>* numLightsBuffer = GetRenderResourceManager()->getUniformBuffer<uint32_t>("num lights");
+    UniformBuffer<uint32_t>* numLightsBuffer = GetRenderResourceManager()->GetUniformBuffer<uint32_t>("num lights");
     numLightsBuffer->SetData(nNumLights);
 
     std::array<VkWriteDescriptorSet, 2> writes;

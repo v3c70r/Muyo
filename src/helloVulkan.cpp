@@ -277,7 +277,7 @@ int main(int argc, char** argv)
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         StorageBuffer<LightData>* lightData = GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
-		UniformBuffer<PerViewData>* pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+		UniformBuffer<PerViewData>* pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
 
         // Load materials
         GetMaterialManager()->CreateDefaultMaterial();

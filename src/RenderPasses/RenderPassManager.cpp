@@ -49,7 +49,7 @@ void RenderPassManager::BeginFrame()
     m_temporalInfo.nFrameId++;
     m_temporalInfo.nFrameNoCameraMove++;
 
-    UniformBuffer<PerViewData> *pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    UniformBuffer<PerViewData> *pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
     m_pCamera->UpdatePerViewDataUBO(pUniformBuffer);
 
     m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailable);

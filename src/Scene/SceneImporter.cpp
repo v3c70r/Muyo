@@ -542,7 +542,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     // Use pointer address as string
     std::stringstream ss;
     ss << static_cast<void *>(pGeometry);
-    auto *worldMatBuffer = GetRenderResourceManager()->getUniformBuffer<glm::mat4>(ss.str());
+    auto *worldMatBuffer = GetRenderResourceManager()->GetUniformBuffer<glm::mat4>(ss.str());
     pGeometry->SetWorldMatrixUniformBuffer(worldMatBuffer);
     pGeometry->SetWorldMatrix(glm::mat4(1.0));
     GetGeometryManager()->vpGeometries.emplace_back(pGeometry);

@@ -113,10 +113,10 @@ public:
             m_mResources.erase(it);
         }
     }
-    const ResourceMap& getResourceMap() { return m_mResources; }
+    const ResourceMap& GetResourceMap() { return m_mResources; }
 
     template <class T>
-    UniformBuffer<T>* getUniformBuffer(const std::string sName)
+    UniformBuffer<T>* GetUniformBuffer(const std::string sName)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
