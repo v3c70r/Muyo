@@ -41,7 +41,9 @@ void main()
     outWorldPos = worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
     outWorldNormal = normalize(worldMatrix.mWorldMatrix * vec4(inNormal, 0.0));
     const mat4 mLightViewProj = lightData.i[pushConstant.nLightIndex].mLightViewProjection;
-    mat4 instancedWorldMatrix = perObjData.i[0].mWorldMatrix;
+
+    mat4 instancedWorldMatrix = perObjData.i[0].mWorldMatrix;   // TODO: use instance index
+                                                                //
     //gl_Position = mLightViewProj * worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
     gl_Position = mLightViewProj * instancedWorldMatrix * vec4(inPos, 1.0);
 }
