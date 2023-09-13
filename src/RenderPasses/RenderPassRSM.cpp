@@ -204,6 +204,14 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
             const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
             for (const auto& pSubmesh : pGeometry->getSubmeshes())
             {
+
+                if (pSubmesh->GetMaterial() != nullptr)
+                {
+                    materialDescSet = pSubmesh->GetMaterial()->GetDescriptorSet();
+                    vkCmdBindDescriptorSets(
+                        m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_renderPassParameters.GetPipelineLayout(), 1, 1, &materialDescSet, 0, nullptr);
+                }
+
                 const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
                 uint32_t nIndexCount = mesh.m_nIndexCount;
                 uint32_t nIndexOffset = mesh.m_nIndexOffset;
