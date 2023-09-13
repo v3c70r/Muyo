@@ -8,11 +8,7 @@
 layout(scalar, set = 0, binding = 0) buffer LightData_ { LightData i[]; }
 lightData;
 
-layout (set = 1, binding = 0) uniform WorldMatrix {
-    mat4 mWorldMatrix;
-} worldMatrix;
-
-layout(scalar, set = 3, binding = 0) buffer PerObjData_ { PerObjData i[]; }
+layout(scalar, set = 2, binding = 0) buffer PerObjData_ { PerObjData i[]; }
 perObjData;
 
 layout (push_constant) uniform PushConstant {
@@ -38,11 +34,12 @@ void main()
 {
     outTexCoords0 = inTexCoord.xy;
     outTexCoords1 = inTexCoord.zw;
-    outWorldPos = worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
-    outWorldNormal = normalize(worldMatrix.mWorldMatrix * vec4(inNormal, 0.0));
     const mat4 mLightViewProj = lightData.i[pushConstant.nLightIndex].mLightViewProjection;
 
-    mat4 instancedWorldMatrix = perObjData.i[0].mWorldMatrix;   // TODO: use instance index
+    mat4 instancedWorldMatrix = perObjData.i[gl_InstanceIndex].mWorldMatrix;   // TODO: use instance index
+                                                                //
+    outWorldPos = instancedWorldMatrix * vec4(inPos, 1.0);
+    outWorldNormal = normalize(instancedWorldMatrix * vec4(inNormal, 0.0));
                                                                 //
     //gl_Position = mLightViewProj * worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
     gl_Position = mLightViewProj * instancedWorldMatrix * vec4(inPos, 1.0);

@@ -48,19 +48,15 @@ void RenderPassRSM::PrepareRenderPass()
     m_renderPassParameters.AddParameter(lightDataStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // Set 1, Binding 0
-    m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 1);
-
-    // Set 2 parameters are going to be updated in each drawcall.
-    // Set 2, Binding 0
     // Dummy vector with proper size
     std::vector<const ImageResource*> vDummyImageResources(TEX_COUNT, nullptr);
-    m_renderPassParameters.AddImageParameter(vDummyImageResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 2);
+    m_renderPassParameters.AddImageParameter(vDummyImageResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
 
-    // Set 2, Binding 1
-    m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+    // Set 1, Binding 1
+    m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 
-    // Set 3, binding 0 PerObjData
-    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 3);
+    // Set 2, binding 0 PerObjData
+    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 2);
     // Push constants for light index
     m_renderPassParameters.AddPushConstantParameter<PushConstant>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
@@ -118,6 +114,29 @@ void RenderPassRSM::CreatePipeline()
 
 void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vpGeometryNodes)
 {
+    // construct draw commands
+    std::vector<VkDrawIndexedIndirectCommand> drawCommands;
+    for (const SceneNode* pGeometryNode : vpGeometryNodes)
+    {
+        const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
+        for (const auto& pSubmesh : pGeometry->getSubmeshes())
+        {
+            VkDrawIndexedIndirectCommand drawCommand;
+            const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+
+            drawCommand.indexCount = mesh.m_nIndexCount;
+            drawCommand.instanceCount = 1;
+            drawCommand.firstIndex = mesh.m_nIndexOffset;
+            drawCommand.vertexOffset = mesh.m_nVertexOffset;
+            drawCommand.firstInstance = pGeometryNode->GetPerObjId();
+
+            drawCommands.push_back(drawCommand);
+        }
+    }
+
+    // Early return if there's nothing to draw;
+    if (drawCommands.size() == 0) return;
+
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -151,23 +170,33 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
         const VkBuffer& vertexBuffer = vertexResource.m_pVertexBuffer->buffer();
         const VkBuffer& indexBuffer = vertexResource.m_pIndexBuffer->buffer();
 
-        // construct draw commands
-        std::vector<VkDrawIndexedIndirectCommand> drawCommands;
-        for (const SceneNode* pGeometryNode : vpGeometryNodes)
-        {
-            const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
-            for (const auto& pSubmesh : pGeometry->getSubmeshes())
-            {
-                VkDrawIndexedIndirectCommand drawCommand;
-                const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+        // Upload draw commands
+        GetRenderResourceManager()->GetDrawCommandBuffer("rsm shadow" + m_shadowCasterName, drawCommands);
 
-                drawCommand.indexCount = mesh.m_nIndexCount;
-                drawCommand.instanceCount = 1;
-                drawCommand.firstIndex = mesh.m_nIndexOffset;
-                drawCommand.vertexOffset = mesh.m_nVertexOffset;
-                drawCommand.firstIndex = pGeometryNode->GetPerObjId();
-            }
-        }
+        // Setup descriptor set for the whole pass
+
+        // Setup to default material
+        VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
+
+        std::vector<VkDescriptorSet> vDescSets = {
+            m_renderPassParameters.AllocateDescriptorSet("", 0),
+            // Use global material descriptor set as last descriptor set
+            materialDescSet,
+            m_renderPassParameters.AllocateDescriptorSet("", 2)};
+
+        vkCmdBindDescriptorSets(
+            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_renderPassParameters.GetPipelineLayout(), 0,
+            static_cast<uint32_t>(vDescSets.size()),
+            vDescSets.data(), 0, nullptr);
+
+        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
+                               &offset);
+        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+        vkCmdBindPipeline(m_commandBuffer,
+                          VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          m_pipeline);
 
         SCOPED_MARKER(m_commandBuffer, "Shadow pass: " + m_shadowCasterName);
         for (const SceneNode* pGeometryNode : vpGeometryNodes)
@@ -175,42 +204,11 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
             const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
             for (const auto& pSubmesh : pGeometry->getSubmeshes())
             {
-                const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
-                assert(worldMatrixBuffer != nullptr && "Buffer must be valid");
-
-                // Setup to default material
-                VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
-
-                if (pSubmesh->GetMaterial() != nullptr)
-                {
-                    materialDescSet = pSubmesh->GetMaterial()->GetDescriptorSet();
-                }
-
-                std::vector<VkDescriptorSet> vDescSets = {
-                    m_renderPassParameters.AllocateDescriptorSet("", 0),
-                    m_renderPassParameters.AllocateDescriptorSet("world matrix", {worldMatrixBuffer}, 1),
-                    // Use global material descriptor set as last descriptor set
-                    materialDescSet,
-                    m_renderPassParameters.AllocateDescriptorSet("", 3)
-                };
-
                 const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
-                                uint32_t nIndexCount = mesh.m_nIndexCount;
+                uint32_t nIndexCount = mesh.m_nIndexCount;
                 uint32_t nIndexOffset = mesh.m_nIndexOffset;
 
-                vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
-                                       &offset);
-                vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                                     VK_INDEX_TYPE_UINT32);
-                vkCmdBindPipeline(m_commandBuffer,
-                                  VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                  m_pipeline);
-                vkCmdBindDescriptorSets(
-                    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_renderPassParameters.GetPipelineLayout(), 0, 
-                    static_cast<uint32_t>(vDescSets.size()),
-                    vDescSets.data(), 0, nullptr);
-                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
+                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, pGeometryNode->GetPerObjId());
             }
         }
         vkCmdEndRenderPass(m_commandBuffer);

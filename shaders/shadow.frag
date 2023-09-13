@@ -19,7 +19,7 @@ layout(location = 3) in vec4 inWorldNormal;
 layout(scalar, set = 0, binding = 0) buffer LightData_ { LightData i[]; }
 lightData;
 
-MATERIAL_UBO(2)
+MATERIAL_UBO(1)
 
 layout (push_constant) uniform PushConstant {
     uint nLightIndex;

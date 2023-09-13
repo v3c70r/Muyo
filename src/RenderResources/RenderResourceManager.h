@@ -9,6 +9,7 @@
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
+#include "DrawCommandBuffer.h"
 namespace Muyo
 {
 
@@ -124,6 +125,17 @@ public:
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<UniformBuffer<T>*>(m_mResources[sName].get());
+    }
+
+    template <class T>
+    DrawCommandBuffer<T>* GetDrawCommandBuffer(const std::string sName, const std::vector<T>& drawCommands)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<DrawCommandBuffer<T>>(drawCommands.data(), (uint32_t)drawCommands.size());
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<DrawCommandBuffer<T>*>(m_mResources[sName].get());
     }
 
     template <class T>
