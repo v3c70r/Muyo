@@ -363,7 +363,7 @@ int main(int argc, char** argv)
         std::cout << "Device finished" << std::endl;
 
         // Destroy managers
-        GetMaterialManager()->destroyMaterials();
+        GetMaterialManager()->DestroyMaterials();
         GetGeometryManager()->Destroy();
         GetSamplerManager()->destroySamplers();
         GetTextureResourceManager()->Destroy();

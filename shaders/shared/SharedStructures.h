@@ -6,6 +6,7 @@
 
 #ifndef SHADER_CODE
 #include <glm/glm.hpp>
+#include <vulkan/vulkan.h> // VkDeviceAddress
 using namespace glm;
 namespace Muyo
 {
@@ -56,6 +57,20 @@ struct PBRFactors
 struct PerObjData
 {
     mat4 mWorldMatrix;
+};
+
+#ifdef SHADER_CODE
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#define DeviceAddress uint64_t
+#else
+using DeviceAddress = VkDeviceAddress;
+#endif  // SHADER_CODE
+
+struct PerMeshData
+{
+    DeviceAddress mPerObjDataAddr;
+    DeviceAddress mPBRFactorsAddr;
+    uint mTextureIndices[TEX_COUNT];
 };
 
 #ifndef SHADER_CODE
