@@ -98,15 +98,16 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     return res;
 }
 // Helper function
-ComputePipelineBuilder& ComputePipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage)
+ComputePipelineBuilder& ComputePipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule, const VkSpecializationInfo *pSpecInfo)
 {
     // only a single stage for compute pipeline
-    assert(shaderStage == VK_SHADER_STAGE_COMPUTE_BIT);
+    VkShaderStageFlagBits shaderStage = VK_SHADER_STAGE_COMPUTE_BIT;
 
     m_shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     m_shaderStageInfo.stage = shaderStage;
     m_shaderStageInfo.module = shaderModule;
     m_shaderStageInfo.pName = "main";
+    m_shaderStageInfo.pSpecializationInfo = pSpecInfo;
     m_info.stage = m_shaderStageInfo;
 
     return *this;

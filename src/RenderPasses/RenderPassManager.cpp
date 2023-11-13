@@ -1,6 +1,7 @@
 #include "RenderPassManager.h"
 
 #include <cassert>
+#include <memory>
 
 #include "DebugUI.h"
 #include "RenderLayerIBL.h"
@@ -12,6 +13,7 @@
 #include "RenderPassSkybox.h"
 #include "RenderPassTransparent.h"
 #include "RenderPassUI.h"
+#include "RenderPassGEMM.h"
 #include "RenderResourceManager.h"
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
@@ -115,6 +117,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(vp);
     // AO pass
     m_vpRenderPasses[RENDERPASS_AO] = std::make_unique<RenderPassAO>();
+    m_vpRenderPasses[RENDERPASS_GEMM] = std::make_unique<RenderPassGEMM>();
 #ifdef FEATURE_RAY_TRACING
     // RenderPass Ray Tracing
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = std::make_unique<RenderPassRayTracing>(vp);
@@ -290,6 +293,9 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     pFinalPass->RecordCommandBuffers();
     RenderPassAO *pAOPass = static_cast<RenderPassAO *>(m_vpRenderPasses[RENDERPASS_AO].get());
     pAOPass->RecordCommandBuffer();
+    auto *pGEMMPass = static_cast<RenderPassGEMM*>(m_vpRenderPasses[RENDERPASS_GEMM].get());
+    pGEMMPass->PrepareRenderPass();
+    pGEMMPass->RecordCommandBuffer();
 }
 
 void RenderPassManager::RecordDynamicCmdBuffers()
@@ -347,6 +353,7 @@ void RenderPassManager::SubmitCommandBuffers()
     vCmdBufs.clear();
     // Submit compute tasks
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_AO]->GetCommandBuffer());
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GEMM]->GetCommandBuffer());
     vWaitForSemaphores.push_back(m_depthReady);
     vSignalSemaphores.push_back(m_aoReady);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);

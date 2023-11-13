@@ -139,7 +139,7 @@ public:
         m_info.layout = layout;
         return *this;
     }
-    ComputePipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage = VK_SHADER_STAGE_COMPUTE_BIT);
+    ComputePipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule, const VkSpecializationInfo* pSpecInfo = nullptr);
 
 private:
     VkPipelineShaderStageCreateInfo m_shaderStageInfo = {};

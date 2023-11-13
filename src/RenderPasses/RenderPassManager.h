@@ -8,6 +8,7 @@
 
 #include "ShadowPassManager.h"
 #include "Swapchain.h"
+#include "Camera.h"
 
 namespace Muyo
 {
@@ -29,6 +30,7 @@ enum RenderPassNames
     RENDERPASS_UI,
 
     RENDERPASS_AO,
+    RENDERPASS_GEMM,
 
     RENDERPASS_RAY_TRACING,
 

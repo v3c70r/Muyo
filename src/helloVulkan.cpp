@@ -159,6 +159,7 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        VK_NV_COOPERATIVE_MATRIX_EXTENSION_NAME,
 
 #ifdef FEATURE_RAY_TRACING
         // Ray tracing extensions
@@ -212,8 +213,17 @@ int main(int argc, char** argv)
     rayTracingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
     accStructFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+
+    VkPhysicalDeviceCooperativeMatrixFeaturesNV coopMatFeatures = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_NV,
+        NULL,
+        VK_TRUE, // cooperativeMatrix
+        VK_FALSE, // cooperativeMatrixRobustBufferAccess
+    };
+
     std::vector<void*> features;
     features.push_back(&bufferDeviceAddressFeatrues);
+    features.push_back(&coopMatFeatures);
     if (GetRenderDevice()->IsRayTracingSupported())
     {
         features.push_back(&rayTracingFeature);
