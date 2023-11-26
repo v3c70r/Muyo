@@ -44,19 +44,38 @@ const uint TEX_AO = 4;
 const uint TEX_EMISSIVE = 5;
 const uint TEX_COUNT = 6;
 
-struct PBRFactors
+//struct PBRFactors
+//{
+//    vec4 vBaseColorFactors;
+//    float fRoughness;
+//    float fMetalness;
+//    uint UVIndices[TEX_COUNT];
+//    vec3 vEmissiveFactor;
+//    float padding0;
+//};
+
+struct PBRMaterial
 {
     vec4 vBaseColorFactors;
     float fRoughness;
     float fMetalness;
     uint UVIndices[TEX_COUNT];
     vec3 vEmissiveFactor;
-    float padding0;
+    uint textureIds[TEX_COUNT];
 };
+
+struct PerSubmeshData
+{
+    uint nMaterialIndex;
+};
+
+const uint MAX_NUM_SUBMESHES = 32;
 
 struct PerObjData
 {
     mat4 mWorldMatrix;
+    uint nSubmeshCount;
+    PerSubmeshData vSubmeshDatas[MAX_NUM_SUBMESHES];
 };
 
 #ifdef SHADER_CODE
@@ -65,13 +84,6 @@ struct PerObjData
 #else
 using DeviceAddress = VkDeviceAddress;
 #endif  // SHADER_CODE
-
-struct PerMeshData
-{
-    DeviceAddress mPerObjDataAddr;
-    DeviceAddress mPBRFactorsAddr;
-    uint mTextureIndices[TEX_COUNT];
-};
 
 #ifndef SHADER_CODE
 }  // namespace Muyo

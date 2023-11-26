@@ -353,7 +353,7 @@ void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSe
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = materialParameters.m_pFactors->buffer();
     bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(PBRFactors);
+    bufferInfo.range = sizeof(PBRMaterial);
     {
         VkWriteDescriptorSet& writeDescriptorSet = aWriteDescriptorSets[1];
         writeDescriptorSet = {};

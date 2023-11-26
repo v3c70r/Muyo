@@ -200,10 +200,10 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                 // transformation
                 for (const auto& pSubmesh : pGeometry->getSubmeshes())
                 {
-                    VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
-                    if (pSubmesh->GetMaterial() != nullptr)
+                    VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial().GetDescriptorSet();
+                    if (pSubmesh->HasMaterial())
                     {
-                        materialDescSet = pSubmesh->GetMaterial()->GetDescriptorSet();
+                        materialDescSet = pSubmesh->GetMaterial().GetDescriptorSet();
                     }
                     const UniformBuffer<glm::mat4>* worldMatrixBuffer = pGeometry->GetWorldMatrixBuffer();
                     assert(worldMatrixBuffer != nullptr && "Buffer must be valid");

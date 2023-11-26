@@ -176,7 +176,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
         // Setup descriptor set for the whole pass
 
         // Setup to default material
-        VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial()->GetDescriptorSet();
+        VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial().GetDescriptorSet();
 
         std::vector<VkDescriptorSet> vDescSets = {
             m_renderPassParameters.AllocateDescriptorSet("", 0),
@@ -205,9 +205,9 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
             for (const auto& pSubmesh : pGeometry->getSubmeshes())
             {
 
-                if (pSubmesh->GetMaterial() != nullptr)
+                if (pSubmesh->HasMaterial())
                 {
-                    materialDescSet = pSubmesh->GetMaterial()->GetDescriptorSet();
+                    materialDescSet = pSubmesh->GetMaterial().GetDescriptorSet();
                     vkCmdBindDescriptorSets(
                         m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_renderPassParameters.GetPipelineLayout(), 1, 1, &materialDescSet, 0, nullptr);
                 }

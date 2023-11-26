@@ -8,7 +8,7 @@ class PerObjResourceManager
 {
 public:
     // Append per object data and return the index in the array
-    size_t AppendPerObjData(const PerObjData&& perObjData);
+    size_t AppendPerObjData(const PerObjData& perObjData);
     void Upload()
     {
         m_pPerObjDataGPU = GetRenderResourceManager()->GetStorageBuffer("PerObjData", m_vPerObjDataCPU);

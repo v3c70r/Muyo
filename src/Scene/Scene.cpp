@@ -52,6 +52,8 @@ const DrawLists &Scene::GatherDrawLists()
         {
             glm::mat4 mWorldMatrix = mCurrentTrans * pNode->GetMatrix();
             assert(IsMat4Valid(mWorldMatrix));
+            uint32_t nSubmeshCount = 0;
+            std::array<PerSubmeshData, MAX_NUM_SUBMESHES> aSubmeshDatas;
             if (GeometrySceneNode *pGeometryNode = dynamic_cast<GeometrySceneNode *>(pNode.get()))
             {
                 if (pGeometryNode->IsTransparent())
@@ -64,7 +66,14 @@ const DrawLists &Scene::GatherDrawLists()
                 }
                 Geometry *pGeometry = pGeometryNode->GetGeometry();
                 pGeometry->SetWorldMatrix(mWorldMatrix);
-                
+
+                for (auto& submesh : pGeometry->getSubmeshes())
+                {
+                    // TODO: populate submesh data array
+
+                    aSubmeshDatas[nSubmeshCount++].nMaterialIndex = submesh->GetMeshIndex();
+                    //submesh->GetMaterial();
+                }
                 
             }
             // Gather light sources
@@ -84,8 +93,12 @@ const DrawLists &Scene::GatherDrawLists()
             // Setup per obj data
             if (pNode->GetPerObjId() == -1)
             {
-                pNode->SetPerObjId(
-                    static_cast<int>(GetPerObjResourceManager()->AppendPerObjData({mWorldMatrix})));
+                PerObjData perObjData;
+
+                perObjData.mWorldMatrix = mWorldMatrix;
+                perObjData.nSubmeshCount = nSubmeshCount;
+                memcpy(perObjData.vSubmeshDatas, aSubmeshDatas.data(), nSubmeshCount);
+                pNode->SetPerObjId(static_cast<int>(GetPerObjResourceManager()->AppendPerObjData(perObjData)));
             }
             else
             {
