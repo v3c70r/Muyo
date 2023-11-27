@@ -1,7 +1,6 @@
 #include "Material.h"
 
 #include "DescriptorManager.h"
-#include "MaterialResourceManager.h"
 #include "RenderResourceManager.h"
 
 namespace Muyo
@@ -53,6 +52,17 @@ void MaterialManager::CreateDefaultMaterial()
     }
     
 }
+
+void MaterialManager::UploadMaterialBuffer() const
+{
+    GetRenderResourceManager()->GetStorageBuffer(sMaterialBufferName, m_vMaterialBufferCPU);
+}
+
+const StorageBuffer<PBRMaterial>* MaterialManager::GetMaterialBuffer() const
+{
+    return GetRenderResourceManager()->GetResource<StorageBuffer<PBRMaterial>>(sMaterialBufferName);
+}
+
 MaterialManager *GetMaterialManager()
 {
     return &s_materialManager;

@@ -58,7 +58,7 @@ public:
 
 private:
     uint32_t m_nMeshIndex = 0;  // Index in MeshResourceManager
-    uint32_t m_nMaterialIndex = std::numeric_limits<uint32_t>::max();// Index in MaterialResourceManager
+    uint32_t m_nMaterialIndex = std::numeric_limits<uint32_t>::max();
     Mesh* m_pMesh = nullptr;
 };
 

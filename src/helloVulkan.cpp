@@ -273,6 +273,10 @@ int main(int argc, char** argv)
             //GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
         }
 
+        // Finalize material buffer
+        GetMaterialManager()->CreateDefaultMaterial();
+        GetMaterialManager()->UploadMaterialBuffer();
+
 		GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         StorageBuffer<LightData>* lightData = GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
@@ -280,7 +284,6 @@ int main(int argc, char** argv)
 		UniformBuffer<PerViewData>* pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
 
         // Load materials
-        GetMaterialManager()->CreateDefaultMaterial();
 
   
         

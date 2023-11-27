@@ -90,10 +90,16 @@ public:
 
     bool HasMaterial(const std::string sMaterialName);
 
+    void UploadMaterialBuffer() const;
+    const StorageBuffer<PBRMaterial>* GetMaterialBuffer() const;
+
+
 private:
 
     const std::string sDefaultName = "default";
     uint32_t nDefaultMaterialIndex = 0;
+
+    const std::string sMaterialBufferName = "material_buffer";
 
 
     // Track material buffer
@@ -102,7 +108,6 @@ private:
     std::vector<Material> m_vMaterials;
 
     std::vector<PBRMaterial> m_vMaterialBufferCPU;
-    StorageBuffer<PBRMaterial>* m_vMaterialBuffer;
 
 };
 

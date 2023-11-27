@@ -36,12 +36,12 @@ void main()
     outTexCoords1 = inTexCoord.zw;
     const mat4 mLightViewProj = lightData.i[pushConstant.nLightIndex].mLightViewProjection;
 
-    mat4 instancedWorldMatrix = perObjData.i[gl_InstanceIndex].mWorldMatrix;   // TODO: use instance index
+    uint objIndex = GetObjectIndex(gl_InstanceIndex);
+    mat4 instancedWorldMatrix = perObjData.i[objIndex].mWorldMatrix;
                                                                 //
     outWorldPos = instancedWorldMatrix * vec4(inPos, 1.0);
     outWorldNormal = normalize(instancedWorldMatrix * vec4(inNormal, 0.0));
                                                                 //
-    //gl_Position = mLightViewProj * worldMatrix.mWorldMatrix * vec4(inPos, 1.0);
     gl_Position = mLightViewProj * instancedWorldMatrix * vec4(inPos, 1.0);
 }
 

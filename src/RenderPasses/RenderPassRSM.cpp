@@ -216,7 +216,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
                 uint32_t nIndexCount = mesh.m_nIndexCount;
                 uint32_t nIndexOffset = mesh.m_nIndexOffset;
 
-                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, pGeometryNode->GetPerObjId());
+                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), pSubmesh->GetMeshIndex()));
             }
         }
         vkCmdEndRenderPass(m_commandBuffer);
