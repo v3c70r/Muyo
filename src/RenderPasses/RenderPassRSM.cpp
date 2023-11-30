@@ -48,12 +48,19 @@ void RenderPassRSM::PrepareRenderPass()
     m_renderPassParameters.AddParameter(lightDataStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // Set 1, Binding 0
-    // Dummy vector with proper size
-    std::vector<const ImageResource*> vDummyImageResources(TEX_COUNT, nullptr);
-    m_renderPassParameters.AddImageParameter(vDummyImageResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
+    // All textures
+    const auto& vpUniquePtrTextures = GetTextureResourceManager()->GetTextures();
+    std::vector<const ImageResource*> vpTextures;
+    vpTextures.reserve(vpUniquePtrTextures.size());
+    for (const auto& pTexture : vpUniquePtrTextures)
+    {
+        vpTextures.push_back(pTexture.get());
+    }
+    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
 
     // Set 1, Binding 1
-    m_renderPassParameters.AddParameter(nullptr, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+    const auto* materialBuffer = GetMaterialManager()->GetMaterialBuffer();
+    m_renderPassParameters.AddParameter(materialBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 
     // Set 2, binding 0 PerObjData
     m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 2);
@@ -175,13 +182,9 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
 
         // Setup descriptor set for the whole pass
 
-        // Setup to default material
-        VkDescriptorSet materialDescSet = GetMaterialManager()->GetDefaultMaterial().GetDescriptorSet();
-
         std::vector<VkDescriptorSet> vDescSets = {
             m_renderPassParameters.AllocateDescriptorSet("", 0),
-            // Use global material descriptor set as last descriptor set
-            materialDescSet,
+            m_renderPassParameters.AllocateDescriptorSet("", 1),
             m_renderPassParameters.AllocateDescriptorSet("", 2)};
 
         vkCmdBindDescriptorSets(
@@ -204,14 +207,6 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
             const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
             for (const auto& pSubmesh : pGeometry->getSubmeshes())
             {
-
-                if (pSubmesh->HasMaterial())
-                {
-                    materialDescSet = pSubmesh->GetMaterial().GetDescriptorSet();
-                    vkCmdBindDescriptorSets(
-                        m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_renderPassParameters.GetPipelineLayout(), 1, 1, &materialDescSet, 0, nullptr);
-                }
-
                 const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
                 uint32_t nIndexCount = mesh.m_nIndexCount;
                 uint32_t nIndexOffset = mesh.m_nIndexOffset;
