@@ -69,6 +69,7 @@ struct PBRMaterial
 struct PerSubmeshData
 {
     uint nMaterialIndex;
+    vec3 vPadding;
 };
 
 const uint MAX_NUM_SUBMESHES = 32;
@@ -77,6 +78,7 @@ struct PerObjData
 {
     mat4 mWorldMatrix;
     uint nSubmeshCount;
+    vec3 vPadding;
     PerSubmeshData vSubmeshDatas[MAX_NUM_SUBMESHES];
 };
 

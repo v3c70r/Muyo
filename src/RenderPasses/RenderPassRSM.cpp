@@ -205,13 +205,14 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
         for (const SceneNode* pGeometryNode : vpGeometryNodes)
         {
             const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
+            uint32_t nSubmeshIndex = 0;
             for (const auto& pSubmesh : pGeometry->getSubmeshes())
             {
                 const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
                 uint32_t nIndexCount = mesh.m_nIndexCount;
                 uint32_t nIndexOffset = mesh.m_nIndexOffset;
 
-                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), pSubmesh->GetMeshIndex()));
+                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++));
             }
         }
         vkCmdEndRenderPass(m_commandBuffer);

@@ -97,7 +97,7 @@ const DrawLists &Scene::GatherDrawLists()
 
                 perObjData.mWorldMatrix = mWorldMatrix;
                 perObjData.nSubmeshCount = nSubmeshCount;
-                memcpy(perObjData.vSubmeshDatas, aSubmeshDatas.data(), nSubmeshCount);
+                memcpy(perObjData.vSubmeshDatas, aSubmeshDatas.data(), nSubmeshCount * sizeof(PerSubmeshData));
                 pNode->SetPerObjId(static_cast<int>(GetPerObjResourceManager()->AppendPerObjData(perObjData)));
             }
             else

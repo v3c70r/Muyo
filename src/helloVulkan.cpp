@@ -157,8 +157,8 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 {
     std::vector<const char *> vDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_KHR_MULTIVIEW_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+        //VK_KHR_MULTIVIEW_EXTENSION_NAME,
+        //VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 
 #ifdef FEATURE_RAY_TRACING
         // Ray tracing extensions
@@ -213,7 +213,7 @@ int main(int argc, char** argv)
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
     accStructFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
     std::vector<void*> features;
-    features.push_back(&bufferDeviceAddressFeatrues);
+    //features.push_back(&bufferDeviceAddressFeatrues);
     if (GetRenderDevice()->IsRayTracingSupported())
     {
         features.push_back(&rayTracingFeature);
