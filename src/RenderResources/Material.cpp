@@ -85,6 +85,13 @@ Material &Material::SetMaterialParameterFactors(const PBRMaterial &factors, cons
     pUniformBuffer->SetData(factors);
     m_materialParameters.m_pFactors = pUniformBuffer;
 
+    PBRMaterial& material = GetMaterialManager()->m_vMaterialBufferCPU[m_nMaterialIndex];
+    material.vBaseColorFactors = factors.vBaseColorFactors;
+    material.fRoughness = factors.fRoughness;
+    material.fMetalness = factors.fMetalness;
+    memcpy(material.UVIndices, factors.UVIndices, sizeof(uint32_t) * TEX_COUNT);
+    material.vEmissiveFactor = factors.vEmissiveFactor;
+
     return *this;
 }
 
