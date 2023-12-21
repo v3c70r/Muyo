@@ -21,6 +21,11 @@ public:
         GetMemoryAllocator()->AllocateBuffer(m_nSize, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "DrawCommandBuffer");
         SetData((void*)drawCommands, m_nSize);
     }
+
+    uint32_t GetStride() const { return sizeof(T); }
+
+    uint32_t GetDrawCommandCount() const {return m_nDrawCommandCount;}
+
 private:
     uint32_t m_nDrawCommandCount = 0;
 };

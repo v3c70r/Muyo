@@ -126,6 +126,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
     for (const SceneNode* pGeometryNode : vpGeometryNodes)
     {
         const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
+        uint32_t nSubmeshIndex = 0;
         for (const auto& pSubmesh : pGeometry->getSubmeshes())
         {
             VkDrawIndexedIndirectCommand drawCommand;
@@ -135,7 +136,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
             drawCommand.instanceCount = 1;
             drawCommand.firstIndex = mesh.m_nIndexOffset;
             drawCommand.vertexOffset = mesh.m_nVertexOffset;
-            drawCommand.firstInstance = pGeometryNode->GetPerObjId();
+            drawCommand.firstInstance = PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++);
 
             drawCommands.push_back(drawCommand);
         }
@@ -178,7 +179,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
         const VkBuffer& indexBuffer = vertexResource.m_pIndexBuffer->buffer();
 
         // Upload draw commands
-        GetRenderResourceManager()->GetDrawCommandBuffer("rsm shadow" + m_shadowCasterName, drawCommands);
+        const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer = GetRenderResourceManager()->GetDrawCommandBuffer("rsm shadow" + m_shadowCasterName, drawCommands);
 
         // Setup descriptor set for the whole pass
 
@@ -202,19 +203,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
                           m_pipeline);
 
         SCOPED_MARKER(m_commandBuffer, "Shadow pass: " + m_shadowCasterName);
-        for (const SceneNode* pGeometryNode : vpGeometryNodes)
-        {
-            const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
-            uint32_t nSubmeshIndex = 0;
-            for (const auto& pSubmesh : pGeometry->getSubmeshes())
-            {
-                const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
-                uint32_t nIndexCount = mesh.m_nIndexCount;
-                uint32_t nIndexOffset = mesh.m_nIndexOffset;
-
-                vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++));
-            }
-        }
+        vkCmdDrawIndexedIndirect(m_commandBuffer, pDrawCommandBuffer->buffer(), 0, pDrawCommandBuffer->GetDrawCommandCount(), pDrawCommandBuffer->GetStride());
         vkCmdEndRenderPass(m_commandBuffer);
     }
     vkEndCommandBuffer(m_commandBuffer);
