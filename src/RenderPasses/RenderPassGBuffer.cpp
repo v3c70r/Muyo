@@ -1,54 +1,38 @@
-#include "RenderPassRSM.h"
-
-#include "Camera.h"
-#include "DescriptorManager.h"
-#include "Geometry.h"
-#include "MeshResourceManager.h"
-#include "PerObjResourceManager.h"
-#include "PipelineStateBuilder.h"
+#include "RenderPassGBuffer.h"
 #include "RenderResourceManager.h"
+#include "PerObjResourceManager.h"
+#include "Material.h"
 #include "SamplerManager.h"
+#include "PipelineStateBuilder.h"
+#include "MeshVertex.h"
+#include "MeshResourceManager.h"
 #include "Scene.h"
-#include "vulkan/vulkan_core.h"
+#include "Camera.h"
 
 namespace Muyo
 {
-
-RenderPassRSM::~RenderPassRSM()
+void RenderPassGBuffer::PrepareRenderPass()
 {
-    if (m_pipeline != VK_NULL_HANDLE)
+    m_renderPassParameters.SetRenderArea(m_renderArea);
+
+    // Output attachments
+    for (int i = 0; i < ATTACHMENTS_COUNT; i++)
     {
-        vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-        m_pipeline = VK_NULL_HANDLE;
+        const GBufferAttachment& attachment = m_attachments[i];
+        RenderTarget* pTarget = GetRenderResourceManager()->GetRenderTarget(attachment.sName, m_renderArea, attachment.format);
+
+        m_renderPassParameters.AddAttachment(pTarget,
+                                             attachment.format == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
     }
-}
 
-void RenderPassRSM::PrepareRenderPass()
-{
-    m_renderPassParameters.SetRenderArea(m_shadowMapSize);
+    // Input resources
+    const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
+    m_renderPassParameters.AddParameter(perView, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);
 
-    // Depth attachments
-    RenderTarget* shadowMap = GetRenderResourceManager()->GetDepthTarget(m_aRSMNames[SHADOW_MAP_DEPTH], m_shadowMapSize);
-    m_renderPassParameters.AddAttachment(shadowMap, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
+    // Set 1, Binding 0: PerObjData
+    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 
-    // Shadow Normal
-    RenderTarget* shadowNormal = GetRenderResourceManager()->GetColorTarget(m_aRSMNames[SHADOW_MAP_NORMAL], m_shadowMapSize);
-    m_renderPassParameters.AddAttachment(shadowNormal, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
-
-    // Shadow position
-    RenderTarget* shadowPosition = GetRenderResourceManager()->GetColorTarget(m_aRSMNames[SHADOW_MAP_POSITION], m_shadowMapSize);
-    m_renderPassParameters.AddAttachment(shadowPosition, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
-
-    // Shadow flux
-    RenderTarget* shadowFlux = GetRenderResourceManager()->GetColorTarget(m_aRSMNames[SHADOW_MAP_FLUX], m_shadowMapSize);
-    m_renderPassParameters.AddAttachment(shadowFlux, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
-
-    // Set0, Binding 0
-    const StorageBuffer<LightData>* lightDataStorageBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
-    m_renderPassParameters.AddParameter(lightDataStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-
-    // Set 1, Binding 0
-    // All textures
+    // Set 2, Binding 0: All texture
     const auto& vpUniquePtrTextures = GetTextureResourceManager()->GetTextures();
     std::vector<const ImageResource*> vpTextures;
     vpTextures.reserve(vpUniquePtrTextures.size());
@@ -56,34 +40,27 @@ void RenderPassRSM::PrepareRenderPass()
     {
         vpTextures.push_back(pTexture.get());
     }
-    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
+    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 2);
 
-    // Set 1, Binding 1
+    // Set 2, Binding 1: All materials
     const auto* materialBuffer = GetMaterialManager()->GetMaterialBuffer();
-    m_renderPassParameters.AddParameter(materialBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+    m_renderPassParameters.AddParameter(materialBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
 
-    // Set 2, binding 0 PerObjData
-    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 2);
-    // Push constants for light index
-    m_renderPassParameters.AddPushConstantParameter<PushConstant>(VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-
-    m_renderPassParameters.Finalize("Render pass shadow");
-
+    m_renderPassParameters.Finalize("Render pass gbuffer");
     CreatePipeline();
 }
 
-void RenderPassRSM::CreatePipeline()
+void RenderPassGBuffer::CreatePipeline()
 {
     VkPipelineLayout pipelineLayout = m_renderPassParameters.GetPipelineLayout();
-
-    VkShaderModule vertexShader = CreateShaderModule(ReadSpv("shaders/shadow.vert.spv"));
-    VkShaderModule fragShader = CreateShaderModule(ReadSpv("shaders/shadow.frag.spv"));
+    VkShaderModule vertexShader = CreateShaderModule(ReadSpv("shaders/GBuffer.vert.spv"));
+    VkShaderModule fragShader = CreateShaderModule(ReadSpv("shaders/GBuffer.frag.spv"));
 
     ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(m_shadowMapSize).Build();
+    VkViewport viewport = vpBuilder.setWH(m_renderArea).Build();
     VkRect2D scissorRect;
     scissorRect.offset = {0, 0};
-    scissorRect.extent = m_shadowMapSize;
+    scissorRect.extent = m_renderArea;
 
     InputAssemblyStateCIBuilder iaBuilder;
     RasterizationStateCIBuilder rsBuilder;
@@ -111,10 +88,10 @@ void RenderPassRSM::CreatePipeline()
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShader, nullptr);
 
     // Set debug name for the pipeline
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Shadow pass");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Gbuffer pass");
 }
 
-void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vpGeometryNodes)
+void RenderPassGBuffer::RecordCommandBuffers(const std::vector<const SceneNode*>& vpGeometryNodes)
 {
     // construct draw commands
     std::vector<VkDrawIndexedIndirectCommand> drawCommands;
@@ -150,22 +127,21 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
         RenderPassBeginInfoBuilder builder;
-        std::vector<VkClearValue> clearValue = {
-            {.depthStencil = {1.0, 0}},
-            {.color = {0.0, 0.0, 0.0, 0.0}},
-            {.color = {0.0, 0.0, 0.0, 0.0}},
-            {.color = {0.0, 0.0, 0.0, 0.0}}};
+        std::vector<VkClearValue> clearValues;
+        clearValues.resize(ATTACHMENTS_COUNT);
+        for (int i = 0; i < ATTACHMENTS_COUNT; i++)
+        {
+            clearValues[i] = m_attachments[i].clearValue;
+        }
+       
         VkRenderPassBeginInfo renderPassBeginInfo =
             builder.setRenderPass(m_renderPassParameters.GetRenderPass())
                 .setFramebuffer(m_renderPassParameters.GetFramebuffer())
-                .setRenderArea(m_shadowMapSize)
-                .setClearValues(clearValue)
+                .setRenderArea(m_renderArea)
+                .setClearValues(clearValues)
                 .Build();
 
         vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-        PushConstant pushConstant = {m_nLightIndex, m_shadowMapSize.width};
-        vkCmdPushConstants(m_commandBuffer, m_renderPassParameters.GetPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstant), &pushConstant);
 
         // Global mesh resource
         const MeshVertexResources& vertexResource = GetMeshResourceManager()->GetMeshVertexResources();
@@ -174,14 +150,14 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
         const VkBuffer& indexBuffer = vertexResource.m_pIndexBuffer->buffer();
 
         // Upload draw commands
-        const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer = GetRenderResourceManager()->GetDrawCommandBuffer("rsm shadow " + m_shadowCasterName, drawCommands);
+        const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer = GetRenderResourceManager()->GetDrawCommandBuffer("GBuffer draw commands", drawCommands);
 
         // Setup descriptor set for the whole pass
-
         std::vector<VkDescriptorSet> vDescSets = {
             m_renderPassParameters.AllocateDescriptorSet("", 0),
             m_renderPassParameters.AllocateDescriptorSet("", 1),
-            m_renderPassParameters.AllocateDescriptorSet("", 2)};
+            m_renderPassParameters.AllocateDescriptorSet("", 2)
+        };
 
         vkCmdBindDescriptorSets(
             m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -197,20 +173,11 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
                           VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_pipeline);
 
-        SCOPED_MARKER(m_commandBuffer, "Shadow pass: " + m_shadowCasterName);
+        SCOPED_MARKER(m_commandBuffer, "GBuffer pass");
         vkCmdDrawIndexedIndirect(m_commandBuffer, pDrawCommandBuffer->buffer(), 0, pDrawCommandBuffer->GetDrawCommandCount(), pDrawCommandBuffer->GetStride());
         vkCmdEndRenderPass(m_commandBuffer);
     }
     vkEndCommandBuffer(m_commandBuffer);
 }
-
-RSMResources RenderPassRSM::GetRSM()
-{
-    return {
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_DEPTH]),
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_NORMAL]),
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_POSITION]),
-        GetRenderResourceManager()->GetResource<RenderTarget>(m_aRSMNames[SHADOW_MAP_FLUX])};
-}
-
 }  // namespace Muyo
+

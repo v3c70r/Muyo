@@ -377,9 +377,9 @@ void RenderPassGBufferLighting::CreatePipeline(const std::vector<RSMResources>& 
                                 VK_OBJECT_TYPE_PIPELINE_LAYOUT, "GBuffer");
 
         VkShaderModule vertShdr =
-            CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
+            CreateShaderModule(ReadSpv("shaders/GBufferSubpass.vert.spv"));
         VkShaderModule fragShdr =
-            CreateShaderModule(ReadSpv("shaders/gbuffer.frag.spv"));
+            CreateShaderModule(ReadSpv("shaders/GBufferSupass.frag.spv"));
         PipelineStateBuilder builder;
 
         InputAssemblyStateCIBuilder iaBuilder;
