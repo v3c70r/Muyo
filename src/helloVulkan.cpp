@@ -35,7 +35,7 @@
 #include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
 #include "RenderPass.h"
-#include "RenderPassGBuffer.h"
+#include "RenderPassGBufferLighting.h"
 #include "RenderLayerIBL.h"
 #include "RenderPassUI.h"
 #include "RenderResourceManager.h"

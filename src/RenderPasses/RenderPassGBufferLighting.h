@@ -8,7 +8,7 @@
 
 namespace Muyo
 {
-class RenderPassGBuffer : public RenderPass
+class RenderPassGBufferLighting : public RenderPass
 {
 public:
     struct LightingAttachments
@@ -82,8 +82,8 @@ public:
     using GBufferViews =
         std::array<VkImageView, LightingAttachments::GBUFFER_ATTACHMENTS_COUNT>;
 
-    RenderPassGBuffer();
-    ~RenderPassGBuffer();
+    RenderPassGBufferLighting();
+    ~RenderPassGBufferLighting();
     void RecordCommandBuffer(const std::vector<const Geometry*>& vpGeometries);
     void DestroyFramebuffer();
     void SetGBufferImageViews(VkImageView positionView, VkImageView albedoView,

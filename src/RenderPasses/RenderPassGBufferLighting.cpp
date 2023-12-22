@@ -1,18 +1,18 @@
-#include "RenderPassGBuffer.h"
+#include "RenderPassGBufferLighting.h"
 
 #include "Debug.h"
 #include "DescriptorManager.h"
-#include "Geometry.h"
+#include "MeshResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
+#include "Scene.h"
 #include "VkRenderDevice.h"
-#include "MeshResourceManager.h"
 
 namespace Muyo
 {
 
-RenderPassGBuffer::LightingAttachments::LightingAttachments()
+RenderPassGBufferLighting::LightingAttachments::LightingAttachments()
 {
     // Construct color attachment descriptions
     VkAttachmentDescription desc = {};
@@ -46,7 +46,7 @@ RenderPassGBuffer::LightingAttachments::LightingAttachments()
     aAttachmentDesc[GBUFFER_DEPTH].finalLayout = VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL;
 }
 
-RenderPassGBuffer::RenderPassGBuffer()
+RenderPassGBufferLighting::RenderPassGBufferLighting()
 {
     // Create two supasses, one for GBuffer and another for opaque lighting
     // Subpass
@@ -104,7 +104,7 @@ RenderPassGBuffer::RenderPassGBuffer()
                             VK_OBJECT_TYPE_RENDER_PASS, "Opaque Lighting");
 }
 
-RenderPassGBuffer::~RenderPassGBuffer()
+RenderPassGBufferLighting::~RenderPassGBufferLighting()
 {
     DestroyFramebuffer();
     vkDestroyRenderPass(GetRenderDevice()->GetDevice(), m_vRenderPasses.back(), nullptr);
@@ -120,7 +120,7 @@ RenderPassGBuffer::~RenderPassGBuffer()
                             mLightingPipelineLayout, nullptr);
 }
 
-void RenderPassGBuffer::SetGBufferImageViews(
+void RenderPassGBufferLighting::SetGBufferImageViews(
     VkImageView positionView, VkImageView albedoView, VkImageView normalView,
     VkImageView uvView, VkImageView lightingOutput, VkImageView depthView,
     uint32_t nWidth, uint32_t nHeight)
@@ -147,12 +147,12 @@ void RenderPassGBuffer::SetGBufferImageViews(
     mRenderArea = {nWidth, nHeight};
 }
 
-void RenderPassGBuffer::DestroyFramebuffer()
+void RenderPassGBufferLighting::DestroyFramebuffer()
 {
     vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), mFramebuffer, nullptr);
 }
 
-void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& vpGeometries)
+void RenderPassGBufferLighting::RecordCommandBuffer(const std::vector<const Geometry*>& vpGeometries)
 {
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -314,7 +314,7 @@ void RenderPassGBuffer::RecordCommandBuffer(const std::vector<const Geometry*>& 
                             VK_OBJECT_TYPE_COMMAND_BUFFER, "OpaqueLighting");
 }
 
-void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
+void RenderPassGBufferLighting::createGBufferViews(VkExtent2D size)
 {
     std::array<VkImageView, LightingAttachments::ATTACHMENTS_COUNT> views;
     // Color attachments
@@ -339,7 +339,7 @@ void RenderPassGBuffer::createGBufferViews(VkExtent2D size)
     SetGBufferImageViews(views[0], views[1], views[2], views[3], views[4],
                          views[5], size.width, size.height);
 }
-void RenderPassGBuffer::removeGBufferViews()
+void RenderPassGBufferLighting::removeGBufferViews()
 {
     for (int i = 0; i < LightingAttachments::ATTACHMENTS_COUNT; i++)
     {
@@ -348,7 +348,7 @@ void RenderPassGBuffer::removeGBufferViews()
     DestroyFramebuffer();
 }
 
-void RenderPassGBuffer::CreatePipeline(const std::vector<RSMResources>& vpShadowMaps)
+void RenderPassGBufferLighting::CreatePipeline(const std::vector<RSMResources>& vpShadowMaps)
 {
     // Pipeline should be created after mRenderArea been updated
     ViewportBuilder vpBuilder;

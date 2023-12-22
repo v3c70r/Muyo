@@ -6,7 +6,7 @@
 #include "RenderLayerIBL.h"
 #include "RenderPass.h"
 #include "RenderPassAO.h"
-#include "RenderPassGBuffer.h"
+#include "RenderPassGBufferLighting.h"
 #include "RenderPassRSM.h"
 #include "RenderPassRayTracing.h"
 #include "RenderPassSkybox.h"
@@ -88,8 +88,8 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     VkExtent2D vp = {uWidth, uHeight};
     // GBuffer pass
     {
-        m_vpRenderPasses[RENDERPASS_GBUFFER] = std::make_unique<RenderPassGBuffer>();
-        RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+        m_vpRenderPasses[RENDERPASS_GBUFFER_LIGHTING] = std::make_unique<RenderPassGBufferLighting>();
+        RenderPassGBufferLighting *pGBufferPass = static_cast<RenderPassGBufferLighting *>(m_vpRenderPasses[RENDERPASS_GBUFFER_LIGHTING].get());
         pGBufferPass->createGBufferViews(vp);
     }
     // Final pass
@@ -244,7 +244,7 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         m_pShadowPassManager->RecordCommandBuffers(opaqueDrawList);
     }
     {
-        RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+        RenderPassGBufferLighting *pGBufferPass = static_cast<RenderPassGBufferLighting *>(m_vpRenderPasses[RENDERPASS_GBUFFER_LIGHTING].get());
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         std::vector<const Geometry *> vpGeometries;
         vpGeometries.reserve(opaqueDrawList.size());
@@ -322,7 +322,7 @@ void RenderPassManager::SubmitCommandBuffers()
     vCmdBufs.insert(std::end(vCmdBufs), std::begin(vShadowPassCmds), std::end(vShadowPassCmds));
 
     // Submit graphics queue to signal depth ready semaphore
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer());
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER_LIGHTING]->GetCommandBuffer());
     vSignalSemaphores.push_back(m_depthReady);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
 

@@ -8,7 +8,7 @@
 
 #include "Camera.h"
 #include "Material.h"
-#include "RenderPassGBuffer.h"
+#include "RenderPassGBufferLighting.h"
 #include "UniformBuffer.h"
 namespace Muyo
 {
@@ -42,11 +42,11 @@ public:
         VkImageView albedo, VkImageView normal, VkImageView uv);  // Deprecating
 
     VkDescriptorSet AllocateGBufferDescriptorSet(
-        const RenderPassGBuffer::GBufferViews &gbufferViews);
+        const RenderPassGBufferLighting::GBufferViews &gbufferViews);
     VkDescriptorSet AllocateGBufferDescriptorSet();
     static void updateGBufferDescriptorSet(
         VkDescriptorSet descriptorSet,
-        const RenderPassGBuffer::GBufferViews &gbufferViews);
+        const RenderPassGBufferLighting::GBufferViews &gbufferViews);
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);

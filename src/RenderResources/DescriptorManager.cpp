@@ -193,7 +193,7 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 
-        std::array<VkDescriptorSetLayoutBinding, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> bindings = {
+        std::array<VkDescriptorSetLayoutBinding, RenderPassGBufferLighting::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> bindings = {
             GetInputAttachmentBinding(0, 1),
             GetInputAttachmentBinding(1, 1),
             GetInputAttachmentBinding(2, 1),
@@ -460,7 +460,7 @@ VkDescriptorSet DescriptorManager::AllocateGBufferDescriptorSet()
 }
 
 VkDescriptorSet DescriptorManager::AllocateGBufferDescriptorSet(
-    const RenderPassGBuffer::GBufferViews& gbufferViews)
+    const RenderPassGBufferLighting::GBufferViews& gbufferViews)
 {
     VkDescriptorSet descriptorSet = AllocateGBufferDescriptorSet();
     updateGBufferDescriptorSet(descriptorSet, gbufferViews);
@@ -469,14 +469,14 @@ VkDescriptorSet DescriptorManager::AllocateGBufferDescriptorSet(
 
 void DescriptorManager::updateGBufferDescriptorSet(
     VkDescriptorSet descriptorSet,
-    const RenderPassGBuffer::GBufferViews& gbufferViews)
+    const RenderPassGBufferLighting::GBufferViews& gbufferViews)
 
 {
     // prepare image descriptor
-    std::array<VkDescriptorImageInfo, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> imageInfos;
-    std::array<VkWriteDescriptorSet, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> writeDescriptorSets;
+    std::array<VkDescriptorImageInfo, RenderPassGBufferLighting::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> imageInfos;
+    std::array<VkWriteDescriptorSet, RenderPassGBufferLighting::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> writeDescriptorSets;
 
-    for (uint32_t i = 0; i < RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT; i++)
+    for (uint32_t i = 0; i < RenderPassGBufferLighting::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT; i++)
     {
         VkDescriptorImageInfo& imageInfo = imageInfos[i];
         imageInfo = {GetSamplerManager()->getSampler(SAMPLER_1_MIPS),

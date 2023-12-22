@@ -179,7 +179,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
         const VkBuffer& indexBuffer = vertexResource.m_pIndexBuffer->buffer();
 
         // Upload draw commands
-        const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer = GetRenderResourceManager()->GetDrawCommandBuffer("rsm shadow" + m_shadowCasterName, drawCommands);
+        const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer = GetRenderResourceManager()->GetDrawCommandBuffer("rsm shadow " + m_shadowCasterName, drawCommands);
 
         // Setup descriptor set for the whole pass
 
