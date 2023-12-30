@@ -143,7 +143,7 @@ void RenderPassTransparent::CreatePipeline()
 
     // TODO : Write a shader for transparent pass
     VkShaderModule vertShdr =
-        CreateShaderModule(ReadSpv("shaders/gbuffer.vert.spv"));
+        CreateShaderModule(ReadSpv("shaders/GBufferSubpass.vert.spv"));
     VkShaderModule fragShdr =
         CreateShaderModule(ReadSpv("shaders/transparent.frag.spv"));
 

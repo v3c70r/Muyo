@@ -11,18 +11,24 @@
 
 namespace Muyo
 {
+RenderPassGBuffer::~RenderPassGBuffer()
+{
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
+}
 void RenderPassGBuffer::PrepareRenderPass()
 {
     m_renderPassParameters.SetRenderArea(m_renderArea);
 
     // Output attachments
-    for (int i = 0; i < ATTACHMENTS_COUNT; i++)
+    for (int i = 0; i < ATTACHMENT_COUNT; i++)
     {
         const GBufferAttachment& attachment = m_attachments[i];
         RenderTarget* pTarget = GetRenderResourceManager()->GetRenderTarget(attachment.sName, m_renderArea, attachment.format);
 
         m_renderPassParameters.AddAttachment(pTarget,
-                                             attachment.format == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
+                                             VK_IMAGE_LAYOUT_UNDEFINED,  // init layout
+                                             attachment.format == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,  // final layout
+                                             true);
     }
 
     // Input resources
@@ -66,7 +72,7 @@ void RenderPassGBuffer::CreatePipeline()
     RasterizationStateCIBuilder rsBuilder;
     MultisampleStateCIBuilder msBuilder;
     BlendStateCIBuilder blendBuilder;
-    blendBuilder.setAttachments(3, false);
+    blendBuilder.setAttachments(COLOR_ATTACHMENT_COUNT, false);
     DepthStencilCIBuilder depthStencilBuilder;
     PipelineStateBuilder builder;
 
@@ -126,10 +132,11 @@ void RenderPassGBuffer::RecordCommandBuffers(const std::vector<const SceneNode*>
     m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
+        // Transit
         RenderPassBeginInfoBuilder builder;
         std::vector<VkClearValue> clearValues;
-        clearValues.resize(ATTACHMENTS_COUNT);
-        for (int i = 0; i < ATTACHMENTS_COUNT; i++)
+        clearValues.resize(ATTACHMENT_COUNT);
+        for (int i = 0; i < ATTACHMENT_COUNT; i++)
         {
             clearValues[i] = m_attachments[i].clearValue;
         }

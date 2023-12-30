@@ -20,7 +20,12 @@ enum RenderPassNames
 {
     // Order matters
     RENDERPASS_IBL,
+
+    // TODO: Remove this combined pass when separated GBuffer lighting passes work.
     RENDERPASS_GBUFFER_LIGHTING,
+
+    RENDERPASS_GBUFFER,
+
     RENDERPASS_SKYBOX,
     RENDERPASS_TRANSPARENT,
 
