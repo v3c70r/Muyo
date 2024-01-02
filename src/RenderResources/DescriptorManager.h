@@ -8,7 +8,6 @@
 
 #include "Camera.h"
 #include "Material.h"
-#include "RenderPassGBufferLighting.h"
 #include "UniformBuffer.h"
 namespace Muyo
 {
@@ -23,7 +22,6 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_PER_VIEW_DATA,  // A layout contains mvp matrices at binding 0
     DESCRIPTOR_LAYOUT_PER_OBJ_DATA,   // Per object data layout
     DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
-    DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_IBL,            // IBL descriptor sets
     DESCRIPTOR_LAYOUT_LIGHT_DATA,     // Light data layout
     DESCRIPTOR_LAYOUT_COUNT,
@@ -40,13 +38,6 @@ public:
     VkDescriptorSet AllocateLightingDescriptorSet(
         const UniformBuffer<PerViewData> &perViewData, VkImageView position,
         VkImageView albedo, VkImageView normal, VkImageView uv);  // Deprecating
-
-    VkDescriptorSet AllocateGBufferDescriptorSet(
-        const RenderPassGBufferLighting::GBufferViews &gbufferViews);
-    VkDescriptorSet AllocateGBufferDescriptorSet();
-    static void updateGBufferDescriptorSet(
-        VkDescriptorSet descriptorSet,
-        const RenderPassGBufferLighting::GBufferViews &gbufferViews);
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);

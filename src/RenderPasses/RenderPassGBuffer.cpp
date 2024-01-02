@@ -18,7 +18,7 @@ const RenderPassGBuffer::GBufferAttachment RenderPassGBuffer::attachments[] =
         {"GBufferAlbedoTransmittance_", VK_FORMAT_R16G16B16A16_SFLOAT, {.color = {0.0f, 0.0f, 0.0f, 0.0f}}},
         {"GBufferNormalRoughness_", VK_FORMAT_R16G16B16A16_SFLOAT, {.color = {0.0f, 0.0f, 0.0f, 0.0f}}},
         {"GbufferMetalnessTranslucency_", VK_FORMAT_R16G16B16A16_SFLOAT, {.color = {0.0f, 0.0f, 0.0f, 0.0f}}},
-        {"GBuffferDepth_", VK_FORMAT_D32_SFLOAT, {.depthStencil = {1.0f, 0}}}};
+        {"GBufferDepth_", VK_FORMAT_D32_SFLOAT, {.depthStencil = {1.0f, 0}}}};
 
 RenderPassGBuffer::~RenderPassGBuffer()
 {

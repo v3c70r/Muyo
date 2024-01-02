@@ -10,7 +10,6 @@ public:
     RenderPassSkybox(VkExtent2D imageSize)
     {
         m_renderPassParameters.SetRenderArea(imageSize);
-        PrepareRenderPass();
     }
     void PrepareRenderPass() override;
 

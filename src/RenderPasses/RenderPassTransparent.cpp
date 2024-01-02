@@ -96,8 +96,8 @@ void RenderPassTransparent::CreateFramebuffer(uint32_t uWidth, uint32_t uHeight)
 {
     VkExtent2D vp = {uWidth, uHeight};
     std::array<VkImageView, 2> views = {
-        GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", vp)->getView(),
-        GetRenderResourceManager()->GetDepthTarget("GBUFFER_DEPTH", vp)->getView()};
+        GetRenderResourceManager()->GetColorTarget("opaqueLightingOutput", vp)->getView(),
+        GetRenderResourceManager()->GetDepthTarget("GBufferDepth_", vp)->getView()};
 
     VkFramebufferCreateInfo framebufferInfo = {};
     framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

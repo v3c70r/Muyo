@@ -213,7 +213,7 @@ void RenderPassFinal::CreatePipeline()
 
 void RenderPassFinal::RecordCommandBuffers()
 {
-    VkImageView imgView = GetRenderResourceManager()->GetColorTarget("LIGHTING_OUTPUT", VkExtent2D({0, 0}))->getView();
+    VkImageView imgView = GetRenderResourceManager()->GetColorTarget("opaqueLightingOutput", VkExtent2D({0, 0}))->getView();
 
 #ifdef FEATURE_RAY_TRACING
     // VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({1, 1}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();

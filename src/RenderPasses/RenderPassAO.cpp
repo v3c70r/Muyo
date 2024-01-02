@@ -3,6 +3,7 @@
 #include "Debug.h"
 #include "DescriptorManager.h"
 #include "PipelineStateBuilder.h"
+#include "RenderResourceManager.h"
 #include "ResourceBarrier.h"
 
 namespace Muyo
@@ -50,7 +51,7 @@ RenderPassAO::~RenderPassAO()
 void RenderPassAO::RecordCommandBuffer()
 {
     // Create descriptor sets
-    RenderTarget* pDepthTarget = GetRenderResourceManager()->GetResource<RenderTarget>("GBUFFER_DEPTH");
+    RenderTarget* pDepthTarget = GetRenderResourceManager()->GetResource<RenderTarget>("GBufferDepth_");
     VkDescriptorSet inputImageDescSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(pDepthTarget->getView());
     VkExtent2D linearDepthImageSize = {800, 600};
 

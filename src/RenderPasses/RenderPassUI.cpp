@@ -3,6 +3,7 @@
 #include "Debug.h"
 #include "DescriptorManager.h"
 #include "ImGuiControl.h"
+#include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
 #include "RenderResourceManager.h"
