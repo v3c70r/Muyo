@@ -62,9 +62,6 @@ void main()
     uint materialIndex = perObjData.i[objIndex].vSubmeshDatas[submeshIndex].nMaterialIndex;
     PBRMaterial material = AllMaterials.i[materialIndex];
     
-    // TODO: Bind ssbo and index material from SSBO
-
-
     vec3 vAlbedo = texture(AllTextures[material.textureIds[TEX_ALBEDO]], inTexCoords[material.UVIndices[TEX_ALBEDO]]).xyz * material.vBaseColorFactors.xyz;
 
     fOutFlux = vec4(light.vColor * light.fIntensity * vAlbedo, 0.0f);

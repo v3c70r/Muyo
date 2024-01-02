@@ -89,7 +89,7 @@ ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLa
     m_imageBarrier.subresourceRange.layerCount = nLayerCount;
 }
 
-void ImageResourceBarrier::AddBarrier(VkCommandBuffer cmdBuf)
+void ImageResourceBarrier::AddToCommandBuffer(VkCommandBuffer cmdBuf)
 {
     vkCmdPipelineBarrier(cmdBuf, m_sourceStage, m_destinationStage, 0, 0, nullptr, 0, nullptr, 1, &m_imageBarrier);
 }

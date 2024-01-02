@@ -284,8 +284,8 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImage
     if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
     {
         attachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        assert(m_depthAttachmentReference.attachment != VK_ATTACHMENT_UNUSED);
         m_depthAttachmentReference = attachmentRef;
+        assert(m_depthAttachmentReference.attachment != VK_ATTACHMENT_UNUSED);
     }
     else
     {
@@ -319,7 +319,12 @@ void RenderPassParameters::CreateRenderPass()
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = (uint32_t)m_vColorAttachmentReferences.size();
     subpass.pColorAttachments = m_vColorAttachmentReferences.data();
+
     subpass.pDepthStencilAttachment = &m_depthAttachmentReference;
+    if (m_depthAttachmentReference.attachment == VK_ATTACHMENT_UNUSED)
+    {
+        subpass.pDepthStencilAttachment = nullptr;
+    }
 
     // Subpass dependency
     VkSubpassDependency subpassDep = {};

@@ -1,12 +1,13 @@
 #pragma once
 #include "RenderPass.h"
+#include "ShadowPassManager.h"
 
 namespace Muyo
 {
 class RenderPassOpaqueLighting : public RenderPass
 {
     public:
-        explicit RenderPassOpaqueLighting(const VkExtent2D renderArea): m_renderArea(renderArea){};
+        RenderPassOpaqueLighting(const VkExtent2D renderArea, const ShadowPassManager& shadowPassManager) : m_renderArea(renderArea), m_shadowPassManager(shadowPassManager){};
         ~RenderPassOpaqueLighting()
         {
             vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
@@ -26,5 +27,7 @@ class RenderPassOpaqueLighting : public RenderPass
         VkExtent2D m_renderArea = {0, 0};
         VkPipeline m_pipeline = VK_NULL_HANDLE;
         VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+
+        const ShadowPassManager& m_shadowPassManager;
 };
 }

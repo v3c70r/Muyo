@@ -130,7 +130,7 @@ void RenderPassRSM::RecordCommandBuffers(const std::vector<const SceneNode*>& vp
             drawCommand.indexCount = mesh.m_nIndexCount;
             drawCommand.instanceCount = 1;
             drawCommand.firstIndex = mesh.m_nIndexOffset;
-            drawCommand.vertexOffset = mesh.m_nVertexOffset;
+            drawCommand.vertexOffset = 0;
             drawCommand.firstInstance = PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++);
 
             drawCommands.push_back(drawCommand);

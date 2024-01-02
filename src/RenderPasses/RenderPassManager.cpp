@@ -8,6 +8,7 @@
 #include "RenderPassAO.h"
 #include "RenderPassGBufferLighting.h"
 #include "RenderPassGBuffer.h"
+#include "RenderPassOpaqueLighting.h"
 #include "RenderPassRSM.h"
 #include "RenderPassRayTracing.h"
 #include "RenderPassSkybox.h"
@@ -86,6 +87,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 
     CreateSwapchain(swapchainSurface);
 
+    m_pShadowPassManager = std::make_unique<ShadowPassManager>();
     VkExtent2D vp = {uWidth, uHeight};
     // GBuffer pass
     {
@@ -96,6 +98,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 
     {
         m_vpRenderPasses[RENDERPASS_GBUFFER] = std::make_unique<RenderPassGBuffer>(vp);
+        m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING] = std::make_unique<RenderPassOpaqueLighting>(vp, *m_pShadowPassManager);
     }
     // Final pass
     m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(m_pSwapchain->GetImageFormat());
@@ -242,7 +245,6 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 {
     // Prepare shadow pass
     {
-        m_pShadowPassManager = std::make_unique<ShadowPassManager>();
         m_pShadowPassManager->SetLights(drawLists.m_aDrawLists[DrawLists::DL_LIGHT]);
         m_pShadowPassManager->PrepareRenderPasses();
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
@@ -267,6 +269,11 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         pGBufferPass->PrepareRenderPass();
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         pGBufferPass->RecordCommandBuffers(opaqueDrawList);
+    }
+    {
+        RenderPassOpaqueLighting *pOpaqueLightingPass = static_cast<RenderPassOpaqueLighting *>(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING].get());
+        pOpaqueLightingPass->PrepareRenderPass();
+        pOpaqueLightingPass->RecordCommandBuffers();
     }
     {
         RenderPassTransparent *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
@@ -335,6 +342,7 @@ void RenderPassManager::SubmitCommandBuffers()
 
     // Submit graphics queue to signal depth ready semaphore
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer());
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING]->GetCommandBuffer());
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER_LIGHTING]->GetCommandBuffer());
     vSignalSemaphores.push_back(m_depthReady);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);

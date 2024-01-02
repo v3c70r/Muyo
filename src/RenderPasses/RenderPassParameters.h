@@ -108,7 +108,7 @@ private:
     // Framebuffer related
     std::vector<VkAttachmentDescription> m_vAttachmentDescriptions;
     std::vector<VkAttachmentReference> m_vColorAttachmentReferences;
-    VkAttachmentReference m_depthAttachmentReference = {};
+    VkAttachmentReference m_depthAttachmentReference = {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_UNDEFINED};
     std::vector<const ImageResource*> m_vAttachmentResources;
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
     VkFramebuffer m_framebuffer = VK_NULL_HANDLE;

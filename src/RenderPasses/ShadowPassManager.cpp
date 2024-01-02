@@ -40,7 +40,7 @@ std::vector<VkCommandBuffer> ShadowPassManager::GetCommandBuffers() const
     return vCommandBuffers;
 }
 
-std::vector<RSMResources> ShadowPassManager::GetShadowMaps()
+std::vector<RSMResources> ShadowPassManager::GetShadowMaps() const
 {
     std::vector<RSMResources> vpShadowMaps;
 

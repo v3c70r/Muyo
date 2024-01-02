@@ -497,7 +497,7 @@ VkSampler VkRenderDevice::CreateSampler()
 
 void VkRenderDevice::AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& barrier)
 {
-    barrier.AddBarrier(cmdBuf);
+    barrier.AddToCommandBuffer(cmdBuf);
 }
 
 VkCommandBuffer VkRenderDevice::AllocatePrimaryCommandbuffer(CommandPools pool)

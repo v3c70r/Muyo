@@ -17,7 +17,7 @@ public:
     void PrepareRenderPasses();
     void RecordCommandBuffers(const std::vector<const SceneNode*>& geometryNodes);
     std::vector<VkCommandBuffer> GetCommandBuffers() const;
-    std::vector<RSMResources> GetShadowMaps();
+    std::vector<RSMResources> GetShadowMaps() const;
 
 private:
     std::vector<std::unique_ptr<RenderPassRSM>> m_vpShadowPasses;

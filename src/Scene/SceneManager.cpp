@@ -64,6 +64,9 @@ StorageBuffer<LightData>* SceneManager::ConstructLightBufferFromDrawLists(const 
     {
         lightData.push_back(LightData());
     }
+
+    // Set light count uniform buffer
+    GetRenderResourceManager()->GetUniformBuffer<uint32_t>("light count")->SetData(lightData.size());
     return GetRenderResourceManager()->GetStorageBuffer("light data", lightData);
 }
 

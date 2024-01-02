@@ -11,6 +11,15 @@
 
 namespace Muyo
 {
+
+const RenderPassGBuffer::GBufferAttachment RenderPassGBuffer::attachments[] =
+    {
+        {"GBufferPositionAO_", VK_FORMAT_R16G16B16A16_SFLOAT, {.color = {0.0f, 0.0f, 0.0f, 0.0f}}},
+        {"GBufferAlbedoTransmittance_", VK_FORMAT_R16G16B16A16_SFLOAT, {.color = {0.0f, 0.0f, 0.0f, 0.0f}}},
+        {"GBufferNormalRoughness_", VK_FORMAT_R16G16B16A16_SFLOAT, {.color = {0.0f, 0.0f, 0.0f, 0.0f}}},
+        {"GbufferMetalnessTranslucency_", VK_FORMAT_R16G16B16A16_SFLOAT, {.color = {0.0f, 0.0f, 0.0f, 0.0f}}},
+        {"GBuffferDepth_", VK_FORMAT_D32_SFLOAT, {.depthStencil = {1.0f, 0}}}};
+
 RenderPassGBuffer::~RenderPassGBuffer()
 {
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
@@ -22,12 +31,12 @@ void RenderPassGBuffer::PrepareRenderPass()
     // Output attachments
     for (int i = 0; i < ATTACHMENT_COUNT; i++)
     {
-        const GBufferAttachment& attachment = m_attachments[i];
+        const GBufferAttachment& attachment = attachments[i];
         RenderTarget* pTarget = GetRenderResourceManager()->GetRenderTarget(attachment.sName, m_renderArea, attachment.format);
 
         m_renderPassParameters.AddAttachment(pTarget,
                                              VK_IMAGE_LAYOUT_UNDEFINED,  // init layout
-                                             attachment.format == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,  // final layout
+                                             attachment.format == VK_FORMAT_D32_SFLOAT ? VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,  // final layout
                                              true);
     }
 
@@ -113,7 +122,7 @@ void RenderPassGBuffer::RecordCommandBuffers(const std::vector<const SceneNode*>
             drawCommand.indexCount = mesh.m_nIndexCount;
             drawCommand.instanceCount = 1;
             drawCommand.firstIndex = mesh.m_nIndexOffset;
-            drawCommand.vertexOffset = mesh.m_nVertexOffset;
+            drawCommand.vertexOffset = 0;
             drawCommand.firstInstance = PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++);
 
             drawCommands.push_back(drawCommand);
@@ -132,13 +141,13 @@ void RenderPassGBuffer::RecordCommandBuffers(const std::vector<const SceneNode*>
     m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
-        // Transit
+        SCOPED_MARKER(m_commandBuffer, "GBuffer pass");
         RenderPassBeginInfoBuilder builder;
         std::vector<VkClearValue> clearValues;
         clearValues.resize(ATTACHMENT_COUNT);
         for (int i = 0; i < ATTACHMENT_COUNT; i++)
         {
-            clearValues[i] = m_attachments[i].clearValue;
+            clearValues[i] = attachments[i].clearValue;
         }
        
         VkRenderPassBeginInfo renderPassBeginInfo =
@@ -180,7 +189,6 @@ void RenderPassGBuffer::RecordCommandBuffers(const std::vector<const SceneNode*>
                           VK_PIPELINE_BIND_POINT_GRAPHICS,
                           m_pipeline);
 
-        SCOPED_MARKER(m_commandBuffer, "GBuffer pass");
         vkCmdDrawIndexedIndirect(m_commandBuffer, pDrawCommandBuffer->buffer(), 0, pDrawCommandBuffer->GetDrawCommandCount(), pDrawCommandBuffer->GetStride());
         vkCmdEndRenderPass(m_commandBuffer);
     }

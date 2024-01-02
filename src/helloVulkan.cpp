@@ -279,7 +279,7 @@ int main(int argc, char** argv)
 
 		GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
         DrawLists dl = GetSceneManager()->GatherDrawLists();
-        StorageBuffer<LightData>* lightData = GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
+        GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
 		UniformBuffer<PerViewData>* pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
 
