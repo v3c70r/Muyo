@@ -16,7 +16,6 @@ struct LightData;
 
 enum DescriptorLayoutType
 {
-    DESCRIPTOR_LAYOUT_LIGHTING,        // TODO: Remove this
     DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,  // A single sampler descriptor set layout at binding 0
     DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
     DESCRIPTOR_LAYOUT_PER_VIEW_DATA,  // A layout contains mvp matrices at binding 0
@@ -34,10 +33,6 @@ public:
     void destroyDescriptorPool();
     void createDescriptorSetLayouts();
     void destroyDescriptorSetLayouts();
-
-    VkDescriptorSet AllocateLightingDescriptorSet(
-        const UniformBuffer<PerViewData> &perViewData, VkImageView position,
-        VkImageView albedo, VkImageView normal, VkImageView uv);  // Deprecating
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);

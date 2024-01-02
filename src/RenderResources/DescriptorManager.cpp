@@ -36,30 +36,6 @@ void DescriptorManager::destroyDescriptorPool()
 
 void DescriptorManager::createDescriptorSetLayouts()
 {
-    // GBuffer lighting layout
-    {
-        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
-        descriptorSetLayoutInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-            GetUniformBufferBinding(0),    // Pre view data
-            GetSamplerArrayBinding(1, 4),  // gbuffers
-        };
-        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
-        descriptorSetLayoutInfo.pBindings = bindings.data();
-
-        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
-                                           &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
-
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
-                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
-                                "Lighting");
-        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHTING] = layout;
-    }
-
     // Single sampler descriptor set layout
     {
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
@@ -342,76 +318,6 @@ void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSe
 
     vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(aWriteDescriptorSets.size()), aWriteDescriptorSets.data(),
                            0, nullptr);
-}
-
-VkDescriptorSet DescriptorManager::AllocateLightingDescriptorSet(
-    const UniformBuffer<PerViewData>& perViewData, VkImageView position,
-    VkImageView albedo, VkImageView normal, VkImageView uv)
-{
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    // Create descriptor sets
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts =
-        &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHTING];
-
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
-
-    // Prepare buffer descriptor
-    {
-        VkDescriptorBufferInfo bufferInfo = {};
-        bufferInfo.buffer = perViewData.buffer();
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(PerViewData);
-
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSet;
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-        // prepare image descriptor
-        std::array<VkDescriptorImageInfo, 4> imageInfos = {
-            // position
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            position,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            // albedo
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            albedo,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            // normal
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            normal,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            // UV
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            uv,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSet;
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount =
-            static_cast<uint32_t>(imageInfos.size());
-        descriptorWrites[1].pImageInfo = imageInfos.data();
-
-        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
-                               static_cast<uint32_t>(descriptorWrites.size()),
-                               descriptorWrites.data(), 0, nullptr);
-    }
-    return descriptorSet;
 }
 
 VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
