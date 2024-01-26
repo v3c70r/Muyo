@@ -5,22 +5,6 @@
 #include "Camera.h"
 #include "material.h"
 
-// Light informations
-// TODO: use light uniforms
-const int TMP_LIGHT_COUNT = 4;
-const int USED_LIGHT_COUNT = 4;
-const vec3 lightPositions[TMP_LIGHT_COUNT] = vec3[]( vec3(1.0, 1.0, 0.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0),
-    vec3(1.0, 1.0, 0.0)
-);
-const vec3 lightColors[TMP_LIGHT_COUNT] = vec3[](
-    vec3(1.0, 1.0, 1.0),
-    vec3(0.0, 1.0, 0.0),
-    vec3(0.0, 0.0, 1.0),
-    vec3(1.0, 1.0, 0.0)
-);
-
 //===============
 
 // GBuffer texture indices
@@ -32,7 +16,14 @@ layout(location = 3) in vec4 inWorldNormal;
 layout(location = 0) out vec4 outColor;
 
 CAMERA_UBO(0)
-MATERIAL_UBO(1)
+// IBL parameters
+layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
+layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
+layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
+
+LIGHTS_UBO(3)
+
+
 
 void main()
 {

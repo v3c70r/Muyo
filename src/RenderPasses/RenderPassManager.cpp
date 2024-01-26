@@ -5,7 +5,6 @@
 #include "DebugUI.h"
 #include "RenderLayerIBL.h"
 #include "RenderPass.h"
-#include "RenderPassAO.h"
 #include "RenderPassGBuffer.h"
 #include "RenderPassOpaqueLighting.h"
 #include "RenderPassRSM.h"
@@ -114,8 +113,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>();
     // Skybox pass
     m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(vp);
-    // AO pass
-    m_vpRenderPasses[RENDERPASS_AO] = std::make_unique<RenderPassAO>();
 #ifdef FEATURE_RAY_TRACING
     // RenderPass Ray Tracing
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = std::make_unique<RenderPassRayTracing>(vp);
@@ -132,10 +129,8 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_depthReady));
-    VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_aoReady));
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_depthReady), VK_OBJECT_TYPE_SEMAPHORE, "Depth Ready");
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aoReady), VK_OBJECT_TYPE_SEMAPHORE, "AO Ready");
 
     VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_imageAvailable));
     VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_renderFinished));
@@ -223,7 +218,6 @@ void RenderPassManager::Unintialize()
         pPass = nullptr;
     }
     vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_depthReady, nullptr);
-    vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_aoReady, nullptr);
     vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_imageAvailable, nullptr);
     vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_renderFinished, nullptr);
     for (auto &fence : m_aGPUExecutionFence)
@@ -280,8 +274,6 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     pSkybox->RecordCommandBuffers();
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->RecordCommandBuffers();
-    RenderPassAO *pAOPass = static_cast<RenderPassAO *>(m_vpRenderPasses[RENDERPASS_AO].get());
-    pAOPass->RecordCommandBuffer();
 }
 
 void RenderPassManager::RecordDynamicCmdBuffers()
@@ -339,9 +331,7 @@ void RenderPassManager::SubmitCommandBuffers()
 
     vCmdBufs.clear();
     // Submit compute tasks
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_AO]->GetCommandBuffer());
     vWaitForSemaphores.push_back(m_depthReady);
-    vSignalSemaphores.push_back(m_aoReady);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetComputeQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
 
@@ -358,7 +348,6 @@ void RenderPassManager::SubmitCommandBuffers()
         vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer());
     }
     vWaitForSemaphores.push_back(m_imageAvailable);
-    vWaitForSemaphores.push_back(m_aoReady);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     vSignalSemaphores.push_back(m_renderFinished);

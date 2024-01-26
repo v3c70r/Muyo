@@ -31,8 +31,6 @@ enum RenderPassNames
     RENDERPASS_FINAL,
     RENDERPASS_UI,
 
-    RENDERPASS_AO,
-
     RENDERPASS_RAY_TRACING,
 
     RENDERPASS_COUNT
@@ -82,7 +80,6 @@ private:
 
     // Synchronization elements required in passes
     VkSemaphore m_depthReady = VK_NULL_HANDLE;
-    VkSemaphore m_aoReady = VK_NULL_HANDLE;
     VkSemaphore m_imageAvailable = VK_NULL_HANDLE;  // Semaphores to notify the frame when the current image is ready
     VkSemaphore m_renderFinished = VK_NULL_HANDLE;
 

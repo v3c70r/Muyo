@@ -4,17 +4,87 @@
 
 #include "Debug.h"
 #include "DescriptorManager.h"
+#include "PerObjResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
+#include "SamplerManager.h"
 #include "VkRenderDevice.h"
 #include "MeshResourceManager.h"
 
 namespace Muyo
 {
 
-RenderPassTransparent::RenderPassTransparent()
+RenderPassTransparent::RenderPassTransparent(VkExtent2D renderArea) : m_renderArea(renderArea)
 {
     CreateRenderPasses();
+}
+
+void RenderPassTransparent::PrepareRenderPass()
+{
+    m_renderPassParameters.SetRenderArea(m_renderArea);
+
+    // Attachments
+    RenderTarget* colorAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("opaqueLightingOutput");
+    m_renderPassParameters.AddAttachment(colorAttachment, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
+
+    RenderTarget* depthAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("GBufferDepth_");
+    m_renderPassParameters.AddAttachment(depthAttachment, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, false);
+
+    // Shader Uniform buffers:
+    //
+    // Set 0: CAMERA_UBO(0)
+    //
+    // Set 1: layout(scalar, set = 1, binding = 0) buffer PerObjData_ { PerObjData i[]; }perObjData;
+    //
+    // Set 2: IBL textures
+    // layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
+    // layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
+    // layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
+    //
+    // Set 3:
+    //
+    // All textures and material
+    //
+    // Set 4: Light UBO
+    //
+    // Set0, Binding 0
+    // Camera UBO
+    const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
+    m_renderPassParameters.AddParameter(perView, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);
+
+    // Set 1
+    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+
+    // Set 2
+    const auto& vpUniquePtrTextures = GetTextureResourceManager()->GetTextures();
+    std::vector<const ImageResource*> vpTextures;
+    vpTextures.reserve(vpUniquePtrTextures.size());
+    for (const auto& pTexture : vpUniquePtrTextures)
+    {
+        vpTextures.push_back(pTexture.get());
+    }
+    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
+
+    // Set 3
+    const auto* materialBuffer = GetMaterialManager()->GetMaterialBuffer();
+    m_renderPassParameters.AddParameter(materialBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+
+    // Set 2: IBL textures
+    const RenderTarget* pIrradianceMap = GetRenderResourceManager()->GetRenderTarget("irr_cube_map", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    const RenderTarget* pPrefilteredCubeMap = GetRenderResourceManager()->GetRenderTarget("prefiltered_cubemap", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    const RenderTarget* pSpecularBrdfLut = GetRenderResourceManager()->GetRenderTarget("specular_brdf_lut", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+
+    m_renderPassParameters.AddImageParameter(pIrradianceMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 2);
+    m_renderPassParameters.AddImageParameter(pPrefilteredCubeMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_8_MIPS), 2);
+    m_renderPassParameters.AddImageParameter(pSpecularBrdfLut, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_8_MIPS), 2);
+
+ 
+    // Set 3, binding 0 PerObjData
+    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 3);
+
+    m_renderPassParameters.Finalize("transparent pass");
+
+
 }
 
 void RenderPassTransparent::CreateRenderPasses()
@@ -143,7 +213,7 @@ void RenderPassTransparent::CreatePipeline()
 
     // TODO : Write a shader for transparent pass
     VkShaderModule vertShdr =
-        CreateShaderModule(ReadSpv("shaders/GBufferSubpass.vert.spv"));
+        CreateShaderModule(ReadSpv("shaders/GBuffer.vert.spv"));
     VkShaderModule fragShdr =
         CreateShaderModule(ReadSpv("shaders/transparent.frag.spv"));
 
