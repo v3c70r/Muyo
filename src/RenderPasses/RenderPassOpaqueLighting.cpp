@@ -8,7 +8,6 @@
 #include "PipelineStateBuilder.h"
 #include "RenderPassGBuffer.h"
 #include "RenderResourceManager.h"
-#include "ResourceBarrier.h"
 #include "SamplerManager.h"
 #include "SharedStructures.h"
 

@@ -49,6 +49,7 @@ public:
 
     VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, uint32_t nDescSetIdx = 0);
     VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx = 0);  // Allocate descriptor set with resources
+    void AllocateDescriptorSet(std::vector<VkDescriptorSet>& vkDescSets);
     const VkDescriptorSetLayout& GetDescriptorSetLayout(uint32_t nDescSetIdx = 0) const;
 
     // Create all the resources needed for the render pass

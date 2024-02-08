@@ -1,6 +1,7 @@
 #version 450
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_nonuniform_qualifier : require
 #include "directLighting.h"
 #include "Camera.h"
 #include "material.h"
@@ -12,49 +13,29 @@ layout(location = 0) in vec2 inTexCoords0;
 layout(location = 1) in vec2 inTexCoords1;
 layout(location = 2) in vec4 inWorldPos;
 layout(location = 3) in vec4 inWorldNormal;
+layout(location = 4) flat in uvec2 inObjSubmeshIndex;
 
 layout(location = 0) out vec4 outColor;
 
 CAMERA_UBO(0)
-// IBL parameters
-layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
-layout(set = 2, binding = 1) uniform samplerCube prefilteredMap;
-layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
-
-LIGHTS_UBO(3)
-
-
+layout(scalar, set = 1, binding = 0) buffer PerObjData_ { PerObjData i[]; }
+perObjData;
+MATERIAL_SSBO(2)
 
 void main()
 {
+    // Suports up to 2 sets of UVs
     vec2 inTexCoords[2];
     inTexCoords[0] = inTexCoords0;
     inTexCoords[1] = inTexCoords1;
 
-    vec3 vTextureNormal = texture(texPBR[TEX_NORMAL], inTexCoords[factors.UVIndices[TEX_NORMAL]]).xyz;
-    vec3 vWorldNormal = normalize(inWorldNormal.xyz + vTextureNormal);
+    uint objIndex = inObjSubmeshIndex.x;
+    uint submeshIndex = inObjSubmeshIndex.y;
+    uint materialIndex = perObjData.i[objIndex].vSubmeshDatas[submeshIndex].nMaterialIndex;
 
-    const vec4 vAlbedo = texture(texPBR[TEX_ALBEDO], inTexCoords[factors.UVIndices[TEX_ALBEDO]]) * factors.vBaseColorFactors;
-    const float fMetalness = texture(texPBR[TEX_METALNESS], inTexCoords[factors.UVIndices[TEX_METALNESS]]).r * factors.fMetalness;
-    const float fRoughness = texture(texPBR[TEX_ROUGHNESS], inTexCoords[factors.UVIndices[TEX_ROUGHNESS]]).g * factors.fRoughness;
+    PBRMaterial material = AllMaterials.i[materialIndex];
 
-    Material material;
-    // populate material struct with material properties
-    material.vAlbedo = vAlbedo.xyz;
-    material.fAO = 1.0;
-    material.fMetalness = fMetalness;
-    material.fRoughness = fRoughness;
-    material.vEmissive = vec3(0.0);
-
-
-    vec3 vLo = vec3(0.0);
-    const vec3 vViewPos = (uboCamera.view * inWorldPos).xyz;
-    const vec3 vNormal = (uboCamera.view * vec4(vWorldNormal, 0.0)).xyz;
-    for(int i = 0; i < USED_LIGHT_COUNT; ++i)
-    {
-        // TODO: Bind light uniforms and finish transparent lighting
-
-    }
+    vec4 vAlbedo = vec4(texture(AllTextures[material.textureIds[TEX_ALBEDO]], inTexCoords[material.UVIndices[TEX_ALBEDO]]).xyz, 1.0) * material.vBaseColorFactors;
 
     outColor = vec4(vAlbedo);
 }
