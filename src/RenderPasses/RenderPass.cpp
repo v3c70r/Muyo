@@ -6,6 +6,7 @@
 #include "MeshResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
+#include "ResourceBarrier.h"
 #include "VkRenderDevice.h"
 
 namespace Muyo
@@ -213,7 +214,8 @@ void RenderPassFinal::CreatePipeline()
 
 void RenderPassFinal::RecordCommandBuffers()
 {
-    VkImageView imgView = GetRenderResourceManager()->GetColorTarget("opaqueLightingOutput", VkExtent2D({0, 0}))->getView();
+    //VkImageView imgView = GetRenderResourceManager()->GetColorTarget("opaqueLightingOutput", VkExtent2D({0, 0}))->getView();
+    auto* colorOutputResource = GetRenderResourceManager()->GetResource<RenderTarget>("opaqueLightingOutput");
 
 #ifdef FEATURE_RAY_TRACING
     // VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({1, 1}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
@@ -224,13 +226,12 @@ void RenderPassFinal::RecordCommandBuffers()
 
     std::vector<VkDescriptorSet>
         descSets = {
-            GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView),
+            GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(colorOutputResource->getView()),
             GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(rtOutputView),
-            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(
-                *perView)};
+            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView)};
 #else
     std::vector<VkDescriptorSet> descSets = {
-        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(imgView)};
+        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(colorOutputResource->getView())};
 #endif
     VkCommandBufferBeginInfo beginInfo = {};
 
@@ -254,10 +255,14 @@ void RenderPassFinal::RecordCommandBuffers()
 
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
 
+        // barrier to transit opaque lighting image
+        ImageResourceBarrier colroOutputBarrier(colorOutputResource->getImage(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+        colroOutputBarrier.AddToCommandBuffer(curCmdBuf);
+
         // Set dynamic viewport and scissor
         VkViewport viewport = {0.0, 0.0, (float)mRenderArea.width, (float)mRenderArea.height, 0.0, 1.0};
         vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
-        VkRect2D scissor = {0, 0, mRenderArea.width, mRenderArea.height};
+        VkRect2D scissor = {{0, 0}, {mRenderArea.width, mRenderArea.height}};
         vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
 
         VkRenderPassBeginInfo renderPassBeginInfo = {};

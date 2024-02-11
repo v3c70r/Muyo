@@ -16,7 +16,6 @@
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
 #include "RenderPassRayTracing.h"
-
 #endif
 namespace Muyo
 {

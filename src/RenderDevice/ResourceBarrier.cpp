@@ -69,6 +69,16 @@ ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLa
         m_sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         m_destinationStage = VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
     }
+    // COLOR_ATTACHMENT -> SHADER READ OPTIMAL
+    else if (sourceLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL &&
+             targetLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        m_imageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        m_imageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        m_sourceStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        m_destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    }
     else
     {
         throw std::invalid_argument("unsupported layout transition!");
