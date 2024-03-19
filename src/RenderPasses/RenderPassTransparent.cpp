@@ -24,10 +24,10 @@ void RenderPassTransparent::PrepareRenderPass()
     m_renderPassParameters.SetRenderArea(m_renderArea);
 
     // Attachments
-    RenderTarget* colorAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("opaqueLightingOutput");
+    auto* colorAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("opaqueLightingOutput");
     m_renderPassParameters.AddAttachment(colorAttachment, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
 
-    RenderTarget* depthAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("GBufferDepth_");
+    auto* depthAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("GBufferDepth_");
     m_renderPassParameters.AddAttachment(depthAttachment, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, false);
 
     // Shader Uniform buffers:

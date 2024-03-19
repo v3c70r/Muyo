@@ -8,10 +8,10 @@ class RenderPassTransparent : public RenderPass
 {
 public:
     RenderPassTransparent(VkExtent2D renderArea);
-    virtual ~RenderPassTransparent() override;
+    ~RenderPassTransparent() override;
 
-    virtual void PrepareRenderPass() override;
-    virtual void CreatePipeline() override;
+    void PrepareRenderPass() override;
+    void CreatePipeline() override;
 
     VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
     void RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries);
