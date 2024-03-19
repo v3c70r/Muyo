@@ -8,7 +8,6 @@
 #include "RenderPassGBuffer.h"
 #include "RenderPassOpaqueLighting.h"
 #include "RenderPassRSM.h"
-#include "RenderPassRayTracing.h"
 #include "RenderPassSkybox.h"
 #include "RenderPassTransparent.h"
 #include "RenderPassUI.h"
@@ -16,7 +15,7 @@
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
-
+#include "RenderPassRayTracing.h"
 #endif
 namespace Muyo
 {
@@ -110,7 +109,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
     // Transparent pass
-    m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>();
+    m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>(vp);
     // Skybox pass
     m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(vp);
 #ifdef FEATURE_RAY_TRACING
@@ -173,9 +172,6 @@ void RenderPassManager::SetSwapchainImageViews(const std::vector<VkImageView> &v
     static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->SetSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
     static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->CreateImGuiResources();
     static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->CreatePipeline();
-
-    static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreateFramebuffer(m_uWidth, m_uHeight);
-    static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get())->CreatePipeline();
 }
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
@@ -251,14 +247,8 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     {
         RenderPassTransparent *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
         const std::vector<const SceneNode *> &transparentDrawList = drawLists.m_aDrawLists[DrawLists::DL_TRANSPARENT];
-        std::vector<const Geometry *> vpGeometries;
-        vpGeometries.reserve(transparentDrawList.size());
-        for (const SceneNode *pNode : transparentDrawList)
-        {
-            vpGeometries.push_back(
-                static_cast<const GeometrySceneNode *>(pNode)->GetGeometry());
-        }
-        pTransparentPass->RecordCommandBuffers(vpGeometries);
+        pTransparentPass->PrepareRenderPass();
+        pTransparentPass->RecordCommandBuffers(transparentDrawList);
     }
 
 #ifdef FEATURE_RAY_TRACING
@@ -323,11 +313,10 @@ void RenderPassManager::SubmitCommandBuffers()
 
     // Submit other graphics tasks
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer());
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer());
-#ifdef FEATURE_RAY_TRACING
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_RAY_TRACING]->GetCommandBuffer());
-#endif
-    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
+    if (auto cmdBuf = m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer())
+    {
+        vCmdBufs.push_back(cmdBuf);
+    }
 
     vCmdBufs.clear();
     // Submit compute tasks

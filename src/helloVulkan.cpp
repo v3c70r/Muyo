@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <iterator>
 #include <ostream>
 #include <stdexcept>
 #include <tuple>
@@ -10,17 +8,9 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
-#include <array>
-#include <cassert>
-#include <cassert>  // assert
-#include <chrono>
-#include <cstring>  // strcmp
-#include <fstream>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
-#include <limits>
-#include <set>
 #include <vector>
 #include <filesystem>
 
@@ -32,22 +22,15 @@
 #include "Geometry.h"
 #include "ImGuiControl.h"
 #include "Material.h"
-#include "MeshVertex.h"
-#include "PipelineStateBuilder.h"
-#include "RenderPass.h"
-#include "RenderLayerIBL.h"
-#include "RenderPassUI.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
-#include "VertexBuffer.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 #include "SceneImporter.h"
 #include "RenderPassManager.h"
 #include "SceneManager.h"
-#include "Swapchain.h"
 #include "EventSystem.h"
 
 #if defined (USE_SDL)
