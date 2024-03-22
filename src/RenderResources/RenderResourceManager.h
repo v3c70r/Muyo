@@ -3,7 +3,6 @@
 #include <string>
 #include <unordered_map>
 
-#include "Debug.h"
 #include "DrawCommandBuffer.h"
 #include "RenderTargetResource.h"
 #include "StorageImageResource.h"

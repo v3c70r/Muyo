@@ -4,41 +4,39 @@
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
+#include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <vector>
-#include <filesystem>
 
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
-#include "VkExtFuncsLoader.h"
 #include "Camera.h"
 #include "Debug.h"
 #include "DescriptorManager.h"
+#include "EventSystem.h"
 #include "Geometry.h"
 #include "ImGuiControl.h"
 #include "Material.h"
+#include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
+#include "SceneImporter.h"
+#include "SceneManager.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
+#include "VkExtFuncsLoader.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
-#include "SceneImporter.h"
-#include "RenderPassManager.h"
-#include "SceneManager.h"
-#include "EventSystem.h"
 
-#if defined (USE_SDL)
+#if defined(USE_SDL)
 #include "WindowSDL.h"
 #else
 #include "WindowGLFW.h"
 #endif
-
 
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
@@ -47,10 +45,10 @@
 using namespace Muyo;
 
 bool g_bWaylandExt = false;
-const int WIDTH = 1920;
-const int HEIGHT = 1080;
+const int WIDTH    = 1920;
+const int HEIGHT   = 1080;
 
-/// 
+///
 // Arcball callbacks
 static void clickArcballCallback(int button, int action)
 {
@@ -86,17 +84,13 @@ static void rotateArcballCallback(double xpos, double ypos)
 
 static void InitEventHandlers()
 {
-    auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION,
-                                                 GlobalMotionEvent>();
-    pMove->Watch([](uint32_t timestamp, float sx, float sy) {
-        rotateArcballCallback(sx, sy);
-    });
+    auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION, GlobalMotionEvent>();
+    pMove->Watch([](uint32_t timestamp, float sx, float sy)
+                 { rotateArcballCallback(sx, sy); });
 
-    auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON,
-                                                GlobalButtonEvent>();
-    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state) {
-        clickArcballCallback(btn, state);
-    });
+    auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON, GlobalButtonEvent>();
+    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state)
+                { clickArcballCallback(btn, state); });
 
     auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
 
@@ -108,8 +102,7 @@ static void InitEventHandlers()
         pArcball->AddZoom(yoffset * -0.1f);
     } });
 
-    auto pResize = EventSystem::sys()->globalEvent<EventType::WINDOWRESIZE,
-                                                   GlobalResizeEvent>();
+    auto pResize = EventSystem::sys()->globalEvent<EventType::WINDOWRESIZE, GlobalResizeEvent>();
 }
 
 ///////////////////////////////////////////
@@ -120,15 +113,15 @@ std::vector<const char *> GetRequiredInstanceExtensions()
     uint32_t countExtensions = 0;
 
     countExtensions = Window::GetVulkanInstanceExtensions(vExtensions);
-    if (countExtensions == 0 || vExtensions.size() == 0) 
-        throw std::runtime_error("Failed to query instance extensions");    
-    //const char *waylandExt = "VK_KHR_wayland_surface";
-    //query if we have wayland surface, nvidia GPU will not work with it
-    //bool waylandSurface = std::find_if(std::begin(vExtensions),
-    //                              std::end(vExtensions),
-    //                              [waylandExt](const char *ext) {
-    //                                  return std::strcmp(ext, waylandExt) == 0;
-    //                              }) != std::end(vExtensions);
+    if (countExtensions == 0 || vExtensions.size() == 0)
+        throw std::runtime_error("Failed to query instance extensions");
+    // const char *waylandExt = "VK_KHR_wayland_surface";
+    // query if we have wayland surface, nvidia GPU will not work with it
+    // bool waylandSurface = std::find_if(std::begin(vExtensions),
+    //                               std::end(vExtensions),
+    //                               [waylandExt](const char *ext) {
+    //                                   return std::strcmp(ext, waylandExt) == 0;
+    //                               }) != std::end(vExtensions);
 
     // This exteinsion is required by logical device's multiview extension
     vExtensions.push_back("VK_KHR_get_physical_device_properties2");
@@ -139,8 +132,8 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 {
     std::vector<const char *> vDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        //VK_KHR_MULTIVIEW_EXTENSION_NAME,
-        //VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+    // VK_KHR_MULTIVIEW_EXTENSION_NAME,
+    // VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 
 #ifdef FEATURE_RAY_TRACING
         // Ray tracing extensions
@@ -167,17 +160,16 @@ void cleanup()
     Window::Uninitialize();
 }
 
-void updateUniformBuffer(UniformBuffer<PerViewData> *ub)
-{
-    //s_arcball.UpdatePerViewDataUBO(ub);
+void updateUniformBuffer(UniformBuffer<PerViewData> *ub){
+    // s_arcball.UpdatePerViewDataUBO(ub);
 };
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     // Load mesh into memory
     if (!Window::Initialize("hello Vulkan", WIDTH, HEIGHT))
         return -1;
-    
+
     // Create Instace
     std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
     GetRenderDevice()->Initialize(vInstanceExtensions);
@@ -188,22 +180,22 @@ int main(int argc, char** argv)
 
     // Create device
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {};
-    bufferDeviceAddressFeatrues.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT;
+    bufferDeviceAddressFeatrues.sType                                       = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_ADDRESS_FEATURES_EXT;
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature = {};
-    rayTracingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature   = {};
+    rayTracingFeature.sType                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
-    accStructFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-    std::vector<void*> features;
-    //features.push_back(&bufferDeviceAddressFeatrues);
+    accStructFeature.sType                                            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    std::vector<void *> features;
+    // features.push_back(&bufferDeviceAddressFeatrues);
     if (GetRenderDevice()->IsRayTracingSupported())
     {
         features.push_back(&rayTracingFeature);
         features.push_back(&accStructFeature);
     }
 
-    GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
-                                    std::vector<const char *>(),    // Layers
+    GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),    // Extensions
+                                    std::vector<const char *>(),      // Layers
                                     surface, features);
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
@@ -215,7 +207,6 @@ int main(int argc, char** argv)
     GetDescriptorManager()->createDescriptorSetLayouts();
 
     GetSamplerManager()->createSamplers();
-
 
     InitEventHandlers();
 
@@ -236,39 +227,36 @@ int main(int argc, char** argv)
         if (!bFileFromArg)
         {
             // Load scene
-            //GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_emissive/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spotlight/scene.gltf");
-            GetSceneManager()->LoadSceneFromFile("assets/balls/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/Cars/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/Emissive/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_Emissive/untitled.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/Cornell_box/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_spot/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/sofa_combination/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/catherdral/scene.gltf");
-            //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
-            //GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/Documents/cars/New Folder/cars.gltf");
-            //GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
+            GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spot/untitled.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spotlight/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/balls/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/Cars/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/Emissive/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_Emissive/untitled.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/Cornell_box/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_spot/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/sofa_combination/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/catherdral/scene.gltf");
+            // GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
+            // GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/Documents/cars/New Folder/cars.gltf");
+            // GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
         }
 
         // Finalize material buffer
         GetMaterialManager()->CreateDefaultMaterial();
         GetMaterialManager()->UploadMaterialBuffer();
 
-		GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
+        GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
-		UniformBuffer<PerViewData>* pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
+        UniformBuffer<PerViewData> *pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
 
         // Load materials
-
-  
-        
 
         // Test ray tracing
 #ifdef FEATURE_RAY_TRACING
@@ -277,20 +265,20 @@ int main(int argc, char** argv)
         RTSceneManager.BuildScene(dl.m_aDrawLists[DrawLists::DL_OPAQUE]);
         GetRenderPassManager()->SetRayTracingSceneManager(&RTSceneManager);
         // Allocate ray tracing descriptor layout based on number of textures in scene.
-        //GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureResourceManager()->GetTextures().size());
+        // GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureResourceManager()->GetTextures().size());
 
-        //RTBuilder rayTracingBuilder;
-        //if (GetRenderDevice()->IsRayTracingSupported())
+        // RTBuilder rayTracingBuilder;
+        // if (GetRenderDevice()->IsRayTracingSupported())
         //{
-        //    // Test ray tracing
-        //    RTInputs rtInputs;
-        //    rtInputs = ConstructRTInputsFromDrawLists(dl);
-        //    rayTracingBuilder.BuildBLAS(
-        //        rtInputs.BLASs,
-        //        VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
-        //    rayTracingBuilder.BuildTLAS(
-        //        rtInputs.vInstances,
-        //        VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+        //     // Test ray tracing
+        //     RTInputs rtInputs;
+        //     rtInputs = ConstructRTInputsFromDrawLists(dl);
+        //     rayTracingBuilder.BuildBLAS(
+        //         rtInputs.BLASs,
+        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+        //     rayTracingBuilder.BuildTLAS(
+        //         rtInputs.vInstances,
+        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
         //    // Allocate primitive description buffer
         //    StorageBuffer<PrimitiveDescription>* primDescBuffer = GetRenderResourceManager()->GetStorageBuffer("primitive descs", rtInputs.vPrimitiveDescriptions);
@@ -308,16 +296,15 @@ int main(int argc, char** argv)
 
         // Record static command buffer
         GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-       // Mainloop
+        // Mainloop
         while (!Window::ShouldQuit())
         {
             Window::ProcessEvents();
-            //updateUniformBuffer(pUniformBuffer);
+            // updateUniformBuffer(pUniformBuffer);
 
             GetRenderPassManager()->BeginFrame();
 
-            
-            //uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
+            // uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
             GetRenderPassManager()->RecordDynamicCmdBuffers();
 
             GetRenderPassManager()->SubmitCommandBuffers();
@@ -331,14 +318,14 @@ int main(int argc, char** argv)
                 VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
                 int width, height;
                 std::tie(width, height) = Window::GetWindowSize();
-                VkExtent2D currentVp = GetRenderPassManager()->GetViewportSize();
+                VkExtent2D currentVp    = GetRenderPassManager()->GetViewportSize();
                 if (width != (int)currentVp.width || height != (int)currentVp.height)
                 {
-                    //VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
+                    // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
                     GetRenderPassManager()->OnResize(width, height);
                     GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-                    //GetRenderDevice()->SetViewportSize(vp);
-                    //GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
+                    // GetRenderDevice()->SetViewportSize(vp);
+                    // GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
                 }
             }
         }
