@@ -124,7 +124,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     SetSwapchainImageViews(m_pSwapchain->GetImageViews(), pDepthResource->getView());
 
     // Create semaphores
-    //
+
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_depthReady));

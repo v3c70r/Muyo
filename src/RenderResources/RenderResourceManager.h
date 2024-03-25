@@ -6,6 +6,7 @@
 #include "DrawCommandBuffer.h"
 #include "RenderTargetResource.h"
 #include "StorageImageResource.h"
+#include "SwapchainImageResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
@@ -222,6 +223,18 @@ public:
         }
 
         return static_cast<StorageImageResource*>(m_mResources[sName].get());
+    }
+
+    SwapchainImageResource* GetSwapchainImageResource(const std::string& sName, VkImage swapchainImage, VkExtent2D extent, VkFormat format)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] =
+              std::make_unique<SwapchainImageResource>(swapchainImage, format, extent);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+
+        return static_cast<SwapchainImageResource*>(m_mResources[sName].get());
     }
 
     ShaderBindingTableBuffer* GetShaderBindingTableBuffer(

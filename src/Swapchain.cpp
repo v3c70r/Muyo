@@ -3,6 +3,7 @@
 #include <cassert>
 #include <limits>
 
+#include "RenderResourceManager.h"
 #include "VkRenderDevice.h"
 
 namespace Muyo
@@ -62,36 +63,18 @@ void Swapchain::CreateSwapchain(
     VK_ASSERT(vkCreateSwapchainKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &m_swapchain));
 
     // Get swap chain images;
+    std::vector<VkImage> swapchainImages;
     vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, nullptr);
-    m_swapchainImages.resize(numBuffers);
-    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, m_swapchainImages.data());
-
+    swapchainImages.resize(numBuffers);
+    assert(swapchainImages.size() <= m_swapchainImageNames.size());
+    vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, swapchainImages.data());
+    m_swapchainImageResources.resize(swapchainImages.size());
+    m_swapchainImageViews.resize(swapchainImages.size());
     // Create swapchain image views
-    m_swapchainImageViews.resize(numBuffers);
-    for (size_t i = 0; i < m_swapchainImageViews.size(); i++)
+    for (size_t i = 0; i < swapchainImages.size(); i++)
     {
-        VkImageViewCreateInfo createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        createInfo.image = m_swapchainImages[i];
-        createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        createInfo.format = m_swapchainFormat.format;
-
-        // Swizzles
-
-        createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-        createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-        // subresource
-        createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        createInfo.subresourceRange.baseMipLevel = 0;
-        createInfo.subresourceRange.levelCount = 1;
-        createInfo.subresourceRange.baseArrayLayer = 0;
-        createInfo.subresourceRange.layerCount = 1;
-
-        assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &createInfo, nullptr,
-                                 &m_swapchainImageViews[i]) == VK_SUCCESS);
+        m_swapchainImageResources[i] = GetRenderResourceManager()->GetSwapchainImageResource(m_swapchainImageNames[i], swapchainImages[i], createInfo.imageExtent, m_swapchainFormat.format);
+        m_swapchainImageViews[i]     = m_swapchainImageResources[i]->getView();
     }
 }
 
@@ -100,15 +83,12 @@ void Swapchain::DestroySwapchain()
     // Wait for all swapchain images are consumed ?? Is it safe?
     vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
 
-    // Destroy imageviews
-    for (auto& imageView : m_swapchainImageViews)
+    for (size_t i = 0; i < m_swapchainImageResources.size(); i++)
     {
-        vkDestroyImageView(GetRenderDevice()->GetDevice(), imageView, nullptr);
+        GetRenderResourceManager()->RemoveResource(m_swapchainImageNames[i]);
     }
-    m_swapchainImageViews.clear();
-    // Clear swapchian, I assume the swapchian images are destroyed with it
+    m_swapchainImageResources.clear();
     vkDestroySwapchainKHR(GetRenderDevice()->GetDevice(), m_swapchain, nullptr);
-    m_swapchainImages.clear();
 }
 
 uint32_t Swapchain::GetNextImage(VkSemaphore& semaphore)
