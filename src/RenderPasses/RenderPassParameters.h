@@ -49,7 +49,7 @@ public:
 
     VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, uint32_t nDescSetIdx = 0);
     VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx = 0);  // Allocate descriptor set with resources
-    void AllocateDescriptorSet(std::vector<VkDescriptorSet>& vkDescSets);
+    std::vector<VkDescriptorSet> AllocateDescriptorSets();
     const VkDescriptorSetLayout& GetDescriptorSetLayout(uint32_t nDescSetIdx = 0) const;
 
     // Create all the resources needed for the render pass
@@ -60,11 +60,11 @@ public:
     // Get render area
     VkExtent2D GetRenderArea() const { return m_renderArea; }
 
-    VkPipelineLayout GetPipelineLayout() { return m_pipelineLayout; }
-    VkRenderPass GetRenderPass() { return m_renderPass; }
-    VkFramebuffer GetFramebuffer() { return m_framebuffer; }
+    VkPipelineLayout GetPipelineLayout() const { return m_pipelineLayout; }
+    VkRenderPass GetRenderPass() const { return m_renderPass; }
+    VkFramebuffer GetFramebuffer() const { return m_framebuffer; }
 
-private:
+  private:
     void AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx);
     void AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE, uint32_t nDescSetIdx = 0);
     void AddImageDescriptorWrite(const std::vector<const ImageResource*> vpResources, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx);  // Use a single sampler for all image resources for now

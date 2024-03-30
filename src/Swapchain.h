@@ -22,12 +22,13 @@ public:
     void DestroySwapchain();
     VkExtent2D GetSwapchainExtent() const { return m_swapchainExtent; }
     VkSurfaceKHR GetSurface() const { return m_surface; }
-    const std::vector<VkImageView>& GetImageViews() const { return m_swapchainImageViews; }
     VkFormat GetImageFormat() const { return m_swapchainFormat.format; }
     uint32_t GetNextImage(VkSemaphore& semaphore);
     VkSwapchainKHR& GetSwapChain() { return m_swapchain; }
 
-private:
+    std::vector<std::string> GetSwapchainResourceNames() const { return std::vector<std::string>(m_swapchainResourceNames.begin(), m_swapchainResourceNames.begin() + m_swapchainImageViews.size()); }
+
+  private:
     struct SwapchainSupportDetails
     {
         VkSurfaceCapabilitiesKHR capabilities;
@@ -43,7 +44,7 @@ private:
     VkSurfaceFormatKHR m_swapchainFormat = {};
 
     std::vector<SwapchainImageResource*> m_swapchainImageResources;
-    const std::array<std::string, 4> m_swapchainImageNames = {
+    const std::array<std::string, 4> m_swapchainResourceNames = {
         "swapchainImage0_",
         "swapchainImage1_"
         "swapchainImage2_"

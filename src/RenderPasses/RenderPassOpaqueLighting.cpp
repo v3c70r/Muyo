@@ -8,6 +8,7 @@
 #include "PipelineStateBuilder.h"
 #include "RenderPassGBuffer.h"
 #include "RenderResourceManager.h"
+#include "RenderResourceNames.h"
 #include "SamplerManager.h"
 #include "SharedStructures.h"
 
@@ -19,7 +20,7 @@ void RenderPassOpaqueLighting::PrepareRenderPass()
     m_renderPassParameters.SetRenderArea(m_renderArea);
 
     // opaque lighting output
-    const RenderTarget* pRenderTarget = GetRenderResourceManager()->GetRenderTarget("opaqueLightingOutput", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    const RenderTarget* pRenderTarget = GetRenderResourceManager()->GetRenderTarget(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME, m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
     m_renderPassParameters.AddAttachment(pRenderTarget, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true);
 
     // Set 0: Camera UBO
@@ -136,14 +137,6 @@ void RenderPassOpaqueLighting::RecordCommandBuffers()
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
         SCOPED_MARKER(m_commandBuffer, "Opaque lighting");
-
-        // Transit gbuffer attachments
-        //for (int i = 0; i < RenderPassGBuffer::COLOR_ATTACHMENT_COUNT; i++)
-        //{
-        //    const RenderPassGBuffer::GBufferAttachment& attachment = RenderPassGBuffer::attachments[i];
-        //    // TODO: Finish barrier refactoring to cover attachments to read optimal transition
-        //    ImageResourceBarrier(GetRenderResourceManager()->GetResource<ImageResource>(attachment.sName)->getImage(), VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, 1, 1).AddToCommandBuffer(m_commandBuffer);
-        //}
 
         RenderPassBeginInfoBuilder builder;
 

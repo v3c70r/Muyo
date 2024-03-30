@@ -142,7 +142,6 @@ void RenderPassGBuffer::RecordCommandBuffers(const std::vector<const SceneNode*>
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
         SCOPED_MARKER(m_commandBuffer, "GBuffer pass");
-        RenderPassBeginInfoBuilder builder;
         std::vector<VkClearValue> clearValues;
         clearValues.resize(ATTACHMENT_COUNT);
         for (int i = 0; i < ATTACHMENT_COUNT; i++)
@@ -150,6 +149,7 @@ void RenderPassGBuffer::RecordCommandBuffers(const std::vector<const SceneNode*>
             clearValues[i] = attachments[i].clearValue;
         }
        
+        RenderPassBeginInfoBuilder builder;
         VkRenderPassBeginInfo renderPassBeginInfo =
             builder.setRenderPass(m_renderPassParameters.GetRenderPass())
                 .setFramebuffer(m_renderPassParameters.GetFramebuffer())

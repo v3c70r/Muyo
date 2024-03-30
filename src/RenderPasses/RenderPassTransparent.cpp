@@ -6,6 +6,7 @@
 #include "PerObjResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
+#include "RenderResourceNames.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
 
@@ -21,7 +22,7 @@ void RenderPassTransparent::PrepareRenderPass()
     m_renderPassParameters.SetRenderArea(m_renderArea);
 
     // Attachments
-    auto* colorAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("opaqueLightingOutput");
+    auto* colorAttachment = GetRenderResourceManager()->GetResource<RenderTarget>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME);
     m_renderPassParameters.AddAttachment(colorAttachment, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
 
     auto* depthAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("GBufferDepth_");
@@ -169,8 +170,7 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const SceneNo
         // Upload draw commands
         const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer = GetRenderResourceManager()->GetDrawCommandBuffer("transparent draw commands", drawCommands);
 
-        std::vector<VkDescriptorSet> vDescSets;
-        m_renderPassParameters.AllocateDescriptorSet(vDescSets);
+        std::vector<VkDescriptorSet> vDescSets = m_renderPassParameters.AllocateDescriptorSets();
         vkCmdBindDescriptorSets(
             m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_renderPassParameters.GetPipelineLayout(), 0,

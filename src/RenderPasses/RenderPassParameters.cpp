@@ -189,14 +189,15 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     return descriptorSet;
 }
 
-
-void RenderPassParameters::AllocateDescriptorSet(std::vector<VkDescriptorSet>& vkDescSets)
+std::vector<VkDescriptorSet> RenderPassParameters::AllocateDescriptorSets()
 {
+    std::vector<VkDescriptorSet> vkDescSets;
     vkDescSets.resize(m_vDescSetLayouts.size());
     for (size_t i = 0; i < m_vDescSetLayouts.size(); ++i)
     {
         vkDescSets[i] = AllocateDescriptorSet("DescriptorSet" + std::to_string(i), i);
     }
+    return vkDescSets;
 }
 
 bool RenderPassParameters::UpdateDescriptorSet(const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx, VkDescriptorSet descriptorSet)

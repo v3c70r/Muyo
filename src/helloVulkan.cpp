@@ -324,8 +324,6 @@ int main(int argc, char **argv)
                     // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
                     GetRenderPassManager()->OnResize(width, height);
                     GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-                    // GetRenderDevice()->SetViewportSize(vp);
-                    // GetRenderPassManager()->SetSwapchainImageViews(pSwapchian->GetImageViews(), pDepthResource->getView());
                 }
             }
         }

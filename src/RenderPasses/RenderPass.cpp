@@ -6,210 +6,118 @@
 #include "MeshResourceManager.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
+#include "RenderResourceNames.h"
 #include "ResourceBarrier.h"
+#include "SamplerManager.h"
 #include "VkRenderDevice.h"
 
 namespace Muyo
 {
 
-RenderPassFinal::RenderPassFinal(VkFormat swapChainFormat,
-                                 bool bClearAttachments)
+RenderPassFinal::RenderPassFinal(const Swapchain& swapchain, bool bClearAttachments)
 {
-    // Attachments
-    //
-    // Color Attachements
-    VkAttachmentDescription colorAttachment = {};
-    colorAttachment.format = swapChainFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-
-    colorAttachment.loadOp = bClearAttachments
-                                 ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                 : VK_ATTACHMENT_LOAD_OP_LOAD;
-    colorAttachment.storeOp =
-        VK_ATTACHMENT_STORE_OP_STORE;  // Store in the memory to read back
-                                       // later
-    colorAttachment.stencilLoadOp = bClearAttachments
-                                        ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                        : VK_ATTACHMENT_LOAD_OP_LOAD;
-
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-    colorAttachment.initialLayout = bClearAttachments
-                                        ? VK_IMAGE_LAYOUT_UNDEFINED
-                                        : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-    // Depth attachments
-    VkAttachmentDescription depthAttachment = {};
-    depthAttachment.format = VK_FORMAT_D32_SFLOAT;
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = bClearAttachments ? VK_ATTACHMENT_LOAD_OP_CLEAR
-                                               : VK_ATTACHMENT_LOAD_OP_LOAD;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = bClearAttachments
-                                        ? VK_IMAGE_LAYOUT_UNDEFINED
-                                        : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthAttachment.finalLayout =
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // attachment reference
-    VkAttachmentReference colorAttachmentRef = {};
-    colorAttachmentRef.attachment =
-        0;  // indicates the attachemnt index in the attachments array
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkAttachmentReference depthAttachmentRef = {};
-    depthAttachmentRef.attachment = 1;
-    depthAttachmentRef.layout =
-        VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-    // Subpass
-    VkSubpassDescription subpass = {};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;  // the index is the
-                                                      // output from the
-                                                      // fragment shader
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-    // subpass deps
-    VkSubpassDependency subpassDep = {};
-    subpassDep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpassDep.dstSubpass = 0;
-    subpassDep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDep.srcAccessMask = 0;
-    subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    // Render pass
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment,
-                                                          depthAttachment};
-    VkRenderPassCreateInfo renderPassInfo = {};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments = attachments.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &subpassDep;
-
-    m_vRenderPasses.resize(1, VK_NULL_HANDLE);
-    VkRenderPass* pRenderPss = &(m_vRenderPasses.back());
-    assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo,
-                              nullptr, pRenderPss) == VK_SUCCESS);
-}
-
-RenderPassFinal::~RenderPassFinal()
-{
-    DestroyFramebuffers();
-    VkRenderPass& renderPass = (m_vRenderPasses.back());
-    vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderPass, nullptr);
-    m_vRenderPasses.clear();
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
-}
-
-void RenderPassFinal::SetSwapchainImageViews(
-    const std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
-    uint32_t nWidth, uint32_t nHeight)
-{
-    DestroyFramebuffers();
-    m_vFramebuffers.resize(vImageViews.size());
-    for (size_t i = 0; i < vImageViews.size(); i++)
+    m_renderArea                                          = swapchain.GetSwapchainExtent();
+    std::vector<std::string> vSwapchainImageResourceNames = swapchain.GetSwapchainResourceNames();
+    m_vRenderPassParameters.resize(vSwapchainImageResourceNames.size());
+    // For each back buffer, prepare a render pass parameter and a pipeline.
+    for (size_t i = 0; i < vSwapchainImageResourceNames.size(); i++)
     {
-        std::array<VkImageView, 2> attachmentViews = {vImageViews[i],
-                                                      depthImageView};
+        // Color attachments
+        m_vRenderPassParameters[i].SetRenderArea(m_renderArea);
+        m_vRenderPassParameters[i].AddAttachment(
+          GetRenderResourceManager()->GetResource<SwapchainImageResource>(vSwapchainImageResourceNames[i]),
+          bClearAttachments ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+          VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+          bClearAttachments);
 
-        VkFramebufferCreateInfo framebufferInfo = {};
-        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferInfo.renderPass = m_vRenderPasses.back();
-        framebufferInfo.attachmentCount =
-            static_cast<uint32_t>(attachmentViews.size());
-        framebufferInfo.pAttachments = attachmentViews.data();
-        framebufferInfo.width = nWidth;
-        framebufferInfo.height = nHeight;
-        framebufferInfo.layers = 1;
-        assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(),
-                                   &framebufferInfo, nullptr,
-                                   &m_vFramebuffers[i]) == VK_SUCCESS);
-    }
-    mRenderArea = {nWidth, nHeight};
-}
+        // Depth attachment
+        m_vRenderPassParameters[i].AddAttachment(
+          GetRenderResourceManager()->GetRenderTarget("GBufferDepth_", swapchain.GetSwapchainExtent(), VK_FORMAT_D32_SFLOAT),
+          VK_IMAGE_LAYOUT_UNDEFINED,
+          VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+          true);
 
-void RenderPassFinal::CreatePipeline()
-{
-    if (m_pipeline != VK_NULL_HANDLE)
-    {
-        vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-        vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_pipelineLayout, nullptr);
-    }
-    // Allocate pipeline layout
-    std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SINGLE_SAMPLER),
+        // Descriptor set 0
+        m_vRenderPassParameters[i].AddImageParameter(
+          GetRenderResourceManager()->GetRenderTarget(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME, swapchain.GetSwapchainExtent(), VK_FORMAT_R16G16B16A16_SFLOAT),
+          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          VK_SHADER_STAGE_FRAGMENT_BIT,
+          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+          GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+          0);
 #ifdef FEATURE_RAY_TRACING
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_PER_VIEW_DATA)
+        // Descriptor set 1
+        m_vRenderPassParameters[i].AddImageParameter(
+          GetRenderResourceManager()->GetResource<RenderTarget>("Ray Tracing Output"),
+          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          VK_SHADER_STAGE_FRAGMENT_BIT,
+          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+          GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+          1);
+
+        // Descriptor set 2
+        // Add perview
+        m_vRenderPassParameters[i].AddParameter(
+          GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView"),
+          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+          VK_SHADER_STAGE_FRAGMENT_BIT);
 #endif
-    };
 
-    std::vector<VkPushConstantRange> pushConstants;
-    m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout),
-                            VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Final pass");
+          m_vRenderPassParameters[i]
+            .Finalize("FinalPass");
 
-    // Allocate pipeline
-    VkShaderModule vertShdr =
-        CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
+        // Create pipelines
+        VkPipelineLayout pipelineLayout = m_vRenderPassParameters[i].GetPipelineLayout();
 #ifdef FEATURE_RAY_TRACING
-    VkShaderModule fragShdr =
-        CreateShaderModule(ReadSpv("shaders/triangle_rt.frag.spv"));
+        VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/triangle_rt.frag.spv"));
 #else
+        VkShaderModule vertexShader = CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
+#endif    // FEATURE_RAY_TRACING
+        VkShaderModule fragShader = CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
 
-    VkShaderModule fragShdr =
-        CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
-#endif
+        ViewportBuilder vpBuilder;
+        VkViewport viewport = vpBuilder.setWH(swapchain.GetSwapchainExtent()).Build();
+        VkRect2D scissorRect;
+        scissorRect.offset = { 0, 0 };
+        scissorRect.extent = swapchain.GetSwapchainExtent();
 
-    ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(mRenderArea).Build();
-    VkRect2D scissorRect;
-    scissorRect.offset = {0, 0};
-    scissorRect.extent = mRenderArea;
+        InputAssemblyStateCIBuilder iaBuilder;
+        RasterizationStateCIBuilder rsBuilder;
+        MultisampleStateCIBuilder msBuilder;
+        BlendStateCIBuilder blendBuilder;
+        blendBuilder.setAttachments(1, false);
+        DepthStencilCIBuilder depthStencilBuilder;
+        PipelineStateBuilder builder;
 
-    InputAssemblyStateCIBuilder iaBuilder;
-    RasterizationStateCIBuilder rsBuilder;
-    MultisampleStateCIBuilder msBuilder;
-    BlendStateCIBuilder blendBuilder;
-    blendBuilder.setAttachments(1);
-    DepthStencilCIBuilder depthStencilBuilder;
-    PipelineStateBuilder builder;
-    std::vector<VkDynamicState> vDynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-
-    m_pipeline =
-        builder.setShaderModules({vertShdr, fragShdr})
-            .setVertextInfo({Vertex::getBindingDescription()},
+        m_vPipelines.push_back(
+          builder.setShaderModules({ vertexShader, fragShader })
+            .setVertextInfo({ Vertex::getBindingDescription() },
                             Vertex::getAttributeDescriptions())
             .setAssembly(iaBuilder.Build())
             .setViewport(viewport, scissorRect)
             .setRasterizer(rsBuilder.Build())
             .setMSAA(msBuilder.Build())
             .setColorBlending(blendBuilder.Build())
-            .setPipelineLayout(m_pipelineLayout)
+            .setPipelineLayout(pipelineLayout)
             .setDepthStencil(depthStencilBuilder.Build())
-            .setRenderPass(m_vRenderPasses.back())
-            .setDynamicStates(vDynamicStates)
-            .Build(GetRenderDevice()->GetDevice());
+            .setRenderPass(m_vRenderPassParameters[i].GetRenderPass())
+            .Build(GetRenderDevice()->GetDevice()));
 
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertexShader, nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShader, nullptr);
 
-    // Set debug name for the pipeline
-    setDebugUtilsObjectName(
-        reinterpret_cast<uint64_t>(m_pipeline),
-        VK_OBJECT_TYPE_PIPELINE, "Final Pass");
+        // Set debug name for the pipeline
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_vPipelines.back()), VK_OBJECT_TYPE_PIPELINE, "Final pass " + std::to_string(i));
+    }
+}
+
+RenderPassFinal::~RenderPassFinal()
+{
+    for (auto& pipeline : m_vPipelines)
+    {
+        vkDestroyPipeline(GetRenderDevice()->GetDevice(), pipeline, nullptr);
+    }
 }
 
 void RenderPassFinal::RecordCommandBuffers()
@@ -233,13 +141,14 @@ void RenderPassFinal::RecordCommandBuffers()
     std::vector<VkDescriptorSet> descSets = {
         GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(colorOutputResource->getView())};
 #endif
+
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
 
-    for (size_t i = 0; i < m_vFramebuffers.size(); i++)
+    for (size_t i = 0; i < m_vRenderPassParameters.size(); i++)
     {
         VkCommandBuffer curCmdBuf = VK_NULL_HANDLE;
         if (m_vCommandBuffers.size() <= i)
@@ -254,83 +163,47 @@ void RenderPassFinal::RecordCommandBuffers()
         }
 
         vkBeginCommandBuffer(curCmdBuf, &beginInfo);
-
-        // barrier to transit opaque lighting image
-        ImageResourceBarrier colroOutputBarrier(colorOutputResource->getImage(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-        colroOutputBarrier.AddToCommandBuffer(curCmdBuf);
-
-        // Set dynamic viewport and scissor
-        VkViewport viewport = {0.0, 0.0, (float)mRenderArea.width, (float)mRenderArea.height, 0.0, 1.0};
-        vkCmdSetViewport(curCmdBuf, 0, 1, &viewport);
-        VkRect2D scissor = {{0, 0}, {mRenderArea.width, mRenderArea.height}};
-        vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
-
-        VkRenderPassBeginInfo renderPassBeginInfo = {};
-        renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassBeginInfo.renderPass = m_vRenderPasses.back();
-        renderPassBeginInfo.framebuffer = m_vFramebuffers[i];
-
-        renderPassBeginInfo.renderArea.offset = {0, 0};
-        renderPassBeginInfo.renderArea.extent = mRenderArea;
-        std::array<VkClearValue, 2> clearValues = {};
-        clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        clearValues[1].depthStencil = {1.0f, 0};
-        renderPassBeginInfo.clearValueCount =
-            static_cast<uint32_t>(clearValues.size());
-        renderPassBeginInfo.pClearValues = clearValues.data();
-
-        vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
-                             VK_SUBPASS_CONTENTS_INLINE);
-
         {
-            const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
-            const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
-            VkDeviceSize offset = 0;
-            VkBuffer vertexBuffer = meshVertexResources.m_pVertexBuffer->buffer();
-            VkBuffer indexBuffer = meshVertexResources.m_pIndexBuffer->buffer();
-            uint32_t nIndexCount = quadMesh.m_nIndexCount;
-            uint32_t nIndexOffset = quadMesh.m_nIndexOffset;
+            SCOPED_MARKER(m_vCommandBuffers[i], "Final pass " + std::to_string(i));
 
-            vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
-            vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0,
-                                 VK_INDEX_TYPE_UINT32);
-            vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              m_pipeline);
-            vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    m_pipelineLayout, 0,
-                                    static_cast<uint32_t>(descSets.size()), descSets.data(), 0,
-                                    nullptr);
-            vkCmdDrawIndexed(curCmdBuf, nIndexCount, 1, nIndexOffset, 0, 0);
+            std::vector<VkClearValue> clearValues = {
+                { .color = { 0.0f, 0.0f, 0.0f, 0.0f } },
+                { .depthStencil = { 1.0f, 0 } }
+            };
+
+            RenderPassParameters& renderPassParameters = m_vRenderPassParameters[i];
+            RenderPassBeginInfoBuilder builder;
+            VkRenderPassBeginInfo renderPassBeginInfo = builder.setRenderPass(renderPassParameters.GetRenderPass())
+                                                          .setFramebuffer(renderPassParameters.GetFramebuffer())
+                                                          .setRenderArea(m_renderArea)
+                                                          .setClearValues(clearValues)
+                                                          .Build();
+
+            vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+            {
+                std::vector<VkDescriptorSet> vDescSets = renderPassParameters.AllocateDescriptorSets();
+
+                const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+                const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
+                VkDeviceSize offset                            = 0;
+                VkBuffer vertexBuffer                          = meshVertexResources.m_pVertexBuffer->buffer();
+                VkBuffer indexBuffer                           = meshVertexResources.m_pIndexBuffer->buffer();
+                uint32_t nIndexCount                           = quadMesh.m_nIndexCount;
+                uint32_t nIndexOffset                          = quadMesh.m_nIndexOffset;
+
+                vkCmdBindVertexBuffers(curCmdBuf, 0, 1, &vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(curCmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_vPipelines[i]);
+                vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, renderPassParameters.GetPipelineLayout(), 0, static_cast<uint32_t>(descSets.size()), descSets.data(), 0, nullptr);
+                vkCmdDrawIndexed(curCmdBuf, nIndexCount, 1, nIndexOffset, 0, 0);
+            }
+            vkCmdEndRenderPass(curCmdBuf);
         }
-
-        // vkCmdDraw(s_commandBuffers[i], 3, 1, 0, 0);
-
-        vkCmdEndRenderPass(curCmdBuf);
         vkEndCommandBuffer(curCmdBuf);
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(curCmdBuf),
-                                VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] Final");
+                                VK_OBJECT_TYPE_COMMAND_BUFFER, "Final");
     }
 }
-
-void RenderPassFinal::Resize(const std::vector<VkImageView>& vImageViews, VkImageView depthImageView,
-                             uint32_t uWidth, uint32_t uHeight)
-{
-    mRenderArea = {uWidth, uHeight};
-    SetSwapchainImageViews(vImageViews, depthImageView, uWidth, uHeight);
-}
-
-void RenderPassFinal::DestroyFramebuffers()
-{
-    for (auto& framebuffer : m_vFramebuffers)
-    {
-        if (framebuffer != VK_NULL_HANDLE)
-        {
-            vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), framebuffer,
-                                 nullptr);
-        }
-    }
-    m_vFramebuffers.clear();
-}
-
 }  // namespace Muyo

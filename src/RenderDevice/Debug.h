@@ -1,7 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-#include <cassert>
 #include <string>
 #include <vector>
 
@@ -23,7 +22,7 @@ const char* GetValidationExtensionName();
 const char* GetValidationLayerName();
 
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
-                                 const char* sName);
+                                 const std::string& sName);
 
 // Scoped markers
 void beginMarker(VkQueue queue, std::string&& name, uint64_t color);

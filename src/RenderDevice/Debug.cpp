@@ -150,13 +150,13 @@ void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
 // Debug Utils markers
 // // Call add callback by query the extension
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
-                                 const char* sName)
+                                 const std::string& sName)
 {
     // Set debug name for the pipeline
     VkDebugUtilsObjectNameInfoEXT info;
     info.pNext = nullptr;
     info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-    info.pObjectName = sName;
+    info.pObjectName = sName.c_str();
     info.objectType = objectType;
     info.objectHandle = objectHandle;
 

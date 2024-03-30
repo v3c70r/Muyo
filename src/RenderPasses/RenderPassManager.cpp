@@ -54,7 +54,6 @@ void RenderPassManager::BeginFrame()
     m_uImageIdx2Present = m_pSwapchain->GetNextImage(m_imageAvailable);
 
     static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->SetCurrentSwapchainImageIndex(m_uImageIdx2Present);
-    static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_UI].get())->SetCurrentSwapchainImageIndex(m_uImageIdx2Present);
 
     // Wait for previous command renders to current swaphchain image to finish
     vkWaitForFences(GetRenderDevice()->GetDevice(), 1, &m_aGPUExecutionFence[m_uImageIdx2Present], VK_TRUE, std::numeric_limits<uint64_t>::max());
@@ -92,10 +91,11 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
         m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING] = std::make_unique<RenderPassOpaqueLighting>(vp, *m_pShadowPassManager);
     }
     // Final pass
-    m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(m_pSwapchain->GetImageFormat());
+    m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(*m_pSwapchain, true);
     // UI Pass
-    m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(m_pSwapchain->GetImageFormat());
+    m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(vp);
     RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+    pUIPass->PrepareRenderPass();
     pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
     // Register debug ui pages
     pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
@@ -120,8 +120,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 #endif
 
     RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
-
-    SetSwapchainImageViews(m_pSwapchain->GetImageViews(), pDepthResource->getView());
 
     // Create semaphores
 
@@ -163,47 +161,36 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     pCameraDebugPage->SetCamera(GetCamera());
 }
 
-void RenderPassManager::SetSwapchainImageViews(const std::vector<VkImageView> &vImageViews, VkImageView depthImageView)
-{
-    assert(m_uWidth != 0 && m_uHeight != 0);
-    static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->SetSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
-    static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->CreatePipeline();
-
-    static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->SetSwapchainImageViews(vImageViews, depthImageView, m_uWidth, m_uHeight);
-    static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->CreateImGuiResources();
-    static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->CreatePipeline();
-}
-
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
 {
-    if (m_uWidth != uWidth || m_uHeight != uHeight)
-    {
-        m_uWidth = uWidth;
-        m_uHeight = uHeight;
+    // TODO(qgu): Implement resize function
+    //if (m_uWidth != uWidth || m_uHeight != uHeight)
+    //{
+    //    m_uWidth = uWidth;
+    //    m_uHeight = uHeight;
 
-        assert(m_uWidth != 0 && m_uHeight != 0);
+    //    assert(m_uWidth != 0 && m_uHeight != 0);
 
-        // recreate swapchain with the same surface
-        VkSurfaceKHR surface = m_pSwapchain->GetSurface();
-        m_pSwapchain->DestroySwapchain();
-        m_pSwapchain->CreateSwapchain(surface,
-                                      SWAPCHAIN_FORMAT,
-                                      PRESENT_MODE,
-                                      NUM_BUFFERS);
+    //    // recreate swapchain with the same surface
+    //    VkSurfaceKHR surface = m_pSwapchain->GetSurface();
+    //    m_pSwapchain->DestroySwapchain();
+    //    m_pSwapchain->CreateSwapchain(surface,
+    //                                  SWAPCHAIN_FORMAT,
+    //                                  PRESENT_MODE,
+    //                                  NUM_BUFFERS);
 
-        // Reallocate depth target
-        GetRenderResourceManager()->RemoveResource("depthTarget");
-        RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", {uWidth, uHeight});
+    //    // Reallocate depth target
+    //    GetRenderResourceManager()->RemoveResource("depthTarget");
+    //    RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", {uWidth, uHeight});
 
-        // Recreate dependent render passes
-        static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
-        static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
+    //    // Recreate dependent render passes
+    //    static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get())->Resize(m_pSwapchain->GetImageViews(), pDepthResource->getView(), m_uWidth, m_uHeight);
 
-        m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(VkExtent2D({m_uWidth, m_uHeight}));
+    //    m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(VkExtent2D({m_uWidth, m_uHeight}));
 
-        // Update arcball tracking
-        m_pCamera->Resize(glm::vec2((float)uWidth, (float)uHeight));
-    }
+    //    // Update arcball tracking
+    //    m_pCamera->Resize(glm::vec2((float)uWidth, (float)uHeight));
+    //}
 }
 
 void RenderPassManager::Unintialize()
@@ -262,7 +249,9 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     RenderPassSkybox *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
     pSkybox->PrepareRenderPass();
     pSkybox->RecordCommandBuffers();
+
     RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
+    pFinalPass->PrepareRenderPass();
     pFinalPass->RecordCommandBuffers();
 }
 
@@ -270,9 +259,9 @@ void RenderPassManager::RecordDynamicCmdBuffers()
 {
     VkExtent2D vpExtent = {m_uWidth, m_uHeight};
     RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
-    pUIPass->newFrame(vpExtent);
-    pUIPass->updateBuffers(m_uImageIdx2Present);
-    pUIPass->RecordCommandBuffer(vpExtent, m_uImageIdx2Present);
+    pUIPass->NewFrame(vpExtent);
+    pUIPass->UpdateBuffers();
+    pUIPass->RecordCommandBuffer();
 }
 
 void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
@@ -328,14 +317,17 @@ void RenderPassManager::SubmitCommandBuffers()
     vWaitForSemaphores.clear();
     vSignalSemaphores.clear();
     vWaitStages.clear();
-    // Submit passes to swapchain
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_FINAL]->GetCommandBuffer());
 
+    // Submit UI pass
     VkCommandBuffer uiCmdBuffer = m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer();
-    if (uiCmdBuffer != VK_NULL_HANDLE)  // it's possible there's no UI to draw
+    if (uiCmdBuffer != VK_NULL_HANDLE)    // it's possible there's no UI to draw
     {
         vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer());
     }
+    // Submit passes to swapchain
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_FINAL]->GetCommandBuffer());
+
+    
     vWaitForSemaphores.push_back(m_imageAvailable);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);

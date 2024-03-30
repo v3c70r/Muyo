@@ -66,14 +66,14 @@ void Swapchain::CreateSwapchain(
     std::vector<VkImage> swapchainImages;
     vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, nullptr);
     swapchainImages.resize(numBuffers);
-    assert(swapchainImages.size() <= m_swapchainImageNames.size());
+    assert(swapchainImages.size() <= m_swapchainResourceNames.size());
     vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &numBuffers, swapchainImages.data());
     m_swapchainImageResources.resize(swapchainImages.size());
     m_swapchainImageViews.resize(swapchainImages.size());
     // Create swapchain image views
     for (size_t i = 0; i < swapchainImages.size(); i++)
     {
-        m_swapchainImageResources[i] = GetRenderResourceManager()->GetSwapchainImageResource(m_swapchainImageNames[i], swapchainImages[i], createInfo.imageExtent, m_swapchainFormat.format);
+        m_swapchainImageResources[i] = GetRenderResourceManager()->GetSwapchainImageResource(m_swapchainResourceNames[i], swapchainImages[i], createInfo.imageExtent, m_swapchainFormat.format);
         m_swapchainImageViews[i]     = m_swapchainImageResources[i]->getView();
     }
 }
@@ -85,7 +85,7 @@ void Swapchain::DestroySwapchain()
 
     for (size_t i = 0; i < m_swapchainImageResources.size(); i++)
     {
-        GetRenderResourceManager()->RemoveResource(m_swapchainImageNames[i]);
+        GetRenderResourceManager()->RemoveResource(m_swapchainResourceNames[i]);
     }
     m_swapchainImageResources.clear();
     vkDestroySwapchainKHR(GetRenderDevice()->GetDevice(), m_swapchain, nullptr);
