@@ -11,10 +11,6 @@ namespace Muyo
 {
 class RenderLayerIBL : public RenderPass
 {
-    struct IBLPassResource
-    {
-    };
-    // Generate convoluted irradiance map
 public:
     RenderLayerIBL();
     ~RenderLayerIBL();

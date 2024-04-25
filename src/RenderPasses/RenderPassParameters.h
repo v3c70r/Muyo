@@ -64,6 +64,9 @@ public:
     VkRenderPass GetRenderPass() const { return m_renderPass; }
     VkFramebuffer GetFramebuffer() const { return m_framebuffer; }
 
+    // Multiview mask
+    void SetMultiviewMask(uint32_t nMultiviewMask) { m_nMultiviewMask = nMultiviewMask; }
+
   private:
     void AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx);
     void AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE, uint32_t nDescSetIdx = 0);
@@ -112,6 +115,8 @@ private:
     VkAttachmentReference m_depthAttachmentReference = {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_UNDEFINED};
     std::vector<const ImageResource*> m_vAttachmentResources;
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
+    uint32_t m_nMultiviewMask = 0;
+
     VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
 
     VkExtent2D m_renderArea = {0, 0};

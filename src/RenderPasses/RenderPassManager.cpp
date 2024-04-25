@@ -1,10 +1,12 @@
 #include "RenderPassManager.h"
 
 #include <cassert>
+#include <memory>
 
 #include "DebugUI.h"
 #include "RenderLayerIBL.h"
 #include "RenderPass.h"
+#include "RenderPassCubeMapGeneration.h"
 #include "RenderPassGBuffer.h"
 #include "RenderPassOpaqueLighting.h"
 #include "RenderPassRSM.h"
@@ -108,6 +110,10 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
+
+    m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION] = std::make_unique<RenderPassCubeMapGeneration>(VkExtent2D({128, 128}));
+
+    // IBL pass separated
     // Transparent pass
     m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>(vp);
     // Skybox pass
@@ -213,6 +219,11 @@ void RenderPassManager::Unintialize()
 
 void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 {
+    {
+        RenderPassCubeMapGeneration* pCubeMapGenerationPass = static_cast<RenderPassCubeMapGeneration*>(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION].get());
+        pCubeMapGenerationPass->PrepareRenderPass();
+        pCubeMapGenerationPass->RecordCommandBuffers();
+    }
     // Prepare shadow pass
     {
         m_pShadowPassManager->SetLights(drawLists.m_aDrawLists[DrawLists::DL_LIGHT]);
@@ -285,6 +296,10 @@ void RenderPassManager::SubmitCommandBuffers()
         vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_IBL]->GetCommandBuffer());
         m_bIsIrradianceGenerated = true;
     }
+
+    // Debug cubemap generation
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION]->GetCommandBuffer());
+    
 
     // Shadow pass
     // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());

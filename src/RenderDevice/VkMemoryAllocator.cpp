@@ -18,6 +18,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     vmaCreateAllocator(&allocatorInfo, &m_allocator);
     
+#ifdef FEATURE_RAY_TRACING
     // Initialize SBT pool
     VkBufferCreateInfo bufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
     bufferCreateInfo.size = 4*1024*1024; // 4mb memory for SBT
@@ -38,6 +39,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     poolCreateInfo.minAllocationAlignment = raytracingProperties.shaderGroupBaseAlignment;
 
     VK_ASSERT(vmaCreatePool(m_allocator, &poolCreateInfo, &m_SBTPool));
+#endif
 }
 
 void VkMemoryAllocator::Unintialize()

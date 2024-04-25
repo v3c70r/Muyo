@@ -325,7 +325,7 @@ void RenderPassParameters::CreatePipelineLayout()
 
 void RenderPassParameters::CreateRenderPass()
 {
-    // Subpass
+        // Subpass
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = (uint32_t)m_vColorAttachmentReferences.size();
@@ -360,6 +360,16 @@ void RenderPassParameters::CreateRenderPass()
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
+
+    // Multiview structure
+    VkRenderPassMultiviewCreateInfo multiViewCI = {};
+    if (m_nMultiviewMask != 0)
+    {
+        multiViewCI.sType        = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+        multiViewCI.subpassCount = 1;
+        multiViewCI.pViewMasks   = &m_nMultiviewMask;
+        renderPassInfo.pNext = &multiViewCI;
+    }
 
     VK_ASSERT(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr, &m_renderPass));
 }
