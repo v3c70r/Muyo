@@ -78,8 +78,7 @@ public:
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts = &descLayout;
 
-        assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                        &descriptorSet) == VK_SUCCESS);
+        VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet) );
 
         // Bind uniform buffer to descriptor
         {

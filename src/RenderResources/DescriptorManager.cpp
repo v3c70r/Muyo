@@ -24,8 +24,8 @@ void DescriptorManager::createDescriptorPool()
     poolInfo.pPoolSizes = POOL_SIZES.data();
     poolInfo.maxSets =
         DESCRIPTOR_COUNT_EACH_TYPE * static_cast<uint32_t>(POOL_SIZES.size());
-    assert(vkCreateDescriptorPool(GetRenderDevice()->GetDevice(), &poolInfo,
-                                  nullptr, &m_descriptorPool) == VK_SUCCESS);
+    VK_ASSERT(vkCreateDescriptorPool(GetRenderDevice()->GetDevice(), &poolInfo,
+                                  nullptr, &m_descriptorPool) );
 }
 
 void DescriptorManager::destroyDescriptorPool()
@@ -55,9 +55,9 @@ void DescriptorManager::createDescriptorSetLayouts()
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
 
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -79,9 +79,9 @@ void DescriptorManager::createDescriptorSetLayouts()
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
 
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -106,9 +106,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -129,9 +129,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -153,9 +153,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -191,9 +191,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -224,9 +224,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -253,8 +253,8 @@ VkDescriptorSet DescriptorManager::AllocateMaterialDescriptorSet()
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts =
         &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_MATERIALS];
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Material");
@@ -332,8 +332,8 @@ VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
     allocInfo.pSetLayouts =
         &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SINGLE_SAMPLER];
 
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single Sampler");
@@ -376,8 +376,8 @@ VkDescriptorSet DescriptorManager::AllocateSingleStorageImageDescriptorSet(VkIma
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE];
 
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single storage image");
@@ -421,8 +421,8 @@ VkDescriptorSet DescriptorManager::AllocateIBLDescriptorSet()
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts =
         &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IBL];
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "IBL");
@@ -478,8 +478,8 @@ VkDescriptorSet DescriptorManager::AllocateLightDataDescriptorSet(uint32_t nNumL
     allocInfo.descriptorPool = m_descriptorPool;
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHT_DATA];
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Light Data");

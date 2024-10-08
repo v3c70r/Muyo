@@ -387,25 +387,19 @@ void VkRenderDevice::CreateCommandPools()
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[MAIN_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[MAIN_CMD_POOL]));
     }
     // transient pool
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[IMMEDIATE_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[IMMEDIATE_CMD_POOL]));
     }
     // Reusable pool
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[PER_FRAME_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[PER_FRAME_CMD_POOL]));
     }
 
     // Compute pool
@@ -413,9 +407,7 @@ void VkRenderDevice::CreateCommandPools()
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nComputeQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[COMPUTE_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[COMPUTE_CMD_POOL]));
     }
 }
 
@@ -515,8 +507,7 @@ VkSampler VkRenderDevice::CreateSampler()
     samplerInfo.maxLod = 0.0f;
 
     VkSampler sampler = VK_NULL_HANDLE;
-    assert(vkCreateSampler(m_device, &samplerInfo,
-                           nullptr, &sampler) == VK_SUCCESS);
+    VK_ASSERT(vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler));
     return sampler;
 }
 
@@ -596,9 +587,7 @@ VkPipelineLayout VkRenderDevice::CreatePipelineLayout(
         pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
     }
 
-    assert(vkCreatePipelineLayout(m_device,
-                                  &pipelineLayoutInfo, nullptr,
-                                  &pipelineLayout) == VK_SUCCESS);
+    VK_ASSERT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
     return pipelineLayout;
 }
 
