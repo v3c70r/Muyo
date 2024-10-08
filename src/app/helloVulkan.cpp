@@ -196,7 +196,7 @@ int main(int argc, char **argv)
 
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),    // Extensions
                                     std::vector<const char *>(),      // Layers
-                                    surface, features);
+                                    &surface, features);
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
 

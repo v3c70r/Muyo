@@ -92,9 +92,7 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;
 
-    assert(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo,
-                                     nullptr,
-                                     &res) == VK_SUCCESS);
+    VK_ASSERT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &res));
     return res;
 }
 // Helper function
@@ -173,8 +171,7 @@ VkShaderModule CreateShaderModule(const std::vector<char>& code)
     createInfo.codeSize = code.size();
     createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
     VkShaderModule shdrModule;
-    assert(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo,
-                                nullptr, &shdrModule) == VK_SUCCESS);
+    VK_ASSERT(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &shdrModule));
     return shdrModule;
 }
 

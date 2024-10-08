@@ -1,6 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(Muyo)
-
 # Compile time features
 option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
 option (FEATURE_SYNCHRONIZATION2 "Compile with ray tracing feature" off)
@@ -130,19 +129,41 @@ include_directories(
     "src"
     )
 
-file(GLOB main_SRC
+file(GLOB muyo_SRC
     "src/*.h"
     "src/*.cpp"
-    "src/*/*.h"
-    "src/*/*.cpp"
+    "src/Debug/*.h"
+    "src/Debug/*.cpp"
+    "src/RenderDevice/*.h"
+    "src/RenderDevice/*.cpp"
+    "src/RenderPasses/*.h"
+    "src/RenderPasses/*.cpp"
+    "src/RenderResources/*.h"
+    "src/RenderResources/*.cpp"
+    "src/Scene/*.h"
+    "src/Scene/*.cpp"
+    "src/tests/*.h"
+    "src/tests/*.cpp"
     )
 
+add_library(muyo STATIC ${muyo_SRC})
+target_link_libraries(muyo imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 
-add_executable( helloVulkan
-    ${main_SRC}
+file(GLOB main_SRC
+    "src/app/helloVulkan.cpp"
     )
 
-target_link_libraries(helloVulkan imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
+file(GLOB PSOCompiler_SRC
+    "src/app/PSOCompiler.cpp"
+    )
+
+add_executable(helloVulkan ${main_SRC})
+target_link_libraries(helloVulkan PUBLIC muyo)
+
+
+add_executable(PSOCompiler ${PSOCompiler_SRC})
+target_link_libraries(PSOCompiler PUBLIC muyo)
+
 
 # Build shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES

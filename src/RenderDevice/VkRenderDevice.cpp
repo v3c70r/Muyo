@@ -174,8 +174,8 @@ void VkRenderDevice::PickPhysicalDevice()
 void VkRenderDevice::CreateDevice(
     const std::vector<const char*>& vDeviceExtensions,
     const std::vector<const char*>& layers,
-    const VkSurfaceKHR& surface,
-    const std::vector<void*>& vpFeatures)  // surface for compatibility check
+    const VkSurfaceKHR* pSurface,  // surface for compatibility check
+    const std::vector<void*>& vpFeatures)
 {
     // Find supported queue
     uint32_t queueFamilyCount = 0;
@@ -183,39 +183,6 @@ void VkRenderDevice::CreateDevice(
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-    // Find the first queue families support all the queues
-    int nQueueFamilyIdx = 0;
-    for (const auto& queueFamily : queueFamilies)
-    {
-        // Check for graphics support
-        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-        {
-            m_queueFamilyIndices.nGraphicsQueueFamily = nQueueFamilyIdx;
-        }
-
-        // Check for presentation support ( they can be in the same queeu family)
-        VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, nQueueFamilyIdx, surface, &presentSupport);
-
-        if (queueFamily.queueCount > 0 && presentSupport)
-        {
-            m_queueFamilyIndices.nPresentQueneFamily = nQueueFamilyIdx;
-        }
-
-        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
-        {
-            m_queueFamilyIndices.nComputeQueueFamily = nQueueFamilyIdx;
-        }
-
-        if (m_queueFamilyIndices.isComplete())
-        {
-            break;
-        }
-
-        nQueueFamilyIdx++;
-    }
-
-    assert(m_queueFamilyIndices.isComplete());
 
     struct ExtensionHeader  // Helper struct to link extensions together
     {
@@ -265,32 +232,82 @@ void VkRenderDevice::CreateDevice(
     { return info1.queueFamilyIndex < info2.queueFamilyIndex; };
     std::set<VkDeviceQueueCreateInfo, decltype(cmp)> sQueueCreateInfos(cmp);
 
-    sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           // sType;
-        nullptr,                                              // pNext;
-        0,                                                    // flags;
-        (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,  // queueFamilyIndex;
-        1,                                                    // queueCount;
-        &fQueuePriority                                       // pQueuePriorities;
-    }));
+    // Find the first queue families support all the queues
+    int nQueueFamilyIdx = 0;
+    for (const auto& queueFamily : queueFamilies)
+    {
+        // Check for graphics support
+        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        {
+            m_queueFamilyIndices.nGraphicsQueueFamily = nQueueFamilyIdx;
+        }
 
-    sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,          // sType;
-        nullptr,                                             // pNext;
-        0,                                                   // flags;
-        (uint32_t)m_queueFamilyIndices.nPresentQueneFamily,  // queueFamilyIndex;
-        1,                                                   // queueCount;
-        &fQueuePriority                                      // pQueuePriorities;
-    }));
+        // Check for presentation support ( they can be in the same queeu family)
+        if (pSurface)
+        {
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, nQueueFamilyIdx, *pSurface, &presentSupport);
 
-    sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,          // sType;
-        nullptr,                                             // pNext;
-        0,                                                   // flags;
-        (uint32_t)m_queueFamilyIndices.nComputeQueueFamily,  // queueFamilyIndex;
-        1,                                                   // queueCount;
-        &fQueuePriority                                      // pQueuePriorities;
-    }));
+            if (queueFamily.queueCount > 0 && presentSupport)
+            {
+                m_queueFamilyIndices.nPresentQueneFamily = nQueueFamilyIdx;
+            }
+        }
+
+        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+        {
+            m_queueFamilyIndices.nComputeQueueFamily = nQueueFamilyIdx;
+        }
+
+        if (m_queueFamilyIndices.isComplete())
+        {
+            break;
+        }
+
+        nQueueFamilyIdx++;
+    }
+
+    // We should at least have one graphics queue
+    assert(m_queueFamilyIndices.nGraphicsQueueFamily >= 0);
+
+    if (m_queueFamilyIndices.nGraphicsQueueFamily >= 0)
+    {
+        sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
+          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,             // sType;
+          nullptr,                                                // pNext;
+          0,                                                      // flags;
+          (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,    // queueFamilyIndex;
+          1,                                                      // queueCount;
+          &fQueuePriority                                         // pQueuePriorities;
+        }));
+    }
+
+    if (m_queueFamilyIndices.nPresentQueneFamily >= 0)
+    {
+        sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
+          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,            // sType;
+          nullptr,                                               // pNext;
+          0,                                                     // flags;
+          (uint32_t)m_queueFamilyIndices.nPresentQueneFamily,    // queueFamilyIndex;
+          1,                                                     // queueCount;
+          &fQueuePriority                                        // pQueuePriorities;
+        }));
+    }
+
+    if (m_queueFamilyIndices.nComputeQueueFamily >= 0)
+    {
+        sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
+          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,            // sType;
+          nullptr,                                               // pNext;
+          0,                                                     // flags;
+          (uint32_t)m_queueFamilyIndices.nComputeQueueFamily,    // queueFamilyIndex;
+          1,                                                     // queueCount;
+          &fQueuePriority                                        // pQueuePriorities;
+        }));
+    }
+
+    // Make sure we have at least one queue
+    assert(sQueueCreateInfos.size() > 0);
 
     std::vector<VkDeviceQueueCreateInfo> vQueueCreateInfos(sQueueCreateInfos.begin(), sQueueCreateInfos.end());
 
@@ -312,38 +329,45 @@ void VkRenderDevice::CreateDevice(
     VK_ASSERT(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device));
 
     {
+        assert(m_queueFamilyIndices.nGraphicsQueueFamily != -1);
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.nGraphicsQueueFamily, 0, &m_graphicsQueue);
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics Queue");
 
-        vkGetDeviceQueue(m_device, m_queueFamilyIndices.nPresentQueneFamily, 0, &m_presentQueue);
-        if (m_presentQueue == m_graphicsQueue)
+        if (m_queueFamilyIndices.nPresentQueneFamily != -1)
         {
-            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present Queue");
-        }
-        else
-        {
-            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Present Queue");
-        }
-
-        vkGetDeviceQueue(m_device, m_queueFamilyIndices.nComputeQueueFamily, 0, &m_computeQueue);
-        if (m_computeQueue == m_graphicsQueue)
-        {
-            if (m_computeQueue == m_presentQueue)
+            vkGetDeviceQueue(m_device, m_queueFamilyIndices.nPresentQueneFamily, 0, &m_presentQueue);
+            if (m_presentQueue == m_graphicsQueue)
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present/Compute Queue");
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present Queue");
             }
             else
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Compute Queue");
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Present Queue");
             }
         }
-        else if (m_computeQueue == m_presentQueue)
+
+        if (m_queueFamilyIndices.nComputeQueueFamily != -1)
         {
-            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Prsent/Compute Queue");
-        }
-        else
-        {
-            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Compute Queue");
+            vkGetDeviceQueue(m_device, m_queueFamilyIndices.nComputeQueueFamily, 0, &m_computeQueue);
+            if (m_computeQueue == m_graphicsQueue)
+            {
+                if (m_computeQueue == m_presentQueue)
+                {
+                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present/Compute Queue");
+                }
+                else
+                {
+                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Compute Queue");
+                }
+            }
+            else if (m_computeQueue == m_presentQueue)
+            {
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Prsent/Compute Queue");
+            }
+            else
+            {
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Compute Queue");
+            }
         }
     }
 }
@@ -363,34 +387,27 @@ void VkRenderDevice::CreateCommandPools()
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[MAIN_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[MAIN_CMD_POOL]));
     }
     // transient pool
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[IMMEDIATE_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[IMMEDIATE_CMD_POOL]));
     }
     // Reusable pool
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nGraphicsQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[PER_FRAME_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[PER_FRAME_CMD_POOL]));
     }
 
     // Compute pool
+    if (m_queueFamilyIndices.nComputeQueueFamily >= 0)
     {
         commandPoolInfo.queueFamilyIndex = m_queueFamilyIndices.nComputeQueueFamily;
         commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        assert(vkCreateCommandPool(m_device,
-                                   &commandPoolInfo, nullptr,
-                                   &m_aCommandPools[COMPUTE_CMD_POOL]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateCommandPool(m_device, &commandPoolInfo, nullptr, &m_aCommandPools[COMPUTE_CMD_POOL]));
     }
 }
 
@@ -490,8 +507,7 @@ VkSampler VkRenderDevice::CreateSampler()
     samplerInfo.maxLod = 0.0f;
 
     VkSampler sampler = VK_NULL_HANDLE;
-    assert(vkCreateSampler(m_device, &samplerInfo,
-                           nullptr, &sampler) == VK_SUCCESS);
+    VK_ASSERT(vkCreateSampler(m_device, &samplerInfo, nullptr, &sampler));
     return sampler;
 }
 
@@ -571,9 +587,7 @@ VkPipelineLayout VkRenderDevice::CreatePipelineLayout(
         pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
     }
 
-    assert(vkCreatePipelineLayout(m_device,
-                                  &pipelineLayoutInfo, nullptr,
-                                  &pipelineLayout) == VK_SUCCESS);
+    VK_ASSERT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
     return pipelineLayout;
 }
 
@@ -600,12 +614,12 @@ void VkDebugRenderDevice::Unintialize()
     VkRenderDevice::Unintialize();
 }
 
-void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, const VkSurfaceKHR& surface, const std::vector<void*>& vpFeatures)
+void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, const VkSurfaceKHR* pSurface, const std::vector<void*>& vpFeatures)
 {
     std::vector<const char*> vDebugLayerNames = vLayerNames;
     vDebugLayerNames.push_back(GetValidationLayerName());
     VkRenderDevice::CreateDevice(
-        vExtensionNames, vDebugLayerNames, surface, vpFeatures);
+        vExtensionNames, vDebugLayerNames, pSurface, vpFeatures);
 }
 
 }  // namespace Muyo

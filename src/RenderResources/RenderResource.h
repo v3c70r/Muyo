@@ -53,8 +53,8 @@ protected:
         m_imageViewInfo.image = m_image;
         m_imageViewInfo.format = m_imageInfo.format;
 
-        assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &m_imageViewInfo,
-                                 nullptr, &m_view) == VK_SUCCESS);
+        VK_ASSERT(vkCreateImageView(GetRenderDevice()->GetDevice(), &m_imageViewInfo,
+                                 nullptr, &m_view) );
     }
 
     static void TransitionImageLayout(VkImage image,
