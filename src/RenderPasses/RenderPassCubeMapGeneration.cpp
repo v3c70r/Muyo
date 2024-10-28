@@ -27,7 +27,7 @@ void RenderPassCubeMapGeneration::PrepareRenderPass()
     m_renderPassParameters.AddParameter(GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView"), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // Set 1, Binding 0, env map
-    m_renderPassParameters.AddImageParameter(GetRenderResourceManager()->GetTexture("EnvMap", "assets/hdr/black.hdr"), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
+    m_renderPassParameters.AddImageParameter(GetRenderResourceManager()->GetTexture("env_map", "assets/hdr/Mans_Outside_2k.hdr"), VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
     
     // Multiview
     m_renderPassParameters.SetMultiviewMask(0b111111);
@@ -53,6 +53,7 @@ void RenderPassCubeMapGeneration::CreatePipeline()
 
     InputAssemblyStateCIBuilder iaBuilder;
     RasterizationStateCIBuilder rsBuilder;
+    rsBuilder.SetFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE);
     MultisampleStateCIBuilder msBuilder;
     BlendStateCIBuilder blendBuilder;
     blendBuilder.setAttachments(1, false);
