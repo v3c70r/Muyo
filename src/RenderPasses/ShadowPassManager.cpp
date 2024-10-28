@@ -26,10 +26,10 @@ void ShadowPassManager::PrepareRenderPasses()
                   { pShadowPass->PrepareRenderPass(); });
 }
 
-void ShadowPassManager::RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries)
+void ShadowPassManager::RecordCommandBuffers(const std::vector<const SceneNode*>& vpGeometryNodes)
 {
-    std::for_each(m_vpShadowPasses.begin(), m_vpShadowPasses.end(), [&vpGeometries](auto& pShadowPass)
-                  { pShadowPass->RecordCommandBuffers(vpGeometries); });
+    std::for_each(m_vpShadowPasses.begin(), m_vpShadowPasses.end(), [&vpGeometryNodes](auto& pShadowPass)
+                  { pShadowPass->RecordCommandBuffers(vpGeometryNodes); });
 }
 
 std::vector<VkCommandBuffer> ShadowPassManager::GetCommandBuffers() const
@@ -40,7 +40,7 @@ std::vector<VkCommandBuffer> ShadowPassManager::GetCommandBuffers() const
     return vCommandBuffers;
 }
 
-std::vector<RSMResources> ShadowPassManager::GetShadowMaps()
+std::vector<RSMResources> ShadowPassManager::GetShadowMaps() const
 {
     std::vector<RSMResources> vpShadowMaps;
 

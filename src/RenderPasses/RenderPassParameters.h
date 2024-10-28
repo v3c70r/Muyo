@@ -49,6 +49,7 @@ public:
 
     VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, uint32_t nDescSetIdx = 0);
     VkDescriptorSet AllocateDescriptorSet(const std::string& sDescSetName, const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx = 0);  // Allocate descriptor set with resources
+    std::vector<VkDescriptorSet> AllocateDescriptorSets();
     const VkDescriptorSetLayout& GetDescriptorSetLayout(uint32_t nDescSetIdx = 0) const;
 
     // Create all the resources needed for the render pass
@@ -59,11 +60,14 @@ public:
     // Get render area
     VkExtent2D GetRenderArea() const { return m_renderArea; }
 
-    VkPipelineLayout GetPipelineLayout() { return m_pipelineLayout; }
-    VkRenderPass GetRenderPass() { return m_renderPass; }
-    VkFramebuffer GetFramebuffer() { return m_framebuffer; }
+    VkPipelineLayout GetPipelineLayout() const { return m_pipelineLayout; }
+    VkRenderPass GetRenderPass() const { return m_renderPass; }
+    VkFramebuffer GetFramebuffer() const { return m_framebuffer; }
 
-private:
+    // Multiview mask
+    void SetMultiviewMask(uint32_t nMultiviewMask) { m_nMultiviewMask = nMultiviewMask; }
+
+  private:
     void AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx);
     void AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE, uint32_t nDescSetIdx = 0);
     void AddImageDescriptorWrite(const std::vector<const ImageResource*> vpResources, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx);  // Use a single sampler for all image resources for now
@@ -108,9 +112,11 @@ private:
     // Framebuffer related
     std::vector<VkAttachmentDescription> m_vAttachmentDescriptions;
     std::vector<VkAttachmentReference> m_vColorAttachmentReferences;
-    VkAttachmentReference m_depthAttachmentReference = {};
+    VkAttachmentReference m_depthAttachmentReference = {VK_ATTACHMENT_UNUSED, VK_IMAGE_LAYOUT_UNDEFINED};
     std::vector<const ImageResource*> m_vAttachmentResources;
     VkRenderPass m_renderPass = VK_NULL_HANDLE;
+    uint32_t m_nMultiviewMask = 0;
+
     VkFramebuffer m_framebuffer = VK_NULL_HANDLE;
 
     VkExtent2D m_renderArea = {0, 0};

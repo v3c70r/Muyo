@@ -82,9 +82,7 @@ void RenderLayerIBL::setupRenderPass()
             renderPassInfo.pNext = &multiViewCI;
         }
 
-        assert(vkCreateRenderPass(GetRenderDevice()->GetDevice(),
-                                  &renderPassInfo, nullptr,
-                                  &m_vRenderPasses[passIdx]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr, &m_vRenderPasses[passIdx]));
 
         setDebugUtilsObjectName(
             reinterpret_cast<uint64_t>(m_vRenderPasses[passIdx]),
@@ -122,9 +120,7 @@ void RenderLayerIBL::setupFramebuffer()
         frameBufferCreateInfo.height = m_aCubemapSizes[passIdx];
         frameBufferCreateInfo.layers = 1;
 
-        assert(vkCreateFramebuffer(GetRenderDevice()->GetDevice(),
-                                   &frameBufferCreateInfo, nullptr,
-                                   &m_aFramebuffers[passIdx]) == VK_SUCCESS);
+        VK_ASSERT(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &frameBufferCreateInfo, nullptr, &m_aFramebuffers[passIdx]));
         setDebugUtilsObjectName(
             reinterpret_cast<uint64_t>(m_aFramebuffers[passIdx]),
             VK_OBJECT_TYPE_FRAMEBUFFER, m_aRenderPassNames[passIdx].c_str());

@@ -189,6 +189,17 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     return descriptorSet;
 }
 
+std::vector<VkDescriptorSet> RenderPassParameters::AllocateDescriptorSets()
+{
+    std::vector<VkDescriptorSet> vkDescSets;
+    vkDescSets.resize(m_vDescSetLayouts.size());
+    for (size_t i = 0; i < m_vDescSetLayouts.size(); ++i)
+    {
+        vkDescSets[i] = AllocateDescriptorSet("DescriptorSet" + std::to_string(i), i);
+    }
+    return vkDescSets;
+}
+
 bool RenderPassParameters::UpdateDescriptorSet(const std::vector<const IRenderResource*>& vpResources, uint32_t nDescSetIdx, VkDescriptorSet descriptorSet)
 {
     std::vector<VkWriteDescriptorSet>& vWriteDescriptorSets = m_vWriteDescSet[nDescSetIdx];
@@ -284,8 +295,8 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImage
     if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
     {
         attachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        assert(m_depthAttachmentReference.attachment != VK_ATTACHMENT_UNUSED);
         m_depthAttachmentReference = attachmentRef;
+        assert(m_depthAttachmentReference.attachment != VK_ATTACHMENT_UNUSED);
     }
     else
     {
@@ -314,12 +325,17 @@ void RenderPassParameters::CreatePipelineLayout()
 
 void RenderPassParameters::CreateRenderPass()
 {
-    // Subpass
+        // Subpass
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = (uint32_t)m_vColorAttachmentReferences.size();
     subpass.pColorAttachments = m_vColorAttachmentReferences.data();
+
     subpass.pDepthStencilAttachment = &m_depthAttachmentReference;
+    if (m_depthAttachmentReference.attachment == VK_ATTACHMENT_UNUSED)
+    {
+        subpass.pDepthStencilAttachment = nullptr;
+    }
 
     // Subpass dependency
     VkSubpassDependency subpassDep = {};
@@ -344,6 +360,16 @@ void RenderPassParameters::CreateRenderPass()
     renderPassInfo.pSubpasses = &subpass;
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &subpassDep;
+
+    // Multiview structure
+    VkRenderPassMultiviewCreateInfo multiViewCI = {};
+    if (m_nMultiviewMask != 0)
+    {
+        multiViewCI.sType        = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
+        multiViewCI.subpassCount = 1;
+        multiViewCI.pViewMasks   = &m_nMultiviewMask;
+        renderPassInfo.pNext = &multiViewCI;
+    }
 
     VK_ASSERT(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr, &m_renderPass));
 }

@@ -26,8 +26,8 @@ struct UIVertex;
 struct ImGuiResource
 {
     // Vertex buffer and index buffer can be updated each frame
-    std::vector<VertexBuffer<ImDrawVert>*> vpVertexBuffers;
-    std::vector<IndexBuffer*> vpIndexBuffers;
+    VertexBuffer<ImDrawVert>* pVertexBuffers;
+    IndexBuffer* pIndexBuffers;
 
     VkSampler sampler;
     VkDeviceMemory fontMemory = VK_NULL_HANDLE;
@@ -38,27 +38,30 @@ struct ImGuiResource
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     int nTotalIndexCount = 0;
 
-    void createResources(uint32_t numSwapchainBuffers);
+    void CreateResources();
 };
 
-class RenderPassUI : public RenderPassFinal
+class RenderPassUI : public RenderPass
 {
 public:
-    RenderPassUI(VkFormat swapChainFormat);
-    void RecordCommandBuffer(VkExtent2D screenExtent, uint32_t nBufferIdx);
-    ~RenderPassUI() override;
+  explicit RenderPassUI(const VkExtent2D& renderArea);
+  ~RenderPassUI() override;
 
-    // ImGui Related functions
-    void newFrame(VkExtent2D screenExtent);
-    void updateBuffers(uint32_t nSwapchainBufferIndex);
-    void CreateImGuiResources();
-    template <class DebugPageType>
-    DebugPageType* RegisterDebugPage(const std::string& sName)
-    {
-        m_vpDebugPages.emplace_back(new DebugPageType(sName));
-        return static_cast<DebugPageType*>(m_vpDebugPages.back().get());
-    }
-    virtual void CreatePipeline() override;
+  void PrepareRenderPass() override;
+  void CreatePipeline() override;
+  void RecordCommandBuffer();
+  VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
+
+  // ImGui Related functions
+  void NewFrame(VkExtent2D screenExtent);
+  void UpdateBuffers();
+  void CreateImGuiResources();
+  template<class DebugPageType>
+  DebugPageType* RegisterDebugPage(const std::string& sName)
+  {
+      m_vpDebugPages.emplace_back(new DebugPageType(sName));
+      return static_cast<DebugPageType*>(m_vpDebugPages.back().get());
+  }
 
 private:
     struct PushConstBlock
@@ -68,5 +71,9 @@ private:
     };
     ImGuiResource m_uiResources;
     std::vector<std::unique_ptr<IDebugUIPage>> m_vpDebugPages;
+
+    VkExtent2D m_renderArea;
+    VkPipeline m_pipeline           = VK_NULL_HANDLE;
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
 };
 }  // namespace Muyo

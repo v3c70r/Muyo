@@ -53,6 +53,8 @@ struct Mesh
 
     uint32_t m_nIndexOffset;
     uint32_t m_nIndexCount;
+
+    uint32_t m_nMaterialIndex;
 };
 
 struct MeshletMesh

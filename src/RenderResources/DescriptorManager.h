@@ -8,7 +8,6 @@
 
 #include "Camera.h"
 #include "Material.h"
-#include "RenderPassGBuffer.h"
 #include "UniformBuffer.h"
 namespace Muyo
 {
@@ -17,13 +16,11 @@ struct LightData;
 
 enum DescriptorLayoutType
 {
-    DESCRIPTOR_LAYOUT_LIGHTING,        // TODO: Remove this
     DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,  // A single sampler descriptor set layout at binding 0
     DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
     DESCRIPTOR_LAYOUT_PER_VIEW_DATA,  // A layout contains mvp matrices at binding 0
     DESCRIPTOR_LAYOUT_PER_OBJ_DATA,   // Per object data layout
     DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
-    DESCRIPTOR_LAYOUT_GBUFFER,        // Layouts contains output of GBuffer
     DESCRIPTOR_LAYOUT_IBL,            // IBL descriptor sets
     DESCRIPTOR_LAYOUT_LIGHT_DATA,     // Light data layout
     DESCRIPTOR_LAYOUT_COUNT,
@@ -36,17 +33,6 @@ public:
     void destroyDescriptorPool();
     void createDescriptorSetLayouts();
     void destroyDescriptorSetLayouts();
-
-    VkDescriptorSet AllocateLightingDescriptorSet(
-        const UniformBuffer<PerViewData> &perViewData, VkImageView position,
-        VkImageView albedo, VkImageView normal, VkImageView uv);  // Deprecating
-
-    VkDescriptorSet AllocateGBufferDescriptorSet(
-        const RenderPassGBuffer::GBufferViews &gbufferViews);
-    VkDescriptorSet AllocateGBufferDescriptorSet();
-    static void updateGBufferDescriptorSet(
-        VkDescriptorSet descriptorSet,
-        const RenderPassGBuffer::GBufferViews &gbufferViews);
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);
@@ -92,8 +78,7 @@ public:
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts = &descLayout;
 
-        assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                        &descriptorSet) == VK_SUCCESS);
+        VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet) );
 
         // Bind uniform buffer to descriptor
         {

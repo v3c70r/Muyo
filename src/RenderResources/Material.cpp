@@ -8,39 +8,91 @@ namespace Muyo
 
 static MaterialManager s_materialManager;
 
+Material &MaterialManager::GetOrCreateMaterial(const std::string sMaterialName)
+{
+    if (HasMaterial(sMaterialName))
+    {
+        return m_vMaterials[m_mMaterialIndexMap[sMaterialName]];
+    }
+    else
+    {
+        uint32_t index = m_vMaterials.size();
+        assert(m_vMaterials.size() == m_vMaterials.size());
+
+        m_mMaterialIndexMap[sMaterialName] = index;
+
+        m_vMaterials.emplace_back(index);
+        m_vMaterialBufferCPU.push_back({});
+        return m_vMaterials.back();
+    }
+}
+
+bool MaterialManager::HasMaterial(const std::string sMaterialName)
+{
+    return m_mMaterialIndexMap.find(sMaterialName) != m_mMaterialIndexMap.end();
+}
+
 // Material Manager
 void MaterialManager::CreateDefaultMaterial()
 {
-    if (m_mMaterials.find(sDefaultName) == m_mMaterials.end())
+    if (!HasMaterial(sDefaultName))
     {
-        GetMaterialManager()->m_mMaterials[sDefaultName] = std::make_unique<Material>();
-        Material *pMaterial = GetMaterialManager()->m_mMaterials[sDefaultName].get();
+        Material &material = GetOrCreateMaterial(sDefaultName);
 
-        // Load PBR textures
-        pMaterial->LoadTexture(Material::TEX_ALBEDO, "assets/Materials/white5x5.png", "defaultAlbedo");
-        pMaterial->LoadTexture(Material::TEX_METALNESS, "assets/Materials/white5x5.png", "defaultMetalness");
-        pMaterial->LoadTexture(Material::TEX_NORMAL, "assets/Materials/white5x5.png", "defaultNormal");
-        pMaterial->LoadTexture(Material::TEX_ROUGHNESS, "assets/Materials/white5x5.png", "defaultRoughness");
-        pMaterial->LoadTexture(Material::TEX_AO, "assets/Materials/white5x5.png", "defaultOcclusion");
-        pMaterial->LoadTexture(Material::TEX_EMISSIVE, "assets/Materials/white5x5.png", "defaultOcclusion");
-
-        // Load PBR Factors
-        PBRFactors pbrFactors;
-        pMaterial->SetMaterialParameterFactors(pbrFactors, sDefaultName);
-
-        pMaterial->AllocateDescriptorSet();
+        PBRMaterial pbrMaterial;
+        material
+            .SetMaterialParameterFactors(pbrMaterial, sDefaultName)
+            .LoadTexture(Material::TEX_ALBEDO, "assets/Materials/white5x5.png", "defaultAlbedo")
+            .LoadTexture(Material::TEX_METALNESS, "assets/Materials/white5x5.png", "defaultMetalness")
+            .LoadTexture(Material::TEX_NORMAL, "assets/Materials/white5x5.png", "defaultNormal")
+            .LoadTexture(Material::TEX_ROUGHNESS, "assets/Materials/white5x5.png", "defaultRoughness")
+            .LoadTexture(Material::TEX_AO, "assets/Materials/white5x5.png", "defaultOcclusion")
+            .LoadTexture(Material::TEX_EMISSIVE, "assets/Materials/white5x5.png", "defaultOcclusion");
+        material.AllocateDescriptorSet();
     }
+    
 }
+
+void MaterialManager::UploadMaterialBuffer() const
+{
+    GetRenderResourceManager()->GetStorageBuffer(sMaterialBufferName, m_vMaterialBufferCPU);
+}
+
+const StorageBuffer<PBRMaterial>* MaterialManager::GetMaterialBuffer() const
+{
+    return GetRenderResourceManager()->GetResource<StorageBuffer<PBRMaterial>>(sMaterialBufferName);
+}
+
 MaterialManager *GetMaterialManager()
 {
     return &s_materialManager;
 }
 
-void Material::SetMaterialParameterFactors(const PBRFactors &factors, const std::string &sMaterialName)
+Material &Material::LoadTexture(TextureType type, const std::string &path, const std::string &name)
 {
-    auto *pUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PBRFactors>(sMaterialName);
+    m_materialParameters.m_apTextures[type] = GetTextureResourceManager()->CreateAndLoadOrGetTexture(name, path);
+    uint32_t nTextureIndex = GetTextureResourceManager()->GetTextureIndex(name);
+
+    m_materialParameters.m_aTextureIndices[type] = nTextureIndex;
+    GetMaterialManager()->m_vMaterialBufferCPU[m_nMaterialIndex].textureIds[type] = nTextureIndex;
+
+    return *this;
+}
+
+Material &Material::SetMaterialParameterFactors(const PBRMaterial &factors, const std::string &sMaterialName)
+{
+    auto *pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PBRMaterial>(sMaterialName);
     pUniformBuffer->SetData(factors);
     m_materialParameters.m_pFactors = pUniformBuffer;
+
+    PBRMaterial& material = GetMaterialManager()->m_vMaterialBufferCPU[m_nMaterialIndex];
+    material.vBaseColorFactors = factors.vBaseColorFactors;
+    material.fRoughness = factors.fRoughness;
+    material.fMetalness = factors.fMetalness;
+    memcpy(material.UVIndices, factors.UVIndices, sizeof(uint32_t) * TEX_COUNT);
+    material.vEmissiveFactor = factors.vEmissiveFactor;
+
+    return *this;
 }
 
 void Material::AllocateDescriptorSet()

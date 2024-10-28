@@ -2,12 +2,13 @@
 // Extract swapchain for easier management
 // Probably need to inherit from a common interface of render destination
 //
-#include <vulkan/vulkan.h>
-
+#include <array>
+#include <string>
 #include <vector>
+#include <vulkan/vulkan.h>
 namespace Muyo
 {
-
+class SwapchainImageResource;
 class Swapchain
 {
 public:
@@ -21,12 +22,13 @@ public:
     void DestroySwapchain();
     VkExtent2D GetSwapchainExtent() const { return m_swapchainExtent; }
     VkSurfaceKHR GetSurface() const { return m_surface; }
-    const std::vector<VkImageView>& GetImageViews() const { return m_swapchainImageViews; }
     VkFormat GetImageFormat() const { return m_swapchainFormat.format; }
     uint32_t GetNextImage(VkSemaphore& semaphore);
     VkSwapchainKHR& GetSwapChain() { return m_swapchain; }
 
-private:
+    std::vector<std::string> GetSwapchainResourceNames() const { return std::vector<std::string>(m_swapchainResourceNames.begin(), m_swapchainResourceNames.begin() + m_swapchainImageViews.size()); }
+
+  private:
     struct SwapchainSupportDetails
     {
         VkSurfaceCapabilitiesKHR capabilities;
@@ -41,8 +43,15 @@ private:
     VkExtent2D m_swapchainExtent = {0, 0};
     VkSurfaceFormatKHR m_swapchainFormat = {};
 
-    std::vector<VkImage> m_swapchainImages;
-    std::vector<VkImageView> m_swapchainImageViews;
+    std::vector<SwapchainImageResource*> m_swapchainImageResources;
+    const std::array<std::string, 4> m_swapchainResourceNames = {
+        "swapchainImage0_",
+        "swapchainImage1_"
+        "swapchainImage2_"
+        "swapchainImage3_"
+    };
+
+    std::vector<VkImageView> m_swapchainImageViews;    // todo: remove this
 };
 
 }  // namespace Muyo

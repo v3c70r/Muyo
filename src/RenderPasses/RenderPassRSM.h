@@ -5,6 +5,7 @@
 namespace Muyo
 {
 class RenderTarget;
+class SceneNode;
 struct RSMResources
 {
     const RenderTarget* pDepth;
@@ -26,7 +27,7 @@ public:
     ~RenderPassRSM() override;
     virtual void CreatePipeline() override;
     virtual void PrepareRenderPass() override;
-    void RecordCommandBuffers(const std::vector<const Geometry*>& vpGeometries);
+    void RecordCommandBuffers(const std::vector<const SceneNode*>& vpGeometryNodes);
     VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
     RSMResources GetRSM();

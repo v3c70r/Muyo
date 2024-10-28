@@ -7,6 +7,7 @@
 #include "RenderResourceManager.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
+#include "Material.h"
 namespace Muyo
 {
 struct Mesh;
@@ -26,12 +27,18 @@ class Submesh
 public:
     Submesh(size_t nMeshIndex) : m_nMeshIndex(nMeshIndex) {}
 
-    void SetMaterial(Material* pMaterial) { m_pMaterial = pMaterial; }
-    const Material* GetMaterial() const { return m_pMaterial; }
+    const Material& GetMaterial() const { 
+        return GetMaterialManager()->GetMaterial(GetMaterialIndex());
+    }
 
-    void SetMeshIndex(size_t index)
+    void SetMeshIndex(uint32_t index)
     {
         m_nMeshIndex = index;
+    }
+
+    bool HasMaterial() const
+    {
+        return m_nMaterialIndex != std::numeric_limits<uint32_t>::max();
     }
 
     size_t GetMeshIndex() const
@@ -39,9 +46,19 @@ public:
         return m_nMeshIndex;
     }
 
+    size_t GetMaterialIndex() const
+    {
+        return m_nMaterialIndex;
+    }
+
+    void SetMaterialIndex(uint32_t index)
+    {
+        m_nMaterialIndex = index;
+    }
+
 private:
-    Material* m_pMaterial = nullptr;
-    size_t m_nMeshIndex = 0;  // Index in MeshResourceManager
+    uint32_t m_nMeshIndex = 0;  // Index in MeshResourceManager
+    uint32_t m_nMaterialIndex = std::numeric_limits<uint32_t>::max();
     Mesh* m_pMesh = nullptr;
 };
 

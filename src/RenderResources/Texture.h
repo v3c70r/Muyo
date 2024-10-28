@@ -200,8 +200,7 @@ private:
         samplerInfo.minLod = 0.0f;
         samplerInfo.maxLod = 0.0f;
 
-        assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
-                               nullptr, &m_textureSampler) == VK_SUCCESS);
+        VK_ASSERT(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo, nullptr, &m_textureSampler));
     }
 
     VkSampler m_textureSampler;

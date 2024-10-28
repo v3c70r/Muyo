@@ -48,6 +48,16 @@ public:
     {
         return m_AABB;
     }
+    
+    void SetPerObjId(int perObjId) 
+    {
+        m_nPerObjId = perObjId;
+    }
+    
+    int GetPerObjId() const
+    {
+        return m_nPerObjId;
+    }
 
 protected:
     std::string m_sName;
@@ -55,6 +65,7 @@ protected:
     glm::mat4 m_mTransformation = glm::mat4(1.0);
     AABB m_AABB;
     uint32_t m_uFlag = 0;
+    int m_nPerObjId = -1;   // id to track the node in perobject data
 };
 
 using DrawList = std::vector<const SceneNode*>;

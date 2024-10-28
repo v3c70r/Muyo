@@ -31,7 +31,7 @@ public:
     virtual void CreateDevice(
         const std::vector<const char*>& extensions,
         const std::vector<const char*>& layers,
-        const VkSurfaceKHR& surface,
+        const VkSurfaceKHR* pSurface = nullptr,
         const std::vector<void*>& vpFeatures = {});
 
     void DestroyDevice();
@@ -233,7 +233,8 @@ class VkDebugRenderDevice : public VkRenderDevice
 {
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
     virtual void Unintialize() override;
-    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, const VkSurfaceKHR& surface, const std::vector<void*>& vpFeatures = {}) override;
+    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, 
+            const VkSurfaceKHR* pSurface = nullptr, const std::vector<void*>& vpFeatures = {}) override;
 
 private:
     DebugUtilsMessenger m_debugMessenger;

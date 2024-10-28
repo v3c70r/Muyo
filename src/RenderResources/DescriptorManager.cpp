@@ -24,8 +24,8 @@ void DescriptorManager::createDescriptorPool()
     poolInfo.pPoolSizes = POOL_SIZES.data();
     poolInfo.maxSets =
         DESCRIPTOR_COUNT_EACH_TYPE * static_cast<uint32_t>(POOL_SIZES.size());
-    assert(vkCreateDescriptorPool(GetRenderDevice()->GetDevice(), &poolInfo,
-                                  nullptr, &m_descriptorPool) == VK_SUCCESS);
+    VK_ASSERT(vkCreateDescriptorPool(GetRenderDevice()->GetDevice(), &poolInfo,
+                                  nullptr, &m_descriptorPool) );
 }
 
 void DescriptorManager::destroyDescriptorPool()
@@ -36,30 +36,6 @@ void DescriptorManager::destroyDescriptorPool()
 
 void DescriptorManager::createDescriptorSetLayouts()
 {
-    // GBuffer lighting layout
-    {
-        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
-        descriptorSetLayoutInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-
-        std::array<VkDescriptorSetLayoutBinding, 2> bindings = {
-            GetUniformBufferBinding(0),    // Pre view data
-            GetSamplerArrayBinding(1, 4),  // gbuffers
-        };
-        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
-        descriptorSetLayoutInfo.pBindings = bindings.data();
-
-        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
-                                           &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
-
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
-                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
-                                "Lighting");
-        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHTING] = layout;
-    }
-
     // Single sampler descriptor set layout
     {
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
@@ -79,9 +55,9 @@ void DescriptorManager::createDescriptorSetLayouts()
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
 
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -103,9 +79,9 @@ void DescriptorManager::createDescriptorSetLayouts()
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
 
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -130,9 +106,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -153,9 +129,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -177,40 +153,14 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
                                 "Material");
         m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_MATERIALS] = layout;
-    }
-
-    // GBuffer layout
-    {
-        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo = {};
-        descriptorSetLayoutInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-
-        std::array<VkDescriptorSetLayoutBinding, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> bindings = {
-            GetInputAttachmentBinding(0, 1),
-            GetInputAttachmentBinding(1, 1),
-            GetInputAttachmentBinding(2, 1),
-            GetInputAttachmentBinding(3, 1)};  // GBuffer textures
-
-        descriptorSetLayoutInfo.bindingCount = (uint32_t)bindings.size();
-        descriptorSetLayoutInfo.pBindings = bindings.data();
-
-        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
-                                           &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
-
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
-                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
-                                "GBuffer");
-        m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_GBUFFER] = layout;
     }
 
     // IBL layout
@@ -241,9 +191,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -274,9 +224,9 @@ void DescriptorManager::createDescriptorSetLayouts()
         descriptorSetLayoutInfo.pBindings = bindings.data();
 
         VkDescriptorSetLayout layout = VK_NULL_HANDLE;
-        assert(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
+        VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(),
                                            &descriptorSetLayoutInfo, nullptr,
-                                           &layout) == VK_SUCCESS);
+                                           &layout) );
 
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(layout),
                                 VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT,
@@ -303,8 +253,8 @@ VkDescriptorSet DescriptorManager::AllocateMaterialDescriptorSet()
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts =
         &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_MATERIALS];
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Material");
@@ -353,7 +303,7 @@ void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSe
     VkDescriptorBufferInfo bufferInfo = {};
     bufferInfo.buffer = materialParameters.m_pFactors->buffer();
     bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(PBRFactors);
+    bufferInfo.range = sizeof(PBRMaterial);
     {
         VkWriteDescriptorSet& writeDescriptorSet = aWriteDescriptorSets[1];
         writeDescriptorSet = {};
@@ -370,131 +320,6 @@ void DescriptorManager::UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSe
                            0, nullptr);
 }
 
-VkDescriptorSet DescriptorManager::AllocateLightingDescriptorSet(
-    const UniformBuffer<PerViewData>& perViewData, VkImageView position,
-    VkImageView albedo, VkImageView normal, VkImageView uv)
-{
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    // Create descriptor sets
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts =
-        &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHTING];
-
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
-
-    // Prepare buffer descriptor
-    {
-        VkDescriptorBufferInfo bufferInfo = {};
-        bufferInfo.buffer = perViewData.buffer();
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(PerViewData);
-
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites = {};
-
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = descriptorSet;
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-        // prepare image descriptor
-        std::array<VkDescriptorImageInfo, 4> imageInfos = {
-            // position
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            position,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            // albedo
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            albedo,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            // normal
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            normal,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            // UV
-            GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-            uv,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        };
-
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = descriptorSet;
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[1].descriptorCount =
-            static_cast<uint32_t>(imageInfos.size());
-        descriptorWrites[1].pImageInfo = imageInfos.data();
-
-        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
-                               static_cast<uint32_t>(descriptorWrites.size()),
-                               descriptorWrites.data(), 0, nullptr);
-    }
-    return descriptorSet;
-}
-
-VkDescriptorSet DescriptorManager::AllocateGBufferDescriptorSet()
-{
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    // Create descriptor sets
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_GBUFFER];
-
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
-
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
-                            VK_OBJECT_TYPE_DESCRIPTOR_SET, "GBuffer");
-
-    return descriptorSet;
-}
-
-VkDescriptorSet DescriptorManager::AllocateGBufferDescriptorSet(
-    const RenderPassGBuffer::GBufferViews& gbufferViews)
-{
-    VkDescriptorSet descriptorSet = AllocateGBufferDescriptorSet();
-    updateGBufferDescriptorSet(descriptorSet, gbufferViews);
-    return descriptorSet;
-}
-
-void DescriptorManager::updateGBufferDescriptorSet(
-    VkDescriptorSet descriptorSet,
-    const RenderPassGBuffer::GBufferViews& gbufferViews)
-
-{
-    // prepare image descriptor
-    std::array<VkDescriptorImageInfo, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> imageInfos;
-    std::array<VkWriteDescriptorSet, RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT> writeDescriptorSets;
-
-    for (uint32_t i = 0; i < RenderPassGBuffer::LightingAttachments::GBUFFER_ATTACHMENTS_COUNT; i++)
-    {
-        VkDescriptorImageInfo& imageInfo = imageInfos[i];
-        imageInfo = {GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
-                     gbufferViews[i], VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-
-        VkWriteDescriptorSet& writeDescriptorSet = writeDescriptorSets[i];
-        writeDescriptorSet = {};
-        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptorSet.dstSet = descriptorSet;
-        writeDescriptorSet.dstBinding = i;
-        writeDescriptorSet.dstArrayElement = 0;
-        writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-        writeDescriptorSet.descriptorCount = 1;
-        writeDescriptorSet.pImageInfo = &imageInfo;
-    }
-    vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-}
-
 VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
     VkImageView textureView)
 {
@@ -507,8 +332,8 @@ VkDescriptorSet DescriptorManager::AllocateSingleSamplerDescriptorSet(
     allocInfo.pSetLayouts =
         &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SINGLE_SAMPLER];
 
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single Sampler");
@@ -551,8 +376,8 @@ VkDescriptorSet DescriptorManager::AllocateSingleStorageImageDescriptorSet(VkIma
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE];
 
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Single storage image");
@@ -596,8 +421,8 @@ VkDescriptorSet DescriptorManager::AllocateIBLDescriptorSet()
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts =
         &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_IBL];
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "IBL");
@@ -653,8 +478,8 @@ VkDescriptorSet DescriptorManager::AllocateLightDataDescriptorSet(uint32_t nNumL
     allocInfo.descriptorPool = m_descriptorPool;
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_aDescriptorSetLayouts[DESCRIPTOR_LAYOUT_LIGHT_DATA];
-    assert(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
-                                    &descriptorSet) == VK_SUCCESS);
+    VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo,
+                                    &descriptorSet) );
 
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet),
                             VK_OBJECT_TYPE_DESCRIPTOR_SET, "Light Data");
@@ -665,7 +490,7 @@ VkDescriptorSet DescriptorManager::AllocateLightDataDescriptorSet(uint32_t nNumL
 void DescriptorManager::UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights, const StorageBuffer<LightData>& lightData)
 {
     // Allocate a single buffer for number of lights
-    UniformBuffer<uint32_t>* numLightsBuffer = GetRenderResourceManager()->getUniformBuffer<uint32_t>("num lights");
+    UniformBuffer<uint32_t>* numLightsBuffer = GetRenderResourceManager()->GetUniformBuffer<uint32_t>("num lights");
     numLightsBuffer->SetData(nNumLights);
 
     std::array<VkWriteDescriptorSet, 2> writes;

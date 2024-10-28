@@ -4,9 +4,9 @@
 
 #include "DescriptorManager.h"
 #include "Geometry.h"
+#include "MeshResourceManager.h"
 #include "Scene.h"
 #include "VkExtFuncsLoader.h"
-#include "MeshResourceManager.h"
 
 namespace Muyo
 {
@@ -57,10 +57,10 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
         vGeometries.emplace_back(geometry);
         vRangeInfo.emplace_back(range);
 
-        const Material* pMaterial = submesh->GetMaterial();
-        VkDeviceAddress pbrFactorAdd = pMaterial->GetPBRFactorsDeviceAdd();
-        SubmeshDescription submeshDesc = {triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress, pbrFactorAdd, {}};
-        pMaterial->FillPbrTextureIndices(submeshDesc.m_aPbrTextureIndices);
+        const Material& material = submesh->GetMaterial();
+        VkDeviceAddress pbrMaterialAdd = material.GetPBRMaterialDeviceAdd();
+        SubmeshDescription submeshDesc = {triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress, pbrMaterialAdd, {}};
+        material.FillPbrTextureIndices(submeshDesc.m_aPbrTextureIndices);
         m_vSubmeshDescs.emplace_back(submeshDesc);
     }
 

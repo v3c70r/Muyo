@@ -24,15 +24,15 @@ void RenderPassSkybox::PrepareRenderPass()
     // Resources should have been created
 
     // color attachment
-    RenderTarget* colorTarget = GetRenderResourceManager()->GetResource<RenderTarget>("LIGHTING_OUTPUT");
+    RenderTarget* colorTarget = GetRenderResourceManager()->GetResource<RenderTarget>("opaqueLightingOutput");
     m_renderPassParameters.AddAttachment(colorTarget, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
 
     // depth attachment
-    RenderTarget* depthTarget = GetRenderResourceManager()->GetResource<RenderTarget>("GBUFFER_DEPTH");
-    m_renderPassParameters.AddAttachment(depthTarget, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, false);
+    RenderTarget* depthTarget = GetRenderResourceManager()->GetResource<RenderTarget>("GBufferDepth_");
+    m_renderPassParameters.AddAttachment(depthTarget, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, false);
 
     // Binding 0: Per view data
-    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->getUniformBuffer<PerViewData>("perView");
+    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
     m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
 
     // Binding 1: skybox texture

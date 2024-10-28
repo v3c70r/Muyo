@@ -1,7 +1,8 @@
 #include "SceneManager.h"
-#include "MeshResourceManager.h"
 
 #include "LightSceneNode.h"
+#include "MeshResourceManager.h"
+#include "PerObjResourceManager.h"
 #include "RenderResourceManager.h"
 #include "SceneImporter.h"
 
@@ -41,6 +42,10 @@ DrawLists SceneManager::GatherDrawLists()
             dls.m_aDrawLists[i].insert(dls.m_aDrawLists[i].end(), sceneDL.begin(), sceneDL.end());
         }
     }
+    if (!GetPerObjResourceManager()->HasUploaded())
+    {
+        GetPerObjResourceManager()->Upload();
+    }
     return dls;
 }
 
@@ -59,6 +64,9 @@ StorageBuffer<LightData>* SceneManager::ConstructLightBufferFromDrawLists(const 
     {
         lightData.push_back(LightData());
     }
+
+    // Set light count uniform buffer
+    GetRenderResourceManager()->GetUniformBuffer<uint32_t>("light count")->SetData(lightData.size());
     return GetRenderResourceManager()->GetStorageBuffer("light data", lightData);
 }
 

@@ -53,8 +53,8 @@ protected:
         m_imageViewInfo.image = m_image;
         m_imageViewInfo.format = m_imageInfo.format;
 
-        assert(vkCreateImageView(GetRenderDevice()->GetDevice(), &m_imageViewInfo,
-                                 nullptr, &m_view) == VK_SUCCESS);
+        VK_ASSERT(vkCreateImageView(GetRenderDevice()->GetDevice(), &m_imageViewInfo,
+                                 nullptr, &m_view) );
     }
 
     static void TransitionImageLayout(VkImage image,
@@ -157,6 +157,7 @@ public:
                     copyRegion.size = size;
                     vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1,
                                     &copyRegion);
+#ifdef FEATURE_RAY_TRACING
                     // Make sure the copy of the instance buffer are copied before triggering the
                     // acceleration structure build
                     VkMemoryBarrier barrier{
@@ -167,6 +168,7 @@ public:
                                          VK_PIPELINE_STAGE_TRANSFER_BIT,
                                          VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
                                          0, 1, &barrier, 0, nullptr, 0, nullptr);
+#endif
                 });
 
             GetMemoryAllocator()->FreeBuffer(stagingBuffer, stagingAllocation);

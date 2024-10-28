@@ -3,14 +3,29 @@
 #include <string>
 #include <unordered_map>
 
-#include "Debug.h"
+#include "DrawCommandBuffer.h"
 #include "RenderTargetResource.h"
 #include "StorageImageResource.h"
+#include "SwapchainImageResource.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
 namespace Muyo
 {
+
+inline bool FormatSupportsOptimalTilingDepthAttachment(VkFormat format)
+{
+    VkFormatProperties properties;
+    vkGetPhysicalDeviceFormatProperties(GetRenderDevice()->GetPhysicalDevice(), format, &properties);
+    return properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+}
+
+inline bool FormatSupportsOptimalTilingColorAttachment(VkFormat format)
+{
+    VkFormatProperties properties;
+    vkGetPhysicalDeviceFormatProperties(GetRenderDevice()->GetPhysicalDevice(), format, &properties);
+    return properties.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+}
 
 class RenderResourceManager
 {
@@ -43,24 +58,44 @@ public:
         return static_cast<IndexBuffer*>(m_mResources[sName].get());
     }
 
-    RenderTarget* GetRenderTarget(const std::string& sName, bool bColorTarget,
-                                  VkExtent2D extent, VkFormat format,
+    RenderTarget* GetRenderTarget(const std::string& sName, VkExtent2D extent, VkFormat format,
                                   uint32_t numMips = 1, uint32_t numLayers = 1,
                                   VkImageUsageFlags nAdditionalUsageFlags = 0)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
+            bool bIsColorAttachment = FormatSupportsOptimalTilingColorAttachment(format) && !FormatSupportsOptimalTilingDepthAttachment(format);
             VkImageUsageFlags nUsageFlags = nAdditionalUsageFlags;
             m_mResources[sName] = std::make_unique<RenderTarget>(
                 format,
                 nUsageFlags |
-                    (bColorTarget
+                    (bIsColorAttachment
                          ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
                          : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT),
                 extent.width, extent.height, numMips, numLayers);
             m_mResources[sName]->SetDebugName(sName);
         }
+        return static_cast<RenderTarget*>(m_mResources[sName].get());
+    }
+
+    RenderTarget* GetDepthTarget(const std::string sName, VkExtent2D extent,
+                                 VkFormat format = VK_FORMAT_D32_SFLOAT)
+    {
+        return GetRenderTarget(sName, extent, format);
+    }
+
+    RenderTarget* GetColorTarget(
+        const std::string sName, VkExtent2D extent,
+        VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t numMips = 1,
+        uint32_t numLayers = 1, VkImageUsageFlags nAdditionalUsageFlags = 0)
+    {
+        return GetRenderTarget(sName, extent, format, numMips, numLayers,
+                               nAdditionalUsageFlags);
+    }
+
+    RenderTarget* GetColorTarget(const std::string sName)
+    {
         return static_cast<RenderTarget*>(m_mResources[sName].get());
     }
 
@@ -86,26 +121,6 @@ public:
         return static_cast<TextureResource*>(m_mResources[sName].get());
     }
 
-    RenderTarget* GetDepthTarget(const std::string sName, VkExtent2D extent,
-                                 VkFormat format = VK_FORMAT_D32_SFLOAT)
-    {
-        return GetRenderTarget(sName, false, extent, format);
-    }
-
-    RenderTarget* GetColorTarget(
-        const std::string sName, VkExtent2D extent,
-        VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t numMips = 1,
-        uint32_t numLayers = 1, VkImageUsageFlags nAdditionalUsageFlags = 0)
-    {
-        return GetRenderTarget(sName, true, extent, format, numMips, numLayers,
-                               nAdditionalUsageFlags);
-    }
-
-    RenderTarget* GetColorTarget(const std::string sName)
-    {
-        return static_cast<RenderTarget*>(m_mResources[sName].get());
-    }
-
     void RemoveResource(const std::string sName)
     {
         if (auto it = m_mResources.find(sName); it != m_mResources.end())
@@ -113,10 +128,11 @@ public:
             m_mResources.erase(it);
         }
     }
-    const ResourceMap& getResourceMap() { return m_mResources; }
+
+    const ResourceMap& GetResourceMap() { return m_mResources; }
 
     template <class T>
-    UniformBuffer<T>* getUniformBuffer(const std::string sName)
+    UniformBuffer<T>* GetUniformBuffer(const std::string sName)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
@@ -124,6 +140,17 @@ public:
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<UniformBuffer<T>*>(m_mResources[sName].get());
+    }
+
+    template <class T>
+    DrawCommandBuffer<T>* GetDrawCommandBuffer(const std::string sName, const std::vector<T>& drawCommands)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<DrawCommandBuffer<T>>(drawCommands.data(), (uint32_t)drawCommands.size());
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<DrawCommandBuffer<T>*>(m_mResources[sName].get());
     }
 
     template <class T>
@@ -196,6 +223,18 @@ public:
         }
 
         return static_cast<StorageImageResource*>(m_mResources[sName].get());
+    }
+
+    SwapchainImageResource* GetSwapchainImageResource(const std::string& sName, VkImage swapchainImage, VkExtent2D extent, VkFormat format)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] =
+              std::make_unique<SwapchainImageResource>(swapchainImage, format, extent);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+
+        return static_cast<SwapchainImageResource*>(m_mResources[sName].get());
     }
 
     ShaderBindingTableBuffer* GetShaderBindingTableBuffer(

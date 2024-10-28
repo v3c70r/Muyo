@@ -65,10 +65,8 @@ public:
         for (int i = 0; i < SAMPLER_TYPE_COUNT; i++)
         {
             samplerInfo.maxLod = powf(2, static_cast<float>(i));
-            assert(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo,
-                                   nullptr, &m_aSamplers[i]) == VK_SUCCESS);
-            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aSamplers[i]),
-                                    VK_OBJECT_TYPE_SAMPLER, "Frame Sampler");
+            VK_ASSERT(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo, nullptr, &m_aSamplers[i]));
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aSamplers[i]), VK_OBJECT_TYPE_SAMPLER, "Frame Sampler");
         }
     }
     void destroySamplers()

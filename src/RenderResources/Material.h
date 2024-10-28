@@ -31,27 +31,30 @@ public:
     {
         std::array<const TextureResource*, TEX_COUNT> m_apTextures;
         std::array<uint32_t, TEX_COUNT> m_aTextureIndices;
-        UniformBuffer<PBRFactors>* m_pFactors = nullptr;
+        UniformBuffer<PBRMaterial>* m_pFactors = nullptr;
     };
 
 public:
-    VkDeviceAddress GetPBRFactorsDeviceAdd() const
+    explicit Material(uint32_t nMaterialIndex) : m_nMaterialIndex(nMaterialIndex) {}
+    VkDeviceAddress GetPBRMaterialDeviceAdd() const
     {
         return GetRenderDevice()->GetBufferDeviceAddress(m_materialParameters.m_pFactors->buffer());
     }
 
-    void LoadTexture(TextureType type, const std::string& path, const std::string& name)
-    {
-        m_materialParameters.m_apTextures[type] = GetTextureResourceManager()->CreateAndLoadOrGetTexture(name, path);
-        m_materialParameters.m_aTextureIndices[type] = GetTextureResourceManager()->GetTextureIndex(name);
-    }
+    Material& LoadTexture(TextureType type, const std::string& path, const std::string& name);
+    Material& SetMaterialParameterFactors(const PBRMaterial& factors, const std::string& sMaterialName);
 
     void FillPbrTextureIndices(std::array<uint32_t, TEX_COUNT>& aIndices) const
     {
         aIndices = m_materialParameters.m_aTextureIndices;
     }
 
-    void SetMaterialParameterFactors(const PBRFactors& factors, const std::string& sMaterialName);
+
+    void FillPbrTextureIndices(uint32_t* aIndices) const
+    {
+        memcpy((uint32_t*)(m_materialParameters.m_aTextureIndices.data()), aIndices, sizeof(uint32_t) * TEX_COUNT);
+    }
+
 
     VkDescriptorSet GetDescriptorSet() const;
     void AllocateDescriptorSet();
@@ -60,24 +63,52 @@ public:
     void SetTransparent() { m_bIsTransparent = true; }
     void SetOpaque() { m_bIsTransparent = false; }
 
+    const uint32_t GetMaterialIndex() const
+    {
+        return m_nMaterialIndex;
+    }
+
 private:
     MaterialParameters m_materialParameters;
     const std::array<std::string, TEX_COUNT> m_aNames = {
         "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO", "TEX_EMISSIVE"};
-    VkDescriptorSet m_descriptorSet;
+    VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
     bool m_bIsTransparent = false;
+
+    uint32_t m_nMaterialIndex = 0;      // Material index in material resource manager
 };
 
 class MaterialManager
 {
+    friend class Material;
 public:
-    void destroyMaterials() { m_mMaterials.clear(); }
-    std::unordered_map<std::string, std::unique_ptr<Material>> m_mMaterials;
+    void DestroyMaterials() { m_vMaterials.clear(); }
     void CreateDefaultMaterial();
-    const Material* GetDefaultMaterial() { return m_mMaterials[sDefaultName].get(); }
+    Material& GetOrCreateMaterial(const std::string sMaterialName);
+    const Material& GetMaterial(uint32_t index) { return m_vMaterials[index]; }
+    const Material& GetDefaultMaterial() { return m_vMaterials[nDefaultMaterialIndex]; }
+
+    bool HasMaterial(const std::string sMaterialName);
+
+    void UploadMaterialBuffer() const;
+    const StorageBuffer<PBRMaterial>* GetMaterialBuffer() const;
+
 
 private:
+
     const std::string sDefaultName = "default";
+    uint32_t nDefaultMaterialIndex = 0;
+
+    const std::string sMaterialBufferName = "material_buffer";
+
+
+    // Track material buffer
+    std::unordered_map<std::string, uint32_t> m_mMaterialIndexMap;   // Map material name to position in m_vMaterials
+
+    std::vector<Material> m_vMaterials;
+
+    std::vector<PBRMaterial> m_vMaterialBufferCPU;
+
 };
 
 MaterialManager* GetMaterialManager();

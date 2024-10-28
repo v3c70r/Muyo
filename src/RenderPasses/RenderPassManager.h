@@ -20,15 +20,19 @@ enum RenderPassNames
 {
     // Order matters
     RENDERPASS_IBL,
+
+    // TODO(qgu): merge ibl passes with a manager
+    RENDERPASS_CUBEMAP_GENERATION,
+
     RENDERPASS_GBUFFER,
+    RENDERPASS_OPAQUE_LIGHTING,
+
     RENDERPASS_SKYBOX,
     RENDERPASS_TRANSPARENT,
 
     // Render directpy to swapchain
     RENDERPASS_FINAL,
     RENDERPASS_UI,
-
-    RENDERPASS_AO,
 
     RENDERPASS_RAY_TRACING,
 
@@ -42,7 +46,6 @@ public:
     void Present();
 
     void Initialize(uint32_t uWidth, uint32_t uHeight, const VkSurfaceKHR& swapchainSurface);
-    void SetSwapchainImageViews(const std::vector<VkImageView>& vImageViews, VkImageView depthImageView);
     void OnResize(uint32_t uWidth, uint32_t uHeight);
     void Unintialize();
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
@@ -70,8 +73,6 @@ private:
     const VkSurfaceFormatKHR SWAPCHAIN_FORMAT = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     const VkPresentModeKHR PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
 
-private:
-    // TODO: Probably try variant here
     std::array<std::unique_ptr<IRenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
     uint32_t m_uWidth = 0;
     uint32_t m_uHeight = 0;
@@ -79,7 +80,6 @@ private:
 
     // Synchronization elements required in passes
     VkSemaphore m_depthReady = VK_NULL_HANDLE;
-    VkSemaphore m_aoReady = VK_NULL_HANDLE;
     VkSemaphore m_imageAvailable = VK_NULL_HANDLE;  // Semaphores to notify the frame when the current image is ready
     VkSemaphore m_renderFinished = VK_NULL_HANDLE;
 

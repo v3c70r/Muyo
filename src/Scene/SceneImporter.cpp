@@ -180,7 +180,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     glm::vec3 vAABBMin(std::numeric_limits<float>::max());
     glm::vec3 vAABBMax(std::numeric_limits<float>::min());
 
-    uint32_t nPrimitiveIndex = 0;
     for (const auto &primitive : mesh.primitives)
     {
         std::vector<glm::vec3> vPositions;
@@ -372,13 +371,14 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
         {
             gltfMaterial = model.materials.at(primitive.material);
         }
-        auto materialIter = GetMaterialManager()->m_mMaterials.find(gltfMaterial.name);
-        Material *pMaterial = nullptr;
 
-        if (materialIter == GetMaterialManager()->m_mMaterials.end())
+
+        bool bIsMaterialInitialized = GetMaterialManager()->HasMaterial(gltfMaterial.name);
+        Material& material = GetMaterialManager()->GetOrCreateMaterial(gltfMaterial.name);
+
+        if (!bIsMaterialInitialized)
         {
-            GetMaterialManager()->m_mMaterials[gltfMaterial.name] = std::make_unique<Material>();
-            pMaterial = GetMaterialManager()->m_mMaterials.at(gltfMaterial.name).get();
+
             const std::filesystem::path sceneDir = m_sceneFile.parent_path();
 
             // Load material textures
@@ -496,7 +496,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
             }
 
             // PBR factors
-            PBRFactors pbrFactors = {
+            PBRMaterial pbrMaterial = {
                 glm::vec4((float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[0], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[1],
                           (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[2], (float)gltfMaterial.pbrMetallicRoughness.baseColorFactor[3]),  // Base Color
                 (float)gltfMaterial.pbrMetallicRoughness.roughnessFactor,                                                                             // Roughness
@@ -505,34 +505,36 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                  aUVIndices[2], aUVIndices[3],
                  aUVIndices[4], aUVIndices[5]},
                 vEmissiveFactors,
-                0.0f};
+                {0, 0, 0, 0, 0, 0}};
 
-            pMaterial->LoadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName);
-            pMaterial->LoadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName);
-            pMaterial->LoadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName);
-            pMaterial->LoadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName);
-            pMaterial->LoadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName);
-            pMaterial->LoadTexture(Material::TEX_EMISSIVE, sEmissiveTexPath, sEmissiveTexName);
-            pMaterial->SetMaterialParameterFactors(pbrFactors, gltfMaterial.name);
+            material.SetMaterialParameterFactors(pbrMaterial, gltfMaterial.name)
+                .LoadTexture(Material::TEX_ALBEDO, sAlbedoTexPath, sAlbedoTexName)
+                .LoadTexture(Material::TEX_NORMAL, sNormalTexPath, sNormalTexName)
+                .LoadTexture(Material::TEX_METALNESS, sMetalnessTexPath, sMetalnessTexName)
+                .LoadTexture(Material::TEX_ROUGHNESS, sRoughnessTexPath, sRoughnessTexName)
+                .LoadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName)
+                .LoadTexture(Material::TEX_EMISSIVE, sEmissiveTexPath, sEmissiveTexName);
 
-            pMaterial->AllocateDescriptorSet();
-            assert(pMaterial->GetDescriptorSet() != VK_NULL_HANDLE);
+            {
+                // Populate PBRmaterial
+                memcpy(&pbrMaterial, &pbrMaterial, sizeof(pbrMaterial));
+                material.FillPbrTextureIndices(pbrMaterial.textureIds);
+            }
+
+            material.AllocateDescriptorSet();
+            assert(material.GetDescriptorSet() != VK_NULL_HANDLE);
             if (gltfMaterial.alphaMode != "OPAQUE")
             {
                 assert(gltfMaterial.alphaMode == "BLEND" && "Unsupported alpha mode");
-                pMaterial->SetTransparent();
+                material.SetTransparent();
             }
             if (gltfMaterial.doubleSided)
             {
             }
         }
-        else
-        {
-            pMaterial = materialIter->second.get();
-        }
 
-        vSubmeshes.back()->SetMaterial(pMaterial);
-        if (pMaterial->IsTransparent())
+        vSubmeshes.back()->SetMaterialIndex(material.GetMaterialIndex());
+        if (material.IsTransparent())
         {
             bIsMeshTransparent = true;
         }
@@ -543,7 +545,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
     // Use pointer address as string
     std::stringstream ss;
     ss << static_cast<void *>(pGeometry);
-    auto *worldMatBuffer = GetRenderResourceManager()->getUniformBuffer<glm::mat4>(ss.str());
+    auto *worldMatBuffer = GetRenderResourceManager()->GetUniformBuffer<glm::mat4>(ss.str());
     pGeometry->SetWorldMatrixUniformBuffer(worldMatBuffer);
     pGeometry->SetWorldMatrix(glm::mat4(1.0));
     GetGeometryManager()->vpGeometries.emplace_back(pGeometry);

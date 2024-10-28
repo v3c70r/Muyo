@@ -21,10 +21,10 @@ layout(location = 0) out vec4 outColor;
 
 CAMERA_UBO(0)
 
-layout(input_attachment_index = 0, set = 1, binding = 0) uniform subpassInput inGBuffer_POS_AO;
-layout(input_attachment_index = 1, set = 1, binding = 1) uniform subpassInput inGBuffer_ALBEDO_TRANSMITTANCE;
-layout(input_attachment_index = 2, set = 1, binding = 2) uniform subpassInput inGBuffer_NORMAL_ROUGHNESS;
-layout(input_attachment_index = 3, set = 1, binding = 3) uniform subpassInput inGBuffer_MATELNESS_TRANSLUCENCY;
+layout(set = 1, binding = 0) uniform sampler2D inGBuffer_POS_AO;
+layout(set = 1, binding = 1) uniform sampler2D inGBuffer_ALBEDO_TRANSMITTANCE;
+layout(set = 1, binding = 2) uniform sampler2D inGBuffer_NORMAL_ROUGHNESS;
+layout(set = 1, binding = 3) uniform sampler2D inGBuffer_MATELNESS_TRANSLUCENCY;
 
 // IBL parameters
 layout(set = 2, binding = 0) uniform samplerCube irradianceMap;
@@ -33,16 +33,22 @@ layout(set = 2, binding = 2) uniform sampler2D specularBrdfLut;
 
 LIGHTS_UBO(3)
 
+// RSM shadows
+layout(set = 4, binding = 0) uniform sampler2D[] RSMDepth;
+layout(set = 4, binding = 1) uniform sampler2D[] RSMNormal;
+layout(set = 4, binding = 2) uniform sampler2D[] RSMPosition;
+layout(set = 4, binding = 3) uniform sampler2D[] RSMFlux;
+
 void main() {
     // GBuffer info
-    const vec3 vWorldPos = subpassLoad(inGBuffer_POS_AO).xyz;
+    const vec3 vWorldPos = texture(inGBuffer_POS_AO, texCoords).xyz;
     const vec3 vViewPos = (uboCamera.view * vec4(vWorldPos, 1.0)).xyz;
-    const float fAO = subpassLoad(inGBuffer_POS_AO).w;
-    const vec3 vAlbedo = subpassLoad(inGBuffer_ALBEDO_TRANSMITTANCE).xyz;
-    const vec3 vWorldNormal = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).xyz;
+    const float fAO = texture(inGBuffer_POS_AO, texCoords).w;
+    const vec3 vAlbedo = texture(inGBuffer_ALBEDO_TRANSMITTANCE, texCoords).xyz;
+    const vec3 vWorldNormal = texture(inGBuffer_NORMAL_ROUGHNESS, texCoords).xyz;
     const vec3 vFaceNormal = normalize((uboCamera.view * vec4(vWorldNormal, 0.0)).xyz);
-    const float fRoughness = subpassLoad(inGBuffer_NORMAL_ROUGHNESS).w;
-    const float fMetalness = subpassLoad(inGBuffer_MATELNESS_TRANSLUCENCY).r;
+    const float fRoughness = texture(inGBuffer_NORMAL_ROUGHNESS, texCoords).w;
+    const float fMetalness = texture(inGBuffer_MATELNESS_TRANSLUCENCY, texCoords).r;
     //TODO: Read transmittence and translucency if necessary
 
     Material material;
@@ -59,8 +65,7 @@ void main() {
 
     //uint nSeed = InitRandomSeed(InitRandomSeed(uint(gl_FragCoord.x * uboCamera.screenExtent.x), uint(gl_FragCoord.y * uboCamera.screenExtent.y)), uboCamera.uFrameId);
     uint nSeed = InitRandomSeed(uint(gl_FragCoord.x * uboCamera.screenExtent.x), uint(gl_FragCoord.y * uboCamera.screenExtent.y));
-    // For each light source
-    //
+
     for (int i = 0; i < numLights.nNumLights; ++i)
     {
         float fVisible = 1.0;
@@ -69,6 +74,7 @@ void main() {
         if (light.vLightData.w >= 0.0)
         {
             float fBias = max(0.01 * (1.0 - dot(vWorldNormal, light.vPosition - vWorldPos)), 0.001);
+            fVisible = PCFShadowVisibililty(vWorldPos, light.vPosition - vWorldPos, 100, 0.05, nSeed, fBias, RSMDepth[nLightIdx], light.mLightViewProjection);
         }
         // Convert light position to view space
         const vec4 lightPosition = uboCamera.view * vec4(light.vPosition, 1.0);
@@ -77,6 +83,26 @@ void main() {
 
         vLo += fVisible * ComputeDirectLighting(light, material, vViewPos, vFaceNormal);
 
+        // Add to RSM irradiance
+        const int nShadwMapSize = 8;
+        const float fStep = 1.0 / nShadwMapSize;
+        for (float fx = 0.0; fx < 1.0; fx += fStep)
+        {
+            for (float fy = 0.0; fy < 1.0; fy += fStep)
+            {
+                const vec2 vUV = vec2(fx, fy);
+                const vec3 vNormal = texture(RSMNormal[nLightIdx], vUV).xyz;
+                const vec3 vXtoXp = texture(RSMPosition[nLightIdx], vUV).xyz - vWorldPos;
+                const vec3 vFlux = texture(RSMFlux[nLightIdx], vUV).xyz;
+
+                const float fLength = length(vXtoXp);
+                const float fDominator = 1.0 / (fLength * fLength * fLength * fLength);
+
+                const vec3 vBRDF = EvalBRDF(normalize(vXtoXp), normalize(vViewPos), vWorldNormal, material);
+                // Remove the hack of attenuation value
+                vRSMIrridiance += vFlux * max(dot(vWorldNormal, vXtoXp), 0.0) * max(dot(vNormal, -vXtoXp), 0.0) * fDominator * vBRDF * fStep * fStep;
+            }
+        }
     }
 
     vLo += vRSMIrridiance;
