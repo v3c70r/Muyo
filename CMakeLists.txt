@@ -96,6 +96,21 @@ if(NOT EXISTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE})
     message(FATAL_ERROR "Can't find glslangValidator at ${GLSL_VALIDATOR}")
 endif()
 
+## Find slang, this should later be included in official cmake script
+if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
+  set(_Vulkan_hint_executable_search_paths "$ENV{VULKAN_SDK}/bin")
+  find_program(Vulkan_SLANG_EXECUTABLE
+    NAMES slangc
+    HINTS
+      ${_Vulkan_hint_executable_search_paths}
+    )
+  unset(_Vulkan_hint_executable_search_paths)
+endif()
+
+if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
+    message(FATAL_ERROR "Can't find slang executable")
+endif()
+
 if (UNIX)
     set (CMAKE_CXX_FLAGS "-std=c++20 -Wall -pthread -Wno-missing-braces -g")
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
@@ -165,7 +180,7 @@ add_executable(PSOCompiler ${PSOCompiler_SRC})
 target_link_libraries(PSOCompiler PUBLIC muyo)
 
 
-# Build shaders
+# Build glsl shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${CMAKE_SOURCE_DIR}/shaders/*.frag"
     "${CMAKE_SOURCE_DIR}/shaders/*.vert"
@@ -181,7 +196,7 @@ file(GLOB_RECURSE GLSL_HEADER_FILES
     )
 
 
-message(STATUS "Shaders: ${GLSL_SOURCE_FILES}")
+message(STATUS "GLSL shaders: ${GLSL_SOURCE_FILES}")
 foreach (GLSL_SOURCE_FILE ${GLSL_SOURCE_FILES})
     get_filename_component(FILE_NAME ${GLSL_SOURCE_FILE} NAME)
     set(SPIRV "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${FILE_NAME}.spv")
@@ -192,6 +207,24 @@ foreach (GLSL_SOURCE_FILE ${GLSL_SOURCE_FILES})
         DEPENDS ${GLSL_SOURCE_FILE} ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()
+
+# Build slang shaders
+file (GLOB_RECURSE SLANG_SOURCE_FILES "${CMAKE_SOURCE_DIR}/shaders/*.slang")
+message(STATUS "Slang Shaders: ${SLANG_SOURCE_FILES}")
+foreach (SLANG_SOURCE_FILE ${SLANG_SOURCE_FILES})
+    get_filename_component(FILE_NAME ${SLANG_SOURCE_FILE} NAME)
+    set(SPIRV "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${FILE_NAME}.spv")
+    add_custom_command(
+        OUTPUT ${SPIRV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
+        #hello-world.slang -profile glsl_450 -target spirv -o hello-world.spv -entry computeMain
+        COMMAND ${Vulkan_SLANG_EXECUTABLE} ${SLANG_SOURCE_FILE} -DSHADER_CODE -profile glsl_450 -target spirv -o ${SPIRV} -entry main
+        DEPENDS ${SLANG_SOURCE_FILE}# ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
+        )
+    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
+endforeach()
+
+
 
 
 
