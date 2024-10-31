@@ -91,7 +91,7 @@ void RenderPassUI::CreatePipeline()
     // Dynmaic state
     std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_SCISSOR };
 
-    VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/ui.vert.spv"));
+    VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/ui.vert.slang.spv"));
     VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/ui.frag.spv"));
     PipelineStateBuilder builder;
     // Build pipeline
