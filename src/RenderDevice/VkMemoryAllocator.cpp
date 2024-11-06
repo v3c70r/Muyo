@@ -59,9 +59,11 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 
 void VkMemoryAllocator::Unintialize()
 {
+#ifdef FEATURE_RAY_TRACING
     vmaDestroyPool(m_allocator, m_SBTPool);
     vmaDestroyPool(m_allocator, m_BVHPool);
     vmaDestroyAllocator(m_allocator);
+#endif
 }
 
 void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,
