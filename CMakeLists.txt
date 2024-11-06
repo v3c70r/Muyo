@@ -21,27 +21,20 @@ set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
 set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
 set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-#window lib
-if (${FEATURE_USE_SDL})
-  find_package(SDL2 REQUIRED)
-  add_compile_definitions(USE_SDL)
-  set(WINDOW_LIB SDL2::SDL2main SDL2::SDL2)
-else()
-  ## GLFW
-  # Look for precompiled glfw library
-  find_package(glfw3 3.2 QUIET)
-  # Otherwise, build from source
-  if (NOT ${glfw3_FOUND})
-    # Build glfw from source
-    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    #set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
-    add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
-  endif()
-  add_compile_definitions(USE_GLFW)
-  set(WINDOW_LIB glfw)
+## GLFW
+# Look for precompiled glfw library
+find_package(glfw3 3.2 QUIET)
+# Otherwise, build from source
+if (NOT ${glfw3_FOUND})
+# Build glfw from source
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+#set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
 endif()
+add_compile_definitions(USE_GLFW)
+set(WINDOW_LIB glfw)
 
 ## GLM
 find_package(glm QUIET)

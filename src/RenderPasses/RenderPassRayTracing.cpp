@@ -215,7 +215,7 @@ void RenderPassRayTracing::AllocateShaderBindingTable()
     uint32_t nHitGroupCount = 1;
     uint32_t nRayGenGroupCount = 1;  // can have only one
 
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {};
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR, nullptr};
     GetRenderDevice()->GetPhysicalDeviceProperties(raytracingProperties);
 
     uint32_t nHandleSize = raytracingProperties.shaderGroupHandleSize;

@@ -209,7 +209,7 @@ static bool Initialize(const char *name, unsigned w, unsigned h)
 {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     _GLFW::s_pWindow = glfwCreateWindow(w, h, "Vulkan", nullptr, nullptr);
     if (!_GLFW::s_pWindow)

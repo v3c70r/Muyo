@@ -7,6 +7,13 @@ namespace Muyo
 {
 class VkRenderDevice;
 
+enum class PoolType
+{
+    Default,
+    SBT,
+    BVH
+};
+
 // Wrap allocator
 class VkMemoryAllocator
 {
@@ -20,7 +27,7 @@ public:
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags,
                         VmaMemoryUsage nMemoryUsageFlags, VkBuffer &buffer,
                         VmaAllocation &allocation,
-                        std::string bufferName, bool bIsSBTBuffer = false);
+                        std::string bufferName, PoolType ePoolType = PoolType::Default);
     void FreeBuffer(VkBuffer &buffer, VmaAllocation &allocation);
     void MapBuffer(VmaAllocation &allocation, void **ppData);
     void UnmapBuffer(VmaAllocation &allocation);
@@ -33,6 +40,8 @@ public:
 private:
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     VmaPool m_SBTPool = VK_NULL_HANDLE; // SBT pool uses another aligment, need to be allocated in a separate pool
+    VmaPool m_BVHPool = VK_NULL_HANDLE; //VkPhysicalDeviceAccelerationStructurePropertiesKHR::minAccelerationStructureScratchOffsetAlignment
+
 };
 
 VkMemoryAllocator *GetMemoryAllocator();
