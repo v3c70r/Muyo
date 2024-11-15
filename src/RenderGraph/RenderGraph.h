@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <memory>
 #include <vector>
 #include <stack>
 #include <unordered_map>
@@ -15,6 +16,10 @@ struct RenderResourceHandle
 {
     const IRenderResource* pRenderResource = nullptr;
     uint32_t nVersion = 0;
+    bool operator == (const RenderResourceHandle& other)
+    {
+        return pRenderResource == other.pRenderResource && nVersion == other.nVersion;
+    }
 };
 
 struct RenderGraphNode
@@ -30,8 +35,8 @@ public:
   void AddNode(const std::vector<const IRenderResource*>& vInputResources, const std::vector<const IRenderResource*>& vOutputResources, IRenderPass* pRenderPass)
   {
       // Bump output resource version
-      m_vRGNs.push_back(RenderGraphNode());
-      RenderGraphNode& node = m_vRGNs.back();
+      m_vpRGNs.push_back(std::make_unique<RenderGraphNode>());
+      RenderGraphNode& node = *m_vpRGNs.back();
       for (auto* outputResource : vOutputResources)
       {
           if (m_mResourceVersion.count(outputResource) == 0)
@@ -55,25 +60,29 @@ public:
 
   void ConstructAdjList()
   {
-      for (size_t i = 0; i < m_vRGNs.size(); i ++)
-          for (size_t j = i; i < m_vRGNs.size(); j ++)
+      for (size_t i = 0; i < m_vpRGNs.size(); i++)
       {
-          for (const RenderResourceHandle& inputHandle : m_vRGNs[j].m_vInputResources)
+          for (size_t j = i; i < m_vpRGNs.size(); j++)
           {
-              if (std::find(m_vRGNs[i].m_vOuptputResources.begin(), m_vRGNs[i].m_vOuptputResources.end(), inputHandle) != m_vRGNs[i].m_vOuptputResources.end())
+              for (const RenderResourceHandle& inputHandle : m_vpRGNs[j]->m_vInputResources)
               {
-                  // Addresses are valid as long as the graph doesn't move.
-                  m_mAdjList[&m_vRGNs[i]].push_back(&m_vRGNs[j]);
-                  break;
+                  const RenderGraphNode* pFromNode = m_vpRGNs[i].get();
+                  const RenderGraphNode* pToNode = m_vpRGNs[j].get();
+
+                  if (std::find(pFromNode->m_vOuptputResources.begin(), pFromNode->m_vOuptputResources.end(), inputHandle) != pFromNode->m_vOuptputResources.end())
+                  {
+                      m_mAdjList[pFromNode].push_back(pToNode);
+                      break;
+                  }
               }
           }
       }
   }
 
 private:
-  std::vector<RenderGraphNode> m_vRGNs;
+  std::vector<std::unique_ptr<RenderGraphNode>> m_vpRGNs;
   std::unordered_map<const RenderGraphNode*, std::vector<const RenderGraphNode*>> m_mAdjList;
-  std::unordered_map<const IRenderResource*, uint32_t> m_mResourceVersion;
+  std::unordered_map<const IRenderResource*, uint32_t> m_mResourceVersion;  // track current resource version
 };
 
 template <typename T>
