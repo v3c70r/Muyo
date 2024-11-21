@@ -54,6 +54,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     poolCreateInfo.memoryTypeIndex = memTypeIndex;
     poolCreateInfo.minAllocationAlignment = bvhProperty.minAccelerationStructureScratchOffsetAlignment;
     VK_ASSERT(vmaCreatePool(m_allocator, &poolCreateInfo, &m_BVHPool));
+#endif
 }
 
 void VkMemoryAllocator::Unintialize()
@@ -149,3 +150,4 @@ static VkMemoryAllocator allocator;
 VkMemoryAllocator* GetMemoryAllocator() { return &allocator; }
 
 }  // namespace Muyo
+
