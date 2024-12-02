@@ -14,6 +14,7 @@
 #include "RenderPassTransparent.h"
 #include "RenderPassUI.h"
 #include "RenderResourceManager.h"
+#include "RenderPassGBufferMeshShader.h"
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
@@ -112,6 +113,8 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
 
     m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION] = std::make_unique<RenderPassCubeMapGeneration>(VkExtent2D({128, 128}));
+
+    m_vpRenderPasses[RENDERPASS_MESH_SHADER] = std::make_unique<RenderPassGBufferMeshShader>(VkExtent2D({m_uWidth, m_uHeight}));
 
     // IBL pass separated
     // Transparent pass
@@ -223,6 +226,12 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         RenderPassCubeMapGeneration* pCubeMapGenerationPass = static_cast<RenderPassCubeMapGeneration*>(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION].get());
         pCubeMapGenerationPass->PrepareRenderPass();
         pCubeMapGenerationPass->RecordCommandBuffers();
+    }
+
+    {
+        RenderPassGBufferMeshShader* pMeshShaderPass = static_cast<RenderPassGBufferMeshShader*>(m_vpRenderPasses[RENDERPASS_MESH_SHADER].get());
+        pMeshShaderPass->PrepareRenderPass();
+        pMeshShaderPass->RecordCommandBuffers();
     }
     // Prepare shadow pass
     {

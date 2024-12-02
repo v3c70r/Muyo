@@ -191,10 +191,14 @@ void VkRenderDevice::CreateDevice(
     };
 
     VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+
     VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     features13.maintenance4 = VK_TRUE;
     VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    features12.bufferDeviceAddress = VK_TRUE;
+    features12.separateDepthStencilLayouts = VK_TRUE;
     VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+    features11.multiview = VK_TRUE;
 
     features2.pNext = &features11;
     features11.pNext = &features12;
@@ -221,7 +225,7 @@ void VkRenderDevice::CreateDevice(
         // This will qury support for the chain
     }
 
-    vkGetPhysicalDeviceFeatures2(m_physicalDevice, &features2);
+    //vkGetPhysicalDeviceFeatures2(m_physicalDevice, &features2);
 
     // Handle queue family indices and add them to the device creation info
 

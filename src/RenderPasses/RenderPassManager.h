@@ -23,6 +23,7 @@ enum RenderPassNames
 
     // TODO(qgu): merge ibl passes with a manager
     RENDERPASS_CUBEMAP_GENERATION,
+    RENDERPASS_MESH_SHADER,
 
     RENDERPASS_GBUFFER,
     RENDERPASS_OPAQUE_LIGHTING,
