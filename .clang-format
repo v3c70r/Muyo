@@ -12,8 +12,6 @@ BreakConstructorInitializersBeforeComma: true
 BreakConstructorInitializers: BeforeComma
 BreakStringLiterals: true
 AlwaysBreakBeforeMultilineStrings: true
-BreakConstructorInitializersBeforeComma: true
-BreakConstructorInitializers: BeforeComma
 ConstructorInitializerAllOnOneLineOrOnePerLine: true
 
 # indent rules

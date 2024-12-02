@@ -67,14 +67,16 @@ void RenderPassGBufferMeshShader::RecordCommandBuffers()
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
         SCOPED_MARKER(m_commandBuffer, "mesh shader pass");
+
         VkClearValue clearValue;
         clearValue.depthStencil = {1.0, 0};
+        std::vector<VkClearValue> clearValues{clearValue};
 
         RenderPassBeginInfoBuilder rpBuilder;
         VkRenderPassBeginInfo rpBeginInfo = rpBuilder.setRenderPass(m_renderPassParameters.GetRenderPass())
                                                 .setFramebuffer(m_renderPassParameters.GetFramebuffer())
                                                 .setRenderArea(m_renderArea)
-                                                .setClearValues({clearValue})
+                                                .setClearValues({clearValues})
                                                 .Build();
         vkCmdBeginRenderPass(m_commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         {
