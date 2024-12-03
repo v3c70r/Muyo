@@ -5,10 +5,10 @@
 
 #include "shared/SharedStructures.h"
 
-layout(scalar, set = 0, binding = 0) buffer LightData_ { LightData i[]; }
+layout(scalar, set = 0, binding = 0) readonly buffer LightData_ { LightData i[]; }
 lightData;
 
-layout(scalar, set = 2, binding = 0) buffer PerObjData_ { PerObjData i[]; }
+layout(scalar, set = 2, binding = 0) readonly buffer PerObjData_ { PerObjData i[]; }
 perObjData;
 
 layout (push_constant) uniform PushConstant {
@@ -40,7 +40,7 @@ void main()
     uint objIndex = GetObjectIndex(gl_InstanceIndex);
     uint submeshIndex = GetSubmeshIndex(gl_InstanceIndex);
     outObjSubmeshIndex = uvec2(objIndex, submeshIndex);
-    mat4 instancedWorldMatrix = perObjData.i[objIndex].mWorldMatrix;
+    const mat4 instancedWorldMatrix = perObjData.i[objIndex].mWorldMatrix;
                                                                 //
     outWorldPos = instancedWorldMatrix * vec4(inPos, 1.0);
     outWorldNormal = normalize(instancedWorldMatrix * vec4(inNormal, 0.0));

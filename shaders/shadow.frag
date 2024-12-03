@@ -18,12 +18,12 @@ layout(location = 3) in vec4 inWorldNormal;
 layout(location = 4) flat in uvec2 inObjSubmeshIndex;
 
 // Light info for flux
-layout(scalar, set = 0, binding = 0) buffer LightData_ { LightData i[]; }
+layout(scalar, set = 0, binding = 0) buffer readonly LightData_ { LightData i[]; }
 lightData;
 
 MATERIAL_SSBO(1)
 
-layout(scalar, set = 2, binding = 0) buffer PerObjData_ { PerObjData i[]; }
+layout(scalar, set = 2, binding = 0) buffer readonly PerObjData_ { PerObjData i[]; }
 perObjData;
 
 layout (push_constant) uniform PushConstant {

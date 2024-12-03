@@ -9,7 +9,7 @@
 
 #define MATERIAL_SSBO(SET)                                          \
     layout(set = SET, binding = 0) uniform sampler2D AllTextures[]; \
-    layout(scalar, set = SET, binding = 1) buffer PBRMaterial_ { PBRMaterial i[]; } AllMaterials;
+    layout(scalar, set = SET, binding = 1) readonly buffer PBRMaterial_ { PBRMaterial i[]; } AllMaterials;
 
 #endif
 

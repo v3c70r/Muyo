@@ -11,6 +11,7 @@ public:
         : m_renderArea(renderArea)
     {
     }
+    ~RenderPassGBufferMeshShader() override;
     void PrepareRenderPass() override;
     void CreatePipeline() override;
     void RecordCommandBuffers();
@@ -18,7 +19,6 @@ public:
     {
         return m_commandBuffer;
     }
-    //~RenderPassGBufferMeshShader() override {};
 
 private:
     VkPipeline m_pipeline = VK_NULL_HANDLE;

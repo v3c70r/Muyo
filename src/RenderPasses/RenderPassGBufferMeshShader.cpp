@@ -94,5 +94,10 @@ void RenderPassGBufferMeshShader::RecordCommandBuffers()
     }
     vkEndCommandBuffer(m_commandBuffer);
 }
+
+RenderPassGBufferMeshShader::~RenderPassGBufferMeshShader()
+{
+    vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
+}
 }  // namespace Muyo
 
