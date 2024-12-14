@@ -15,7 +15,7 @@ void RenderPassGBufferMeshShader::PrepareRenderPass()
                                          true);
 
     const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
-    m_renderPassParameters.AddParameter(perView, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);
+    m_renderPassParameters.AddParameter(perView, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_MESH_BIT_EXT);
 
     m_renderPassParameters.Finalize("Render pass mesh shader");
     CreatePipeline();

@@ -11,7 +11,6 @@ enum SimpleMeshes
     SIMPLE_MESH_QUAD = 0,
     SIMPLE_MESH_CUBE = 1,
     SIMPLE_MESH_COUNT
-
 };
 // MeshResourceManager contains all the vertex and index buffers. As well as buffers for meshlets.
 
@@ -26,26 +25,6 @@ struct MeshVertexResources
     IndexBuffer* m_pIndexBuffer = nullptr;
 };
 
-struct MeshletDesc
-{
-    size_t nVertexIndexOffset;
-    size_t nVertexIndexCount;
-
-    size_t nTriangleIndexOffset;
-    size_t nTriangleIndexCount;
-
-    // TODO: Other meshlet data
-};
-
-struct MeshletMeshVertexResources
-{
-    std::vector<MeshletDesc> m_vMeshlets;
-
-    std::vector<Vertex> m_vVertices;
-    std::vector<Index> m_vVertexIndices;
-    std::vector<uint8_t> m_vTraingleIndices;    // Index of triangle in each meshlet
-};
-
 struct Mesh
 {
     uint32_t m_nVertexOffset;
@@ -55,10 +34,6 @@ struct Mesh
     uint32_t m_nIndexCount;
 
     uint32_t m_nMaterialIndex;
-};
-
-struct MeshletMesh
-{
 };
 
 class MeshResourceManager
