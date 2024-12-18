@@ -17,3 +17,9 @@
 [submodule "thirdparty/VulkanMemoryAllocator"]
 	path = thirdparty/VulkanMemoryAllocator
 	url = git@github.com:GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "thirdparty/spz"]
+	path = thirdparty/spz
+	url = git@github.com:v3c70r/spz.git
+[submodule "thirdparty/zlib"]
+	path = thirdparty/zlib
+	url = https://github.com/madler/zlib.git

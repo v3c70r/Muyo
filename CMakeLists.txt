@@ -21,6 +21,16 @@ set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}")
 set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}")
 set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if (UNIX)
+    set (CMAKE_CXX_FLAGS "-std=c++20 -Wall -pthread -Wno-missing-braces -g")
+    set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
+    set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
+    add_compile_options(-ffp-contract=off)
+elseif(MSVC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")
+    add_compile_options(/fp:strict)
+endif()
+
 ## GLFW
 # Look for precompiled glfw library
 find_package(glfw3 3.2 QUIET)
@@ -51,6 +61,18 @@ add_library(imgui
     thirdparty/imgui/imgui_widgets.cpp
     thirdparty/imgui/imgui_tables.cpp
     )
+
+# SPZ
+set(SPZ_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/spz/src/cc)
+add_library(spz
+    ${CMAKE_SOURCE_DIR}/thirdparty/spz/src/cc/load-spz.cc
+    ${CMAKE_SOURCE_DIR}/thirdparty/spz/src/cc/splat-c-types.cc
+    ${CMAKE_SOURCE_DIR}/thirdparty/spz/src/cc/splat-types.cc)
+add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/zlib)
+target_link_libraries(spz PRIVATE zlibstatic)
+include_directories(${SPZ_INCLUDE_DIRS})
+
+
 
 ## ImGuizmo
 set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo)
@@ -104,14 +126,6 @@ if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
     message(FATAL_ERROR "Can't find slang executable")
 endif()
 
-if (UNIX)
-    set (CMAKE_CXX_FLAGS "-std=c++20 -Wall -pthread -Wno-missing-braces -g")
-    set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
-    set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
-elseif(MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")
-endif()
-
 # Headers that shared between shader and cpp 
 set (SHARED_HEADER_DIR "${CMAKE_SOURCE_DIR}/shaders/shared")
 
@@ -137,6 +151,8 @@ include_directories(
     "src"
     )
 
+# TODO: Remove GLOB
+
 file(GLOB muyo_SRC
     "src/*.h"
     "src/*.cpp"
@@ -155,7 +171,7 @@ file(GLOB muyo_SRC
     )
 
 add_library(muyo STATIC ${muyo_SRC})
-target_link_libraries(muyo imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
+target_link_libraries(muyo imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer spz)
 
 file(GLOB main_SRC
     "src/app/helloVulkan.cpp"

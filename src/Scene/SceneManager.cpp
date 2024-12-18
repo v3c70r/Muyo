@@ -1,5 +1,6 @@
 #include "SceneManager.h"
 
+#include "GaussainSplatsSceneImporter.h"
 #include "LightSceneNode.h"
 #include "MeshResourceManager.h"
 #include "PerObjResourceManager.h"
@@ -18,15 +19,29 @@ SceneManager* GetSceneManager()
 
 void SceneManager::LoadSceneFromFile(const std::string& sPath)
 {
-    GLTFImporter importer;
-    std::vector<Scene> scenes = importer.ImportScene(sPath);
-    for (auto& scene : scenes)
+    std::filesystem::path filePath(sPath);
+    if (filePath.extension() == ".gltf")
     {
-        assert(m_mScenes.find(scene.GetName()) == m_mScenes.end());
-        m_mScenes[scene.GetName()] = std::move(scene);
+        GLTFImporter importer;
+        std::vector<Scene> scenes = importer.ImportScene(sPath);
+        for (auto& scene : scenes)
+        {
+            assert(m_mScenes.find(scene.GetName()) == m_mScenes.end());
+            m_mScenes[scene.GetName()] = std::move(scene);
+        }
+        GetMeshResourceManager()->PrepareSimpleMeshes();
+        GetMeshResourceManager()->UploadMeshData();
     }
-    GetMeshResourceManager()->PrepareSimpleMeshes();
-    GetMeshResourceManager()->UploadMeshData();
+    else if (filePath.extension() == ".spz")
+    {
+        SPZImporter importer;
+        std::vector<Scene> scenes = importer.ImportScene(sPath);
+        for (auto& scene: scenes)
+        {
+            assert(m_mScenes.find(scene.GetName()) == m_mScenes.end());
+            m_mScenes[scene.GetName()] = std::move(scene);
+        }
+    }
 }
 
 DrawLists SceneManager::GatherDrawLists()
