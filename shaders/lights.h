@@ -12,7 +12,7 @@
         uint nNumLights;                                                        \
     }                                                                           \
     numLights;                                                                  \
-    layout(scalar, set = SET, binding = 1) buffer LightData_ { LightData i[]; } \
+    layout(scalar, set = SET, binding = 1) readonly buffer LightData_ { LightData i[]; } \
     lightDatas;
 
 #endif

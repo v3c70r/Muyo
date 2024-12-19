@@ -23,10 +23,10 @@ class IRenderPass
 
 class RenderPass : public IRenderPass
 {
-  public:
+public:
     virtual void PrepareRenderPass() override{};
 
-  protected:
+protected:
     VkPipeline m_pipeline = VK_NULL_HANDLE;
     RenderPassParameters m_renderPassParameters;
 };

@@ -113,7 +113,6 @@ private:
     std::vector<std::unique_ptr<Submesh>> m_vSubmeshes;
     UniformBuffer<glm::mat4>* m_mWorldMatrixBuffer = nullptr;
     glm::mat4 m_mWorldMatrix = glm::mat4(1.0);  // Cached world matrix
-
 };
 
 class GeometryManager

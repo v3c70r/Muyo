@@ -64,6 +64,7 @@ struct PBRMaterial
     uint UVIndices[TEX_COUNT];
     vec3 vEmissiveFactor;
     uint textureIds[TEX_COUNT];
+    vec3 vPadding;
 };
 
 struct PerSubmeshData

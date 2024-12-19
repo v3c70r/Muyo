@@ -1,4 +1,5 @@
 #include "VkExtFuncsLoader.h"
+#include <vulkan/vulkan_core.h>
 
 namespace Muyo
 {
@@ -15,26 +16,28 @@ PFN_vkCreateRayTracingPipelinesKHR VkExt::vkCreateRayTracingPipelinesKHR = nullp
 PFN_vkGetRayTracingShaderGroupHandlesKHR VkExt::vkGetRayTracingShaderGroupHandlesKHR = nullptr;
 PFN_vkCmdTraceRaysKHR VkExt::vkCmdTraceRaysKHR = nullptr;
 PFN_vkCmdPipelineBarrier2KHR VkExt::vkCmdPipelineBarrier2KHR = nullptr;
+PFN_vkCmdDrawMeshTasksEXT VkExt::vkCmdDrawMeshTasksEXT = nullptr;
 bool VkExt::bExtensionLoaded = false;
 
 void VkExt::LoadInstanceFunctions(VkInstance instance)
 {
     if (!bExtensionLoaded)
     {
-#define GET_VK_INSTANCE_FUNC_RT(FUNC_NAME) \
+#define GET_VK_INSTANCE_FUNC_EXT(FUNC_NAME) \
     FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(instance, #FUNC_NAME);
 
-        GET_VK_INSTANCE_FUNC_RT(vkCreateAccelerationStructureKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkDestroyAccelerationStructureKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkCmdBuildAccelerationStructuresKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkCmdWriteAccelerationStructuresPropertiesKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkGetAccelerationStructureBuildSizesKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkCmdCopyAccelerationStructureKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkGetAccelerationStructureDeviceAddressKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkCreateRayTracingPipelinesKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkGetRayTracingShaderGroupHandlesKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkCmdTraceRaysKHR);
-        GET_VK_INSTANCE_FUNC_RT(vkCmdPipelineBarrier2KHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCreateAccelerationStructureKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkDestroyAccelerationStructureKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCmdBuildAccelerationStructuresKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCmdWriteAccelerationStructuresPropertiesKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkGetAccelerationStructureBuildSizesKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCmdCopyAccelerationStructureKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkGetAccelerationStructureDeviceAddressKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCreateRayTracingPipelinesKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkGetRayTracingShaderGroupHandlesKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCmdTraceRaysKHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCmdPipelineBarrier2KHR);
+        GET_VK_INSTANCE_FUNC_EXT(vkCmdDrawMeshTasksEXT);
 
         bExtensionLoaded = true;
     }

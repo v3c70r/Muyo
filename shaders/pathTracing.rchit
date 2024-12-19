@@ -30,7 +30,7 @@ struct Vertex
 
 CAMERA_UBO(0)
 layout(set = 0, binding = 1) uniform accelerationStructureEXT topLevelAS;
-layout(set = 0, binding = 4, scalar) buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
+layout(set = 0, binding = 4, scalar) readonly  buffer PrimDesc_ {PrimitiveDesc i[]; } primDescs;
 layout(set = 0, binding = 5) uniform sampler2D AllTextures[];
 layout(set = 2, binding = 6) uniform samplerCube environmentMap;
 

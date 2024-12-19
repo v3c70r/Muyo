@@ -18,7 +18,7 @@ layout(location = 4) flat in uvec2 inObjSubmeshIndex;
 layout(location = 0) out vec4 outColor;
 
 CAMERA_UBO(0)
-layout(scalar, set = 1, binding = 0) buffer PerObjData_ { PerObjData i[]; }
+layout(scalar, set = 1, binding = 0) readonly buffer PerObjData_ { PerObjData i[]; }
 perObjData;
 MATERIAL_SSBO(2)
 

@@ -19,7 +19,7 @@ layout(location = 2) out vec4 outNormalRoughness;
 layout(location = 3) out vec4 outMatelnessTranslucency;
 
 CAMERA_UBO(0)
-layout(scalar, set = 1, binding = 0) buffer PerObjData_ { PerObjData i[]; }
+layout(scalar, set = 1, binding = 0) readonly buffer PerObjData_ { PerObjData i[]; }
 perObjData;
 MATERIAL_SSBO(2)
 

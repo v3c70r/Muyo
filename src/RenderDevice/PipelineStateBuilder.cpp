@@ -8,6 +8,20 @@
 namespace Muyo
 {
 
+PipelineStateBuilder& PipelineStateBuilder::SetShaderModule(VkShaderModule shaderModule,
+                                      VkShaderStageFlagBits shaderStageBit)
+{
+    VkPipelineShaderStageCreateInfo shaderStageInfo = {};
+    shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStageInfo.stage = shaderStageBit;
+    shaderStageInfo.module = shaderModule;
+    shaderStageInfo.pName = "main";
+
+    m_vShaderStageInfos.push_back(shaderStageInfo);
+
+    return *this;
+}
+
 PipelineStateBuilder& PipelineStateBuilder::setShaderModules(
     const std::vector<VkShaderModule>& shaderModules)
 {
@@ -36,13 +50,16 @@ PipelineStateBuilder& PipelineStateBuilder::setVertextInfo(
     const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
     const std::vector<VkVertexInputAttributeDescription>& attribDescriptions)
 {
-    m_vertexInputInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    m_vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
-    m_vertexInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
-    m_vertexInputInfo.vertexAttributeDescriptionCount =
-        static_cast<uint32_t>(attribDescriptions.size());
-    m_vertexInputInfo.pVertexAttributeDescriptions = attribDescriptions.data();
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                                                         nullptr,
+                                                         0,
+                                                         static_cast<uint32_t>(bindingDescriptions.size()),
+                                                         bindingDescriptions.data(),
+                                                         static_cast<uint32_t>(attribDescriptions.size()),
+                                                         attribDescriptions.data()
+
+    };
+    m_vertexInputInfo = vertexInputInfo;
 
     return *this;
 }
@@ -68,9 +85,9 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     pipelineInfo.stageCount = (uint32_t)m_vShaderStageInfos.size();
     pipelineInfo.pStages = m_vShaderStageInfos.data();
 
-    pipelineInfo.pVertexInputState = &m_vertexInputInfo;
+    pipelineInfo.pVertexInputState = m_vertexInputInfo.has_value() ? &m_vertexInputInfo.value() : nullptr;
 
-    pipelineInfo.pInputAssemblyState = &m_inputAssemblyInfo;
+    pipelineInfo.pInputAssemblyState = m_inputAssemblyInfo.has_value() ? &m_inputAssemblyInfo.value() : nullptr;
 
     pipelineInfo.pViewportState = &m_viewPortState;
 

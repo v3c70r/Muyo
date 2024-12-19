@@ -6,7 +6,7 @@
 #include "Camera.h"
 #include "shared/SharedStructures.h"
 CAMERA_UBO(0)
-layout(scalar, set = 1, binding = 0) buffer PerObjData_ { PerObjData i[]; }perObjData;
+layout(scalar, set = 1, binding = 0) readonly buffer PerObjData_ { PerObjData i[]; }perObjData;
 
 layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNormal;

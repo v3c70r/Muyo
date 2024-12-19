@@ -18,6 +18,7 @@ public:
     static PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
     static PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
     static PFN_vkCmdPipelineBarrier2KHR vkCmdPipelineBarrier2KHR;
+    static PFN_vkCmdDrawMeshTasksEXT vkCmdDrawMeshTasksEXT;
     static bool bExtensionLoaded;
 
     static void LoadInstanceFunctions(VkInstance instance);

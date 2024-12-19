@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -18,8 +19,14 @@ class VertexBuffer;
 class PipelineStateBuilder
 {
 public:
+
+    PipelineStateBuilder& SetShaderModule(VkShaderModule shaderModule,
+                                          VkShaderStageFlagBits shaderStageBit);
+
     PipelineStateBuilder& setShaderModules(
         const std::vector<VkShaderModule>& shaderModules);
+
+
     PipelineStateBuilder& setVertextInfo(
         const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
         const std::vector<VkVertexInputAttributeDescription>&
@@ -88,8 +95,8 @@ public:
 
 private:
     std::vector<VkPipelineShaderStageCreateInfo> m_vShaderStageInfos;
-    VkPipelineVertexInputStateCreateInfo m_vertexInputInfo = {};
-    VkPipelineInputAssemblyStateCreateInfo m_inputAssemblyInfo = {};
+    std::optional<VkPipelineVertexInputStateCreateInfo> m_vertexInputInfo = {};
+    std::optional<VkPipelineInputAssemblyStateCreateInfo> m_inputAssemblyInfo = {};
 
     VkPipelineViewportStateCreateInfo m_viewPortState = {};
     VkPipelineRasterizationStateCreateInfo m_rasterizerInfo = {};
