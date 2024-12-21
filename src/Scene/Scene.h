@@ -77,6 +77,7 @@ public:
         DL_TRANSPARENT,
         DL_OPAQUE,
         DL_LIGHT,
+        DL_GS,
         DL_COUNT
     };
     std::array<DrawList, DL_COUNT> m_aDrawLists;

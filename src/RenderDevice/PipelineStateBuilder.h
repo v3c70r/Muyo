@@ -2,13 +2,9 @@
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
-#include <cassert>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <vector>
-
-#include "VkRenderDevice.h"
 
 namespace Muyo
 {

@@ -4,6 +4,7 @@
 
 #include <functional>
 
+#include "GaussianSplattingSceneNode.h"
 #include "Geometry.h"
 #include "LightSceneNode.h"
 #include "RenderResourceManager.h"
@@ -88,6 +89,11 @@ const DrawLists &Scene::GatherDrawLists()
 
                 drawLists.m_aDrawLists[DrawLists::DL_LIGHT].push_back(pLightSceneNode);
                 pLightSceneNode->SetWorldMatrix(mWorldMatrix);
+            }
+            // Gather gaussian splats
+            else if (GaussianSplatsSceneNode* pGaussianSplatsSceneNode = dynamic_cast<GaussianSplatsSceneNode*>(pNode.get()))
+            {
+                drawLists.m_aDrawLists[DrawLists::DL_GS].push_back(pNode.get());
             }
 
             // Setup per obj data

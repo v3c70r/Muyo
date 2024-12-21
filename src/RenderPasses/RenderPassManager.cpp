@@ -8,6 +8,7 @@
 #include "RenderPass.h"
 #include "RenderPassCubeMapGeneration.h"
 #include "RenderPassGBuffer.h"
+#include "RenderPassGaussianSplats.h"
 #include "RenderPassOpaqueLighting.h"
 #include "RenderPassRSM.h"
 #include "RenderPassSkybox.h"
@@ -115,6 +116,8 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION] = std::make_unique<RenderPassCubeMapGeneration>(VkExtent2D({128, 128}));
 
     m_vpRenderPasses[RENDERPASS_MESH_SHADER] = std::make_unique<RenderPassGBufferMeshShader>(VkExtent2D({m_uWidth, m_uHeight}));
+
+    m_vpRenderPasses[RENDERPASS_GAUSSIAN_SPLATS] = std::make_unique<RenderPassGaussianSplats>(vp);
 
     // IBL pass separated
     // Transparent pass
@@ -233,6 +236,13 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         pMeshShaderPass->PrepareRenderPass();
         pMeshShaderPass->RecordCommandBuffers();
     }
+
+    {
+        RenderPassGaussianSplats* pGaussianSplatsPass = static_cast<RenderPassGaussianSplats*>(m_vpRenderPasses[RENDERPASS_GAUSSIAN_SPLATS].get());
+        pGaussianSplatsPass->SetGaussainSplatsSceneNode(static_cast<const GaussianSplatsSceneNode*>(drawLists.m_aDrawLists[DrawLists::DL_GS][0]));
+        pGaussianSplatsPass->PrepareRenderPass();
+        pGaussianSplatsPass->RecordCommandBuffers();
+    }
     // Prepare shadow pass
     {
         m_pShadowPassManager->SetLights(drawLists.m_aDrawLists[DrawLists::DL_LIGHT]);
@@ -311,6 +321,8 @@ void RenderPassManager::SubmitCommandBuffers()
    
     // Mesh shader
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_MESH_SHADER]->GetCommandBuffer());
+
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GAUSSIAN_SPLATS]->GetCommandBuffer());
 
     // Shadow pass
     // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());

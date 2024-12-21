@@ -21,7 +21,8 @@ enum Code
     BG_GREEN = 42,
     BG_BLUE = 44,
     BG_YELLOW = 43,
-    BG_DEFAULT = 49
+    BG_DEFAULT = 49,
+    END = 0
 };
 class Modifier
 {
@@ -29,10 +30,7 @@ class Modifier
 
 public:
     Modifier(Code pCode) : code(pCode) {}
-    friend std::ostream& operator<<(std::ostream& os, const Modifier& mod)
-    {
-        return os << "\033[" << mod.code << "m";
-    }
+    friend std::ostream& operator<<(std::ostream& os, const Modifier& mod) { return os << "\033[" << mod.code << "m"; }
 };
 }  // namespace Color
 
@@ -66,14 +64,12 @@ const char* GetValidationLayerName()
     return "VK_LAYER_KHRONOS_validation";
 }
 
-static VkBool32 DebugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
+static VkBool32 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT,
+                              const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
     Color::Modifier red(Color::FG_RED);
-    Color::Modifier normal(Color::BG_DEFAULT);
     Color::Modifier yellow(Color::FG_YELLOW);
+    Color::Modifier end(Color::END);
 
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
     {
@@ -87,14 +83,12 @@ static VkBool32 DebugCallback(
             std::cerr << "CmdBuffer: " << pCallbackData->pCmdBufLabels[i].pLabelName << std::endl;
         }
 
-        std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << normal
-                  << std::endl;
+        std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << end << std::endl;
         assert(0 && "Vulkan Error");
     }
     else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
     {
-        std::cerr << yellow << "[WARNING]:" << pCallbackData->pMessage << normal
-                  << std::endl;
+        std::cerr << yellow << "[WARNING]:" << pCallbackData->pMessage << end << std::endl;
     }
 
     return VK_FALSE;

@@ -227,7 +227,7 @@ foreach (SLANG_SOURCE_FILE ${SLANG_SOURCE_FILES})
         OUTPUT ${SPIRV}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
         #hello-world.slang -profile glsl_450 -target spirv -o hello-world.spv -entry computeMain
-        COMMAND ${Vulkan_SLANG_EXECUTABLE} ${SLANG_SOURCE_FILE} -DSHADER_CODE -DSLANG -capability spirv_1_4 -profile glsl_450 -target spirv -o ${SPIRV} -entry main
+        COMMAND ${Vulkan_SLANG_EXECUTABLE} ${SLANG_SOURCE_FILE} -DSHADER_CODE -DSLANG -g -capability spirv_1_4 -profile glsl_450 -target spirv -o ${SPIRV} -entry main
         DEPENDS ${SLANG_SOURCE_FILE}# ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
         )
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})

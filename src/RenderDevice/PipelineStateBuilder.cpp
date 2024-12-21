@@ -4,6 +4,10 @@
 
 #include <array>
 #include <cassert>
+#include <fstream>
+
+#include "Debug.h"
+#include "VkRenderDevice.h"
 
 namespace Muyo
 {
@@ -50,31 +54,38 @@ PipelineStateBuilder& PipelineStateBuilder::setVertextInfo(
     const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
     const std::vector<VkVertexInputAttributeDescription>& attribDescriptions)
 {
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-                                                         nullptr,
-                                                         0,
-                                                         static_cast<uint32_t>(bindingDescriptions.size()),
-                                                         bindingDescriptions.data(),
-                                                         static_cast<uint32_t>(attribDescriptions.size()),
-                                                         attribDescriptions.data()
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo;
+    if (bindingDescriptions.size() != 0)
+    {
+        vertexInputInfo = {VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                           nullptr,
+                           0,
+                           static_cast<uint32_t>(bindingDescriptions.size()),
+                           bindingDescriptions.data(),
+                           static_cast<uint32_t>(attribDescriptions.size()),
+                           attribDescriptions.data()
 
-    };
+        };
+    }
+    else
+    {
+        vertexInputInfo = {
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, nullptr, 0, 0, nullptr, 0, nullptr};
+    }
     m_vertexInputInfo = vertexInputInfo;
 
     return *this;
 }
 
-PipelineStateBuilder& PipelineStateBuilder::setViewport(
-    const VkViewport& viewport, const VkRect2D& scissor)
-{
-    m_viewPortState.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    m_viewPortState.viewportCount = 1;
-    m_viewPortState.pViewports = &viewport;
-    m_viewPortState.scissorCount = 1;
-    m_viewPortState.pScissors = &scissor;
+    PipelineStateBuilder& PipelineStateBuilder::setViewport(const VkViewport& viewport, const VkRect2D& scissor)
+    {
+        m_viewPortState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        m_viewPortState.viewportCount = 1;
+        m_viewPortState.pViewports = &viewport;
+        m_viewPortState.scissorCount = 1;
+        m_viewPortState.pScissors = &scissor;
 
-    return *this;
+        return *this;
 }
 
 VkPipeline PipelineStateBuilder::Build(VkDevice device)
