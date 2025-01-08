@@ -73,6 +73,13 @@ public:
         m_GpuRotationBuffer = GetRenderResourceManager()->GetStorageBuffer(m_GpuRotationBufferName + m_sName, m_Rotations);
         m_GpuAlphaBuffer = GetRenderResourceManager()->GetStorageBuffer(m_GpuAlphaBufferName + m_sName, m_Alphas);
         m_GpuColorBuffer = GetRenderResourceManager()->GetStorageBuffer(m_GpuColorBufferName + m_sName, m_Colors);
+
+        // Extract AABB
+        for (const auto& pos : m_Positions)
+        {
+            m_AABB.vMin = glm::min(m_AABB.vMin, pos);
+            m_AABB.vMax = glm::max(m_AABB.vMax, pos);
+        }
     }
 
     // Get num of splats

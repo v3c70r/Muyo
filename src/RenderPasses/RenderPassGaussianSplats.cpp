@@ -4,6 +4,7 @@
 #include "Camera.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
+#include "RenderResourceNames.h"
 namespace Muyo
 {
 void RenderPassGaussianSplats::PrepareRenderPass() {
@@ -13,10 +14,12 @@ void RenderPassGaussianSplats::PrepareRenderPass() {
     }
 
     m_renderPassParameters.SetRenderArea(m_renderArea);
-    m_renderPassParameters.AddAttachment(GetRenderResourceManager()->GetColorTarget("GaussianSplats", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, true);
+    m_renderPassParameters.AddAttachment(
+        GetRenderResourceManager()->GetResource<RenderTarget>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME),
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
 
     // Perview
-    m_renderPassParameters.AddParameter(GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView"),
+    m_renderPassParameters.AddParameter(GetRenderResourceManager()->GetUniformBuffer<PerViewData>(PER_VIEW),
                                         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);
 
     assert(m_pGaussianSplatsSceneNode != nullptr);

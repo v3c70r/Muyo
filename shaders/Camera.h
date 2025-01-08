@@ -28,10 +28,10 @@
 #else
 struct CameraUBO
 {
-    matrix<float, 4, 4> view;
-    matrix<float, 4, 4> proj;
-    matrix<float, 4, 4> projInv;
-    matrix<float, 4, 4> viewInv;
+    float4x4 view;
+    float4x4 proj;
+    float4x4 projInv;
+    float4x4 viewInv;
     float2 screenExtent;
     float2 padding;
     float3 vLT;

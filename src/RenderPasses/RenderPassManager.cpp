@@ -237,13 +237,7 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         pMeshShaderPass->RecordCommandBuffers();
     }
 
-    {
-        RenderPassGaussianSplats* pGaussianSplatsPass = static_cast<RenderPassGaussianSplats*>(m_vpRenderPasses[RENDERPASS_GAUSSIAN_SPLATS].get());
-        pGaussianSplatsPass->SetGaussainSplatsSceneNode(static_cast<const GaussianSplatsSceneNode*>(drawLists.m_aDrawLists[DrawLists::DL_GS][0]));
-        pGaussianSplatsPass->PrepareRenderPass();
-        pGaussianSplatsPass->RecordCommandBuffers();
-    }
-    // Prepare shadow pass
+        // Prepare shadow pass
     {
         m_pShadowPassManager->SetLights(drawLists.m_aDrawLists[DrawLists::DL_LIGHT]);
         m_pShadowPassManager->PrepareRenderPasses();
@@ -266,6 +260,16 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         const std::vector<const SceneNode *> &transparentDrawList = drawLists.m_aDrawLists[DrawLists::DL_TRANSPARENT];
         pTransparentPass->PrepareRenderPass();
         pTransparentPass->RecordCommandBuffers(transparentDrawList);
+    }
+
+    // Render Gaussian splats in transparent pass
+    {
+        RenderPassGaussianSplats *pGaussianSplatsPass =
+            static_cast<RenderPassGaussianSplats *>(m_vpRenderPasses[RENDERPASS_GAUSSIAN_SPLATS].get());
+        pGaussianSplatsPass->SetGaussainSplatsSceneNode(
+            static_cast<const GaussianSplatsSceneNode *>(drawLists.m_aDrawLists[DrawLists::DL_GS][0]));
+        pGaussianSplatsPass->PrepareRenderPass();
+        pGaussianSplatsPass->RecordCommandBuffers();
     }
 
 #ifdef FEATURE_RAY_TRACING
@@ -305,6 +309,9 @@ void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
 void RenderPassManager::SubmitCommandBuffers()
 {
     // This function manages command buffer submissions and queue synchronizations
+    // The submission is a little bit funky because I manually manage the queue synchronization. 
+    // Basically, I put all the passes in a graph and inserts a few semaphores to synchronize the passes.
+    // Probably here is a good place to play with dependency graph just for fun
     std::vector<VkCommandBuffer> vCmdBufs;
     std::vector<VkSemaphore> vWaitForSemaphores;
     std::vector<VkPipelineStageFlags> vWaitStages;
@@ -322,7 +329,6 @@ void RenderPassManager::SubmitCommandBuffers()
     // Mesh shader
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_MESH_SHADER]->GetCommandBuffer());
 
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GAUSSIAN_SPLATS]->GetCommandBuffer());
 
     // Shadow pass
     // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
@@ -332,20 +338,22 @@ void RenderPassManager::SubmitCommandBuffers()
     // Submit graphics queue to signal depth ready semaphore
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer());
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING]->GetCommandBuffer());
+    // Submit other graphics tasks
+    if (auto cmdBuf = m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer())
+    {
+        vCmdBufs.push_back(cmdBuf);
+    }
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer());    // Depth to Shader read
+
+    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GAUSSIAN_SPLATS]->GetCommandBuffer());
     vSignalSemaphores.push_back(m_depthReady);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
 
     vCmdBufs.clear();
     vSignalSemaphores.clear();
 
-    // Submit other graphics tasks
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer());
-    if (auto cmdBuf = m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer())
-    {
-        vCmdBufs.push_back(cmdBuf);
-    }
+    
 
-    vCmdBufs.clear();
     // Submit compute tasks
     vWaitForSemaphores.push_back(m_depthReady);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);

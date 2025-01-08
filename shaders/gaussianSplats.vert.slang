@@ -28,7 +28,7 @@ static const float2 vertices[6] = {
 
 float3 ComputeQuadPos(float3 position, float3 upVector, matrix pv, int vertexID)
 {
-    float4 clipPos = mul(float4(position, 1.0), pv);
+    float4 clipPos = mul(float4(position, 1.0), (pv));
     clipPos /= clipPos.w;
     float4 clipPosUp = mul(float4(position + upVector, 1.0), pv);
     clipPosUp /= clipPosUp.w;
@@ -53,7 +53,7 @@ main(VertexInput input)
 {
     VS_OUTPUT output = (VS_OUTPUT)0;
 
-    const matrix pv = uboCamera.proj * uboCamera.view;
+    const matrix pv = mul(uboCamera.view, uboCamera.proj);
 
     output.pos =
         float4(ComputeQuadPos(positions[input.instanceID], ExtractUpVector(uboCamera.view), pv, int(input.vertexID)), 1.0);
