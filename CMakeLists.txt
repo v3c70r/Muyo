@@ -233,9 +233,40 @@ foreach (SLANG_SOURCE_FILE ${SLANG_SOURCE_FILES})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()
 
-
-
-
+# Build hlsl sorting shaders
+# customized building process with DXC
+if(NOT Vulkan_dxc_exe_FOUND)
+    find_program(Vulkan_dxc_EXECUTABLE
+                NAMES dxc
+                HINTS
+                "$ENV{VULKAN_SDK}/Bin"
+                "$ENV{VULKAN_SDK}/bin"
+                )
+endif()
+if(Vulkan_dxc_EXECUTABLE)
+    message(STATUS "Found DirectX Shader Compiler under ${Vulkan_dxc_EXECUTABLE}")
+else()
+    message(STATUS "Couldn't find DirectX Shader Compiler executable, make sure it is present in Vulkan SDK or add it manually via Vulkan_dxc_EXECUTABLE cmake variable. HLSL shaders won't be compiled.")
+endif()
+set (SORT_PASSES 
+    "InitSweep"
+    "GlobalHistogram"
+    "Scan"
+    "DigitBinningPass")
+    
+foreach (PASS ${SORT_PASSES})
+    set(SPIRV "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${PASS}.hlsl.spv")
+    add_custom_command(
+        OUTPUT ${SPIRV}
+        # -spirv -T cs_6_0 -E Scan OneSweep.hlsl -Fo Scan.spv -Zi -fspv-target-env="vulkan1.3"
+        COMMAND ${Vulkan_dxc_EXECUTABLE} -spirv -T cs_6_0 -E ${PASS} ${CMAKE_SOURCE_DIR}/shaders/Sorting/OneSweep.hlsl -Fo ${SPIRV} -Zi -fspv-target-env="vulkan1.3"
+        DEPENDS 
+        ${CMAKE_SOURCE_DIR}/shaders/Sorting/OneSweep.hlsl
+        ${CMAKE_SOURCE_DIR}/shaders/Sorting/SortCommon.hlsl
+        ${CMAKE_SOURCE_DIR}/shaders/Sorting/SweepCommon.hlsl
+        )
+    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
+endforeach()
 
 add_custom_target(
     Shaders
