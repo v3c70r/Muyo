@@ -150,8 +150,6 @@ file(GLOB muyo_SRC
     "src/RenderResources/*.cpp"
     "src/Scene/*.h"
     "src/Scene/*.cpp"
-    "src/tests/*.h"
-    "src/tests/*.cpp"
     )
 
 add_library(muyo STATIC ${muyo_SRC})
@@ -237,6 +235,21 @@ add_custom_command(
 message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Tests
+
+Include(FetchContent)
+
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.8.0 # or a later release
+)
+
+FetchContent_MakeAvailable(Catch2)
+add_executable(tests src/tests/testRenderGraph.cpp)
+message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
+target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
+
 # Disable tests for now until proper method has been found to load the gltf
 #add_executable(testSceneImporter
 #    src/Geometry.cpp
