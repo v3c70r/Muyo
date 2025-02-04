@@ -1,22 +1,16 @@
 #pragma once
-
-#include <iostream>
-#include <memory>
-#include <vector>
-#include <stack>
-#include <unordered_map>
-
-#include <RenderResources/RenderResourceManager.h>
-#include "RenderPass.h"
+#include "DependencyGraph.h"
 
 namespace Muyo
 {
 
+class IRenderPass;
+class IRenderResource;
 struct RenderResourceHandle
 {
     const IRenderResource* pRenderResource = nullptr;
     uint32_t nVersion = 0;
-    bool operator == (const RenderResourceHandle& other)
+    bool operator == (const RenderResourceHandle& other) const
     {
         return pRenderResource == other.pRenderResource && nVersion == other.nVersion;
     }
@@ -25,14 +19,19 @@ struct RenderResourceHandle
 struct RenderGraphNode
 {
     std::vector<RenderResourceHandle> m_vInputResources;
-    std::vector<RenderResourceHandle> m_vOuptputResources;
-    IRenderPass* pRenderPass = nullptr;
+    std::vector<RenderResourceHandle> m_vOutputResources;
+    IRenderPass* m_pRenderPass = nullptr;
+    bool operator == (const RenderGraphNode& other) const
+    {
+        return m_vInputResources == other.m_vInputResources && m_vOutputResources == other.m_vOutputResources && m_pRenderPass == other.m_pRenderPass;
+    }
 };
 
-class RenderGraph
+class RenderDependencyGraph : DependencyGraph<const RenderGraphNode*>
 {
-  public:
-    void AddNode(const std::vector<const IRenderResource*>& vInputResources, const std::vector<const IRenderResource*>& vOutputResources, IRenderPass* pRenderPass)
+public:
+    void AddNode(const std::vector<const IRenderResource*>&& vInputResources,
+                 const std::vector<const IRenderResource*>&& vOutputResources, IRenderPass* pRenderPass)
     {
         // Bump output resource version
         m_vpRGNs.push_back(std::make_unique<RenderGraphNode>());
@@ -48,14 +47,14 @@ class RenderGraph
                 m_mResourceVersion[outputResource]++;
             }
 
-            node.m_vOuptputResources.push_back({ outputResource, m_mResourceVersion[outputResource] });
+            node.m_vOutputResources.push_back({outputResource, m_mResourceVersion[outputResource]});
         }
 
         for (auto* inputResource : vInputResources)
         {
-            node.m_vInputResources.push_back({ inputResource, m_mResourceVersion[inputResource] });
+            node.m_vInputResources.push_back({inputResource, m_mResourceVersion[inputResource]});
         }
-        node.pRenderPass = pRenderPass;
+        node.m_pRenderPass = pRenderPass;
     }
 
     void ConstructAdjList()
@@ -67,11 +66,14 @@ class RenderGraph
                 for (const RenderResourceHandle& inputHandle : m_vpRGNs[j]->m_vInputResources)
                 {
                     const RenderGraphNode* pFromNode = m_vpRGNs[i].get();
-                    const RenderGraphNode* pToNode   = m_vpRGNs[j].get();
+                    const RenderGraphNode* pToNode = m_vpRGNs[j].get();
 
-                    if (std::find(pFromNode->m_vOuptputResources.begin(), pFromNode->m_vOuptputResources.end(), inputHandle) != pFromNode->m_vOuptputResources.end())
+                    // FromNode depends on ToNode, thus FromNode's input resource must be in ToNode's output resources
+
+                    if (std::find(pFromNode->m_vInputResources.begin(), pFromNode->m_vInputResources.end(),
+                                  inputHandle) != pFromNode->m_vOutputResources.end())
                     {
-                        m_mAdjList[pFromNode].push_back(pToNode);
+                        AddEdge(pFromNode, pToNode);
                         break;
                     }
                 }
@@ -79,61 +81,41 @@ class RenderGraph
         }
     }
 
-  private:
+private:
     std::vector<std::unique_ptr<RenderGraphNode>> m_vpRGNs;
-    std::unordered_map<const RenderGraphNode*, std::vector<const RenderGraphNode*>> m_mAdjList;
     std::unordered_map<const IRenderResource*, uint32_t> m_mResourceVersion;    // track current resource version
 };
+}    // namespace Muyo
 
-template<typename T>
-class Graph
+namespace std
 {
-  private:
-    std::unordered_map<T, std::vector<T>> adjacencyList;
-
-    void dfsUtil(const T& vertex, std::unordered_map<T, bool>& visited, std::stack<T>& stack)
+template <>
+struct hash<Muyo::RenderResourceHandle>
+{
+    size_t operator()(const Muyo::RenderResourceHandle& handle) const
     {
-        visited[vertex] = true;
-
-        for (const T& neighbor : adjacencyList[vertex])
-        {
-            if (!visited[neighbor])
-            {
-                dfsUtil(neighbor, visited, stack);
-            }
-        }
-
-        stack.push(vertex);
-    }
-
-  public:
-    void addEdge(const T& from, const T& to)
-    {
-        adjacencyList[from].push_back(to);
-    }
-
-    std::vector<T> topologicalSort()
-    {
-        std::unordered_map<T, bool> visited;
-        std::stack<T> stack;
-
-        for (const auto& pair : adjacencyList)
-        {
-            if (!visited[pair.first])
-            {
-                dfsUtil(pair.first, visited, stack);
-            }
-        }
-
-        std::vector<T> result;
-        while (!stack.empty())
-        {
-            result.push_back(stack.top());
-            stack.pop();
-        }
-
-        return result;
+        return hash<const Muyo::IRenderResource*>()(handle.pRenderResource) ^ ::std::hash<uint32_t>()(handle.nVersion);
     }
 };
 
-}    // namespace Muyo
+template <>
+struct hash<Muyo::RenderGraphNode>
+{
+    size_t operator()(const Muyo::RenderGraphNode& node) const
+    {
+        size_t hash = 0;
+        for (const Muyo::RenderResourceHandle& inputHandle : node.m_vInputResources)
+        {
+            hash ^= std::hash<Muyo::RenderResourceHandle>{}(inputHandle);
+        }
+
+        for (const Muyo::RenderResourceHandle& outputHandle : node.m_vOutputResources)
+        {
+            hash ^= std::hash<Muyo::RenderResourceHandle>{}(outputHandle);
+        }
+
+        hash ^= std::hash<Muyo::IRenderPass*>{}(node.m_pRenderPass);
+        return hash;
+    }
+};
+}  // namespace std

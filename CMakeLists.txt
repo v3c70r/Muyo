@@ -236,6 +236,9 @@ message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Tests
 
+enable_testing()
+include(CTest)
+
 Include(FetchContent)
 
 FetchContent_Declare(
@@ -249,6 +252,8 @@ add_executable(tests src/tests/testRenderGraph.cpp)
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
 target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src)
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
+include(Catch)
+catch_discover_tests(tests)
 
 # Disable tests for now until proper method has been found to load the gltf
 #add_executable(testSceneImporter
