@@ -3,22 +3,6 @@
 #include "RenderGraph/DependencyGraph.h"
 #include "RenderGraph/RenderGraph.h"
 
-
-namespace Muyo
-{
-class IRenderResource
-{
-public:
-    std::string sName;
-};
-
-class IRenderPass
-{
-public:
-    std::string sName;
-};
-}
-
 TEST_CASE("DependencyGraph_TopSort", "TopSort")
 {
     Muyo::DependencyGraph<int> graph;
@@ -62,7 +46,24 @@ TEST_CASE("DependencyGraph_ParallelExecutionLevels", "ParallelExecutionLevels")
     REQUIRE(executionLevels == expectedLevels);
 }
 
-TEST_CASE( "Factorials are computed", "[factorial]" ) {
+namespace Muyo
+{
+class IRenderResource
+{
+public:
+    std::string m_sName;
+};
+
+class IRenderPass
+{
+public:
+    std::string m_sName;
+};
+}
+
+TEST_CASE( "RenderDependencyGraph_Ping_Pong", "Ping Pong" ) {
+
+    // pongPass -> pingPass Pong pass depends on ping pass
 
     auto inputResource = std::make_unique<Muyo::IRenderResource>(Muyo::IRenderResource{"inputResource"});
     auto outputResource = std::make_unique<Muyo::IRenderResource>(Muyo::IRenderResource{"outputResource"});
@@ -70,46 +71,15 @@ TEST_CASE( "Factorials are computed", "[factorial]" ) {
     auto pingPass = std::make_unique<Muyo::IRenderPass>(Muyo::IRenderPass{"pingPass"});
     auto pongPass = std::make_unique<Muyo::IRenderPass>(Muyo::IRenderPass{"pongPass"});
 
-    // construct two render graph nodes
-    Muyo::RenderResourceHandle pingInputResource = 
-    {
-        .pRenderResource = inputResource.get(),
-        .nVersion = 0
-    };
+    Muyo::RenderDependencyGraph rdg;
+    rdg.AddPass({inputResource.get()}, {outputResource.get()}, pingPass.get());
+    rdg.AddPass({outputResource.get()}, {inputResource.get()}, pongPass.get());
+    rdg.ConstructAdjList();
+    auto executionLevels = rdg.GetParallelExecutionLevels();
 
-    Muyo::RenderResourceHandle pingOutputResource = 
-    {
-        .pRenderResource = outputResource.get(),
-        .nVersion = 0
-    };
-    Muyo::RenderGraphNode pingNode = {
-        .m_vInputResources = {pingInputResource},
-        .m_vOutputResources = {pingOutputResource},
-        .m_pRenderPass = pingPass.get()
-    };
-
-    // Pong node
-    Muyo::RenderResourceHandle pongInputResource = 
-    {
-        .pRenderResource = outputResource.get(),
-        .nVersion = 1 // bump version since it's an output resource of ping
-    };
-    Muyo::RenderResourceHandle pongOutputResource = 
-    {
-        .pRenderResource = inputResource.get(),
-        .nVersion = 0
-    };
-    Muyo::RenderGraphNode pongNode = {
-        .m_vInputResources = {pongInputResource},
-        .m_vOutputResources = {pongOutputResource},
-        .m_pRenderPass = pongPass.get()
-    };
-
-    Muyo::DependencyGraph<Muyo::RenderGraphNode> graph;
-    graph.AddEdge(pingNode, pongNode);
-    auto sortedNodes = graph.TopologicalSort();
-
-    REQUIRE(sortedNodes.size() == 2);
+    REQUIRE(executionLevels[0][0]->m_pRenderPass == pongPass.get());
+    REQUIRE(executionLevels[1][0]->m_pRenderPass == pingPass.get());
+    REQUIRE(executionLevels[0][0]->m_vOutputResources[0].nVersion == 1);
+    REQUIRE(executionLevels[0][0]->m_vInputResources[0].pRenderResource->m_sName == "outputResource");
 }
-
 

@@ -111,7 +111,7 @@ CheckOptions:
   - { key: readability-identifier-naming.MemberCase,             value: camelBack }
   - { key: readability-identifier-naming.MemberPrefix,           value: m_ }
   - { key: readability-identifier-naming.ConstMemberCase,        value: UPPPER_CASE }
-  - { key: readability-identifier-naming.ConstMemberPrefix,      value: }
+  #- { key: readability-identifier-naming.ConstMemberPrefix,      value: }
   - { key: readability-identifier-naming.EnumConstantCase,         value: UPPER_CASE }
   - { key: readability-identifier-naming.ConstexprVariableCase,    value: UPPER_CASE }
   - { key: readability-identifier-naming.GlobalConstantCase,       value: UPPER_CASE }
