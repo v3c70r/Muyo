@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <set>
 #include <queue>
 #include <stack>
 #include <unordered_map>
@@ -11,13 +12,13 @@ template <typename T>
 class DependencyGraph
 {
 private:
-    std::unordered_map<T, std::vector<T>> m_adjacencyList;
+    std::unordered_map<T, std::set<T>> m_adjacencyList;
     std::unordered_map<T, int> m_inDegree;  // Track in-degrees for parallel execution
 
 public:
     bool AddEdge(const T& from, const T& to)
     {
-        m_adjacencyList[from].push_back(to);
+        m_adjacencyList[from].insert(to);
         m_inDegree[to]++;
         if (m_inDegree.find(from) == m_inDegree.end()) m_inDegree[from] = 0;
 

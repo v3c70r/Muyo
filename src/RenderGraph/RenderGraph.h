@@ -8,11 +8,11 @@ class IRenderPass;
 class IRenderResource;
 struct RenderResourceHandle
 {
-    const IRenderResource* pRenderResource = nullptr;
-    uint32_t nVersion = 0;
+    const IRenderResource* m_pRenderResource = nullptr;
+    uint32_t m_nVersion = 0;
     bool operator == (const RenderResourceHandle& other) const
     {
-        return pRenderResource == other.pRenderResource && nVersion == other.nVersion;
+        return m_pRenderResource == other.m_pRenderResource && m_nVersion == other.m_nVersion;
     }
 };
 
@@ -27,16 +27,16 @@ struct RenderGraphNode
     }
 };
 
-class RenderDependencyGraph : DependencyGraph<const RenderGraphNode*>
+class RenderDependencyGraph : public DependencyGraph<const RenderGraphNode*>
 {
 public:
-    void AddNode(const std::vector<const IRenderResource*>&& vInputResources,
+    void AddPass(const std::vector<const IRenderResource*>&& vInputResources,
                  const std::vector<const IRenderResource*>&& vOutputResources, IRenderPass* pRenderPass)
     {
         // Bump output resource version
         m_vpRGNs.push_back(std::make_unique<RenderGraphNode>());
         RenderGraphNode& node = *m_vpRGNs.back();
-        for (auto* outputResource : vOutputResources)
+        for (const auto* outputResource : vOutputResources)
         {
             if (m_mResourceVersion.count(outputResource) == 0)
             {
@@ -50,8 +50,13 @@ public:
             node.m_vOutputResources.push_back({outputResource, m_mResourceVersion[outputResource]});
         }
 
-        for (auto* inputResource : vInputResources)
+        for (const auto* inputResource : vInputResources)
         {
+            // record input resource version
+            if (m_mResourceVersion.count(inputResource) == 0)
+            {
+                m_mResourceVersion[inputResource] = 0;
+            }
             node.m_vInputResources.push_back({inputResource, m_mResourceVersion[inputResource]});
         }
         node.m_pRenderPass = pRenderPass;
@@ -61,19 +66,17 @@ public:
     {
         for (size_t i = 0; i < m_vpRGNs.size(); i++)
         {
-            for (size_t j = i; i < m_vpRGNs.size(); j++)
+            for (size_t j = i; j < m_vpRGNs.size(); j++)
             {
-                for (const RenderResourceHandle& inputHandle : m_vpRGNs[j]->m_vInputResources)
+                const RenderGraphNode* pSourcePass = m_vpRGNs[i].get();
+                const RenderGraphNode* pTargetPass = m_vpRGNs[j].get();
+
+                for (const RenderResourceHandle& inputHandle : pTargetPass->m_vInputResources)
                 {
-                    const RenderGraphNode* pFromNode = m_vpRGNs[i].get();
-                    const RenderGraphNode* pToNode = m_vpRGNs[j].get();
-
                     // FromNode depends on ToNode, thus FromNode's input resource must be in ToNode's output resources
-
-                    if (std::find(pFromNode->m_vInputResources.begin(), pFromNode->m_vInputResources.end(),
-                                  inputHandle) != pFromNode->m_vOutputResources.end())
+                    if (std::find( pSourcePass->m_vOutputResources.begin(), pSourcePass->m_vOutputResources.end(), inputHandle) != pSourcePass->m_vOutputResources.end())
                     {
-                        AddEdge(pFromNode, pToNode);
+                        AddEdge(pTargetPass, pSourcePass);
                         break;
                     }
                 }
@@ -85,7 +88,7 @@ private:
     std::vector<std::unique_ptr<RenderGraphNode>> m_vpRGNs;
     std::unordered_map<const IRenderResource*, uint32_t> m_mResourceVersion;    // track current resource version
 };
-}    // namespace Muyo
+} // namespace Muyo
 
 namespace std
 {
@@ -94,7 +97,7 @@ struct hash<Muyo::RenderResourceHandle>
 {
     size_t operator()(const Muyo::RenderResourceHandle& handle) const
     {
-        return hash<const Muyo::IRenderResource*>()(handle.pRenderResource) ^ ::std::hash<uint32_t>()(handle.nVersion);
+        return hash<const Muyo::IRenderResource*>()(handle.m_pRenderResource) ^ ::std::hash<uint32_t>()(handle.m_nVersion);
     }
 };
 
