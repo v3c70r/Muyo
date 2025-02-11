@@ -160,7 +160,7 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_vDescSetLayouts[nDescSetIdx];
     VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName.c_str());
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName);
 
     bool bUpdated = UpdateDescriptorSet(m_vpResources[nDescSetIdx], nDescSetIdx, descriptorSet);
     assert(bUpdated);
@@ -178,7 +178,7 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &m_vDescSetLayouts[nDescSetIdx];
     VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName.c_str());
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET, sDescSetName);
 
     bool bUpdated = UpdateDescriptorSet(vpResources, nDescSetIdx, descriptorSet);
     assert(bUpdated);
@@ -216,7 +216,7 @@ bool RenderPassParameters::UpdateDescriptorSet(const std::vector<const IRenderRe
         if (writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
         {
             assert(writeDescSet.descriptorCount == 1);
-            const BufferResource* pBufferResource = static_cast<const BufferResource*>(vpResources[nResourceIdx++]);
+            const auto* pBufferResource = static_cast<const BufferResource*>(vpResources[nResourceIdx++]);
             if (pBufferResource != nullptr)
             {
                 m_vBufferInfos[vDescriptorInfoIndex[i]].buffer = pBufferResource->buffer();
@@ -236,7 +236,7 @@ bool RenderPassParameters::UpdateDescriptorSet(const std::vector<const IRenderRe
             {
                 VkDescriptorImageInfo& imageInfo = m_vImageInfos[vDescriptorInfoIndex[i] + descIdx];
 
-                const ImageResource* pImageResource = static_cast<const ImageResource*>(vpResources[nResourceIdx++]);
+                const auto* pImageResource = static_cast<const ImageResource*>(vpResources[nResourceIdx++]);
                 if (pImageResource)
                 {
                     imageInfo.imageView = pImageResource->getView();
@@ -252,7 +252,7 @@ bool RenderPassParameters::UpdateDescriptorSet(const std::vector<const IRenderRe
         else if (writeDescSet.descriptorType == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
         {
             assert(writeDescSet.descriptorCount == 1);
-            const AccelerationStructure* pAccStruct = static_cast<const AccelerationStructure*>(vpResources[nResourceIdx++]);
+            const auto* pAccStruct = static_cast<const AccelerationStructure*>(vpResources[nResourceIdx++]);
             // Acceleration structure should be ready from the begining
             assert(pAccStruct);
             m_vAccelerationStructureWrites[vDescriptorInfoIndex[i]].accelerationStructureCount = 1;
@@ -290,9 +290,9 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImage
     // Create attachment reference
     VkAttachmentReference attachmentRef = {};
     // check if format is depth format
-    // TODO: add more depth foramts if we start to use them
-    attachmentRef.attachment = (uint32_t)m_vAttachmentDescriptions.size() - 1;
-    if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
+    // TODO(qgu): add more depth foramts if we start to use them
+    attachmentRef.attachment = static_cast<uint32_t>(m_vAttachmentDescriptions.size()) - 1;
+    if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D32_SFLOAT)
     {
         attachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         m_depthAttachmentReference = attachmentRef;
@@ -314,7 +314,7 @@ void RenderPassParameters::CreatePipelineLayout()
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(m_vDescSetLayouts.size());
     pipelineLayoutInfo.pSetLayouts = m_vDescSetLayouts.data();
 
-    if (m_vPushConstantRanges.size() > 0)
+    if (!m_vPushConstantRanges.empty())
     {
         pipelineLayoutInfo.pushConstantRangeCount = m_vPushConstantRanges.size();
         pipelineLayoutInfo.pPushConstantRanges = m_vPushConstantRanges.data();
@@ -328,7 +328,7 @@ void RenderPassParameters::CreateRenderPass()
         // Subpass
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = (uint32_t)m_vColorAttachmentReferences.size();
+    subpass.colorAttachmentCount = static_cast<uint32_t>(m_vColorAttachmentReferences.size());
     subpass.pColorAttachments = m_vColorAttachmentReferences.data();
 
     subpass.pDepthStencilAttachment = &m_depthAttachmentReference;
@@ -377,7 +377,8 @@ void RenderPassParameters::CreateRenderPass()
 void RenderPassParameters::CreateFrameBuffer()
 {
     std::vector<VkImageView> attachments;
-    for (const auto& attachment : m_vAttachmentResources)
+    attachments.reserve(m_vAttachmentResources.size());
+for (const auto& attachment : m_vAttachmentResources)
     {
         attachments.push_back(attachment->getView());
     }
@@ -400,14 +401,14 @@ void RenderPassParameters::Finalize(const std::string& sPassName)
     }
 
     CreatePipelineLayout();
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, sPassName.c_str());
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, sPassName);
 
     if (!m_vAttachmentResources.empty())
     {
         CreateRenderPass();
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass), VK_OBJECT_TYPE_RENDER_PASS, sPassName.c_str());
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass), VK_OBJECT_TYPE_RENDER_PASS, sPassName);
         CreateFrameBuffer();
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_framebuffer), VK_OBJECT_TYPE_FRAMEBUFFER, sPassName.c_str());
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_framebuffer), VK_OBJECT_TYPE_FRAMEBUFFER, sPassName);
     }
 
     m_bIsFinalized = true;
