@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.10.0)
 project(Muyo)
 # Compile time features
 option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
@@ -64,10 +64,6 @@ endif()
 # Cap vulkan version to avoid validation layer error
 find_package(Vulkan REQUIRED)
 
-
-## Vulkan Memory Allocator
-add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
-include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator/include)
 
 ## tiny obj
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader)
@@ -153,6 +149,17 @@ file(GLOB muyo_SRC
     )
 
 add_library(muyo STATIC ${muyo_SRC})
+
+#fetch VMA from Github
+include(FetchContent)
+FetchContent_Declare(
+  VMA
+  GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(VMA)
+target_include_directories(muyo PRIVATE ${vma_SOURCE_DIR}/include)
+
 target_link_libraries(muyo imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 
 file(GLOB main_SRC
