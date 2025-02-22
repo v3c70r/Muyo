@@ -65,6 +65,17 @@ public:
     }
 #endif
 
+    std::vector<const IRenderPass*> GetRenderPasses() const
+    {
+        std::vector<const IRenderPass*> vpRenderPasses;
+        vpRenderPasses.reserve(m_vpRenderPasses.size());
+        for (const auto& pRenderPass : m_vpRenderPasses)
+        {
+            vpRenderPasses.push_back(pRenderPass.get());
+        }
+        return vpRenderPasses;
+    }
+
 private:
 #ifdef __APPLE__
     static const uint32_t NUM_BUFFERS = 2;

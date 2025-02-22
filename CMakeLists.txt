@@ -64,6 +64,10 @@ add_library(imgui
 set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo)
 add_library(imguizmo thirdparty/ImGuizmo/ImGuizmo.cpp)
 
+## imnodes
+set(IMNODES_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/imnodes)
+add_library(imnodes thirdparty/imnodes/imnodes.cpp)
+
 ## VULKAN
 if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
     list(APPEND CMAKE_PREFIX_PATH $ENV{VULKAN_SDK})
@@ -126,6 +130,7 @@ include_directories(
     ${IMGUI_INCLUDE_DIRS}
     ${SHARED_HEADER_DIR}
     ${IMGUIZMO_INCLUDE_DIRS}
+    ${IMNODES_INCLUDE_DIRS}
     )
 
     
@@ -168,7 +173,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(VMA)
 target_include_directories(muyo PRIVATE ${vma_SOURCE_DIR}/include)
 
-target_link_libraries(muyo imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
+target_link_libraries(muyo imgui imguizmo imnodes ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 
 file(GLOB main_SRC
     "src/app/helloVulkan.cpp"
