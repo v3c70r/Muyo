@@ -9,6 +9,7 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <ImGuizmo.h>
+#include <imnodes.h>
 
 #include <functional>
 #include <glm/gtc/type_ptr.hpp>
@@ -291,6 +292,72 @@ void CameraDebugPage::Render() const
         m_pCamera->SetLeftSplitScreenRatio(fRatio);
         ImGui::End();
     }
+}
+
+RenderPassDebugPage::RenderPassDebugPage(const std::string& sName) : IDebugUIPage(sName)
+{
+    ImNodes::CreateContext();
+}
+RenderPassDebugPage::~RenderPassDebugPage()
+{
+    ImNodes::DestroyContext();
+}
+void RenderPassDebugPage::Render() const
+{
+    static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
+    ImGui::Begin("RenderPasses", nullptr, flags);
+    if (m_pRenderPassManager)
+    {
+        for (const auto* pRenderPass : m_pRenderPassManager->GetRenderPasses())
+        {
+            if (pRenderPass)
+            {
+                ImGui::Text("%s", pRenderPass->GetName().c_str());
+                const auto& resourceMap = GetRenderResourceManager()->GetResourceMap();
+                for (const auto* inputResource : pRenderPass->GetInputResources())
+                {
+                    // find key in resource map
+                    for (const auto& resMap : resourceMap)
+                    {
+                        if (resMap.second.get() == inputResource)
+                        {
+                            ImGui::Text("\tInput: %s", resMap.first.c_str());
+                        }
+                    }
+                }
+                for (const auto* outputResource : pRenderPass->GetOutputResources())
+                {
+                    // find key in resource map
+                    for (const auto& resMap : resourceMap)
+                    {
+                        if (resMap.second.get() == outputResource)
+                        {
+                            ImGui::Text("\tOutput: %s", resMap.first.c_str());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ImGui::End();
+
+    ImGui::Begin("node editor");
+    const int hardcoded_node_id = 1;
+
+    ImNodes::BeginNodeEditor();
+    ImNodes::BeginNode(hardcoded_node_id);
+
+    const int output_attr_id = 2;
+    ImNodes::BeginOutputAttribute(output_attr_id);
+    // in between Begin|EndAttribute calls, you can call ImGui
+    // UI functions
+    ImGui::Text("output pin");
+    ImNodes::EndOutputAttribute();
+
+    ImNodes::EndNode();
+    ImNodes::EndNodeEditor();
+
+    ImGui::End();
 }
 
 #undef GLM_ENABLE_EXPERIMENTAL

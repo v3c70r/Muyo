@@ -15,10 +15,10 @@ class IDebugUIPage
 {
 public:
     IDebugUIPage() = delete;
-    explicit IDebugUIPage(const std::string& sName) : m_sName(sName) {}
+    explicit IDebugUIPage(std::string sName) : m_sName(std::move(sName)) {}
     virtual void Render() const = 0;
     virtual bool ShouldRender() const = 0;
-    virtual ~IDebugUIPage() {}
+    virtual ~IDebugUIPage() = default;
     std::string GetName() const { return m_sName; }
 
 protected:
@@ -31,7 +31,7 @@ public:
     explicit ResourceManagerDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~ResourceManagerDebugPage() override{};
+    ~ResourceManagerDebugPage() override= default;
 };
 
 class SceneDebugPage : public IDebugUIPage
@@ -40,7 +40,7 @@ public:
     explicit SceneDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~SceneDebugPage() override{};
+    ~SceneDebugPage() override= default;
 
 private:
     void DisplaySceneNodeInfo(const SceneNode& sceneNode) const;
@@ -54,7 +54,7 @@ public:
     explicit DemoDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~DemoDebugPage() override{};
+    ~DemoDebugPage() override= default;
 };
 
 // Home of all vertical tabs on the left side
@@ -64,11 +64,11 @@ public:
     explicit VerticalTabsPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~VerticalTabsPage() override{};
+    ~VerticalTabsPage() override= default;
 
 private:
     // A list of tabs
-    uint32_t uCurrentSelection = 0;
+    uint32_t m_uCurrentSelection = 0;
 };
 
 // A full scree dock space page
@@ -101,7 +101,7 @@ public:
     }
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~EnvironmentMapDebugPage() override{};
+    ~EnvironmentMapDebugPage() override= default;
 
 private:
     std::vector<std::filesystem::path> m_vHDRImagePathes;
@@ -114,13 +114,13 @@ class LightsDebugPage : public IDebugUIPage
 {
 public:
     explicit LightsDebugPage(const std::string& sName);
-    void UpdateLightNodes(const std::vector<const LightSceneNode*> vpLightNodes)
+    void UpdateLightNodes(const std::vector<const LightSceneNode*>& vpLightNodes)
     {
         m_vpLightNodes = vpLightNodes;
     }
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~LightsDebugPage() override {}
+    ~LightsDebugPage() override = default;
 
 private:
     std::vector<const LightSceneNode*> m_vpLightNodes;
@@ -134,9 +134,22 @@ public:
     void SetCamera(Camera* pCamera) { m_pCamera = pCamera; }
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~CameraDebugPage() override {}
+    ~CameraDebugPage() override = default;
 
 private:
     Camera* m_pCamera = nullptr;
+};
+
+class RenderPassManager;
+class RenderPassDebugPage : public IDebugUIPage
+{
+public:
+    explicit RenderPassDebugPage(const std::string& sName);
+    void SetRenderPassManager(const RenderPassManager* pRenderPassManager) { m_pRenderPassManager = pRenderPassManager; }
+    void Render() const override;
+    bool ShouldRender() const override { return true; }
+    ~RenderPassDebugPage() override;
+private:
+    const RenderPassManager* m_pRenderPassManager = nullptr;
 };
 }  // namespace Muyo

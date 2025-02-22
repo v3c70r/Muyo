@@ -105,7 +105,9 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
     pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
     pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
-    CameraDebugPage *pCameraDebugPage = pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
+    auto *pCameraDebugPage = pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
+    auto *pRenderPassDebugPage = pUIPass->RegisterDebugPage<RenderPassDebugPage>("Render Passes");
+    pRenderPassDebugPage->SetRenderPassManager(this);
 
     // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
 
@@ -128,7 +130,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = nullptr;
 #endif
 
-    RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
+    GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
 
     // Create semaphores
 
