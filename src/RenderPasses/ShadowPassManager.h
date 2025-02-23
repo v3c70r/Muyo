@@ -2,7 +2,6 @@
 
 #include "RenderPassRSM.h"
 #include "Scene.h"
-#include "UniformBuffer.h"
 
 namespace Muyo
 {
@@ -18,7 +17,8 @@ public:
     void RecordCommandBuffers(const std::vector<const SceneNode*>& geometryNodes);
     std::vector<VkCommandBuffer> GetCommandBuffers() const;
     std::vector<RSMResources> GetShadowMaps() const;
-
+    const std::vector<std::unique_ptr<RenderPassRSM>>& GetShadowPasses() const { return m_vpShadowPasses; }
+    ~ShadowPassManager() = default;
 private:
     std::vector<std::unique_ptr<RenderPassRSM>> m_vpShadowPasses;
 };

@@ -20,7 +20,7 @@ struct RenderGraphNode
 {
     std::vector<RenderResourceHandle> m_vInputResources;
     std::vector<RenderResourceHandle> m_vOutputResources;
-    IRenderPass* m_pRenderPass = nullptr;
+    const IRenderPass* m_pRenderPass = nullptr;
     bool operator == (const RenderGraphNode& other) const
     {
         return m_vInputResources == other.m_vInputResources && m_vOutputResources == other.m_vOutputResources && m_pRenderPass == other.m_pRenderPass;
@@ -30,8 +30,8 @@ struct RenderGraphNode
 class RenderDependencyGraph : public DependencyGraph<const RenderGraphNode*>
 {
 public:
-    void AddPass(const std::vector<const IRenderResource*>&& vInputResources,
-                 const std::vector<const IRenderResource*>&& vOutputResources, IRenderPass* pRenderPass)
+    void AddPass(const std::vector<const IRenderResource*>& vInputResources,
+                 const std::vector<const IRenderResource*>& vOutputResources, const IRenderPass* pRenderPass)
     {
         // Bump output resource version
         m_vpRGNs.push_back(std::make_unique<RenderGraphNode>());
@@ -117,7 +117,7 @@ struct hash<Muyo::RenderGraphNode>
             hash ^= std::hash<Muyo::RenderResourceHandle>{}(outputHandle);
         }
 
-        hash ^= std::hash<Muyo::IRenderPass*>{}(node.m_pRenderPass);
+        hash ^= std::hash<const Muyo::IRenderPass*>{}(node.m_pRenderPass);
         return hash;
     }
 };

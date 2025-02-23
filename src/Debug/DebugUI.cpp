@@ -1,11 +1,14 @@
 #include "DebugUI.h"
+#include <unordered_map>
 
 #include "DescriptorManager.h"
 #include "LightSceneNode.h"
+#include "RenderGraph/RenderGraph.h"
 #include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "SceneManager.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <ImGuizmo.h>
@@ -341,23 +344,69 @@ void RenderPassDebugPage::Render() const
     }
     ImGui::End();
 
-    ImGui::Begin("node editor");
-    const int hardcoded_node_id = 1;
 
+    std::vector<const RenderGraphNode*> rgNodes = m_pRDG->TopologicalSort();
+
+
+    ImGui::Begin("Render Passes");
     ImNodes::BeginNodeEditor();
-    ImNodes::BeginNode(hardcoded_node_id);
+    // Construct nodes
+    int nodeId = 0;
+    // output pin has node id + 1 
+    // input pin has node id
+    std::unordered_map<const RenderGraphNode*, int> rgnToNodeId;
+    for (const auto* rgNode : rgNodes)
+    {
 
-    const int output_attr_id = 2;
-    ImNodes::BeginOutputAttribute(output_attr_id);
-    // in between Begin|EndAttribute calls, you can call ImGui
-    // UI functions
-    ImGui::Text("output pin");
-    ImNodes::EndOutputAttribute();
+        rgnToNodeId[rgNode] = nodeId;
+        ImNodes::BeginNode(nodeId);
+        ImGui::Text("%s", rgNode->m_pRenderPass->GetName().c_str());
 
-    ImNodes::EndNode();
+        ImNodes::BeginInputAttribute(nodeId);
+        ImGui::Text("InputPass");
+        ImNodes::EndInputAttribute();
+
+        ImNodes::BeginOutputAttribute(nodeId+1);
+        ImGui::Text("OutputPass");
+        ImNodes::EndOutputAttribute();
+        ImNodes::EndNode();
+        nodeId += 2;
+    }
+
+    // construct links
+    for (const auto* rgNode : rgNodes)
+    {
+        for (const auto* neighbor : rgNodes)
+        {
+            if (rgNode != neighbor && m_pRDG->IsAdjacentTo(rgNode, neighbor))
+            {
+                ImNodes::Link(rgnToNodeId[rgNode], rgnToNodeId[rgNode]+1,rgnToNodeId[neighbor]);
+            }
+        }
+    }
+
+
     ImNodes::EndNodeEditor();
-
     ImGui::End();
+
+
+    //ImGui::Begin("node editor");
+    //const int hardcoded_node_id = 1;
+
+    //ImNodes::BeginNodeEditor();
+    //ImNodes::BeginNode(hardcoded_node_id);
+
+    //const int output_attr_id = 2;
+    //ImNodes::BeginOutputAttribute(output_attr_id);
+    //// in between Begin|EndAttribute calls, you can call ImGui
+    //// UI functions
+    //ImGui::Text("output pin");
+    //ImNodes::EndOutputAttribute();
+
+    //ImNodes::EndNode();
+    //ImNodes::EndNodeEditor();
+
+    //ImGui::End();
 }
 
 #undef GLM_ENABLE_EXPERIMENTAL

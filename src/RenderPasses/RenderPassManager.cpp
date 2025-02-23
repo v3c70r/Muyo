@@ -97,7 +97,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(*m_pSwapchain, true);
     // UI Pass
     m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(vp);
-    RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
     pUIPass->PrepareRenderPass();
     pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
     // Register debug ui pages
@@ -106,8 +106,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
     pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
     auto *pCameraDebugPage = pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
-    auto *pRenderPassDebugPage = pUIPass->RegisterDebugPage<RenderPassDebugPage>("Render Passes");
-    pRenderPassDebugPage->SetRenderPassManager(this);
 
     // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
 
@@ -157,10 +155,10 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 
     // Allocate an arcball camera
     // TODO: Allocate camera as needed if we ever support mulit render targets
-    const float FAR = 100.0f;
+    const float FAR = 100.0F;
     m_pCamera = std::make_unique<Arcball>(
         glm::perspective(glm::radians(80.0f),
-                         (float)m_uWidth / (float)m_uHeight, 0.1f,
+                         static_cast<float>(m_uWidth) / static_cast<float>(m_uHeight), 0.1F,
                          FAR),
         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
                     glm::vec3(0.0f, 0.0f, 0.0f),   // Center
@@ -170,6 +168,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
         (float)m_uWidth,
         (float)m_uHeight);
     pCameraDebugPage->SetCamera(GetCamera());
+
 }
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
@@ -268,19 +267,38 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         pRTPass->RecordCommandBuffer();
     }
 #endif
-    RenderPassSkybox *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
+    auto *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
     pSkybox->PrepareRenderPass();
     pSkybox->RecordCommandBuffers();
 
-    RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
+    auto *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->PrepareRenderPass();
     pFinalPass->RecordCommandBuffers();
+
+    // Construct RDG
+    for (const auto &pRenderPass : m_vpRenderPasses)
+    {
+        if (pRenderPass == nullptr)
+        {
+            continue;
+        }
+        m_rdg.AddPass(pRenderPass->GetInputResources(), pRenderPass->GetOutputResources(), pRenderPass.get());
+    }
+    for (const auto &pShadowPass : m_pShadowPassManager->GetShadowPasses())
+    {
+        m_rdg.AddPass(pShadowPass->GetInputResources(), pShadowPass->GetOutputResources(), pShadowPass.get());
+    }
+    m_rdg.ConstructAdjList();
+    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+    auto *pRenderPassDebugPage = pUIPass->RegisterDebugPage<RenderPassDebugPage>("Render Passes");
+    pRenderPassDebugPage->SetRenderPassManager(this);
+    pRenderPassDebugPage->SetRDG(&m_rdg);
 }
 
 void RenderPassManager::RecordDynamicCmdBuffers()
 {
     VkExtent2D vpExtent = {m_uWidth, m_uHeight};
-    RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
     pUIPass->NewFrame(vpExtent);
     pUIPass->UpdateBuffers();
     pUIPass->RecordCommandBuffer();
@@ -288,7 +306,7 @@ void RenderPassManager::RecordDynamicCmdBuffers()
 
 void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
 {
-    RenderLayerIBL *pIBLPass = static_cast<RenderLayerIBL *>(m_vpRenderPasses[RENDERPASS_IBL].get());
+    auto *pIBLPass = static_cast<RenderLayerIBL *>(m_vpRenderPasses[RENDERPASS_IBL].get());
     pIBLPass->ReloadEnvironmentMap(sNewEnvMapPath);
 
     m_bIsIrradianceGenerated = false;

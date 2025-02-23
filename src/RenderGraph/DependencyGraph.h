@@ -26,7 +26,7 @@ public:
         return !HasCycle();
     }
 
-    std::vector<T> TopologicalSort()
+    std::vector<T> TopologicalSort() const
     {
         std::unordered_map<T, bool> visited;
         std::stack<T> stack;
@@ -85,9 +85,9 @@ public:
         return levels;
     }
 
-    bool IsAdjacentTo(const T& from, const T& to)
+    bool IsAdjacentTo(const T& from, const T& to) const
     {
-        return std::find(m_adjacencyList[from].begin(), m_adjacencyList[from].end(), to) != m_adjacencyList[from].end();
+        return std::find(m_adjacencyList.at(from).begin(), m_adjacencyList.at(from).end(), to) != m_adjacencyList.at(from).end();
     }
 
     bool HasCycle()
@@ -104,11 +104,11 @@ public:
     }
 
 private:
-    void DfsUtil(const T& vertex, std::unordered_map<T, bool>& visited, std::stack<T>& stack)
+    void DfsUtil(const T& vertex, std::unordered_map<T, bool>& visited, std::stack<T>& stack) const
     {
         visited[vertex] = true;
 
-        for (const T& neighbor : m_adjacencyList[vertex])
+        for (const T& neighbor : m_adjacencyList.at(vertex))
         {
             if (!visited[neighbor])
             {
