@@ -141,15 +141,18 @@ private:
 };
 
 class RenderPassManager;
+class RenderDependencyGraph;
 class RenderPassDebugPage : public IDebugUIPage
 {
 public:
     explicit RenderPassDebugPage(const std::string& sName);
     void SetRenderPassManager(const RenderPassManager* pRenderPassManager) { m_pRenderPassManager = pRenderPassManager; }
+    void SetRDG(const RenderDependencyGraph* pRDG) { m_pRDG = pRDG; }
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~RenderPassDebugPage() override;
 private:
     const RenderPassManager* m_pRenderPassManager = nullptr;
+    const RenderDependencyGraph* m_pRDG = nullptr;
 };
 }  // namespace Muyo

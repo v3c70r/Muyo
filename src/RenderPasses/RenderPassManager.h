@@ -8,6 +8,7 @@
 
 #include "ShadowPassManager.h"
 #include "Swapchain.h"
+#include "RenderGraph//RenderGraph.h"
 
 namespace Muyo
 {
@@ -114,6 +115,9 @@ private:
     } m_temporalInfo;
 
     std::unique_ptr<ShadowPassManager> m_pShadowPassManager;
+
+    // RenderDependencyGraph
+    RenderDependencyGraph m_rdg;
 };
 
 RenderPassManager* GetRenderPassManager();
