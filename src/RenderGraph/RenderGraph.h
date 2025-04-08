@@ -30,7 +30,7 @@ struct RenderGraphNode
 class RenderDependencyGraph : public DependencyGraph<const RenderGraphNode*>
 {
 public:
-    void AddPass(const std::vector<const IRenderResource*>& vInputResources,
+    const RenderGraphNode* AddPass(const std::vector<const IRenderResource*>& vInputResources,
                  const std::vector<const IRenderResource*>& vOutputResources, const IRenderPass* pRenderPass)
     {
         // Bump output resource version
@@ -60,6 +60,7 @@ public:
             node.m_vInputResources.push_back({inputResource, m_mResourceVersion[inputResource]});
         }
         node.m_pRenderPass = pRenderPass;
+        return m_vpRGNs.back().get();
     }
 
     void ConstructAdjList()

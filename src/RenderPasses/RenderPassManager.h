@@ -32,7 +32,7 @@ enum RenderPassNames
     RENDERPASS_SKYBOX,
     RENDERPASS_TRANSPARENT,
 
-    // Render directpy to swapchain
+    // Render directly to swapchain
     RENDERPASS_FINAL,
     RENDERPASS_UI,
 
