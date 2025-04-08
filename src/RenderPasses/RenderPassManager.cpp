@@ -1,5 +1,6 @@
 #include "RenderPassManager.h"
 
+#include <algorithm>
 #include <cassert>
 #include <memory>
 
@@ -155,18 +156,18 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 
     // Allocate an arcball camera
     // TODO: Allocate camera as needed if we ever support mulit render targets
-    const float FAR = 100.0F;
+    const float far = 100.0F;
     m_pCamera = std::make_unique<Arcball>(
         glm::perspective(glm::radians(80.0f),
                          static_cast<float>(m_uWidth) / static_cast<float>(m_uHeight), 0.1F,
-                         FAR),
+                         far),
         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
                     glm::vec3(0.0f, 0.0f, 0.0f),   // Center
                     glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
         0.1f,                                      // near
-        FAR,                                       // far
-        (float)m_uWidth,
-        (float)m_uHeight);
+        far,                                       // far
+        static_cast<float>(m_uWidth),
+        static_cast<float>(m_uHeight));
     pCameraDebugPage->SetCamera(GetCamera());
 
 }
@@ -224,13 +225,13 @@ void RenderPassManager::Unintialize()
 void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 {
     {
-        RenderPassCubeMapGeneration* pCubeMapGenerationPass = static_cast<RenderPassCubeMapGeneration*>(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION].get());
+        auto* pCubeMapGenerationPass = static_cast<RenderPassCubeMapGeneration*>(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION].get());
         pCubeMapGenerationPass->PrepareRenderPass();
         pCubeMapGenerationPass->RecordCommandBuffers();
     }
 
     {
-        RenderPassGBufferMeshShader* pMeshShaderPass = static_cast<RenderPassGBufferMeshShader*>(m_vpRenderPasses[RENDERPASS_MESH_SHADER].get());
+        auto* pMeshShaderPass = static_cast<RenderPassGBufferMeshShader*>(m_vpRenderPasses[RENDERPASS_MESH_SHADER].get());
         pMeshShaderPass->PrepareRenderPass();
         pMeshShaderPass->RecordCommandBuffers();
     }
@@ -242,18 +243,18 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         m_pShadowPassManager->RecordCommandBuffers(opaqueDrawList);
     }
     {
-        RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer*>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+        auto *pGBufferPass = static_cast<RenderPassGBuffer*>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
         pGBufferPass->PrepareRenderPass();
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         pGBufferPass->RecordCommandBuffers(opaqueDrawList);
     }
     {
-        RenderPassOpaqueLighting *pOpaqueLightingPass = static_cast<RenderPassOpaqueLighting *>(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING].get());
+        auto *pOpaqueLightingPass = static_cast<RenderPassOpaqueLighting *>(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING].get());
         pOpaqueLightingPass->PrepareRenderPass();
         pOpaqueLightingPass->RecordCommandBuffers();
     }
     {
-        RenderPassTransparent *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
+        auto *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
         const std::vector<const SceneNode *> &transparentDrawList = drawLists.m_aDrawLists[DrawLists::DL_TRANSPARENT];
         pTransparentPass->PrepareRenderPass();
         pTransparentPass->RecordCommandBuffers(transparentDrawList);
@@ -276,18 +277,46 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     pFinalPass->RecordCommandBuffers();
 
     // Construct RDG
-    for (const auto &pRenderPass : m_vpRenderPasses)
+
+    // keep track of all render graph nodes for each render pass
+    std::vector<const RenderGraphNode*> vRenderGraphNodes(RENDERPASS_COUNT, nullptr);
+    std::vector<const RenderGraphNode*> vShadowRGNs(m_pShadowPassManager->GetShadowMaps().size(), nullptr);
+
+    // Add shadow passes
+    for (const auto &pShadowPass : m_pShadowPassManager->GetShadowPasses())
     {
+        if (!pShadowPass)
+        {
+            continue;
+        }
+        vShadowRGNs.push_back(
+            m_rdg.AddPass(pShadowPass->GetInputResources(), pShadowPass->GetOutputResources(), pShadowPass.get()));
+    }
+    for (int i = 0; i < RENDERPASS_COUNT; i++)
+    {
+        const IRenderPass* pRenderPass = m_vpRenderPasses[i].get();
         if (pRenderPass == nullptr)
         {
             continue;
         }
-        m_rdg.AddPass(pRenderPass->GetInputResources(), pRenderPass->GetOutputResources(), pRenderPass.get());
+        const RenderGraphNode *rgn =
+            m_rdg.AddPass(pRenderPass->GetInputResources(), pRenderPass->GetOutputResources(), pRenderPass);
+
+        if (i == RENDERPASS_OPAQUE_LIGHTING)
+        {
+            m_rdg.AddEdge(rgn, vRenderGraphNodes[RENDERPASS_GBUFFER]);
+            // it also depends on shadow passes
+            for (const auto &pShadowRGN : vShadowRGNs)
+            {
+                m_rdg.AddEdge(rgn, pShadowRGN);
+            }
+        }
+        if( i == RENDERPASS_TRANSPARENT)
+        {
+            m_rdg.AddEdge(rgn, vRenderGraphNodes[RENDERPASS_OPAQUE_LIGHTING]);
+        }
     }
-    for (const auto &pShadowPass : m_pShadowPassManager->GetShadowPasses())
-    {
-        m_rdg.AddPass(pShadowPass->GetInputResources(), pShadowPass->GetOutputResources(), pShadowPass.get());
-    }
+    
     m_rdg.ConstructAdjList();
     auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
     auto *pRenderPassDebugPage = pUIPass->RegisterDebugPage<RenderPassDebugPage>("Render Passes");
@@ -348,7 +377,7 @@ void RenderPassManager::SubmitCommandBuffers()
 
     // Submit other graphics tasks
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer());
-    if (auto cmdBuf = m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer())
+    if (auto *cmdBuf = m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer())
     {
         vCmdBufs.push_back(cmdBuf);
     }
