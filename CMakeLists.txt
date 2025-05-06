@@ -30,7 +30,15 @@ if (NOT ${glfw3_FOUND})
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-#set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
+execute_process(COMMAND bash -c "echo $WAYLAND_DISPLAY"
+                OUTPUT_VARIABLE WAYLAND_SESSION
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+if(WAYLAND_SESSION)
+    message(STATUS "Wayland session detected")
+    set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
+    set(GLFW_USE_X11 OFF CACHE BOOL "" FORCE)
+endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
 endif()
 add_compile_definitions(USE_GLFW)
