@@ -10,7 +10,6 @@
 #include <vulkan/vulkan_core.h>
 #include <chrono>
 #include <iostream>
-using namespace Muyo;
 
 std::vector<VkDescriptorSetLayout> CreateDescriptorSetLayout()
 {
@@ -28,11 +27,11 @@ std::vector<VkDescriptorSetLayout> CreateDescriptorSetLayout()
     layoutInfo.pBindings                       = &bindingInfo;
     layoutInfo.bindingCount                    = 1;
 
-    VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &layoutInfo, nullptr, &res[0]));
+    Muyo::VK_ASSERT(vkCreateDescriptorSetLayout(Muyo::GetRenderDevice()->GetDevice(), &layoutInfo, nullptr, &res[0]));
 
     bindingInfo.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 
-    VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &layoutInfo, nullptr, &res[1]));
+    Muyo::VK_ASSERT(vkCreateDescriptorSetLayout(Muyo::GetRenderDevice()->GetDevice(), &layoutInfo, nullptr, &res[1]));
 
     return res;
 }
@@ -45,21 +44,23 @@ VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& 
     createInfo.pSetLayouts = descLayouts.data();
     
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VK_ASSERT(vkCreatePipelineLayout(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &pipelineLayout));
+    Muyo::VK_ASSERT(
+        vkCreatePipelineLayout(Muyo::GetRenderDevice()->GetDevice(), &createInfo, nullptr, &pipelineLayout));
     return pipelineLayout;
 }
 
 VkPipeline CreatePipeline(VkPipelineLayout pipelineLayout, VkPipelineCache pipelineCache)
 {
-    ComputePipelineBuilder builder;
+    Muyo::ComputePipelineBuilder builder;
 
-    VkShaderModule compShader = CreateShaderModule(ReadSpv("shaders/linearizeDepth.comp.spv"));
+    VkShaderModule compShader = Muyo::CreateShaderModule(Muyo::ReadSpv("shaders/linearizeDepth.comp.spv"));
 
     VkComputePipelineCreateInfo createInfo = builder.AddShaderModule(compShader).SetPipelineLayout(pipelineLayout).Build();
 
     VkPipeline computePipeline = VK_NULL_HANDLE;
-    vkCreateComputePipelines(GetRenderDevice()->GetDevice(), pipelineCache, 1, &createInfo, nullptr, &computePipeline);
-    vkDestroyShaderModule(GetRenderDevice()->GetDevice(), compShader, nullptr);
+    vkCreateComputePipelines(Muyo::GetRenderDevice()->GetDevice(), pipelineCache, 1, &createInfo, nullptr,
+                             &computePipeline);
+    vkDestroyShaderModule(Muyo::GetRenderDevice()->GetDevice(), compShader, nullptr);
     return computePipeline;
 }
 
@@ -71,11 +72,7 @@ VkPipelineCache CreatePipelineCache()
     info.pInitialData              = nullptr;
 
     VkPipelineCache cache = VK_NULL_HANDLE;
-    vkCreatePipelineCache(
-      GetRenderDevice()->GetDevice(),
-      &info,
-      nullptr,
-      &cache);
+    vkCreatePipelineCache(Muyo::GetRenderDevice()->GetDevice(), &info, nullptr, &cache);
 
     return cache;
 }
@@ -83,7 +80,7 @@ VkPipelineCache CreatePipelineCache()
 void SerializeCacheData(VkPipelineCache pipelineCache, std::filesystem::path filePath)
 {
     size_t bufferSize = 0;
-    VK_ASSERT(vkGetPipelineCacheData(GetRenderDevice()->GetDevice(), pipelineCache, &bufferSize, nullptr));
+    Muyo::VK_ASSERT(vkGetPipelineCacheData(Muyo::GetRenderDevice()->GetDevice(), pipelineCache, &bufferSize, nullptr));
     bufferSize += sizeof(size_t); // buffer contains buffer size and buffer
 
 
@@ -91,7 +88,8 @@ void SerializeCacheData(VkPipelineCache pipelineCache, std::filesystem::path fil
     memcpy(buffer, &bufferSize, sizeof(size_t));
 
     uint8_t* cacheBuffer = buffer + sizeof(size_t);
-    VK_ASSERT(vkGetPipelineCacheData(GetRenderDevice()->GetDevice(), pipelineCache, &bufferSize, cacheBuffer));
+    Muyo::VK_ASSERT(
+        vkGetPipelineCacheData(Muyo::GetRenderDevice()->GetDevice(), pipelineCache, &bufferSize, cacheBuffer));
 
     std::ofstream outputFile(filePath);
 
@@ -128,16 +126,11 @@ VkPipelineCache DeserializeCacheData(std::filesystem::path filePath)
     info.pInitialData              = buffer+sizeof(size_t);
 
     VkPipelineCache cache = VK_NULL_HANDLE;
-    vkCreatePipelineCache(
-      GetRenderDevice()->GetDevice(),
-      &info,
-      nullptr,
-      &cache);
+    vkCreatePipelineCache(Muyo::GetRenderDevice()->GetDevice(), &info, nullptr, &cache);
 
     return cache;
 }
 
-using std::chrono::duration;
 using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
 using std::chrono::milliseconds;
@@ -157,7 +150,7 @@ class ScopedTimer
     }
 
   private:
-    std::chrono::steady_clock::time_point m_StartTime;
+    std::chrono::system_clock::time_point m_StartTime;
 };
 
 int main()
@@ -169,8 +162,8 @@ int main()
     Muyo::GetRenderDevice()->CreateDevice(vDeviceExtensions,              // Extensions
                                           std::vector<const char*>());    // Layers
 
-    GetMemoryAllocator()->Initalize(GetRenderDevice());
-    GetRenderDevice()->CreateCommandPools();
+    Muyo::GetMemoryAllocator()->Initalize(Muyo::GetRenderDevice());
+    Muyo::GetRenderDevice()->CreateCommandPools();
 
     std::vector<VkDescriptorSetLayout> descLayouts = CreateDescriptorSetLayout();
     VkPipelineLayout layout = CreatePipelineLayout(descLayouts);
@@ -199,18 +192,18 @@ int main()
         SerializeCacheData(pipelineCache, cacheBinary);
     }
 
-    vkDestroyPipeline(GetRenderDevice()->GetDevice(), pipeline, nullptr);
-    vkDestroyPipelineCache(GetRenderDevice()->GetDevice(), pipelineCache, nullptr);
+    vkDestroyPipeline(Muyo::GetRenderDevice()->GetDevice(), pipeline, nullptr);
+    vkDestroyPipelineCache(Muyo::GetRenderDevice()->GetDevice(), pipelineCache, nullptr);
 
-    vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), descLayouts[0], nullptr);
-    vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), descLayouts[1], nullptr);
-    vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), layout, nullptr);
+    vkDestroyDescriptorSetLayout(Muyo::GetRenderDevice()->GetDevice(), descLayouts[0], nullptr);
+    vkDestroyDescriptorSetLayout(Muyo::GetRenderDevice()->GetDevice(), descLayouts[1], nullptr);
+    vkDestroyPipelineLayout(Muyo::GetRenderDevice()->GetDevice(), layout, nullptr);
 
     // Clean up
-    GetRenderDevice() ->DestroyCommandPools();
-    GetMemoryAllocator()->Unintialize();
-    GetRenderDevice()->DestroyDevice();
-    GetRenderDevice()->Unintialize();
+    Muyo::GetRenderDevice()->DestroyCommandPools();
+    Muyo::GetMemoryAllocator()->Unintialize();
+    Muyo::GetRenderDevice()->DestroyDevice();
+    Muyo::GetRenderDevice()->Unintialize();
     return 0;
 }
 

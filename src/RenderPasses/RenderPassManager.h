@@ -53,7 +53,7 @@ public:
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
     void RecordDynamicCmdBuffers();
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
-    VkExtent2D GetViewportSize() const { return VkExtent2D({m_uWidth, m_uHeight}); }
+    VkExtent2D GetViewportSize() const { return VkExtent2D({.width=m_uWidth, .height=m_uHeight}); }
 
     void SubmitCommandBuffers();
 

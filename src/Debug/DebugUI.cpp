@@ -344,9 +344,8 @@ void RenderPassDebugPage::Render() const
     }
     ImGui::End();
 
-
+    /*  Comment out Render Pass topological sort code
     std::vector<const RenderGraphNode*> rgNodes = m_pRDG->TopologicalSort();
-
 
     ImGui::Begin("Render Passes");
     ImNodes::BeginNodeEditor();
@@ -388,6 +387,7 @@ void RenderPassDebugPage::Render() const
 
     ImNodes::EndNodeEditor();
     ImGui::End();
+    */
 
 
     //ImGui::Begin("node editor");

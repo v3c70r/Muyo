@@ -49,6 +49,9 @@ bool g_bWaylandExt = false;
 const int WIDTH    = 1920;
 const int HEIGHT   = 1080;
 
+static int s_framebufferWidth  = WIDTH;
+static int s_framebufferHeight = HEIGHT;
+
 ///
 // Arcball callbacks
 static void clickArcballCallback(int button, int action)
@@ -267,7 +270,9 @@ int main(int argc, char **argv)
         GetMaterialManager()->CreateDefaultMaterial();
         GetMaterialManager()->UploadMaterialBuffer();
 
-        GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
+        // update framebuffer size
+        Window::GetFramebufferSize(s_framebufferWidth, s_framebufferHeight);
+        GetRenderPassManager()->Initialize(s_framebufferWidth, s_framebufferHeight, surface);
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
@@ -333,15 +338,16 @@ int main(int argc, char **argv)
             {
                 // TODO: Resizing doesn't work properly, need to investigate
                 VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
-                int width, height;
-                std::tie(width, height) = Window::GetWindowSize();
+                int width;
+                int height;
+                Window::GetFramebufferSize(width, height);
                 VkExtent2D currentVp    = GetRenderPassManager()->GetViewportSize();
-                if (width != (int)currentVp.width || height != (int)currentVp.height)
-                {
-                    // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
-                    GetRenderPassManager()->OnResize(width, height);
-                    GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-                }
+                //if (width != static_cast<int>(currentVp.width) || height != static_cast<int>(currentVp.height))
+                //{
+                //    // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
+                //    GetRenderPassManager()->OnResize(width, height);
+                //    GetRenderPassManager()->RecordStaticCmdBuffers(dl);
+                //}
             }
         }
         std::cout << "Closing window, wait for device to finish..."
