@@ -1,5 +1,4 @@
 #pragma once
-#include <memory>
 #include <set>
 #include <queue>
 #include <stack>
@@ -87,7 +86,7 @@ public:
 
     bool IsAdjacentTo(const T& from, const T& to) const
     {
-        return std::find(m_adjacencyList.at(from).begin(), m_adjacencyList.at(from).end(), to) != m_adjacencyList.at(from).end();
+        return std::ranges::find(m_adjacencyList.at(from).begin(), m_adjacencyList.at(from).end(), to) != m_adjacencyList.at(from).end();
     }
 
     bool HasCycle()

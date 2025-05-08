@@ -248,9 +248,15 @@ static void ProcessEvents()
 
 static std::pair<int, int> GetWindowSize()
 {
-    int w, h;
-    glfwGetWindowSize(_GLFW::s_pWindow, &w, &h);
+    int w;
+    int h;
+    glfwGetFramebufferSize(_GLFW::s_pWindow, &w, &h);
     return std::make_pair(w, h);
+}
+
+static void GetFramebufferSize(int &w, int &h)
+{
+    glfwGetFramebufferSize(_GLFW::s_pWindow, &w, &h);
 }
 
 static size_t GetVulkanInstanceExtensions(std::vector<const char*> &vExtensions)

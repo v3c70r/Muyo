@@ -399,6 +399,8 @@ void RenderPassParameters::CreateFrameBuffer()
 
 void RenderPassParameters::Finalize(const std::string& sPassName)
 {
+    assert(!m_bIsFinalized);
+
     m_sName = sPassName;
     if (!m_vBindings.empty())
     {

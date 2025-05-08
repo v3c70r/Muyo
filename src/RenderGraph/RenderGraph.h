@@ -75,7 +75,7 @@ public:
                 for (const RenderResourceHandle& inputHandle : pTargetPass->m_vInputResources)
                 {
                     // FromNode depends on ToNode, thus FromNode's input resource must be in ToNode's output resources
-                    if (std::find( pSourcePass->m_vOutputResources.begin(), pSourcePass->m_vOutputResources.end(), inputHandle) != pSourcePass->m_vOutputResources.end())
+                    if (std::ranges::find( pSourcePass->m_vOutputResources.begin(), pSourcePass->m_vOutputResources.end(), inputHandle) != pSourcePass->m_vOutputResources.end())
                     {
                         AddEdge(pTargetPass, pSourcePass);
                         break;
