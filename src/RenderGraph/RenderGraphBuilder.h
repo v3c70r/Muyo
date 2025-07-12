@@ -1,24 +1,63 @@
 #pragma once
+#include "RenderGraphResourceHandle.h"
+#include "DependencyGraph.h"
 #include <concepts>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <memory>
+
 namespace Muyo
 {
 class RenderGraphParameters
 {
+public:
+    virtual ~RenderGraphParameters() = default;
+
     std::vector<RenderGraphResourceHandle> m_vInputResources;
     std::vector<RenderGraphResourceHandle> m_vOutputResources;
 };
+
+class MyRGParam : public RenderGraphParameters
+{
+};
+
 class RenderGraphBuilder
 {
 public:
-    // Requires T to be a subclass of RenderGraphParameters
-    template <typename T>
-    concept DerivedFromRenderGraphParameters = std::derived_from<RenderGraphParameters, T>;
-    template <DerivedFromRenderGraphParameters T>
-    T* AllocateRenderPassParameters()
-    {
 
+    // Allocate parameters for a render graph node
+    template <typename T>
+    requires std::derived_from<T, RenderGraphParameters>
+    T* AllocateRenderGraphNodeParameters()
+    {
+        auto parameters = std::make_unique<T>();
+        T* rawPtr = parameters.get();
+        m_renderGraphNodeParameters.emplace_back(std::move(parameters));
+        return rawPtr;
     }
 
-    void AddPass();
+    // Add a render graph node
+    void AddNode(const std::string& nodeName, RenderGraphParameters* parameters);
+
+    // Add a dependency between two nodes
+    void AddDependency(const std::string& fromNode, const std::string& toNode);
+
+    // Build the render graph
+    void Build();
+
+    // Retrieve the execution order of nodes
+    std::vector<std::string> GetExecutionOrder() const;
+
+private:
+    struct RenderGraphNode
+    {
+        std::string name;
+        RenderGraphParameters* parameters;
+    };
+
+    std::vector<std::unique_ptr<RenderGraphParameters>> m_renderGraphNodeParameters;
+    std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
+    DependencyGraph<std::string> m_dependencyGraph;
 };
 }  // namespace Muyo
