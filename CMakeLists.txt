@@ -163,6 +163,8 @@ file(GLOB muyo_SRC
 
 add_library(muyo STATIC ${muyo_SRC})
 
+add_library(muyo_rg "src/RenderGraph/RenderGraphBuilder.cpp")
+
 #fetch VMA from Github
 include(FetchContent)
 FetchContent_Declare(
@@ -268,10 +270,10 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(Catch2)
-add_executable(tests src/tests/testRenderGraph.cpp)
+add_executable(tests src/tests/RenderGraphBuilderTest.cpp)
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
 target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src)
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo_rg)
 include(Catch)
 catch_discover_tests(tests)
 

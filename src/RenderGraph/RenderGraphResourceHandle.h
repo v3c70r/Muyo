@@ -82,10 +82,11 @@ struct ResourceDesc
 class RenderGraphResourceHandle
 {
 public:
-    explicit RenderGraphResourceHandle(std::string_view name)
-        : m_name(name), m_nameHash(Hash::StrFnV1A64(name))
-    {
-    }
+    RenderGraphResourceHandle(const RenderGraphResourceHandle&) = default;
+    RenderGraphResourceHandle(RenderGraphResourceHandle&&) = default;
+    RenderGraphResourceHandle& operator=(const RenderGraphResourceHandle&) = delete;
+    RenderGraphResourceHandle& operator=(RenderGraphResourceHandle&&) = delete;
+    explicit RenderGraphResourceHandle(std::string_view name) : m_name(name), m_nameHash(Hash::StrFnV1A64(name)) {}
     bool operator==(const RenderGraphResourceHandle& other) const {
         return m_nameHash == other.m_nameHash && m_nVersion == other.m_nVersion;
     }

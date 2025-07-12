@@ -3,7 +3,6 @@
 
 #include "DescriptorManager.h"
 #include "LightSceneNode.h"
-#include "RenderGraph/RenderGraph.h"
 #include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "SceneManager.h"
@@ -343,51 +342,6 @@ void RenderPassDebugPage::Render() const
         }
     }
     ImGui::End();
-
-    /*  Comment out Render Pass topological sort code
-    std::vector<const RenderGraphNode*> rgNodes = m_pRDG->TopologicalSort();
-
-    ImGui::Begin("Render Passes");
-    ImNodes::BeginNodeEditor();
-    // Construct nodes
-    int nodeId = 0;
-    // output pin has node id + 1 
-    // input pin has node id
-    std::unordered_map<const RenderGraphNode*, int> rgnToNodeId;
-    for (const auto* rgNode : rgNodes)
-    {
-
-        rgnToNodeId[rgNode] = nodeId;
-        ImNodes::BeginNode(nodeId);
-        ImGui::Text("%s", rgNode->m_pRenderPass->GetName().c_str());
-
-        ImNodes::BeginInputAttribute(nodeId);
-        ImGui::Text("InputPass");
-        ImNodes::EndInputAttribute();
-
-        ImNodes::BeginOutputAttribute(nodeId+1);
-        ImGui::Text("OutputPass");
-        ImNodes::EndOutputAttribute();
-        ImNodes::EndNode();
-        nodeId += 2;
-    }
-
-    // construct links
-    for (const auto* rgNode : rgNodes)
-    {
-        for (const auto* neighbor : rgNodes)
-        {
-            if (rgNode != neighbor && m_pRDG->IsAdjacentTo(rgNode, neighbor))
-            {
-                ImNodes::Link(rgnToNodeId[rgNode], rgnToNodeId[rgNode]+1,rgnToNodeId[neighbor]);
-            }
-        }
-    }
-
-
-    ImNodes::EndNodeEditor();
-    ImGui::End();
-    */
 
 
     //ImGui::Begin("node editor");
