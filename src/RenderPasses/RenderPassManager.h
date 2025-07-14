@@ -114,9 +114,6 @@ private:
     } m_temporalInfo;
 
     std::unique_ptr<ShadowPassManager> m_pShadowPassManager;
-
-    // RenderDependencyGraph
-    RenderDependencyGraph m_rdg;
 };
 
 RenderPassManager* GetRenderPassManager();
