@@ -275,53 +275,6 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     auto *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->PrepareRenderPass();
     pFinalPass->RecordCommandBuffers();
-
-    // Construct RDG
-
-    // keep track of all render graph nodes for each render pass
-    std::vector<const RenderGraphNode*> vRenderGraphNodes(RENDERPASS_COUNT, nullptr);
-    std::vector<const RenderGraphNode*> vShadowRGNs(m_pShadowPassManager->GetShadowMaps().size(), nullptr);
-
-    // Add shadow passes
-    for (const auto &pShadowPass : m_pShadowPassManager->GetShadowPasses())
-    {
-        if (!pShadowPass)
-        {
-            continue;
-        }
-        vShadowRGNs.push_back(
-            m_rdg.AddPass(pShadowPass->GetInputResources(), pShadowPass->GetOutputResources(), pShadowPass.get()));
-    }
-    for (int i = 0; i < RENDERPASS_COUNT; i++)
-    {
-        const IRenderPass* pRenderPass = m_vpRenderPasses[i].get();
-        if (pRenderPass == nullptr)
-        {
-            continue;
-        }
-        const RenderGraphNode *rgn =
-            m_rdg.AddPass(pRenderPass->GetInputResources(), pRenderPass->GetOutputResources(), pRenderPass);
-
-        if (i == RENDERPASS_OPAQUE_LIGHTING)
-        {
-            m_rdg.AddEdge(rgn, vRenderGraphNodes[RENDERPASS_GBUFFER]);
-            // it also depends on shadow passes
-            for (const auto &pShadowRGN : vShadowRGNs)
-            {
-                m_rdg.AddEdge(rgn, pShadowRGN);
-            }
-        }
-        if( i == RENDERPASS_TRANSPARENT)
-        {
-            m_rdg.AddEdge(rgn, vRenderGraphNodes[RENDERPASS_OPAQUE_LIGHTING]);
-        }
-    }
-    
-    m_rdg.ConstructAdjList();
-    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
-    auto *pRenderPassDebugPage = pUIPass->RegisterDebugPage<RenderPassDebugPage>("Render Passes");
-    pRenderPassDebugPage->SetRenderPassManager(this);
-    pRenderPassDebugPage->SetRDG(&m_rdg);
 }
 
 void RenderPassManager::RecordDynamicCmdBuffers()
