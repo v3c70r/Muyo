@@ -1,10 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexcept>
+#include <utility>
 #include "RenderGraph/RenderGraphBuilder.h"
+#include "RenderGraph/RenderGraphResourceDesc.h"
 
 namespace Muyo
 {
-
 TEST_CASE("RenderGraphBuilder: AddNode and GetExecutionOrder", "[RenderGraphBuilder]")
 { 
 
@@ -84,4 +85,74 @@ TEST_CASE("RenderGraphBuilder: Missing Node Dependency", "[RenderGraphBuilder]")
     REQUIRE_THROWS_AS(builder.AddDependency("NodeA", "NodeB"), std::runtime_error);
 }
 
+TEST_CASE("RenderGraphBuilder: Custom Render Graph Parameter", "[RenderGraphBuilder]")
+{
+    class CustomRGParam : public RenderGraphParameters
+    {
+        const int m_customData = 42;
+        bool m_functionCalled = false;
+
+    public:
+        int GetCustomData() const { return m_customData; }
+        void OnGraphBuild() override
+        {
+            // Custom build logic
+            m_functionCalled = true;
+        }
+        bool WasFunctionCalled() const { return m_functionCalled; }
+    };
+
+    RenderGraphBuilder builder;
+    // Allocate parameters for a node
+    auto* nodeAParams = builder.AllocateRenderGraphNodeParameters<CustomRGParam>();
+    nodeAParams->m_vInputResources.emplace_back("InputResource");
+    nodeAParams->m_vOutputResources.emplace_back("OutputResources");
+    builder.AddNode("NodeA", nodeAParams);
+
+    auto* nodeBParams = builder.AllocateRenderGraphNodeParameters<CustomRGParam>();
+    nodeBParams->m_vInputResources.emplace_back("InputResource");
+    nodeBParams->m_vOutputResources.emplace_back("OutputResources");
+    builder.AddNode("NodeB", nodeBParams);
+
+    builder.AddDependency("NodeB", "NodeA");
+
+    builder.Build();
+
+    assert(nodeAParams->WasFunctionCalled());
+    assert(nodeBParams->WasFunctionCalled());
+}
+TEST_CASE("Resource Desc", "[RenderGraphBuilderResourceDesc type]")
+{
+    std::vector<RenderGraph::ResourceDesc> resources
+    {
+        RenderGraph::IndexBufferDesc<uint8_t>{.name="MyIndexBufferDesc", .count=3000},
+        RenderGraph::VertexBuffer<Vertex>{.name="MyVertexBuffer", .count=1000}
+    };
+
+    auto* pIdxBuffer = std::get_if<RenderGraph::IndexBufferDesc<uint8_t>>(&resources[0]);
+    REQUIRE(pIdxBuffer != nullptr);
+
+    auto* pVertBuffer = std::get_if<RenderGraph::VertexBuffer<Vertex>>(&resources[1]);
+    REQUIRE(pVertBuffer != nullptr);
+
+}
+
+TEST_CASE("Resource Allocatoin", "[RenderGraphBuilderResourceDesc type]")
+{
+    GetRenderDevice()->Initialize({}, {});
+    GetRenderDevice()->CreateDevice({}, std::vector<const char*>(), nullptr, {});
+    GetRenderDevice()->CreateCommandPools();
+    GetMemoryAllocator()->Initalize(GetRenderDevice());
+    GetRenderResourceManager()->Initialize();
+
+    RenderGraph::IndexBufferDesc<uint16_t> indexBufferDesc{.name = "IndexBufferDesc", .count = 100};
+    auto* pResource = Allocate(indexBufferDesc, GetRenderResourceManager());
+    REQUIRE(pResource != nullptr);
+
+    GetRenderResourceManager()->Unintialize();
+    GetRenderDevice()->DestroyCommandPools();
+    GetMemoryAllocator()->Unintialize();
+    GetRenderDevice()->DestroyDevice();
+    GetRenderDevice()->Unintialize();
+}
 }  // namespace Muyo

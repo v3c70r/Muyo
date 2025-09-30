@@ -273,7 +273,7 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(tests src/tests/RenderGraphBuilderTest.cpp)
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
 target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src)
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo_rg)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo_rg muyo)
 include(Catch)
 catch_discover_tests(tests)
 
