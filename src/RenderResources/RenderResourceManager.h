@@ -17,7 +17,7 @@ inline bool FormatSupportsOptimalTilingDepthAttachment(VkFormat format)
 {
     VkFormatProperties properties;
     vkGetPhysicalDeviceFormatProperties(GetRenderDevice()->GetPhysicalDevice(), format, &properties);
-    return properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    return (properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U;
 }
 
 inline bool FormatSupportsOptimalTilingColorAttachment(VkFormat format)
@@ -143,7 +143,7 @@ public:
     }
 
     template <class T>
-    DrawCommandBuffer<T>* GetDrawCommandBuffer(const std::string sName, const std::vector<T>& drawCommands)
+    DrawCommandBuffer<T>* GetDrawCommandBuffer(const std::string& sName, const std::vector<T>& drawCommands)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
@@ -154,7 +154,7 @@ public:
     }
 
     template <class T>
-    StorageBuffer<T>* GetStorageBuffer(const std::string sName, const std::vector<T>& structuredBuffers)
+    StorageBuffer<T>* GetStorageBuffer(const std::string& sName, const std::vector<T>& structuredBuffers)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
@@ -258,7 +258,7 @@ public:
         // Make sure the swapped resource is the same type of resource
         if (m_mResources.find(sName) != m_mResources.end())
         {
-            if (dynamic_cast<T*>(pResource) != nullptr)
+            if (pResource != nullptr)
             {
                 m_mResources[sName] = std::unique_ptr<T>(pResource);
                 m_mResources[sName]->SetDebugName(sName);
@@ -274,10 +274,7 @@ public:
         {
             return dynamic_cast<T*>(m_mResources[sName].get());
         }
-        else
-        {
-            return nullptr;
-        }
+        return nullptr;
     }
 
 protected:

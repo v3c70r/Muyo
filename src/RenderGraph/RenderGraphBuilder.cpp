@@ -1,5 +1,6 @@
 #include "RenderGraphBuilder.h"
 #include <stdexcept>
+#include <unordered_map>
 
 namespace Muyo
 {
@@ -10,7 +11,7 @@ void RenderGraphBuilder::AddNode(const std::string& nodeName, RenderGraphParamet
         throw std::runtime_error("Node with name '" + nodeName + "' already exists in the render graph.");
     }
 
-    m_renderGraphNodes[nodeName] = {nodeName, parameters};
+    m_renderGraphNodes[nodeName] = {.name = nodeName, .parameters = parameters};
 }
 
 void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::string& toNode)
@@ -37,7 +38,24 @@ void RenderGraphBuilder::Build()
     {
         throw std::runtime_error("Render graph contains a cycle!");
     }
+    std::unordered_map<std::string, uint32_t> resourceCurrentVersions;
+    std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
+    for (const auto& nodeName: executionOrder)
+    {
+        // Update handle versions
+        auto& node = m_renderGraphNodes.at(nodeName);
+        for (auto& resource : node.parameters->m_vInputResources)
+        {
+            std::string key = std::string(resource.GetName());
+            if (resourceCurrentVersions.find(key) == resourceCurrentVersions.end())
+            {
+                resourceCurrentVersions[key] = 0;
+                m_resourceLastUsedVersion[key] = 0;
+            }
+        }
 
+        m_renderGraphNodes.at(nodeName).parameters->OnGraphBuild();
+    }
     // Additional build logic can be added here if needed
 }
 

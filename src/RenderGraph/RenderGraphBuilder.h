@@ -16,6 +16,8 @@ public:
 
     std::vector<RenderGraphResourceHandle> m_vInputResources;
     std::vector<RenderGraphResourceHandle> m_vOutputResources;
+    virtual void OnGraphBuild() {}
+    virtual void OnGraphExecute() {}
 };
 
 class MyRGParam : public RenderGraphParameters
@@ -25,16 +27,13 @@ class MyRGParam : public RenderGraphParameters
 class RenderGraphBuilder
 {
 public:
-
     // Allocate parameters for a render graph node
     template <typename T>
     requires std::derived_from<T, RenderGraphParameters>
-    T* AllocateRenderGraphNodeParameters()
+    [[nodiscard]] T* AllocateRenderGraphNodeParameters()
     {
-        auto parameters = std::make_unique<T>();
-        T* rawPtr = parameters.get();
-        m_renderGraphNodeParameters.emplace_back(std::move(parameters));
-        return rawPtr;
+        m_renderGraphNodeParameters.emplace_back(std::make_unique<T>());
+        return static_cast<T*>(m_renderGraphNodeParameters.back().get());
     }
 
     // Add a render graph node
@@ -59,5 +58,6 @@ private:
     std::vector<std::unique_ptr<RenderGraphParameters>> m_renderGraphNodeParameters;
     std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
     DependencyGraph<std::string> m_dependencyGraph;
+    std::unordered_map<std::string, uint32_t> m_resourceLastUsedVersion;  // Track last used version of resources
 };
 }  // namespace Muyo
