@@ -39,12 +39,17 @@ void RenderGraphBuilder::Build()
         throw std::runtime_error("Render graph contains a cycle!");
     }
     std::unordered_map<std::string, uint32_t> resourceCurrentVersions;
+    
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
-    for (const auto& nodeName: executionOrder)
+    if (m_renderGraphNodes.size() == 1)
+    {
+        executionOrder = {m_renderGraphNodes.begin()->first};
+    }
+    for (const auto& nodeName : executionOrder)
     {
         // Update handle versions
         auto& node = m_renderGraphNodes.at(nodeName);
-        for (auto& resource : node.parameters->m_vInputResources)
+        for (auto& resource : node.parameters->vInputResources)
         {
             std::string key = std::string(resource.GetName());
             if (resourceCurrentVersions.find(key) == resourceCurrentVersions.end())
@@ -58,6 +63,19 @@ void RenderGraphBuilder::Build()
     }
     // Additional build logic can be added here if needed
 }
+
+void RenderGraphBuilder::Execute()
+{
+    std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
+    if (m_renderGraphNodes.size() == 1)
+    {
+        executionOrder = {m_renderGraphNodes.begin()->first};
+    }
+    for (const auto& nodeName : executionOrder)
+    {
+        m_renderGraphNodes.at(nodeName).parameters->OnGraphExecute();
+    }
+};
 
 std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const
 {
