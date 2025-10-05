@@ -1,4 +1,5 @@
 #pragma once
+#include "RenderGraph/RenderGraphResourceDesc.h"
 #include "RenderGraphResourceHandle.h"
 #include "DependencyGraph.h"
 #include <concepts>
@@ -14,8 +15,8 @@ class RenderGraphParameters
 public:
     virtual ~RenderGraphParameters() = default;
 
-    std::vector<RenderGraphResourceHandle> m_vInputResources;
-    std::vector<RenderGraphResourceHandle> m_vOutputResources;
+    std::vector<RenderGraphResourceHandle> vInputResources;
+    std::vector<RenderGraphResourceHandle> vOutputResources;
     virtual void OnGraphBuild() {}
     virtual void OnGraphExecute() {}
 };
@@ -44,6 +45,8 @@ public:
 
     // Build the render graph
     void Build();
+
+    void Execute();
 
     // Retrieve the execution order of nodes
     std::vector<std::string> GetExecutionOrder() const;
