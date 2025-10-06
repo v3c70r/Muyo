@@ -108,17 +108,29 @@ if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
   unset(_Vulkan_hint_executable_search_paths)
 endif()
 
+
 if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
     message(FATAL_ERROR "Can't find slang executable")
 endif()
 
+set(SANITIZE_CONDITION "$<CONFIG:Sanitize>")
 if (UNIX)
     set (CMAKE_CXX_FLAGS "-std=c++20 -Wall -pthread -Wno-missing-braces -g")
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
+    set(SANITIZE_FLAGS
+      "$<${SANITIZE_CONDITION}:-fsanitize=address>"
+      "$<${SANITIZE_CONDITION}:-fno-omit-frame-pointer>"
+      "$<${SANITIZE_CONDITION}:-g>"
+    )
 elseif(MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")
+    set(SANITIZE_FLAGS "$<${SANITIZE_CONDITION}:/fsanitize=address,undefined,thread,memory>")
+    add_compile_options("$<${SANITIZE_CONDITION}:/Zi>")
 endif()
+
+add_compile_options(${SANITIZE_FLAGS})
+add_link_options(${SANITIZE_FLAGS})
 
 # Headers that shared between shader and cpp 
 set (SHARED_HEADER_DIR "${CMAKE_SOURCE_DIR}/shaders/shared")
