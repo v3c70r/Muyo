@@ -429,6 +429,7 @@ void VkRenderDevice::DestroyCommandPools()
 void VkRenderDevice::Unintialize()
 {
     vkDestroyInstance(m_instance, nullptr);
+    m_instance = VK_NULL_HANDLE;
 }
 
 VkCommandBuffer VkRenderDevice::AllocateComputeCommandBuffer()
