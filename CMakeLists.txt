@@ -186,6 +186,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(VMA)
 target_include_directories(muyo PRIVATE ${vma_SOURCE_DIR}/include)
+target_include_directories(muyo_rg PRIVATE ${vma_SOURCE_DIR}/include)
 
 target_link_libraries(muyo imgui imguizmo imnodes ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 

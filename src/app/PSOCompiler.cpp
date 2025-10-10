@@ -150,7 +150,7 @@ class ScopedTimer
     }
 
   private:
-    std::chrono::system_clock::time_point m_StartTime;
+    std::chrono::high_resolution_clock::time_point m_StartTime;
 };
 
 int main()
