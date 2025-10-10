@@ -1,0 +1,5 @@
+# Use LSAN_OPTIONS="suppressions=../san.supp:print_suppressions=1" ./app
+
+# pthread_once initialization frame (glibc)
+leak:^__pthread_once_slow$
+leak:nptl/pthread_once.c
