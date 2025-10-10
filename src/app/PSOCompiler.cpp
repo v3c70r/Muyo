@@ -156,11 +156,16 @@ class ScopedTimer
 int main()
 {
     std::vector<const char*> vInstanceExtensions = {};
-    Muyo::GetRenderDevice()->Initialize(vInstanceExtensions);
+    Muyo::GetRenderDevice()->Initialize(vInstanceExtensions, {});
 
     std::vector<const char*> vDeviceExtensions = {};
-    Muyo::GetRenderDevice()->CreateDevice(vDeviceExtensions,              // Extensions
-                                          std::vector<const char*>());    // Layers
+    Muyo::GetRenderDevice()->CreateDevice(vDeviceExtensions,          // Extensions
+                                          std::vector<const char*>()  // Layers
+                                          ,
+                                          nullptr  // Surface
+                                          ,
+                                          std::vector<void*>()  // Extension features
+    );
 
     Muyo::GetMemoryAllocator()->Initalize(Muyo::GetRenderDevice());
     Muyo::GetRenderDevice()->CreateCommandPools();

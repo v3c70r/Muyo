@@ -179,7 +179,7 @@ int main(int argc, char **argv)
 
     // Create Instace
     std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
-    GetRenderDevice()->Initialize(vInstanceExtensions);
+    GetRenderDevice()->Initialize(vInstanceExtensions, {});
     VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
 
     // Create swapchain

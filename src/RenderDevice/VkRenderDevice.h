@@ -24,15 +24,15 @@ public:
 #endif
     }
 
-    virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers = std::vector<const char*>());
+    virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers);
 
     virtual void Unintialize();
 
     virtual void CreateDevice(
         const std::vector<const char*>& extensions,
         const std::vector<const char*>& layers,
-        const VkSurfaceKHR* pSurface = nullptr,
-        const std::vector<void*>& vpFeatures = {});
+        const VkSurfaceKHR* pSurface,
+        const std::vector<void*>& vpFeatures);
 
     void DestroyDevice();
 
