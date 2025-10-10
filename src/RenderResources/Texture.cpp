@@ -60,13 +60,15 @@ void TextureResource::LoadPixels(void *pixels, int width, int height)
     mInitSampler();
 }
 
-void TextureResource::LoadImage(const std::string path)
+void TextureResource::LoadImage(const std::string& path)
 {
-    int width, height, channels;
-    stbi_uc *pixels =
-        stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    stbi_uc *pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
     assert(pixels);
-    LoadPixels((void *)pixels, width, height);
+    LoadPixels(static_cast<void*>(pixels), width, height);
+    stbi_image_free(pixels);
 }
 
 }  // namespace Muyo
