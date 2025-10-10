@@ -38,6 +38,7 @@ struct PerViewData
 class Camera
 {
 public:
+    virtual ~Camera() = default;
     Camera(glm::mat4 mProj, glm::mat4 mView, float fNear, float fFar, float width, float height)
     {
         m_perViewData.mProj = mProj;
