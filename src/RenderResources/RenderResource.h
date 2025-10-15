@@ -300,17 +300,16 @@ template <class T>
 class StorageBuffer : public BufferResource
 {
 public:
-    StorageBuffer(const T* buffer, uint32_t nNumStructs)
-        : BufferResource(
-              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                  VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-              VMA_MEMORY_USAGE_GPU_ONLY)
+    StorageBuffer(const T* buffer, uint32_t nNumStructs, bool bAllowReadback = false)
+        : BufferResource(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                         bAllowReadback ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_GPU_ONLY)
+
     {
         uint32_t nSize = sizeof(T) * nNumStructs;
         GetMemoryAllocator()->AllocateBuffer(nSize, BUFFER_USAGE, MEMORY_USAGE,
                                              m_buffer, m_allocation,
                                              "Storage Buffer");
-        SetData((void*)buffer, nSize);
+        SetData(static_cast<const void*>(buffer), nSize);
         m_nNumStructs = nNumStructs;
     }
     uint32_t GetNumStructs() const { return m_nNumStructs; }

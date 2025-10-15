@@ -58,6 +58,7 @@ namespace Muyo::RenderGraph
     {
         std::string name;
         size_t count{};
+        bool allowReadback{false};
         static constexpr size_t STRIDE = sizeof(T);
     };
 
