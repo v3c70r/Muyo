@@ -154,11 +154,12 @@ public:
     }
 
     template <class T>
-    StorageBuffer<T>* GetStorageBuffer(const std::string& sName, const std::vector<T>& structuredBuffers)
+    StorageBuffer<T>* GetStorageBuffer(const std::string& sName, const std::vector<T>& structuredBuffers, bool bAllowReadback = true)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
-            m_mResources[sName] = std::make_unique<StorageBuffer<T>>(structuredBuffers.data(), (uint32_t)structuredBuffers.size());
+            m_mResources[sName] = std::make_unique<StorageBuffer<T>>(
+                structuredBuffers.data(), static_cast<uint32_t>(structuredBuffers.size()), bAllowReadback);
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<StorageBuffer<T>*>(m_mResources[sName].get());
