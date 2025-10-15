@@ -119,9 +119,8 @@ if (UNIX)
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
     set(SANITIZE_FLAGS
-      "$<${SANITIZE_CONDITION}:-fsanitize=address>"
+      "$<${SANITIZE_CONDITION}:-fsanitize=address,undefined>"
       "$<${SANITIZE_CONDITION}:-fno-omit-frame-pointer>"
-      "$<${SANITIZE_CONDITION}:-g>"
     )
 elseif(MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")

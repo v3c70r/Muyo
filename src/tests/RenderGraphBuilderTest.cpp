@@ -286,6 +286,35 @@ TEST_CASE("Simple Headless Compute Graph", "[RenderGraph]")
             GetRenderDevice()->ExecuteImmediateCommand(
                 [&](VkCommandBuffer commandBuffer)
                 {
+                    // resource barriers to prepare input and output buffers
+                    VkBuffer inputBuffer = GetRenderResourceManager()->GetResource<Muyo::StorageBuffer<uint8_t>>("InputBuffer")->buffer();
+                    VkBuffer outputBuffer = GetRenderResourceManager()->GetResource<Muyo::StorageBuffer<uint8_t>>("OutputBuffer")->buffer();
+                    std::array<VkBufferMemoryBarrier, 2> bufferBarriers = {};
+                    bufferBarriers[0].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                    bufferBarriers[0].srcAccessMask = 0;
+                    bufferBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    bufferBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    bufferBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    bufferBarriers[0].buffer = inputBuffer;
+                    bufferBarriers[0].offset = 0;
+                    bufferBarriers[0].size = VK_WHOLE_SIZE;
+                    bufferBarriers[1].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                    bufferBarriers[1].srcAccessMask = 0;
+                    bufferBarriers[1].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    bufferBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    bufferBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    bufferBarriers[1].buffer = outputBuffer;
+                    bufferBarriers[1].offset = 0;
+                    bufferBarriers[1].size = VK_WHOLE_SIZE;
+                    vkCmdPipelineBarrier(commandBuffer,
+                                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,  // srcStageMask
+                                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // dstStageMask
+                                         0,                                   // dependencyFlags
+                                         0, nullptr,                          // memoryBarriers
+                                         static_cast<uint32_t>(bufferBarriers.size()), bufferBarriers.data(), // bufferMemoryBarriers
+                                         0, nullptr                           // imageMemoryBarriers
+                    );
+
                     std::array<VkDescriptorSet, 2> vDescSets = {
                         m_renderPassParameters.AllocateDescriptorSet("", 0),
                         m_renderPassParameters.AllocateDescriptorSet("", 1),
@@ -298,14 +327,34 @@ TEST_CASE("Simple Headless Compute Graph", "[RenderGraph]")
                     vkCmdPushConstants(commandBuffer, m_renderPassParameters.GetPipelineLayout(),
                                        VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &pushConstData);
                     vkCmdDispatch(commandBuffer, 1024, 1, 1);
+
+                    // Insert a barrier to ensure compute shader writes are finished before readback
+                    VkBufferMemoryBarrier bufferBarrier = {};
+                    bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+                    bufferBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    bufferBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+                    bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    bufferBarrier.buffer = outputBuffer;
+                    bufferBarrier.offset = 0;
+                    bufferBarrier.size = VK_WHOLE_SIZE;
+
+                    vkCmdPipelineBarrier(commandBuffer,
+                                         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,  // srcStageMask
+                                         VK_PIPELINE_STAGE_HOST_BIT,            // dstStageMask
+                                         0,                                     // dependencyFlags
+                                         0, nullptr,                            // memoryBarriers
+                                         1, &bufferBarrier,                     // bufferMemoryBarriers
+                                         0, nullptr                             // imageMemoryBarriers
+                    );
                 });
+
             auto* pStorageBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<uint8_t>>("OutputBuffer");
             void* pGpuSource = pStorageBuffer->Map();
             memcpy(m_outputData.data(), pGpuSource, m_outputData.size());
             pStorageBuffer->Unmap();
 
-            // Validate output data
-            //CHECK(std::equal(m_inputData.begin(), m_inputData.end(), m_outputData.begin()));
+            CHECK(std::equal(m_inputData.begin(), m_inputData.end(), m_outputData.begin()));
         };
         void DestroyResources() { vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr); }
     };
@@ -315,9 +364,9 @@ TEST_CASE("Simple Headless Compute Graph", "[RenderGraph]")
 
     auto* computeParam = builder.AllocateRenderGraphNodeParameters<ComputeParam>();
     computeParam->vInputResources.emplace_back(
-        "InputBuffer", RenderGraph::StorageBufferDesc<uint8_t>{.name = "InputBuffer", .count = 1024});
+        "InputBuffer", RenderGraph::StorageBufferDesc<uint8_t>{.name = "InputBuffer", .count = 1024, .allowReadback=false});
     computeParam->vOutputResources.emplace_back(
-        "OutputBuffer", RenderGraph::StorageBufferDesc<uint8_t>{.name = "OutputBuffer", .count = 1024});
+        "OutputBuffer", RenderGraph::StorageBufferDesc<uint8_t>{.name = "OutputBuffer", .count = 1024, .allowReadback=true});
 
     builder.AddNode("ComputePass", computeParam);
     builder.Build();
