@@ -2,9 +2,10 @@
 #include <stdexcept>
 #include <unordered_map>
 
-namespace Muyo
+namespace Muyo::RenderGraph
 {
-void RenderGraphBuilder::AddNode(const std::string& nodeName, RenderGraphParameters* parameters)
+
+void RenderGraphBuilder::AddNode(const std::string& nodeName, RenderGraphNodeParameters* parameters)
 {
     if (m_renderGraphNodes.find(nodeName) != m_renderGraphNodes.end())
     {
@@ -49,7 +50,7 @@ void RenderGraphBuilder::Build()
     {
         // Update handle versions
         auto& node = m_renderGraphNodes.at(nodeName);
-        for (auto& resource : node.parameters->vInputResources)
+        for (auto& resource : node.parameters->m_inputResources)
         {
             std::string key = std::string(resource.GetName());
             if (resourceCurrentVersions.find(key) == resourceCurrentVersions.end())
