@@ -1,28 +1,31 @@
 #pragma once
-#include "RenderGraph/RenderGraphResourceDesc.h"
 #include "RenderGraphResourceHandle.h"
 #include "DependencyGraph.h"
+#include "RenderGraphNodePipelineLayoutDesc.h"
 #include <concepts>
 #include <string>
 #include <vector>
 #include <unordered_map>
 #include <memory>
 
-namespace Muyo
+namespace Muyo::RenderGraph
 {
-class RenderGraphParameters
+class RenderGraphNodeParameters
 {
+    friend class RenderGraphBuilder;
 public:
-    virtual ~RenderGraphParameters() = default;
-
-    std::vector<RenderGraphResourceHandle> vInputResources;
-    std::vector<RenderGraphResourceHandle> vOutputResources;
     virtual void OnGraphBuild() {}
     virtual void OnGraphExecute() {}
-};
+    virtual ~RenderGraphNodeParameters() = default;
+private:
+    VkPipelineLayout CreatePipelineLayout();
 
-class MyRGParam : public RenderGraphParameters
-{
+    // Store names and versions of input and output resources
+    std::vector<RenderGraphResourceHandle> m_inputResources;
+    std::vector<RenderGraphResourceHandle> m_outputResources;
+
+    // Store pipeline layout description and resource description to create actual resource
+    PipelineLayoutDesc m_pipelineLayoutDesc;
 };
 
 class RenderGraphBuilder
@@ -30,15 +33,40 @@ class RenderGraphBuilder
 public:
     // Allocate parameters for a render graph node
     template <typename T>
-    requires std::derived_from<T, RenderGraphParameters>
-    [[nodiscard]] T* AllocateRenderGraphNodeParameters()
+    requires std::derived_from<T, RenderGraphNodeParameters>
+    [[nodiscard]] T* AllocateRenderGraphNodeParameters(
+            PipelineLayoutDesc&& inputDesc = {},
+            PipelineLayoutDesc&& outputDesc = {}
+            )
     {
-        m_renderGraphNodeParameters.emplace_back(std::make_unique<T>());
+        auto& param = m_renderGraphNodeParameters.emplace_back(std::make_unique<T>());
+
+        // Construct input and output handles from layout description resource names
+        for (const auto& descSet : inputDesc.vDescriptorSets)
+        {
+            for (const auto& bindingVariant : descSet.bindings)
+            {
+                std::visit([&param](auto&& binding) { param->m_inputResources.emplace_back(GetDescName(binding)); },
+                           bindingVariant);
+            }
+        }
+        for (const auto& descSet : outputDesc.vDescriptorSets)
+        {
+            for (const auto& bindingVariant : descSet.bindings)
+            {
+                std::visit([&param](auto&& binding) { param->m_outputResources.emplace_back(GetDescName(binding)); },
+                           bindingVariant);
+            }
+        }
+
+        param->m_pipelineLayoutDesc = std::move(inputDesc);
+        param->m_pipelineLayoutDesc.Append(outputDesc);
+
         return static_cast<T*>(m_renderGraphNodeParameters.back().get());
     }
 
     // Add a render graph node
-    void AddNode(const std::string& nodeName, RenderGraphParameters* parameters);
+    void AddNode(const std::string& nodeName, RenderGraphNodeParameters* parameters);
 
     // Add a dependency between two nodes
     void AddDependency(const std::string& fromNode, const std::string& toNode);
@@ -55,10 +83,10 @@ private:
     struct RenderGraphNode
     {
         std::string name;
-        RenderGraphParameters* parameters;
+        RenderGraphNodeParameters* parameters;
     };
 
-    std::vector<std::unique_ptr<RenderGraphParameters>> m_renderGraphNodeParameters;
+    std::vector<std::unique_ptr<RenderGraphNodeParameters>> m_renderGraphNodeParameters;
     std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
     DependencyGraph<std::string> m_dependencyGraph;
     std::unordered_map<std::string, uint32_t> m_resourceLastUsedVersion;  // Track last used version of resources
