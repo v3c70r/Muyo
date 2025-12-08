@@ -17,3 +17,6 @@
 [submodule "thirdparty/imnodes"]
 	path = thirdparty/imnodes
 	url = https://github.com/Nelarius/imnodes.git
+[submodule "thirdparty/SPIRV-Reflect"]
+	path = thirdparty/SPIRV-Reflect
+	url = https://github.com/KhronosGroup/SPIRV-Reflect.git
