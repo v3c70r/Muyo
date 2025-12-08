@@ -60,6 +60,9 @@ add_library(imgui
     thirdparty/imgui/imgui_tables.cpp
     )
 
+set(SPIRV-Reflect_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/SPIRV-Reflect)
+add_library(SPIRV-Reflect ${CMAKE_SOURCE_DIR}/thirdparty/SPIRV-Reflect/spirv_reflect.cpp)
+
 ## ImGuizmo
 set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo)
 add_library(imguizmo thirdparty/ImGuizmo/ImGuizmo.cpp)
