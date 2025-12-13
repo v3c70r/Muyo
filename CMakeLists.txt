@@ -145,6 +145,7 @@ include_directories(
     ${SHARED_HEADER_DIR}
     ${IMGUIZMO_INCLUDE_DIRS}
     ${IMNODES_INCLUDE_DIRS}
+    ${SPIRV-Reflect_INCLUDE_DIRS}
     )
 
     
@@ -285,10 +286,13 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(Catch2)
-add_executable(tests src/tests/RenderGraphBuilderTest.cpp)
+add_executable(tests 
+    src/RenderGraph/ShaderReflectionFetcher.cpp
+    src/tests/ShaderReflectionTests.cpp
+)
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
 target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src)
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo_rg muyo)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain SPIRV-Reflect)
 include(Catch)
 catch_discover_tests(tests)
 
