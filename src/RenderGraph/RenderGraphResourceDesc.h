@@ -7,6 +7,7 @@
 #include <variant>
 #include <MeshVertex.h>
 
+
 template <class D>
 concept GraphResourceDesc = requires(const D& d, Muyo::RenderResourceManager* rs)
 {
@@ -40,12 +41,6 @@ namespace Muyo::RenderGraph
         return renderResourceManager->GetIndexBuffer<T>(d.name, std::vector<T>(d.count));
     }
 
-    template <class T>
-    VkDescriptorType GetDescriptorType(const IndexBufferDesc<T>&) {
-        return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; // or appropriate type
-    }
-
-
     template<class T>
     struct VertexBufferDesc
     {
@@ -58,10 +53,6 @@ namespace Muyo::RenderGraph
     inline Muyo::VertexBuffer<T>* AcquireImp(const VertexBufferDesc<T>& d, Muyo::RenderResourceManager* renderResourceManager)
     {
         return renderResourceManager->GetVertexBuffer<T>(d.name, std::vector<T>(d.count));
-    }
-    template <class T>
-    VkDescriptorType GetDescriptorType(const VertexBuffer<T>&) {
-        return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; // or appropriate type
     }
 
     template <class T>
@@ -78,10 +69,6 @@ namespace Muyo::RenderGraph
                                                Muyo::RenderResourceManager* renderResourceManager)
     {
         return renderResourceManager->GetStorageBuffer<T>(d.name, std::vector<T>(d.count));
-    }
-    template <class T>
-    VkDescriptorType GetDescriptorType(const StorageBufferDesc<T>&) {
-        return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     }
 
     struct RenderTargetDesc
@@ -106,6 +93,15 @@ namespace Muyo::RenderGraph
         VertexBufferDesc<Muyo::UIVertex>,
         StorageBufferDesc<uint8_t>,
         RenderTargetDesc >;
+
+    template <GraphResourceDesc T>
+    constexpr uint32_t GetDescriptorCount(const T&) { return 1;}
+
+    template <GraphResourceDesc T>
+    constexpr VkDescriptorType GetDescriptorType(const T&) 
+    {
+        return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    }
 }
 
 // Example usage:

@@ -195,6 +195,7 @@ void VkRenderDevice::CreateDevice(
 
     VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     features13.maintenance4 = VK_TRUE;
+    features13.dynamicRendering = VK_TRUE;
     VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     features12.bufferDeviceAddress = VK_TRUE;
     features12.separateDepthStencilLayouts = VK_TRUE;

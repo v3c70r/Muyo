@@ -17,27 +17,28 @@ constexpr uint64_t StrFnV1A64(std::string_view str)
 }
 }  // namespace Hash
 
-namespace Muyo
+namespace Muyo::RenderGraph
 {
 
-class RenderGraphResourceHandle
-{
-public:
-    RenderGraphResourceHandle(const RenderGraphResourceHandle&) = default;
-    RenderGraphResourceHandle(RenderGraphResourceHandle&&) = default;
-    RenderGraphResourceHandle& operator=(const RenderGraphResourceHandle&) = delete;
-    RenderGraphResourceHandle& operator=(RenderGraphResourceHandle&&) = delete;
-    explicit RenderGraphResourceHandle(std::string_view name) : m_name(name), m_nameHash(Hash::StrFnV1A64(name)) {}
-    bool operator==(const RenderGraphResourceHandle& other) const
-    {
-        return m_nameHash == other.m_nameHash && m_nVersion == other.m_nVersion;
-    }
-    std::string_view GetName() const { return m_name; }
-
-private:
-    const std::string m_name;
-    const uint64_t m_nameHash;
-    uint32_t m_nVersion = 0;
-};
+//class ResourceHandle
+//{
+//public:
+//    ResourceHandle(const ResourceHandle&) = default;
+//    ResourceHandle(ResourceHandle&&) = default;
+//    ResourceHandle& operator=(const ResourceHandle&) = delete;
+//    ResourceHandle& operator=(ResourceHandle&&) = delete;
+//    explicit ResourceHandle(const std::string& name) : m_name(name), m_nameHash(Hash::StrFnV1A64(name)) {}
+//    bool operator==(const ResourceHandle& other) const
+//    {
+//        return m_nameHash == other.m_nameHash;
+//    }
+//    std::string_view GetName() const { return m_name; }
+//
+//private:
+//    const std::string m_name;
+//    const uint64_t m_nameHash;
+//};
+//
+using ResourceHandle = std::string;
 
 };  // namespace Muyo

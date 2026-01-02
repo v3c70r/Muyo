@@ -2,69 +2,82 @@
 #include "RenderGraphResourceDesc.h"
 namespace Muyo::RenderGraph
 {
-struct PushConstantDesc
+struct BindingDesc
 {
+    ResourceDesc resource;
     VkShaderStageFlags stages;
-    size_t size;
 };
-struct PipelineLayoutDesc
+struct DescriptorSetDesc
 {
-    std::vector<ResourceDesc> bindings;
-    std::optional<PushConstantDesc> pushConstant;
-    void Append(const PipelineLayoutDesc& other)
-    {
-        bindings.insert(bindings.end(), other.bindings.begin(), other.bindings.end());
-        if (other.pushConstant.has_value())
-        {
-            // handle the case where both layout descs have push constants
-            assert(!pushConstant.has_value());
-            pushConstant = other.pushConstant;
-        }
-    }
+    std::vector<BindingDesc> bindings;
 };
 
-inline VkDescriptorSetLayout CreateDescriptorSetLayout(const std::vector<ResourceDesc>& bindingVariants)
+struct PipelineLayoutDesc
 {
-    std::vector<VkDescriptorSetLayoutBinding> vkBindings(bindingVariants.size());
+    std::vector<DescriptorSetDesc>  descriptorSets;
+    std::vector<VkPushConstantRange> pushConstants;
+};
+
+struct PipelineLayoutObjects
+{
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+};
+
+inline VkDescriptorSetLayout CreateDescriptorSetLayout(const DescriptorSetDesc& desc)
+{
+    std::vector<VkDescriptorSetLayoutBinding> vkBindings(desc.bindings.size());
     uint32_t bindingIndx = 0;
     for (auto & vkBinding : vkBindings)
     {
-        std::visit([&vkBinding, bindingIndx](auto&& binding) { 
+        VkShaderStageFlags stages = desc.bindings[bindingIndx].stages;
+        std::visit([&vkBinding, bindingIndx, &stages](auto&& binding) { 
                 vkBinding.binding = bindingIndx;
                 vkBinding.descriptorType = GetDescriptorType(binding);
-                vkBinding.descriptorCount = 1;
-                vkBinding.stageFlags = 
-                ; },
-                bindingVariants[bindingIndx]);
+                vkBinding.descriptorCount = GetDescriptorCount(binding);
+                vkBinding.stageFlags = stages;
+                },
+                desc.bindings[bindingIndx].resource);
         bindingIndx++;
     }
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .bindingCount = static_cast<uint32_t>(vkBindings.size()),
+        .pBindings = vkBindings.data(),
+    };
+    VkDescriptorSetLayout layout;
+    VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &layoutInfo, nullptr, &layout));
+    return layout;
 }
 
-inline VkPipelineLayoutCreateInfo GeneratePipelineLayoutCreateInfo(const PipelineLayoutDesc& pipelineLayoutDesc)
+inline PipelineLayoutObjects CreatePipelineObjects(const PipelineLayoutDesc& pipelineLayoutDesc)
 {
+    PipelineLayoutObjects pipelineLayoutObjects;
+    for (const auto& descSet : pipelineLayoutDesc.descriptorSets)
+    {
+        VkDescriptorSetLayout layout = CreateDescriptorSetLayout(descSet);
+        pipelineLayoutObjects.descriptorSetLayouts.push_back(layout);
+    }
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .setLayoutCount = static_cast<uint32_t>(pipelineLayoutObjects.descriptorSetLayouts.size()),
+        .pSetLayouts = nullptr, // to be filled
+        .pushConstantRangeCount = static_cast<uint32_t>(pipelineLayoutDesc.pushConstants.size()),
+        .pPushConstantRanges = pipelineLayoutDesc.pushConstants.data(),
     };
 
-    /*
-    typedef struct VkPipelineLayoutCreateInfo {
-    VkStructureType                 sType;
-    const void*                     pNext;
-    VkPipelineLayoutCreateFlags     flags;
-    uint32_t                        setLayoutCount;
-    const VkDescriptorSetLayout*    pSetLayouts;
-    uint32_t                        pushConstantRangeCount;
-    const VkPushConstantRange*      pPushConstantRanges;
-    */
-}
+    // Create pipeline layout
+    VK_ASSERT(vkCreatePipelineLayout(
+                GetRenderDevice()->GetDevice(),
+                &pipelineLayoutInfo,
+                nullptr,
+                &pipelineLayoutObjects.pipelineLayout));
 
-    // fill pipeline layout
-
-
-    return pipelineLayoutInfo;
+    return pipelineLayoutObjects;
 }
-
-inline VkDescriptorSetLayout AllocateDescriptorSetLayout(const DescriptorSetDesc& desc)
-{
-}
-}
+}  // namespace Muyo::RenderGraph
