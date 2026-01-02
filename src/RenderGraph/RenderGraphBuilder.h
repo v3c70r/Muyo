@@ -1,72 +1,75 @@
 #pragma once
-#include "RenderGraphResourceHandle.h"
-#include "DependencyGraph.h"
-#include "RenderGraphNodePipelineLayoutDesc.h"
+#include <spirv_reflect.h>
+
 #include <concepts>
-#include <string>
-#include <vector>
-#include <unordered_map>
+#include <functional>
 #include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+#include "DependencyGraph.h"
+#include "PSODesc.h"
+#include "RenderGraphParameters.h"
+#include "RenderGraphResourceHandle.h"
+#include "ShaderAsset.h"
+#include "MeshResourceManager.h"
 
 namespace Muyo::RenderGraph
 {
-class RenderGraphNodeParameters
+
+static constexpr int MAX_SHADER_STAGES = 8;
+enum class RenderGraphNodeType : uint8_t
 {
-    friend class RenderGraphBuilder;
-public:
-    virtual void OnGraphBuild() {}
-    virtual void OnGraphExecute() {}
-    virtual ~RenderGraphNodeParameters() = default;
-private:
-    VkPipelineLayout CreatePipelineLayout();
+    GRAPHICS,
+    COMPUTE,
+    RAY_TRACING
+};
+struct RenderGraphNodeCpuContext
+{
+    RenderResourceManager& resourceManager;
+    MeshResourceManager& meshManager;
+};
 
-    // Store names and versions of input and output resources
-    std::vector<RenderGraphResourceHandle> m_inputResources;
-    std::vector<RenderGraphResourceHandle> m_outputResources;
+struct RenderGraphNodeGpuContext
+{
+    RenderResourceManager& resourceManager;
+    MeshResourceManager& meshManager;
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+};
 
-    // Store pipeline layout description and resource description to create actual resource
-    PipelineLayoutDesc m_pipelineLayoutDesc;
+using RenderGraphNodeCpuCallback = std::function<void(RenderGraphNodeCpuContext&)>;
+using RenderGraphNodeGpuCallback = std::function<void(RenderGraphNodeGpuContext&)>;
+
+struct RenderGraphNodeCreateInfo
+{
+    std::string nodeName;
+    RenderGraphNodeType type;
+    QueueType queueType;
+    std::vector<ResourceUse> resourceUses;
+    std::vector<std::string> shaderNames;
+    PSODesc psoDesc = {};
+    RenderGraphNodeCpuCallback cpuCallback;
+    RenderGraphNodeGpuCallback gpuCallback;
 };
 
 class RenderGraphBuilder
 {
 public:
-    // Allocate parameters for a render graph node
-    template <typename T>
-    requires std::derived_from<T, RenderGraphNodeParameters>
-    [[nodiscard]] T* AllocateRenderGraphNodeParameters(
-            PipelineLayoutDesc&& inputDesc = {},
-            PipelineLayoutDesc&& outputDesc = {}
-            )
+    explicit RenderGraphBuilder(VkRenderDevice* renderDevice)
+        : m_shaderAssetManager(renderDevice->GetDevice()), m_vkDevice(renderDevice->GetDevice())
     {
-        auto& param = m_renderGraphNodeParameters.emplace_back(std::make_unique<T>());
-
-        // Construct input and output handles from layout description resource names
-        for (const auto& descSet : inputDesc.vDescriptorSets)
-        {
-            for (const auto& bindingVariant : descSet.bindings)
-            {
-                std::visit([&param](auto&& binding) { param->m_inputResources.emplace_back(GetDescName(binding)); },
-                           bindingVariant);
-            }
-        }
-        for (const auto& descSet : outputDesc.vDescriptorSets)
-        {
-            for (const auto& bindingVariant : descSet.bindings)
-            {
-                std::visit([&param](auto&& binding) { param->m_outputResources.emplace_back(GetDescName(binding)); },
-                           bindingVariant);
-            }
-        }
-
-        param->m_pipelineLayoutDesc = std::move(inputDesc);
-        param->m_pipelineLayoutDesc.Append(outputDesc);
-
-        return static_cast<T*>(m_renderGraphNodeParameters.back().get());
+        m_commandBuffers[0] = renderDevice->AllocateReusablePrimaryCommandbuffer();
+        m_commandBuffers[1] = renderDevice->AllocateComputeCommandBuffer();
+        m_commandBuffers[2] = renderDevice->AllocateImmediateCommandBuffer();
     }
 
     // Add a render graph node
-    void AddNode(const std::string& nodeName, RenderGraphNodeParameters* parameters);
+    void AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo);
 
     // Add a dependency between two nodes
     void AddDependency(const std::string& fromNode, const std::string& toNode);
@@ -79,16 +82,51 @@ public:
     // Retrieve the execution order of nodes
     std::vector<std::string> GetExecutionOrder() const;
 
+    ~RenderGraphBuilder()
+    {
+        for (auto& rgn : m_compiledGraphNodes)
+        {
+            DestroyCompiledRenderGraphNode(rgn);
+        }
+        m_vkDevice = VK_NULL_HANDLE;
+    }
+
 private:
     struct RenderGraphNode
     {
         std::string name;
-        RenderGraphNodeParameters* parameters;
+        std::vector<ResolvedResourceUse> resourceUses;
+        std::array<ShaderKey, MAX_SHADER_STAGES> shaders;
+        PSODesc psoDesc;
+        RenderGraphNodeCpuCallback cpuCallback;
+        RenderGraphNodeGpuCallback gpuCallBack;
     };
 
-    std::vector<std::unique_ptr<RenderGraphNodeParameters>> m_renderGraphNodeParameters;
+    struct CompiledRenderGraphNode
+    {
+        const RenderGraphNode* logicalRenderGraphNode;
+
+        // Execution related structures
+        VkPipeline pipeline;
+        VkPipelineLayout pipelineLayout;
+
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        QueueType queueType = QueueType::GRAPHICS;
+        VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        RenderGraphNodeCpuCallback cpuCallback;
+        RenderGraphNodeGpuCallback gpuCallBack;
+    };
+
+    CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
+    void DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn);
+
     std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
+    std::vector<CompiledRenderGraphNode> m_compiledGraphNodes;
+
     DependencyGraph<std::string> m_dependencyGraph;
-    std::unordered_map<std::string, uint32_t> m_resourceLastUsedVersion;  // Track last used version of resources
+    std::unordered_map<ResourceHandle, uint32_t> m_resourceLastUsedVersion;  // Track last used version of resources
+    ShaderAssetManager m_shaderAssetManager;
+    VkDevice m_vkDevice = VK_NULL_HANDLE;
+    std::array<VkCommandBuffer, static_cast<size_t>(QueueType::COUNT)> m_commandBuffers;
 };
-}  // namespace Muyo
+}  // namespace Muyo::RenderGraph

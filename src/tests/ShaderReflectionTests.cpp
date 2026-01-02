@@ -1,56 +1,101 @@
 #include <catch2/catch_test_macros.hpp>
-
-#include "RenderGraph/ShaderReflectionFetcher.h"
-#include "catch2/catch_message.hpp"
 #include <filesystem>
 #include <fstream>
-namespace Muyo::RenderGraph
+
+#include "GraphicsTestEnv.h"
+#include "ShaderAsset.h"
+#include "ShaderReflectionFetcher.h"
+#include "catch2/catch_message.hpp"
+namespace Muyo
 {
 
-inline std::vector<char> ReadSpv(const std::filesystem::path& spvPath)
-{
-    std::ifstream file(spvPath, std::ios::binary);
-    if (!file) throw std::runtime_error("Failed to open file");
-    return std::vector<char>(std::istreambuf_iterator<char>(file), {});
-}
-
+namespace fs = std::filesystem;
 TEST_CASE("ShaderReflectionFetcher: SPIR-V Reflection from file", "[ShaderReflectionFetcher]")
 {
-    namespace fs = std::filesystem;
     // Path to the compiled SPIR-V file
     fs::path spirvPath = fs::path("shaders") / "copyBuffer.comp.slang.spv";
-    auto spirv_bytes = ReadSpv(spirvPath);
+    auto spirvCode = ReadSpv(spirvPath);
 
-    REQUIRE(spirv_bytes.size() % 4 == 0); // SPIR-V must be uint32-aligned
-    const uint32_t* spirv_code = reinterpret_cast<const uint32_t*>(spirv_bytes.data());
-    size_t spirv_nbytes = spirv_bytes.size();
+    ShaderReflection reflection = Muyo::FetchShaderReflection(spirvCode);
 
-    Muyo::RenderGraph::ShaderReflectionFetcher fetcher(spirv_code, spirv_nbytes);
+    // Check that descriptor sets are extracted
+    REQUIRE(reflection.descriptorBindings.size() == 2);
 
-    const auto& descriptorSets = fetcher.GetDescriptorSets();
-    const auto& pushConstantRanges = fetcher.GetPushConstantRanges();
+    // Check descriptor set/binding and types
+    // gInput: set 0, binding 0, likely VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+    REQUIRE(reflection.descriptorBindings[0].name == "gInput");
+    REQUIRE(reflection.descriptorBindings[0].set == 0);
+    REQUIRE(reflection.descriptorBindings[0].binding == 0);
+    REQUIRE(reflection.descriptorBindings[0].type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
-    // Validate descriptor sets and bindings
-    // According to copyBuffer.comp.slang:
-    // - set 0, binding 0: ByteAddressBuffer (should be STORAGE_BUFFER)
-    // - set 1, binding 0: RWByteAddressBuffer (should be STORAGE_BUFFER or STORAGE_BUFFER/UNIFORM_BUFFER depending on reflection)
-    // - push constant block: 4 bytes
+    // gOutput: set 1, binding 0, likely VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+    REQUIRE(reflection.descriptorBindings[1].name == "gOutput");
+    REQUIRE(reflection.descriptorBindings[1].set == 1);
+    REQUIRE(reflection.descriptorBindings[1].binding == 0);
+    REQUIRE(reflection.descriptorBindings[1].type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
 
-    // There should be at least 2 sets (set 0 and set 1)
-    REQUIRE(descriptorSets.size() >= 2);
+    // Check push constant range
+    REQUIRE(reflection.pushConstantRanges.size() == 1);
+    REQUIRE(reflection.pushConstantRanges[0].size == sizeof(uint32_t));
 
-    // Set 0, binding 0
-    REQUIRE(descriptorSets[0].size() >= 1);
-    CHECK(descriptorSets[0][0].binding == 0);
-    CHECK(descriptorSets[0][0].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    // Check entry point
+    REQUIRE(reflection.entryPoints.size() == 1);
+    REQUIRE(reflection.entryPoints[0].name == "main");
+    REQUIRE(reflection.entryPoints[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
 
-    // Set 1, binding 0
-    REQUIRE(descriptorSets[1].size() >= 1);
-    CHECK(descriptorSets[1][0].binding == 0);
-    CHECK(descriptorSets[1][0].descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    // Check workgroup size (from [numthreads(256,1,1)])
+    REQUIRE(reflection.entryPoints[0].workgroupSize.has_value());
+    REQUIRE(reflection.entryPoints[0].workgroupSize->x == 256);
+    REQUIRE(reflection.entryPoints[0].workgroupSize->y == 1);
+    REQUIRE(reflection.entryPoints[0].workgroupSize->z == 1);
+};
+TEST_CASE("ShaderReflectionFetcher: Partially build pipeline", "[ShaderReflectionFetcher]")
+{
+    fs::path vertSpirvPath = fs::path("shaders") / "GBuffer.vert.spv";
+    auto vertByteCode = ReadSpv(vertSpirvPath);
+    fs::path fragSpirvPath = fs::path("shaders") / "GBuffer.frag.spv";
+    auto fragByteCode = ReadSpv(fragSpirvPath);
 
-    // Push constant block
-    REQUIRE(pushConstantRanges.size() == 1);
-    CHECK(pushConstantRanges[0].size == 4);
+    std::vector<ShaderReflection> reflections;
+    reflections.push_back(Muyo::FetchShaderReflection(vertByteCode));
+    reflections.push_back(Muyo::FetchShaderReflection(fragByteCode));
+    ShaderReflection mergedReflection = Muyo::MergeShaderReflections(reflections);
+    // Check that descriptor sets are merged correctly
+    // For GBuffer.vert and GBuffer.frag, expect:
+    // - CAMERA_UBO at set=0, binding=0 (from Camera.h)
+    // - PerObjData at set=1, binding=0 (from SharedStructures.h)
+    // - MATERIAL_SSBO at set=2, binding=0 (from material.h, frag only)
+    // - Output variables in vert, input variables in frag
+
+    // CAMERA_UBO (set=0, binding=0) should be present (from Camera.h)
+    auto hasCameraUBO =
+        std::ranges::any_of(mergedReflection.descriptorBindings,
+                            [](const ShaderReflection::DescriptorBinding& b) { return b.set == 0 && b.binding == 0; });
+    REQUIRE(hasCameraUBO);
+
+    // PerObjData (set=1, binding=0) should be present (from SharedStructures.h)
+    auto hasPerObjData =
+        std::ranges::any_of(mergedReflection.descriptorBindings,
+                            [](const ShaderReflection::DescriptorBinding& b) { return b.set == 1 && b.binding == 0; });
+    REQUIRE(hasPerObjData);
+
+    // MATERIAL_SSBO (set=2, binding=0) should be present (from material.h, frag only)
+    auto hasMaterialSSBO =
+        std::ranges::any_of(mergedReflection.descriptorBindings,
+                            [](const ShaderReflection::DescriptorBinding& b) { return b.set == 2 && b.binding == 0; });
+    REQUIRE(hasMaterialSSBO);
+
+    // Output variables from vert shader should match input variables in frag shader
+    for (const auto& outVar : reflections[0].outputVariables)
+    {
+        if (outVar.isBuiltIn)
+        {
+            // Skip built-in variables as they don't have matching locations
+            continue;
+        }
+        auto match = std::ranges::find_if(reflections[1].inputVariables, [&](const ShaderReflection::IOVariable& inVar)
+                                          { return inVar.location == outVar.location; });
+        REQUIRE(match != reflections[1].inputVariables.end());
+    }
 }
-} // namespace Muyo::RenderGraph
+}  // namespace Muyo

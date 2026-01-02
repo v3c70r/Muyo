@@ -3,6 +3,7 @@
 #include "RenderResourceManager.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
+#include "MeshResourceManager.h"
 namespace Muyo
 {
 // RAII graphics environment
@@ -18,6 +19,8 @@ public:
         GetRenderResourceManager()->Initialize();
         GetDescriptorManager()->createDescriptorPool();
         GetDescriptorManager()->createDescriptorSetLayouts();
+        GetMeshResourceManager()->PrepareSimpleMeshes();
+        GetMeshResourceManager()->UploadMeshData();
     }
     ~GraphicsTestEnv()
     {

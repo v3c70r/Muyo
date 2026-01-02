@@ -1,18 +1,159 @@
 #include "RenderGraphBuilder.h"
+
+#include <algorithm>
 #include <stdexcept>
 #include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include "RenderGraph/ResourceUseResolver.h"
+#include "ShaderReflectionFetcher.h"
+#include "vulkan/vulkan_core.h"
 
 namespace Muyo::RenderGraph
 {
 
-void RenderGraphBuilder::AddNode(const std::string& nodeName, RenderGraphNodeParameters* parameters)
+RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(
+    const RenderGraphBuilder::RenderGraphNode& rgn)
 {
-    if (m_renderGraphNodes.find(nodeName) != m_renderGraphNodes.end())
+    // Compile pipeline and pipeline layout from node
+    CompiledRenderGraphNode result{
+        .logicalRenderGraphNode = &rgn, .pipeline = VK_NULL_HANDLE, .pipelineLayout = VK_NULL_HANDLE};
+
+    // Retrive and merge shader reflections
+    std::vector<ShaderReflection> shaderReflections;
+    std::vector<VkShaderModule> shaderModules;
+    for (const auto& shaderKey : rgn.shaders)
     {
-        throw std::runtime_error("Node with name '" + nodeName + "' already exists in the render graph.");
+        if (shaderKey.IsValid())
+        {
+            const auto* shaderAsset = m_shaderAssetManager.GetShaderAsset(shaderKey);
+            if (shaderAsset)
+            {
+                shaderReflections.push_back(shaderAsset->shaderReflection);
+                shaderModules.push_back(shaderAsset->shaderModule);
+            }
+        }
+    }
+    result.cpuCallback = std::move(rgn.cpuCallback);
+    result.gpuCallBack = std::move(rgn.gpuCallBack);
+
+    if (shaderReflections.size() > 0)
+    {
+        ShaderReflection mergedReflection = MergeShaderReflections(shaderReflections);
+        // Pipeline layout from shader bindings and push constans
+        std::unordered_map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> setBindingsMap;
+        for (const auto& binding : mergedReflection.descriptorBindings)
+        {
+            setBindingsMap[binding.set].push_back({.binding = binding.binding,
+                                                   .descriptorType = binding.type,
+                                                   .descriptorCount = binding.count,
+                                                   .stageFlags = binding.stageFlags,
+                                                   .pImmutableSamplers = nullptr});
+        }
+        if (!mergedReflection.descriptorBindings.empty())
+        {
+            result.descriptorSetLayouts.resize(mergedReflection.descriptorBindings.back().set + 1, VK_NULL_HANDLE);
+            for (const auto& [set, bindings] : setBindingsMap)
+            {
+                VkDescriptorSetLayoutCreateInfo layoutInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                    .bindingCount = static_cast<uint32_t>(bindings.size()),
+                    .pBindings = bindings.data()};
+                VkDescriptorSetLayout descriptorSetLayout;
+                VK_ASSERT(vkCreateDescriptorSetLayout(m_vkDevice, &layoutInfo, nullptr, &descriptorSetLayout));
+                result.descriptorSetLayouts[set] = descriptorSetLayout;
+            }
+        }
+        std::vector<VkPushConstantRange> pushConstantRanges;
+        for (const auto& pcRange : mergedReflection.pushConstantRanges)
+        {
+            pushConstantRanges.push_back(
+                {.stageFlags = pcRange.stageFlags, .offset = pcRange.offset, .size = pcRange.size});
+        }
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = static_cast<uint32_t>(result.descriptorSetLayouts.size()),
+            .pSetLayouts = result.descriptorSetLayouts.data(),
+            .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
+            .pPushConstantRanges = pushConstantRanges.data()};
+        VK_ASSERT(vkCreatePipelineLayout(m_vkDevice, &pipelineLayoutInfo, nullptr, &result.pipelineLayout));
+
+        // Inspect number of attachments
+        // Assume color attachments and depth attachments has predefined formats; RGBA16 and D32
+        // TODO(qgu): expose interface to change the attachment formats
+        std::vector<VkFormat> colorAttachmentFormats;
+        VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED;
+        for (const auto& resourceUse : rgn.resourceUses)
+        {
+            if (resourceUse.usage == ResourceUsage::COLOR_ATTACHMENT)
+            {
+                colorAttachmentFormats.push_back(VK_FORMAT_R16G16B16A16_SFLOAT);
+            }
+            else if (resourceUse.usage == ResourceUsage::DEPTH_STENCIL_ATTACHMENT)
+            {
+                depthAttachmentFormat = VK_FORMAT_D32_SFLOAT;
+            }
+        }
+
+        VkPipelineRenderingCreateInfo renderingInfo{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+            .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
+            .pColorAttachmentFormats = colorAttachmentFormats.data(),
+            .depthAttachmentFormat = depthAttachmentFormat,
+        };
+
+        // Create pipeline
+        result.pipeline =
+            CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, result.pipelineLayout, renderingInfo);
     }
 
-    m_renderGraphNodes[nodeName] = {.name = nodeName, .parameters = parameters};
+    return result;
+}
+
+void RenderGraphBuilder::DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn)
+{
+    for (auto& descLayout : rgn.descriptorSetLayouts)
+    {
+        vkDestroyDescriptorSetLayout(m_vkDevice, descLayout, nullptr);
+    }
+    vkDestroyPipelineLayout(m_vkDevice, rgn.pipelineLayout, nullptr);
+    vkDestroyPipeline(m_vkDevice, rgn.pipeline, nullptr);
+}
+
+void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
+{
+    const std::string& nodeName = nodeCreateInfo.nodeName;
+
+    if (m_renderGraphNodes.find(nodeName) != m_renderGraphNodes.end())
+    {
+        throw std::runtime_error("Node with name '" + nodeCreateInfo.nodeName +
+                                 "' already exists in the render graph.");
+    }
+
+    m_renderGraphNodes[nodeName] = {.name = nodeName};
+
+    auto& rgn = m_renderGraphNodes.at(nodeName);
+
+    // Load shaders
+    int shaderIdx = 0;
+    for (const auto& shaderName : nodeCreateInfo.shaderNames)
+    {
+        auto key = m_shaderAssetManager.LoadShader(shaderName);
+        if (key)
+        {
+            rgn.shaders[shaderIdx++] = key.value();
+        }
+    }
+
+    // Resolve resource
+    for (const auto& resourceUse : nodeCreateInfo.resourceUses)
+    {
+        // Resolve resource uses
+        rgn.resourceUses.push_back(ResolveResourceUse(resourceUse));
+    }
+    rgn.psoDesc = std::move(nodeCreateInfo.psoDesc);
+    rgn.cpuCallback = std::move(nodeCreateInfo.cpuCallback);
+    rgn.gpuCallBack = std::move(nodeCreateInfo.gpuCallback);
 }
 
 void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::string& toNode)
@@ -29,7 +170,8 @@ void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::s
 
     if (!m_dependencyGraph.AddEdge(fromNode, toNode))
     {
-        throw std::runtime_error("Adding dependency from '" + fromNode + "' to '" + toNode + "' creates a cycle in the render graph.");
+        throw std::runtime_error("Adding dependency from '" + fromNode + "' to '" + toNode +
+                                 "' creates a cycle in the render graph.");
     }
 }
 
@@ -39,48 +181,65 @@ void RenderGraphBuilder::Build()
     {
         throw std::runtime_error("Render graph contains a cycle!");
     }
-    std::unordered_map<std::string, uint32_t> resourceCurrentVersions;
-    
-    std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
-    if (m_renderGraphNodes.size() == 1)
-    {
-        executionOrder = {m_renderGraphNodes.begin()->first};
-    }
+
+    m_compiledGraphNodes.clear();
+    m_compiledGraphNodes.reserve(m_renderGraphNodes.size());
+    std::vector<std::string> executionOrder = m_renderGraphNodes.size() == 1
+                                                  ? std::vector<std::string>{m_renderGraphNodes.begin()->first}
+                                                  : m_dependencyGraph.TopologicalSort();
+
+    std::unordered_map<ResourceHandle, uint32_t> resourceCurrentVersions;
     for (const auto& nodeName : executionOrder)
     {
         // Update handle versions
         auto& node = m_renderGraphNodes.at(nodeName);
-        for (auto& resource : node.parameters->m_inputResources)
+        for (auto& resource : node.resourceUses)
         {
-            std::string key = std::string(resource.GetName());
-            if (resourceCurrentVersions.find(key) == resourceCurrentVersions.end())
+            ResourceHandle handle = std::string(resource.handle);
+            // If handle never used before, initialize versioning
+            if (resourceCurrentVersions.find(handle) == resourceCurrentVersions.end())
             {
-                resourceCurrentVersions[key] = 0;
-                m_resourceLastUsedVersion[key] = 0;
+                resourceCurrentVersions[handle] = 0;
+                m_resourceLastUsedVersion[handle] = 0;
+            }
+            else
+            {
+                // Assign version to resource use
+                resource.version = resourceCurrentVersions[handle];
+                // Increment version for write usages
+                if (resource.io == ResourceIOType::WRITE || resource.io == ResourceIOType::READ_WRITE)
+                {
+                    resourceCurrentVersions[handle]++;
+                }
             }
         }
 
-        m_renderGraphNodes.at(nodeName).parameters->OnGraphBuild();
+        // Compile RenderGraphNode
+        m_compiledGraphNodes.push_back(CompileRenderGraphNode(node));
     }
-    // Additional build logic can be added here if needed
 }
 
 void RenderGraphBuilder::Execute()
 {
-    std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
-    if (m_renderGraphNodes.size() == 1)
+    RenderGraphNodeCpuContext cpuContext = {.resourceManager = *GetRenderResourceManager(),
+                                            .meshManager = *GetMeshResourceManager()};
+    for (const auto& rgn : m_compiledGraphNodes)
     {
-        executionOrder = {m_renderGraphNodes.begin()->first};
-    }
-    for (const auto& nodeName : executionOrder)
-    {
-        m_renderGraphNodes.at(nodeName).parameters->OnGraphExecute();
+        rgn.cpuCallback(cpuContext);
+        GetRenderDevice()->ExecuteImmediateCommand(
+            [&rgn](VkCommandBuffer buf)
+            {
+                RenderGraphNodeGpuContext gpuContext = {.resourceManager = *GetRenderResourceManager(),
+                                                        .meshManager = *GetMeshResourceManager(),
+                                                        .commandBuffer = buf,
+                                                        .pipeline = rgn.pipeline,
+                                                        .bindingPoint = rgn.bindingPoint
+                                                        };
+                rgn.gpuCallBack(gpuContext);
+            });
     }
 };
 
-std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const
-{
-    return m_dependencyGraph.TopologicalSort();
-}
+std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const { return m_dependencyGraph.TopologicalSort(); }
 
-}  // namespace Muyo
+}  // namespace Muyo::RenderGraph

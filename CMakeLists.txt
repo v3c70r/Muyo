@@ -287,12 +287,14 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Catch2)
 add_executable(tests 
-    src/RenderGraph/ShaderReflectionFetcher.cpp
+    src/ShaderReflectionFetcher.cpp
+    src/RenderGraph/RenderGraphBuilder.cpp
+    src/tests/RenderGraphBuilderTest.cpp
     src/tests/ShaderReflectionTests.cpp
 )
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
-target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src)
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain SPIRV-Reflect)
+target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/RenderDoc)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain SPIRV-Reflect muyo muyo_rg)
 include(Catch)
 catch_discover_tests(tests)
 
