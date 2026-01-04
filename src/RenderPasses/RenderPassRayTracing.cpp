@@ -81,7 +81,7 @@ void RenderPassRayTracing::CreatePipeline()
 
     std::vector<VkDescriptorSetLayout> descLayouts = {
         m_renderPassParameters.GetDescriptorSetLayout(),
-        GetDescriptorManager()->getDescriptorLayout(DESCRIPTOR_LAYOUT_LIGHT_DATA)};
+        GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_LIGHT_DATA)};
 
     m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
