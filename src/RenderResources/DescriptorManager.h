@@ -14,7 +14,7 @@ namespace Muyo
 struct PrimitiveDescription;
 struct LightData;
 
-enum DescriptorLayoutType
+enum class DescriptorLayoutType: uint8_t
 {
     DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,  // A single sampler descriptor set layout at binding 0
     DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
@@ -23,16 +23,18 @@ enum DescriptorLayoutType
     DESCRIPTOR_LAYOUT_MATERIALS,      // A sampler array contains material textures
     DESCRIPTOR_LAYOUT_IBL,            // IBL descriptor sets
     DESCRIPTOR_LAYOUT_LIGHT_DATA,     // Light data layout
-    DESCRIPTOR_LAYOUT_COUNT,
+    COUNT
 };
+
+static constexpr std::size_t DESCRIPTOR_LAYOUT_TYPE_COUNT = static_cast<std::size_t>(DescriptorLayoutType::COUNT);
 
 class DescriptorManager
 {
 public:
-    void createDescriptorPool();
-    void destroyDescriptorPool();
-    void createDescriptorSetLayouts();
-    void destroyDescriptorSetLayouts();
+    void CreateDescriptorPool();
+    void DestroyDescriptorPool();
+    void CreateDescriptorSetLayouts();
+    void DestroyDescriptorSetLayouts();
 
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);
@@ -43,32 +45,27 @@ public:
     // Material Descriptor Set
     VkDescriptorSet AllocateMaterialDescriptorSet();
     VkDescriptorSet AllocateMaterialDescriptorSet(const Material::MaterialParameters &materialParameters);
-    static void UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSet, const Material::MaterialParameters &materialParameters);
+    static void UpdateMaterialDescriptorSet(VkDescriptorSet descriptorSet,
+                                            const Material::MaterialParameters &materialParameters);
 
     // IBL descriptor set
     VkDescriptorSet AllocateIBLDescriptorSet();
-    VkDescriptorSet AllocateIBLDescriptorSet(
-        VkImageView irradianceMap,
-        VkImageView prefilteredEnvMap,
-        VkImageView specularBrdfLutMap);
+    VkDescriptorSet AllocateIBLDescriptorSet(VkImageView irradianceMap, VkImageView prefilteredEnvMap,
+                                             VkImageView specularBrdfLutMap);
 
-    void UpdateIBLDescriptorSet(
-        VkDescriptorSet &descriptorSet,
-        VkImageView irradianceMap,
-        VkImageView prefilteredEnvMap,
-        VkImageView specularBrdfLutMap);
+    void UpdateIBLDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView irradianceMap,
+                                VkImageView prefilteredEnvMap, VkImageView specularBrdfLutMap);
 
     VkDescriptorSet AllocateLightDataDescriptorSet(uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
-    static void UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights, const StorageBuffer<LightData> &lightData);
+    static void UpdateRayLightDataDescriptorSet(VkDescriptorSet descriptorSet, uint32_t nNumLights,
+                                                const StorageBuffer<LightData> &lightData);
 
-    VkDescriptorSetLayout getDescriptorLayout(DescriptorLayoutType type) const
-    {
-        return m_aDescriptorSetLayouts[type];
-    }
+    VkDescriptorSetLayout GetDescriptorLayout(DescriptorLayoutType type) const { return m_aDescriptorSetLayouts[type]; }
 
     // Function template to allocate single type uniform buffer descriptor set
     template <class T>
-    VkDescriptorSet AllocateUniformBufferDescriptorSet(const UniformBuffer<T> &uniformBuffer, uint32_t nBinding, const VkDescriptorSetLayout &descLayout)
+    VkDescriptorSet AllocateUniformBufferDescriptorSet(const UniformBuffer<T> &uniformBuffer, uint32_t nBinding,
+                                                       const VkDescriptorSetLayout &descLayout)
     {
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
         // Create descriptor sets
@@ -78,7 +75,7 @@ public:
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts = &descLayout;
 
-        VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet) );
+        VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descriptorSet));
 
         // Bind uniform buffer to descriptor
         {
@@ -96,8 +93,7 @@ public:
             descriptorWrites[0].descriptorCount = 1;
             descriptorWrites[0].pBufferInfo = &bufferInfo;
 
-            vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(),
-                                   static_cast<uint32_t>(descriptorWrites.size()),
+            vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), static_cast<uint32_t>(descriptorWrites.size()),
                                    descriptorWrites.data(), 0, nullptr);
         }
 
@@ -111,13 +107,11 @@ public:
         return m_vImGuiTextureDescriptorSets[nTextureId];
     }
 
-    VkDescriptorPool GetDescriptorPool() const
-    {
-        return m_descriptorPool;
-    }
+    VkDescriptorPool GetDescriptorPool() const { return m_descriptorPool; }
 
 private:
-    static VkDescriptorSetLayoutBinding GetUniformBufferBinding(uint32_t binding, VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+    static VkDescriptorSetLayoutBinding GetUniformBufferBinding(
+        uint32_t binding, VkShaderStageFlags stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
     {
         VkDescriptorSetLayoutBinding uboLayoutBinding = {};
         uboLayoutBinding.binding = binding;
@@ -127,7 +121,9 @@ private:
         uboLayoutBinding.stageFlags = stages;
         return uboLayoutBinding;
     }
-    static VkDescriptorSetLayoutBinding GetBinding(uint32_t nBinding, VkDescriptorType descType, uint32_t nDescCount = 1, VkShaderStageFlags shaderStageFlags = VK_SHADER_STAGE_ALL)
+    static VkDescriptorSetLayoutBinding GetBinding(uint32_t nBinding, VkDescriptorType descType,
+                                                   uint32_t nDescCount = 1,
+                                                   VkShaderStageFlags shaderStageFlags = VK_SHADER_STAGE_ALL)
     {
         VkDescriptorSetLayoutBinding binding = {};
         binding.binding = nBinding;
@@ -137,21 +133,19 @@ private:
         return binding;
     }
 
-    static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(
-        uint32_t binding, uint32_t numSamplers, int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
+    static VkDescriptorSetLayoutBinding GetSamplerArrayBinding(uint32_t binding, uint32_t numSamplers,
+                                                               int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
     {
         VkDescriptorSetLayoutBinding samplerLayoutBinding = {};
         samplerLayoutBinding.binding = binding;
         samplerLayoutBinding.descriptorCount = numSamplers;
-        samplerLayoutBinding.descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         samplerLayoutBinding.stageFlags = nStageFlag;
 
         return samplerLayoutBinding;
     }
 
-    static VkDescriptorSetLayoutBinding GetInputAttachmentBinding(
-        uint32_t binding, uint32_t numAttachments = 1)
+    static VkDescriptorSetLayoutBinding GetInputAttachmentBinding(uint32_t binding, uint32_t numAttachments = 1)
     {
         VkDescriptorSetLayoutBinding descSetBinding;
         descSetBinding.binding = binding;
@@ -161,29 +155,45 @@ private:
         return descSetBinding;
     }
 
-    static VkDescriptorSetLayoutBinding GetSamplerBinding(uint32_t binding, int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
+    static VkDescriptorSetLayoutBinding GetSamplerBinding(uint32_t binding,
+                                                          int nStageFlag = VK_SHADER_STAGE_FRAGMENT_BIT)
     {
         return GetSamplerArrayBinding(binding, 1, nStageFlag);
     }
 
-    std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_COUNT> m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
+    class DescriptorSetLayoutArray : public std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_TYPE_COUNT>
+    {
+    public:
+        const VkDescriptorSetLayout &operator[](DescriptorLayoutType type) const
+        {
+            return std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_TYPE_COUNT>::operator[](
+                    static_cast<size_t>(type));
+        }
+        VkDescriptorSetLayout &operator[](DescriptorLayoutType type)
+        {
+            return std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_TYPE_COUNT>::operator[](
+                    static_cast<size_t>(type));
+        }
+    };
+    DescriptorSetLayoutArray m_aDescriptorSetLayouts = {VK_NULL_HANDLE};
 
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
+    static constexpr uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 500;
+    static constexpr std::size_t DESCRIPTOR_TYPE_COUNT = 11;
 
-    const uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 500;
-    const std::vector<VkDescriptorPoolSize> POOL_SIZES = {
-        {VK_DESCRIPTOR_TYPE_SAMPLER, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, DESCRIPTOR_COUNT_EACH_TYPE},
-        {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, DESCRIPTOR_COUNT_EACH_TYPE}};
-
+    static constexpr std::array<VkDescriptorPoolSize, DESCRIPTOR_TYPE_COUNT> POOL_SIZES{{
+        {.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+    }};
     // UI texture descriptor tracker
     // ImGui uses textureId to track the bond texture in each draw command.
     // I add a map to bind the textureId to corresbonding texture to show.

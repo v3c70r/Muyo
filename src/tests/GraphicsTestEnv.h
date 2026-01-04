@@ -17,15 +17,15 @@ public:
         GetRenderDevice()->CreateCommandPools();
         GetMemoryAllocator()->Initalize(GetRenderDevice());
         GetRenderResourceManager()->Initialize();
-        GetDescriptorManager()->createDescriptorPool();
-        GetDescriptorManager()->createDescriptorSetLayouts();
+        GetDescriptorManager()->CreateDescriptorPool();
+        GetDescriptorManager()->CreateDescriptorSetLayouts();
         GetMeshResourceManager()->PrepareSimpleMeshes();
         GetMeshResourceManager()->UploadMeshData();
     }
     ~GraphicsTestEnv()
     {
-        GetDescriptorManager()->destroyDescriptorSetLayouts();
-        GetDescriptorManager()->destroyDescriptorPool();
+        GetDescriptorManager()->DestroyDescriptorSetLayouts();
+        GetDescriptorManager()->DestroyDescriptorPool();
         GetRenderResourceManager()->Unintialize();
         GetRenderDevice()->DestroyCommandPools();
         GetMemoryAllocator()->Unintialize();

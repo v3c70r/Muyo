@@ -213,7 +213,7 @@ constexpr VkBlendOp ToVkBlendOp(BlendOp blendOp)
 
 struct ColorBlendAttachment
 {
-    bool blendEnable = false;
+    bool blendEnable = true;
 
     BlendFactor srcColor = BlendFactor::ONE;
     BlendFactor dstColor = BlendFactor::ZERO;

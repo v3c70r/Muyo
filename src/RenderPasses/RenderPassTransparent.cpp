@@ -72,12 +72,12 @@ void RenderPassTransparent::CreatePipeline()
 
     // Descriptor layouts
     std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_MATERIALS),
-        GetDescriptorManager()->getDescriptorLayout(
-            DESCRIPTOR_LAYOUT_PER_OBJ_DATA)};
+        GetDescriptorManager()->GetDescriptorLayout(
+            DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+        GetDescriptorManager()->GetDescriptorLayout(
+            DescriptorLayoutType::DESCRIPTOR_LAYOUT_MATERIALS),
+        GetDescriptorManager()->GetDescriptorLayout(
+            DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_OBJ_DATA)};
 
     std::vector<VkPushConstantRange> pushConstants;
 

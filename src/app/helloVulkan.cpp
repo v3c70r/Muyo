@@ -155,8 +155,8 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 
 void cleanup()
 {
-    GetDescriptorManager()->destroyDescriptorSetLayouts();
-    GetDescriptorManager()->destroyDescriptorPool();
+    GetDescriptorManager()->DestroyDescriptorSetLayouts();
+    GetDescriptorManager()->DestroyDescriptorPool();
 
     GetRenderPassManager()->Unintialize();
     GetRenderDevice()->DestroyCommandPools();
@@ -223,8 +223,8 @@ int main(int argc, char **argv)
     GetRenderDevice()->CreateCommandPools();
 
     // Initialize managers
-    GetDescriptorManager()->createDescriptorPool();
-    GetDescriptorManager()->createDescriptorSetLayouts();
+    GetDescriptorManager()->CreateDescriptorPool();
+    GetDescriptorManager()->CreateDescriptorSetLayouts();
 
     GetSamplerManager()->createSamplers();
 
