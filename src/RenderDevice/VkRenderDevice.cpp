@@ -202,6 +202,7 @@ void VkRenderDevice::CreateDevice(
     features12.runtimeDescriptorArray = VK_TRUE;
     VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
     features11.multiview = VK_TRUE;
+    features11.shaderDrawParameters = VK_TRUE;
 
     features2.pNext = &features11;
     features11.pNext = &features12;

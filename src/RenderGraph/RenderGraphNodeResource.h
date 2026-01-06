@@ -50,6 +50,15 @@ enum class ResourceUsage : uint8_t
 };
 using ResourceVersion = uint64_t;
 
+enum class ResourceBindingSemantic : uint8_t
+{
+    NONE,
+    PER_VIEW,
+    PER_OBJ,
+    MATERIAL_PARAM,
+    MATERIAL_TEXTURES,
+};
+
 // Interface ResourceUse that passed into RenderGraphBuilder
 struct ResourceUse
 {
@@ -57,6 +66,7 @@ struct ResourceUse
     ResourceIOType io;
     ResourceUsage usage;
     ResourceKind kind;
+    ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;
 };
 
 // Resolved ResourceUse used within RenderGraph
