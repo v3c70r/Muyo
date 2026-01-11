@@ -202,6 +202,13 @@ TEST_CASE("RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilde
 
             vkCmdBeginRendering(cmdBuf, &renderingInfo);
             vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx.pipeline);
+            
+            std::vector<VkDescriptorSet>  descSets = 
+            {
+                ctx.descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_VIEW),
+                ctx.descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_OBJ)
+            };
+            vkCmdBindDescriptorSets(cmdBuf, ctx.bindingPoint, ctx.pipelineLayout, 0, static_cast<uint32_t>(descSets.size()), descSets.data(), 0, nullptr);
             vkCmdBindVertexBuffers(cmdBuf, 0, 1, &vertexBuffer, &offset);
             vkCmdBindIndexBuffer(cmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 

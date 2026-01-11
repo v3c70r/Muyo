@@ -11,11 +11,12 @@
 #include <vector>
 
 #include "DependencyGraph.h"
+#include "MeshResourceManager.h"
 #include "PSODesc.h"
+#include "RenderGraphDescriptorSets.h"
 #include "RenderGraphParameters.h"
 #include "RenderGraphResourceHandle.h"
 #include "ShaderAsset.h"
-#include "MeshResourceManager.h"
 
 namespace Muyo::RenderGraph
 {
@@ -37,7 +38,9 @@ struct RenderGraphNodeGpuContext
 {
     RenderResourceManager& resourceManager;
     MeshResourceManager& meshManager;
+    RenderGraphDescriptorSets& descriptorSetManager;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 };
@@ -61,7 +64,9 @@ class RenderGraphBuilder
 {
 public:
     explicit RenderGraphBuilder(VkRenderDevice* renderDevice)
-        : m_shaderAssetManager(renderDevice->GetDevice()), m_vkDevice(renderDevice->GetDevice())
+        : m_shaderAssetManager(renderDevice->GetDevice())
+        , m_vkDevice(renderDevice->GetDevice())
+        , m_descriptorSetManager(*GetDescriptorManager())
     {
         m_commandBuffers[0] = renderDevice->AllocateReusablePrimaryCommandbuffer();
         m_commandBuffers[1] = renderDevice->AllocateComputeCommandBuffer();
@@ -128,5 +133,6 @@ private:
     ShaderAssetManager m_shaderAssetManager;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     std::array<VkCommandBuffer, static_cast<size_t>(QueueType::COUNT)> m_commandBuffers;
+    RenderGraphDescriptorSets m_descriptorSetManager;
 };
 }  // namespace Muyo::RenderGraph

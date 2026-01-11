@@ -41,28 +41,14 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
     if (shaderReflections.size() > 0)
     {
         ShaderReflection mergedReflection = MergeShaderReflections(shaderReflections);
-        // Pipeline layout from shader bindings and push constans
-        std::unordered_map<uint32_t, std::vector<VkDescriptorSetLayoutBinding>> setBindingsMap;
-        for (const auto& binding : mergedReflection.descriptorBindings)
-        {
-            setBindingsMap[binding.set].push_back({.binding = binding.binding,
-                                                   .descriptorType = binding.type,
-                                                   .descriptorCount = binding.count,
-                                                   .stageFlags = binding.stageFlags,
-                                                   .pImmutableSamplers = nullptr});
-        }
+        
         if (!mergedReflection.descriptorBindings.empty())
         {
-            result.descriptorSetLayouts.resize(mergedReflection.descriptorBindings.back().set + 1, VK_NULL_HANDLE);
-            for (const auto& [set, bindings] : setBindingsMap)
-            {
-                VkDescriptorSetLayoutCreateInfo layoutInfo{.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-                    .bindingCount = static_cast<uint32_t>(bindings.size()),
-                    .pBindings = bindings.data()};
-                VkDescriptorSetLayout descriptorSetLayout;
-                VK_ASSERT(vkCreateDescriptorSetLayout(m_vkDevice, &layoutInfo, nullptr, &descriptorSetLayout));
-                result.descriptorSetLayouts[set] = descriptorSetLayout;
-            }
+            result.descriptorSetLayouts.resize(ENUM_COUNT<ResourceBindingSemantic>);
+            result.descriptorSetLayouts[0] = m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::PER_VIEW);
+            result.descriptorSetLayouts[1] = m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::PER_OBJ);
+            result.descriptorSetLayouts[2] = m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::MATERIAL);
+            
         }
         std::vector<VkPushConstantRange> pushConstantRanges;
         for (const auto& pcRange : mergedReflection.pushConstantRanges)
@@ -112,10 +98,6 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
 
 void RenderGraphBuilder::DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn)
 {
-    for (auto& descLayout : rgn.descriptorSetLayouts)
-    {
-        vkDestroyDescriptorSetLayout(m_vkDevice, descLayout, nullptr);
-    }
     vkDestroyPipelineLayout(m_vkDevice, rgn.pipelineLayout, nullptr);
     vkDestroyPipeline(m_vkDevice, rgn.pipeline, nullptr);
 }
@@ -227,13 +209,15 @@ void RenderGraphBuilder::Execute()
     {
         rgn.cpuCallback(cpuContext);
         GetRenderDevice()->ExecuteImmediateCommand(
-            [&rgn](VkCommandBuffer buf)
+            [&rgn, this](VkCommandBuffer buf)
             {
                 RenderGraphNodeGpuContext gpuContext = {.resourceManager = *GetRenderResourceManager(),
                                                         .meshManager = *GetMeshResourceManager(),
+                                                        .descriptorSetManager = m_descriptorSetManager,
                                                         .commandBuffer = buf,
+                                                        .pipelineLayout = rgn.pipelineLayout,
                                                         .pipeline = rgn.pipeline,
-                                                        .bindingPoint = rgn.bindingPoint
+                                                        .bindingPoint = rgn.bindingPoint,
                                                         };
                 rgn.gpuCallBack(gpuContext);
             });

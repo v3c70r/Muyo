@@ -1,5 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <map>
@@ -36,6 +37,10 @@ public:
     void CreateDescriptorSetLayouts();
     void DestroyDescriptorSetLayouts();
 
+    VkDescriptorSetLayout AllocateDescriptorSetLayout(const std::vector<VkDescriptorSetLayoutBinding> &bindings);
+    void DestroyDescriptorSetLayout(VkDescriptorSetLayout layout);
+    VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout);
+    
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);
     VkDescriptorSet AllocateSingleStorageImageDescriptorSet(VkImageView imageView);
@@ -183,7 +188,7 @@ private:
 
     static constexpr std::array<VkDescriptorPoolSize, DESCRIPTOR_TYPE_COUNT> POOL_SIZES{{
         {.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
-        {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+        {.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 2048},
         {.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
         {.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
         {.type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
