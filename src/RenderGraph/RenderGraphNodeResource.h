@@ -52,11 +52,11 @@ using ResourceVersion = uint64_t;
 
 enum class ResourceBindingSemantic : uint8_t
 {
-    NONE,
     PER_VIEW,
     PER_OBJ,
-    MATERIAL_PARAM,
-    MATERIAL_TEXTURES,
+    MATERIAL,
+    COUNT,
+    NONE,
 };
 
 // Interface ResourceUse that passed into RenderGraphBuilder
