@@ -214,6 +214,7 @@ void RenderGraphBuilder::Execute()
                 RenderGraphNodeGpuContext gpuContext = {.resourceManager = *GetRenderResourceManager(),
                                                         .meshManager = *GetMeshResourceManager(),
                                                         .descriptorSetManager = m_descriptorSetManager,
+                                                        .perObjResourceManager = *GetPerObjResourceManager(),
                                                         .commandBuffer = buf,
                                                         .pipelineLayout = rgn.pipelineLayout,
                                                         .pipeline = rgn.pipeline,

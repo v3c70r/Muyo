@@ -13,6 +13,7 @@
 #include "DependencyGraph.h"
 #include "MeshResourceManager.h"
 #include "PSODesc.h"
+#include "PerObjResourceManager.h"
 #include "RenderGraphDescriptorSets.h"
 #include "RenderGraphParameters.h"
 #include "RenderGraphResourceHandle.h"
@@ -39,6 +40,7 @@ struct RenderGraphNodeGpuContext
     RenderResourceManager& resourceManager;
     MeshResourceManager& meshManager;
     RenderGraphDescriptorSets& descriptorSetManager;
+    PerObjResourceManager& perObjResourceManager;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
