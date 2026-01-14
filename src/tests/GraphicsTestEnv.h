@@ -1,6 +1,8 @@
 #pragma once
 #include "DescriptorManager.h"
 #include "RenderResourceManager.h"
+#include "SamplerManager.h"
+#include "SceneManager.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 #include "MeshResourceManager.h"
@@ -19,11 +21,20 @@ public:
         GetRenderResourceManager()->Initialize();
         GetDescriptorManager()->CreateDescriptorPool();
         GetDescriptorManager()->CreateDescriptorSetLayouts();
-        GetMeshResourceManager()->PrepareSimpleMeshes();
-        GetMeshResourceManager()->UploadMeshData();
+        GetSamplerManager()->createSamplers();
+        //GetMeshResourceManager()->PrepareSimpleMeshes();
+        //GetMeshResourceManager()->UploadMeshData();
+        // Load a scene to populate mesh and per object buffer
+        GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spot/untitled.gltf");
+        GetSceneManager()->GatherDrawLists();
+
+        //GetMaterialManager()->CreateDefaultMaterial();
+        //GetMaterialManager()->UploadMaterialBuffer();
     }
     ~GraphicsTestEnv()
     {
+        GetSamplerManager()->destroySamplers();
+        GetTextureResourceManager()->Destroy();
         GetDescriptorManager()->DestroyDescriptorSetLayouts();
         GetDescriptorManager()->DestroyDescriptorPool();
         GetRenderResourceManager()->Unintialize();

@@ -119,6 +119,69 @@ public:
         }
     }
 
+    void BindResourceToDescriptorSet(const IRenderResource* pResource, 
+            ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)
+    {
+        VkDescriptorSet descriptorSet = m_descriptorSets[bindingSemantic];
+
+        VkWriteDescriptorSet writeDescSet = {};
+        writeDescSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescSet.dstSet = descriptorSet;
+        writeDescSet.dstBinding = bindingIndex;
+        writeDescSet.dstArrayElement = 0;
+        writeDescSet.descriptorCount = 1;
+        switch (bindingSemantic)
+        {
+            case ResourceBindingSemantic::PER_VIEW:
+                writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                break;
+            case ResourceBindingSemantic::PER_OBJ:
+                writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                break;
+            case ResourceBindingSemantic::MATERIAL:
+                if (bindingIndex == BINDING_PBR_MATERIAL)
+                {
+                    writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                }
+                else if (bindingIndex == BINDING_TEXTURS)
+                {
+                    writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                }
+                else
+                {
+                    assert(false && "Invalid binding index for MATERIAL descriptor set");
+                    return;
+                }
+                break;
+            default:
+                assert(false && "Unsupported binding semantic");
+                return;
+        }
+
+        if (const auto* pBufferResource = dynamic_cast<const BufferResource*>(pResource))
+        {
+            VkDescriptorBufferInfo bufferInfo = {};
+            bufferInfo.buffer = pBufferResource->buffer();
+            bufferInfo.offset = 0;
+            bufferInfo.range = pBufferResource->GetSize();
+            writeDescSet.pBufferInfo = &bufferInfo;
+        }
+        else if (const auto* pImageResource = dynamic_cast<const ImageResource*>(pResource))
+        {
+            VkDescriptorImageInfo imageInfo = {};
+            imageInfo.imageView = pImageResource->getView();
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            writeDescSet.pImageInfo = &imageInfo;
+        }
+        else
+        {
+            assert(false && "Unsupported resource type for binding");
+            return;
+        }
+
+        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1, &writeDescSet, 0, nullptr);
+    }
+
 private:
     DescriptorManager& m_descManager;
     EnumArray<ResourceBindingSemantic, VkDescriptorSet> m_descriptorSets{};
