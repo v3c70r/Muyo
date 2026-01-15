@@ -114,9 +114,8 @@ namespace Muyo::RenderGraph
 //    }
 //}
 
-TEST_CASE("RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilder]")
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilder]")
 {
-    GraphicsTestEnv testEnv;
     RenderGraphBuilder builder(GetRenderDevice());
     RenderGraphNodeCreateInfo cubePassCreateInfo = {
         .nodeName = "CubeNode",
@@ -155,7 +154,8 @@ TEST_CASE("RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilde
 
             REQUIRE(pTarget != nullptr);
 
-            UniformBuffer<PerViewData> *pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("PerViewData");
+            UniformBuffer<PerViewData>* pUniformBuffer =
+                GetRenderResourceManager()->GetUniformBuffer<PerViewData>("PerViewData");
 
             // Update camera uniform buffer
             Arcball camera(glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT),
@@ -169,8 +169,34 @@ TEST_CASE("RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilde
             camera.UpdatePerViewDataUBO(pUniformBuffer);
         },
         .gpuCallback =
-            [](RenderGraphNodeGpuContext& ctx)
+            [this](RenderGraphNodeGpuContext& ctx)
         {
+            // construct draw commands
+            std::vector<VkDrawIndexedIndirectCommand> drawCommands;
+            std::vector<const SceneNode*>& vpGeometryNodes = mDrawList.m_aDrawLists[DrawLists::DL_OPAQUE];
+
+            for (const SceneNode* pGeometryNode : vpGeometryNodes)
+            {
+                const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
+                uint32_t nSubmeshIndex = 0;
+                for (const auto& pSubmesh : pGeometry->getSubmeshes())
+                {
+                    VkDrawIndexedIndirectCommand drawCommand;
+                    const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+
+                    drawCommand.indexCount = mesh.m_nIndexCount;
+                    drawCommand.instanceCount = 1;
+                    drawCommand.firstIndex = mesh.m_nIndexOffset;
+                    drawCommand.vertexOffset = 0;
+                    drawCommand.firstInstance = PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++);
+
+                    drawCommands.push_back(drawCommand);
+                }
+            }
+
+            const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer =
+                ctx.resourceManager.GetDrawCommandBuffer("GBuffer draw commands", drawCommands);
+
             VkCommandBuffer cmdBuf = ctx.commandBuffer;
 
             auto* pTarget = ctx.resourceManager.template GetResource<RenderTarget>("TriangleOutput");
@@ -192,26 +218,25 @@ TEST_CASE("RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilde
             renderingInfo.colorAttachmentCount = 1;
             renderingInfo.pColorAttachments = &colorAttachment;
 
-            const Mesh& mesh = GetMeshResourceManager()->GetCube();
             const MeshVertexResources& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
             VkBuffer indexBuffer = meshManager.m_pIndexBuffer->buffer();
-            uint32_t nIndexCount = mesh.m_nIndexCount;
-            uint32_t nIndexOffset = mesh.m_nIndexOffset;
 
             vkCmdBeginRendering(cmdBuf, &renderingInfo);
             vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx.pipeline);
-            
-            ctx.descriptorSetManager.BindResourceToDescriptorSet(ctx.resourceManager.template GetResource<UniformBuffer<PerViewData>>("PerViewData"), ResourceBindingSemantic::PER_VIEW, 0);
-            ctx.descriptorSetManager.BindResourceToDescriptorSet(ctx.perObjResourceManager.GetPerObjResource() , ResourceBindingSemantic::PER_OBJ, 0);
 
-            std::vector<VkDescriptorSet>  descSets = 
-            {
+            ctx.descriptorSetManager.BindResourceToDescriptorSet(
+                ctx.resourceManager.template GetResource<UniformBuffer<PerViewData>>("PerViewData"),
+                ResourceBindingSemantic::PER_VIEW, 0);
+            ctx.descriptorSetManager.BindResourceToDescriptorSet(ctx.perObjResourceManager.GetPerObjResource(),
+                                                                 ResourceBindingSemantic::PER_OBJ, 0);
+
+            std::vector<VkDescriptorSet> descSets = {
                 ctx.descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_VIEW),
-                ctx.descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_OBJ)
-            };
-            vkCmdBindDescriptorSets(cmdBuf, ctx.bindingPoint, ctx.pipelineLayout, 0, static_cast<uint32_t>(descSets.size()), descSets.data(), 0, nullptr);
+                ctx.descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_OBJ)};
+            vkCmdBindDescriptorSets(cmdBuf, ctx.bindingPoint, ctx.pipelineLayout, 0,
+                                    static_cast<uint32_t>(descSets.size()), descSets.data(), 0, nullptr);
             vkCmdBindVertexBuffers(cmdBuf, 0, 1, &vertexBuffer, &offset);
             vkCmdBindIndexBuffer(cmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
@@ -222,7 +247,9 @@ TEST_CASE("RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilde
             scissorRect.extent = {.width = WIDTH, .height = HEIGHT};
             vkCmdSetViewport(cmdBuf, 0, 1, &viewport);
             vkCmdSetScissor(cmdBuf, 0, 1, &scissorRect);
-            vkCmdDrawIndexed(cmdBuf, nIndexCount, 1, nIndexOffset, 0, 0);
+            vkCmdDrawIndexedIndirect(cmdBuf, pDrawCommandBuffer->buffer(), 0, pDrawCommandBuffer->GetDrawCommandCount(),
+                                     pDrawCommandBuffer->GetStride());
+            // vkCmdDrawIndexed(cmdBuf, nIndexCount, 1, nIndexOffset, 0, 0);
             vkCmdEndRendering(cmdBuf);
         }};
 
