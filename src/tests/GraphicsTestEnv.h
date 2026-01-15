@@ -22,14 +22,10 @@ public:
         GetDescriptorManager()->CreateDescriptorPool();
         GetDescriptorManager()->CreateDescriptorSetLayouts();
         GetSamplerManager()->createSamplers();
-        //GetMeshResourceManager()->PrepareSimpleMeshes();
-        //GetMeshResourceManager()->UploadMeshData();
-        // Load a scene to populate mesh and per object buffer
-        GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spot/untitled.gltf");
-        GetSceneManager()->GatherDrawLists();
 
-        //GetMaterialManager()->CreateDefaultMaterial();
-        //GetMaterialManager()->UploadMaterialBuffer();
+        // Prepare a scene
+        GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spot/untitled.gltf");
+        mDrawList = GetSceneManager()->GatherDrawLists();
     }
     ~GraphicsTestEnv()
     {
@@ -43,5 +39,7 @@ public:
         GetRenderDevice()->DestroyDevice();
         GetRenderDevice()->Unintialize();
     }
+protected:
+    DrawLists mDrawList;
 };
 }  // namespace Muyo
