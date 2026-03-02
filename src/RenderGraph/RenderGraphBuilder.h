@@ -21,39 +21,50 @@
 
 namespace Muyo::RenderGraph
 {
+using ResourceDescRegistry = std::unordered_map<ResourceHandle, ResourceDesc>;
 
 static constexpr int MAX_SHADER_STAGES = 8;
-enum class RenderGraphNodeType : uint8_t
+
+
+struct RenderGraphNodeContext
 {
-    GRAPHICS,
-    COMPUTE,
-    RAY_TRACING
+    RenderResourceManager &resourceManager;
+    ResourceDescRegistry &resourceRegistry;
+    IRenderResource* AllocateResource(const ResourceHandle& handle)
+    {
+        if (resourceRegistry.contains(handle))
+        {
+            //return (resourceRegistry[handle]);
+        }
+        return nullptr;
+    }
+
+
 };
 struct RenderGraphNodeCpuContext
 {
-    RenderResourceManager& resourceManager;
-    MeshResourceManager& meshManager;
+    RenderResourceManager &resourceManager;
+    MeshResourceManager &meshManager;
 };
 
 struct RenderGraphNodeGpuContext
 {
-    RenderResourceManager& resourceManager;
-    MeshResourceManager& meshManager;
-    RenderGraphDescriptorSets& descriptorSetManager;
-    PerObjResourceManager& perObjResourceManager;
+    RenderResourceManager &resourceManager;
+    MeshResourceManager &meshManager;
+    RenderGraphDescriptorSets &descriptorSetManager;
+    PerObjResourceManager &perObjResourceManager;
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipeline pipeline = VK_NULL_HANDLE;
     VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 };
 
-using RenderGraphNodeCpuCallback = std::function<void(RenderGraphNodeCpuContext&)>;
-using RenderGraphNodeGpuCallback = std::function<void(RenderGraphNodeGpuContext&)>;
+using RenderGraphNodeCpuCallback = std::function<void(RenderGraphNodeCpuContext &)>;
+using RenderGraphNodeGpuCallback = std::function<void(RenderGraphNodeGpuContext &)>;
 
 struct RenderGraphNodeCreateInfo
 {
     std::string nodeName;
-    RenderGraphNodeType type;
     QueueType queueType;
     std::vector<ResourceUse> resourceUses;
     std::vector<std::string> shaderNames;
@@ -65,7 +76,7 @@ struct RenderGraphNodeCreateInfo
 class RenderGraphBuilder
 {
 public:
-    explicit RenderGraphBuilder(VkRenderDevice* renderDevice)
+    explicit RenderGraphBuilder(VkRenderDevice *renderDevice)
         : m_shaderAssetManager(renderDevice->GetDevice())
         , m_vkDevice(renderDevice->GetDevice())
         , m_descriptorSetManager(*GetDescriptorManager())
@@ -76,10 +87,10 @@ public:
     }
 
     // Add a render graph node
-    void AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo);
+    void AddNode(const RenderGraphNodeCreateInfo &nodeCreateInfo);
 
     // Add a dependency between two nodes
-    void AddDependency(const std::string& fromNode, const std::string& toNode);
+    void AddDependency(const std::string &fromNode, const std::string &toNode);
 
     // Build the render graph
     void Build();
@@ -91,11 +102,23 @@ public:
 
     ~RenderGraphBuilder()
     {
-        for (auto& rgn : m_compiledGraphNodes)
+        for (auto &rgn : m_compiledGraphNodes)
         {
             DestroyCompiledRenderGraphNode(rgn);
         }
         m_vkDevice = VK_NULL_HANDLE;
+    }
+
+    RenderGraphBuilder &AddRegistry(const ResourceHandle &handle, ResourceDesc desc)
+    {
+        m_resourceDescRegistry[handle] = std::move(desc);
+        return *this;
+    }
+
+    std::optional<ResourceDesc> GetResourceDesc(const ResourceHandle &handle) const
+    {
+        auto it = m_resourceDescRegistry.find(handle);
+        return it != m_resourceDescRegistry.end() ? std::optional{it->second} : std::nullopt;
     }
 
 private:
@@ -111,11 +134,11 @@ private:
 
     struct CompiledRenderGraphNode
     {
-        const RenderGraphNode* logicalRenderGraphNode;
+        const RenderGraphNode *logicalRenderGraphNode;
 
         // Execution related structures
-        VkPipeline pipeline;
-        VkPipelineLayout pipelineLayout;
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
         QueueType queueType = QueueType::GRAPHICS;
@@ -124,8 +147,8 @@ private:
         RenderGraphNodeGpuCallback gpuCallBack;
     };
 
-    CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
-    void DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn);
+    CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode &rgn);
+    void DestroyCompiledRenderGraphNode(CompiledRenderGraphNode &rgn);
 
     std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
     std::vector<CompiledRenderGraphNode> m_compiledGraphNodes;
@@ -136,5 +159,7 @@ private:
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     std::array<VkCommandBuffer, static_cast<size_t>(QueueType::COUNT)> m_commandBuffers;
     RenderGraphDescriptorSets m_descriptorSetManager;
+
+    ResourceDescRegistry m_resourceDescRegistry;
 };
 }  // namespace Muyo::RenderGraph

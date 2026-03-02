@@ -2,22 +2,27 @@
 #include "RenderResource.h"
 #include "RenderResourceManager.h"
 #include "RenderTargetResource.h"
+#include "Utils.h"
 #include <concepts>
 #include <string_view>
 #include <variant>
 #include <MeshVertex.h>
 
+// Note
+// this is messy template playground.
+// I'm experimenting with using concepts and ADL to create a flexible resource allocation system for the render graph.
+
 
 template <class D>
 concept GraphResourceDesc = requires(const D& d, Muyo::RenderResourceManager* rs)
 {
-    { AcquireImp(d, rs) } -> std::convertible_to<Muyo::IRenderResource*>;
+    { AllocateImp(d, rs) } -> std::convertible_to<Muyo::IRenderResource*>;
     //{GetDescName(d)} -> std::convertible_to<std::string_view>;
 };
 
 template <GraphResourceDesc D>
 auto Allocate(const D& d, Muyo::RenderResourceManager* renderResourceManager) {
-    return AcquireImp(d, renderResourceManager); // unqualified call → ADL finds it
+    return AllocateImp(d, renderResourceManager); // unqualified call → ADL finds it
 }
 
 template <GraphResourceDesc D>
@@ -28,48 +33,42 @@ constexpr std::string_view GetDescName(const D& d)
 
 namespace Muyo::RenderGraph
 {
-    template<class T>
-    struct IndexBufferDesc
-    {
-        std::string name;
-        size_t count{};
-        static constexpr size_t STRIDE = sizeof(T);
-    };
-    template <class T>
-    inline Muyo::IndexBuffer* AcquireImp(const IndexBufferDesc<T>& d, Muyo::RenderResourceManager* renderResourceManager)
-    {
-        return renderResourceManager->GetIndexBuffer<T>(d.name, std::vector<T>(d.count));
-    }
+    // Add this helper trait before your usage:
+    template <typename>
+    struct is_buffer_desc : std::false_type {};
 
-    template<class T>
-    struct VertexBufferDesc
-    {
-        std::string name;
-        size_t count{};
+    template <typename T>
+    struct BufferDesc {
+        using value_type = T;
+        size_t count;
+        VkBufferUsageFlags usage;
+        VmaMemoryUsage memoryProperties;
         static constexpr size_t STRIDE = sizeof(T);
+        auto operator<=>(const BufferDesc&) const = default;
     };
 
-    template<class T>
-    inline Muyo::VertexBuffer<T>* AcquireImp(const VertexBufferDesc<T>& d, Muyo::RenderResourceManager* renderResourceManager)
+    template<typename T>
+    inline Muyo::BufferResource* AllocateImp(const BufferDesc<T>& d, Muyo::RenderResourceManager* renderResourceManager)
     {
-        return renderResourceManager->GetVertexBuffer<T>(d.name, std::vector<T>(d.count));
+        //return renderResourceManager->GetBuffer(d.name, d.count * d.STRIDE, d.usage, d.memoryProperties);
     }
 
-    template <class T>
-    struct StorageBufferDesc
-    {
-        std::string name;
-        size_t count{};
-        bool allowReadback{false};
-        static constexpr size_t STRIDE = sizeof(T);
-    };
+    // Buffer descriptor trait
+    template <typename U>
+    struct is_buffer_desc<BufferDesc<U>> : std::true_type {};
 
-    template <class T>
-    inline Muyo::StorageBuffer<T>* AcquireImp(const StorageBufferDesc<T>& d,
-                                               Muyo::RenderResourceManager* renderResourceManager)
-    {
-        return renderResourceManager->GetStorageBuffer<T>(d.name, std::vector<T>(d.count));
-    }
+
+    template<typename T>
+        struct BufferDescHasher {
+            size_t operator()(const BufferDesc<T>& d) const {
+                size_t seed = 0;
+                Muyo::HashCombine(seed, d.count);
+                Muyo::HashCombine(seed, d.usage);
+                Muyo::HashCombine(seed, d.memoryProperties);
+                Muyo::HashCombine(seed, sizeof(T));
+                return seed;
+            }
+        };
 
     struct RenderTargetDesc
     {
@@ -80,19 +79,36 @@ namespace Muyo::RenderGraph
         uint32_t numLayers{1};
         VkImageUsageFlags usage{VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
     };
-    inline Muyo::RenderTarget* AcquireImp(const RenderTargetDesc& d, Muyo::RenderResourceManager* renderResourceManager)
+    inline Muyo::RenderTarget* AllocateImp(const RenderTargetDesc& d, Muyo::RenderResourceManager* renderResourceManager)
     {
-        return renderResourceManager->GetRenderTarget(d.name, d.extent, d.format, d.numMips, d.numLayers, d.usage);
+        //return renderResourceManager->GetRenderTarget(d.name, d.extent, d.format, d.numMips, d.numLayers, d.usage);
     }
 
-    // TODO(qgu): Probalby need to generate known types during compile time
+
+    
+       // TODO(qgu): Probalby need to generate known types during compile time
     using ResourceDesc = std::variant<
-        IndexBufferDesc<uint8_t>, 
-        IndexBufferDesc<uint16_t>, 
-        VertexBufferDesc<Muyo::Vertex>, 
-        VertexBufferDesc<Muyo::UIVertex>,
-        StorageBufferDesc<uint8_t>,
-        RenderTargetDesc >;
+        BufferDesc<uint8_t>, 
+        BufferDesc<uint16_t>,
+        BufferDesc<Vertex>
+        >;
+        //RenderTargetDesc >;
+
+    // Hasher
+    struct ResourceDescHasher {
+            size_t operator()(const ResourceDesc& desc) const {
+                return std::visit([](const auto& d) -> size_t {
+                    // Using a specialized hasher for each type in the variant
+                    using T = std::decay_t<decltype(d)>;
+                    if constexpr (is_buffer_desc<T>::value) {
+                        return BufferDescHasher<typename T::value_type>{}(d);
+                    } else {
+                        // This covers IndexBufferDesc, VertexBufferDesc, StorageBufferDesc
+                        return BufferDescHasher<typename T::value_type>{}(d);
+                    }
+                }, desc);
+            }
+        };
 
     template <GraphResourceDesc T>
     constexpr uint32_t GetDescriptorCount(const T&) { return 1;}
@@ -102,10 +118,5 @@ namespace Muyo::RenderGraph
     {
         return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     }
-}
 
-// Example usage:
-// Muyo::RenderGraph::VertexBufferDesc<Muyo::Vertex> vbDesc{"MyVertexBuffer", 1000};
-// auto* vertexBuffer = Allocate(vbDesc, renderResourceManager);
-// Muyo::RenderGraph::IndexBufferDesc<uint32_t> ibDesc{"MyIndexBuffer", 3000};
-// auto* indexBuffer = Allocate(ibDesc, renderResourceManager);
+}
