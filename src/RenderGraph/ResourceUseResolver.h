@@ -47,7 +47,7 @@ struct UsagePolicy
     VkImageLayout layout;  // ignored for buffers / AS / push constants
 };
 
-constexpr std::array<std::pair<UsageKey, UsagePolicy>, 16> K_USAGE_POLICIES = {{
+constexpr std::array<std::pair<UsageKey, UsagePolicy>, 18> K_USAGE_POLICIES = {{
     // ───────────── Images ─────────────
     {
         {ResourceUsage::SAMPLED, ResourceIOType::READ},
@@ -97,11 +97,22 @@ constexpr std::array<std::pair<UsageKey, UsagePolicy>, 16> K_USAGE_POLICIES = {{
         {ResourceUsage::INDIRECT_BUFFER, ResourceIOType::READ},
         {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
     },
+    // ───────────── Draw Command / Indirect Buffers ─────────────
+    // The Read case
     {
         {ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::READ},
         {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
     },
-
+    // GPU Write case (e.g., a Compute shader generating draw calls)
+    {
+        {ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::WRITE},
+        {VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
+    // Transfer/CPU Write case (e.g., vkCmdCopyBuffer or Host mapping)
+    {
+        {ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::TRANSFER_WRITE},
+        {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
     // ───────────── Ray Tracing / Mesh / Work Graph ─────────────
     {
         {ResourceUsage::ACCEL_STRUCTURE, ResourceIOType::READ},

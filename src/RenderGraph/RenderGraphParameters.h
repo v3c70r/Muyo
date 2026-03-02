@@ -11,6 +11,7 @@ enum class QueueType : uint8_t
     GRAPHICS,
     COMPUTE,
     COPY,
+    CPU,
     COUNT
 };
 class RenderGraphNodeParameters

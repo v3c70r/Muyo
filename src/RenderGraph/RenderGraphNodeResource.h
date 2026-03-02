@@ -18,7 +18,8 @@ enum class ResourceIOType : uint8_t
 {
     READ,
     WRITE,
-    READ_WRITE
+    READ_WRITE,
+    TRANSFER_WRITE,
 };
 
 enum class ResourceUsage : uint8_t
