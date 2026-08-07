@@ -168,16 +168,14 @@ void EnvironmentMapDebugPage::Render() const
         // Draw HDR selector
         struct Funcs
         {
-            static bool ItemGetter(void* data, int n, const char** out_str)
-            {
-                *out_str = ((const std::string*)data)[n].c_str();
-                return true;
-            }
+            static const char* ItemGetter(void* data, int n) { return ((const std::string*)data)[n].c_str(); }
         };
 
         int nPrevSelection = m_nCurrentHDRIndex;
 
-        ImGui::Combo("Current HDR", &m_nCurrentHDRIndex, &Funcs::ItemGetter, (void*)m_vHDRImagePatheStrings.data(), static_cast<int>(m_vHDRImagePathes.size()));
+        ImGui::Combo("Current HDR", &m_nCurrentHDRIndex, &Funcs::ItemGetter, (void*)m_vHDRImagePatheStrings.data(),
+                     static_cast<int>(m_vHDRImagePatheStrings.size()));
+
 
         if (nPrevSelection != m_nCurrentHDRIndex)
         {
@@ -187,7 +185,7 @@ void EnvironmentMapDebugPage::Render() const
         // Draw environmap texture
         {
             ImGuiIO& io = ImGui::GetIO();
-            ImTextureID my_tex_id = (void*)GetDescriptorManager()->GetImGuiTextureId("EnvMap");
+            ImTextureID my_tex_id = static_cast<ImTextureID>(GetDescriptorManager()->GetImGuiTextureId("EnvMap"));
             float my_tex_w = 512.0f;
             float my_tex_h = 256.0f;
             {
