@@ -59,13 +59,24 @@ add_library(imgui
     thirdparty/imgui/imgui_widgets.cpp
     thirdparty/imgui/imgui_tables.cpp
     )
+# Use a project-local imgui config (ImTextureID_Invalid override) instead of editing the submodule.
+target_include_directories(imgui PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(imgui PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
 
 set(SPIRV-Reflect_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/SPIRV-Reflect)
 add_library(SPIRV-Reflect ${CMAKE_SOURCE_DIR}/thirdparty/SPIRV-Reflect/spirv_reflect.cpp)
 
 ## ImGuizmo
-set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo)
-add_library(imguizmo thirdparty/ImGuizmo/ImGuizmo.cpp)
+set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo/src)
+add_library(imguizmo ${IMGUIZMO_INCLUDE_DIRS}/ImGuizmo.cpp)
+#add_library(ImGuizmo STATIC
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImGuizmo.cpp
+#    # Include these if you are also using the curve/gradient/graph editors
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImCurveEdit.cpp
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImGradient.cpp
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImSequencer.cpp
+#    ${IMGUIZMO_INCLUDE_DIRS}/GraphEditor.cpp
+#)
 
 ## imnodes
 set(IMNODES_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/imnodes)
@@ -297,6 +308,12 @@ target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/Ren
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain SPIRV-Reflect muyo muyo_rg)
 include(Catch)
 catch_discover_tests(tests)
+
+# Keep ImTextureID_Invalid consistent (see src/ImGuiUserConfig.h) across all imgui consumers.
+target_compile_definitions(muyo PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+target_compile_definitions(helloVulkan PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+target_compile_definitions(PSOCompiler PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+target_compile_definitions(tests PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
 
 # Disable tests for now until proper method has been found to load the gltf
 #add_executable(testSceneImporter
