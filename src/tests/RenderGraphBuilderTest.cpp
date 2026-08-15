@@ -8,12 +8,13 @@
 #include "Debug/RenderDoc.h"
 #include "GraphicsTestEnv.h"
 #include "MeshVertex.h"
-#include "PipelineStateBuilder.h"
 #include "RenderGraph/RenderGraphBuilder.h"
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphResourceDesc.h"
-#include "RenderPassParameters.h"
-#include "ShaderReflectionFetcher.h"
+#include "Scene/Scene.h"
+#include "RenderResources/Geometry.h"
+#include "PerObjResourceManager.h"
+#include "Camera.h"
 #include "catch2/catch_message.hpp"
 #include "vulkan/vulkan_core.h"
 
@@ -25,101 +26,68 @@ namespace Muyo::RenderGraph
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descriptor sets", "[RenderGraphBuilder]")
 {
-    RenderGraphBuilder builder(GetRenderDevice());
-    // Render graph level registry
-    builder.AddRegistry(
-                ResourceHandle("MeshVertexBuffer"),
-                BufferDesc<Vertex> {
-                .count = 1,
-                .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT ,
-                .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU
-                }
-            );
+    // Prepare the shared quad geometry so we can draw something.
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+    const Mesh& quad = GetMeshResourceManager()->GetQuad();
 
-    // Render pass level details
+    RenderGraphBuilder builder(GetRenderDevice());
+
+    // Graph-owned resources (allocated at Build()).
+    builder.AddResource("TriangleOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                   VK_IMAGE_USAGE_SAMPLED_BIT});
+    // Externally owned mesh buffers (created by the mesh manager).
+    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
+    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+
     RenderGraphNodeCreateInfo quadPassCreateInfo = {
         .nodeName = "QuadNode",
         .queueType = QueueType::GRAPHICS,
         .resourceUses =
             {
                 ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
-                            .io = Muyo::RenderGraph::ResourceIOType::READ,
-                            .usage = Muyo::RenderGraph::ResourceUsage::INDEX_BUFFER,
-                            .kind = Muyo::RenderGraph::ResourceKind::BUFFER},
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
-                            .io = Muyo::RenderGraph::ResourceIOType::READ,
-                            .usage = Muyo::RenderGraph::ResourceUsage::INDEX_BUFFER,
-                            .kind = Muyo::RenderGraph::ResourceKind::BUFFER},
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("TriangleOutput"),
-                            .io = Muyo::RenderGraph::ResourceIOType::WRITE,
-                            .usage = Muyo::RenderGraph::ResourceUsage::COLOR_ATTACHMENT,
-                            .kind = Muyo::RenderGraph::ResourceKind::IMAGE},
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
             },
         .shaderNames = {"triangle.vert", "triangle_no_tex.frag.slang"},
         .psoDesc = {.depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false, .stencilEnable = false},
                     .blendState = {.attachmentCount = 1,
                                    .attachments = {{{
-                                       .blendEnable = true,
+                                       .blendEnable = false,
                                    }}}}},
-        .cpuCallback =
-            [](auto &ctx)
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute =
+            [&quad](RenderGraphNodeContext& ctx)
         {
-            RenderTarget *pTarget = ctx.resourceManager.GetRenderTarget("TriangleOutput", VkExtent2D(WIDTH, HEIGHT),
-                                                                        VK_FORMAT_R16G16B16A16_SFLOAT);
-            REQUIRE(pTarget != nullptr);
-        },
-        .gpuCallback =
-            [](auto &ctx)
-        {
-            VkCommandBuffer cmdBuf = ctx.commandBuffer;
+            // Render pass begin/end, pipeline, viewport/scissor and descriptor sets are handled by the graph.
+            auto* pVertexBuffer = ctx.GetResource<VertexBuffer<Vertex>>("MeshVertexBuffer");
+            auto* pIndexBuffer = ctx.GetResource<IndexBuffer>("MeshIndexBuffer");
+            REQUIRE(pVertexBuffer != nullptr);
+            REQUIRE(pIndexBuffer != nullptr);
 
-            auto *pTarget = ctx.resourceManager.template GetResource<RenderTarget>("TriangleOutput");
-            REQUIRE(pTarget != nullptr);
-            VkRenderingAttachmentInfo colorAttachment = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-            colorAttachment.imageView = pTarget->getView();
-            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
-            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-            colorAttachment.clearValue.color.float32[0] = 0.0F;
-            colorAttachment.clearValue.color.float32[1] = 0.0F;
-            colorAttachment.clearValue.color.float32[2] = 0.0F;
-            colorAttachment.clearValue.color.float32[3] = 1.0F;
-
-            VkRenderingInfo renderingInfo = {VK_STRUCTURE_TYPE_RENDERING_INFO};
-            renderingInfo.renderArea = {.offset = {0, 0}, .extent = {WIDTH, HEIGHT}};
-            renderingInfo.layerCount = 1;
-            renderingInfo.colorAttachmentCount = 1;
-            renderingInfo.pColorAttachments = &colorAttachment;
-
-            ////const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
-            // const MeshVertexResources& meshManager =
-            // GetMeshResourceManager()->GetMeshVertexResources(); VkDeviceSize
-            // offset = 0; VkBuffer vertexBuffer =
-            // meshManager.m_pVertexBuffer->buffer(); VkBuffer indexBuffer =
-            // meshManager.m_pIndexBuffer->buffer(); uint32_t nIndexCount =
-            // quadMesh.m_nIndexCount; uint32_t nIndexOffset =
-            // quadMesh.m_nIndexOffset;
-
-            // vkCmdBeginRendering(cmdBuf, &renderingInfo);
-            // vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            // ctx.pipeline); vkCmdBindVertexBuffers(cmdBuf, 0, 1,
-            // &vertexBuffer, &offset); vkCmdBindIndexBuffer(cmdBuf,
-            // indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-            // ViewportBuilder vpBuilder;
-            // VkViewport viewport = vpBuilder.setWH({WIDTH, HEIGHT}).Build();
-            // VkRect2D scissorRect;
-            // scissorRect.offset = {.x = 0, .y = 0};
-            // scissorRect.extent = {.width = WIDTH, .height = HEIGHT};
-            // vkCmdSetViewport(cmdBuf, 0, 1, &viewport);
-            // vkCmdSetScissor(cmdBuf, 0, 1, &scissorRect);
-            // vkCmdDrawIndexed(cmdBuf, nIndexCount, 1, nIndexOffset, 0, 0);
-            // vkCmdEndRendering(cmdBuf);
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = pVertexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(ctx.commandBuffer, quad.m_nIndexCount, 1, quad.m_nIndexOffset, 0, 0);
         }};
 
     builder.AddNode(quadPassCreateInfo);
     builder.Build();
+
     {
         RenderDocScopedCapture capture("test_quad");
         builder.Execute();
@@ -129,86 +97,79 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
 TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilder]")
 {
     RenderGraphBuilder builder(GetRenderDevice());
+
+    // Graph-owned resources.
+    builder.AddResource("TriangleOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                   VK_IMAGE_USAGE_SAMPLED_BIT});
+    builder.AddResource("PreViewData",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = sizeof(PerViewData),
+                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    // Preallocated scratch buffer that the CPU node fills with actual draw commands.
+    builder.AddResource("GBuffer draw commands",
+                        BufferResourceDesc{.count = 1024,
+                                           .stride = sizeof(VkDrawIndexedIndirectCommand),
+                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    // Imported resources (owned by the mesh / per-obj managers).
+    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
+    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+    builder.ImportResource("PerObjData", GetPerObjResourceManager()->GetPerObjResource());
+
+    // Shared between the CPU node (producer) and the graphics node (consumer).
+    uint32_t nDrawCommandCount = 0;
+
+    // CPU node: builds draw commands and uploads the camera UBO on the host.
     RenderGraphNodeCreateInfo drawCommandPrepPass = {
-      .nodeName = "DrawCmdPrep",
-      .queueType = QueueType::CPU,
-      .resourceUses = {ResourceUse{
-          .handle = ResourceHandle("OpaqueDrawCmdBuf"),
-          .io = Muyo::RenderGraph::ResourceIOType::WRITE,
-          .usage = Muyo::RenderGraph::ResourceUsage::DRAW_COMMAND_BUFFER,
-          .kind = Muyo::RenderGraph::ResourceKind::BUFFER}},
-      .cpuCallback =
-          [](auto &ctx) {
-
-          },
-      .gpuCallback = [](auto &ctx) {}};
-
-    RenderGraphNodeCreateInfo cubePassCreateInfo = {
-        .nodeName = "CubeNode",
-        .queueType = QueueType::GRAPHICS,
+        .nodeName = "DrawCmdPrep",
+        .queueType = QueueType::CPU,
         .resourceUses =
             {
-                ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
-                            .io = Muyo::RenderGraph::ResourceIOType::READ,
-                            .usage = Muyo::RenderGraph::ResourceUsage::VERTEX_BUFFER,
-                            .kind = Muyo::RenderGraph::ResourceKind::BUFFER},
-                ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
-                            .io = Muyo::RenderGraph::ResourceIOType::READ,
-                            .usage = Muyo::RenderGraph::ResourceUsage::INDEX_BUFFER,
-                            .kind = Muyo::RenderGraph::ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("GBuffer draw commands"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("PreViewData"),
-                            .io = Muyo::RenderGraph::ResourceIOType::READ,
-                            .usage = Muyo::RenderGraph::ResourceUsage::UNIFORM_BUFFER,
-                            .kind = Muyo::RenderGraph::ResourceKind::BUFFER,
-                            .bindingSemantic = Muyo::RenderGraph::ResourceBindingSemantic::PER_VIEW},
-                ResourceUse{.handle = ResourceHandle("TriangleOutput"),
-                            .io = Muyo::RenderGraph::ResourceIOType::WRITE,
-                            .usage = Muyo::RenderGraph::ResourceUsage::COLOR_ATTACHMENT,
-                            .kind = Muyo::RenderGraph::ResourceKind::IMAGE},
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER},
             },
-        .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
-        .psoDesc = {.depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false, .stencilEnable = false},
-                    .blendState = {.attachmentCount = 1,
-                                   .attachments = {{{
-                                       .blendEnable = true,
-                                   }}}}},
-        .cpuCallback =
-            [](auto &ctx)
+        .execute =
+            [this, &nDrawCommandCount](RenderGraphNodeContext& ctx)
         {
-            RenderTarget *pTarget = ctx.resourceManager.GetRenderTarget("TriangleOutput", VkExtent2D(WIDTH, HEIGHT),
-                                                                        VK_FORMAT_R16G16B16A16_SFLOAT);
+            // Camera per-view data.
+            Arcball camera(glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F),
+                           glm::lookAt(glm::vec3(0.0F, 0.0F, -2.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)),
+                           0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
 
-            REQUIRE(pTarget != nullptr);
+            PerViewData perView;
+            perView.mProj = camera.GetProjMat();
+            perView.mView = camera.GetViewMat();
+            perView.mProjInv = glm::inverse(perView.mProj);
+            perView.mViewInv = glm::inverse(perView.mView);
+            perView.vScreenExtent = {WIDTH, HEIGHT};
 
-            UniformBuffer<PerViewData> *pUniformBuffer =
-                GetRenderResourceManager()->GetUniformBuffer<PerViewData>("PerViewData");
+            auto* pPreView = ctx.GetResource<BufferResource>("PreViewData");
+            REQUIRE(pPreView != nullptr);
+            pPreView->SetData(&perView, sizeof(perView));
 
-            // Update camera uniform buffer
-            Arcball camera(glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT),
-                                            0.1F, 100.0F),
-                           glm::lookAt(glm::vec3(0.0F, 0.0F, -2.0F),  // Eye
-                                       glm::vec3(0.0F, 0.0F, 0.0F),   // Center
-                                       glm::vec3(0.0F, 1.0F, 0.0F)),  // Up
-                           0.1F,                                      // near
-                           100.0F,                                    // far
-                           static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
-            camera.UpdatePerViewDataUBO(pUniformBuffer);
-        },
-        .gpuCallback =
-            [this](RenderGraphNodeGpuContext &ctx)
-        {
-            // construct draw commands
+            // Build indirect draw commands from the opaque scene nodes.
             std::vector<VkDrawIndexedIndirectCommand> drawCommands;
-            std::vector<const SceneNode *> &vpGeometryNodes = m_mDrawList.m_aDrawLists[DrawLists::DL_OPAQUE];
-
-            for (const SceneNode *pGeometryNode : vpGeometryNodes)
+            const std::vector<const SceneNode*>& vpGeometryNodes = m_mDrawList.m_aDrawLists[DrawLists::DL_OPAQUE];
+            for (const SceneNode* pGeometryNode : vpGeometryNodes)
             {
-                const Geometry *pGeometry = static_cast<const GeometrySceneNode *>(pGeometryNode)->GetGeometry();
+                const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
                 uint32_t nSubmeshIndex = 0;
-                for (const auto &pSubmesh : pGeometry->getSubmeshes())
+                for (const auto& pSubmesh : pGeometry->getSubmeshes())
                 {
                     VkDrawIndexedIndirectCommand drawCommand;
-                    const Mesh &mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+                    const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
 
                     drawCommand.indexCount = mesh.m_nIndexCount;
                     drawCommand.instanceCount = 1;
@@ -219,64 +180,66 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: A cube with des
                     drawCommands.push_back(drawCommand);
                 }
             }
+            nDrawCommandCount = static_cast<uint32_t>(drawCommands.size());
 
-            const DrawCommandBuffer<VkDrawIndexedIndirectCommand> *pDrawCommandBuffer =
-                ctx.resourceManager.GetDrawCommandBuffer("GBuffer draw commands", drawCommands);
+            auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
+            REQUIRE(pDrawCmdBuffer != nullptr);
+            pDrawCmdBuffer->SetData(drawCommands.data(), drawCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
+        }};
 
-            VkCommandBuffer cmdBuf = ctx.commandBuffer;
+    RenderGraphNodeCreateInfo cubePassCreateInfo = {
+        .nodeName = "CubeNode",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("PreViewData"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                ResourceUse{.handle = ResourceHandle("PerObjData"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .bindingSemantic = ResourceBindingSemantic::PER_OBJ},
+                ResourceUse{.handle = ResourceHandle("GBuffer draw commands"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("TriangleOutput"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
+        .psoDesc = {.depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false, .stencilEnable = false},
+                    .blendState = {.attachmentCount = 1,
+                                   .attachments = {{{
+                                       .blendEnable = false,
+                                   }}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute =
+            [this, &nDrawCommandCount](RenderGraphNodeContext& ctx)
+        {
+            const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
+            REQUIRE(pDrawCmdBuffer != nullptr);
 
-            auto *pTarget = ctx.resourceManager.template GetResource<RenderTarget>("TriangleOutput");
-            REQUIRE(pTarget != nullptr);
-            VkRenderingAttachmentInfo colorAttachment = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-            colorAttachment.imageView = pTarget->getView();
-            colorAttachment.imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
-            colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-            colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-            colorAttachment.clearValue.color.float32[0] = 0.0F;
-            colorAttachment.clearValue.color.float32[1] = 0.0F;
-            colorAttachment.clearValue.color.float32[2] = 0.0F;
-            colorAttachment.clearValue.color.float32[3] = 1.0F;
-
-            VkRenderingInfo renderingInfo = {VK_STRUCTURE_TYPE_RENDERING_INFO};
-            renderingInfo.renderArea = {.offset = {0, 0}, .extent = {WIDTH, HEIGHT}};
-            renderingInfo.layerCount = 1;
-            renderingInfo.colorAttachmentCount = 1;
-            renderingInfo.pColorAttachments = &colorAttachment;
-
-            const MeshVertexResources &meshManager = GetMeshResourceManager()->GetMeshVertexResources();
+            const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
-            VkBuffer indexBuffer = meshManager.m_pIndexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
 
-            vkCmdBeginRendering(cmdBuf, &renderingInfo);
-            vkCmdBindPipeline(cmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, ctx.pipeline);
-
-            ctx.descriptorSetManager.BindResourceToDescriptorSet(
-                ctx.resourceManager.template GetResource<UniformBuffer<PerViewData>>("PerViewData"),
-                ResourceBindingSemantic::PER_VIEW, 0);
-            ctx.descriptorSetManager.BindResourceToDescriptorSet(ctx.perObjResourceManager.GetPerObjResource(),
-                                                                 ResourceBindingSemantic::PER_OBJ, 0);
-
-            std::vector<VkDescriptorSet> descSets = {
-                ctx.descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_VIEW),
-                ctx.descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_OBJ)};
-            vkCmdBindDescriptorSets(cmdBuf, ctx.bindingPoint, ctx.pipelineLayout, 0,
-                                    static_cast<uint32_t>(descSets.size()), descSets.data(), 0, nullptr);
-            vkCmdBindVertexBuffers(cmdBuf, 0, 1, &vertexBuffer, &offset);
-            vkCmdBindIndexBuffer(cmdBuf, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-            ViewportBuilder vpBuilder;
-            VkViewport viewport = vpBuilder.setWH({WIDTH, HEIGHT}).Build();
-            VkRect2D scissorRect;
-            scissorRect.offset = {.x = 0, .y = 0};
-            scissorRect.extent = {.width = WIDTH, .height = HEIGHT};
-            vkCmdSetViewport(cmdBuf, 0, 1, &viewport);
-            vkCmdSetScissor(cmdBuf, 0, 1, &scissorRect);
-            vkCmdDrawIndexedIndirect(cmdBuf, pDrawCommandBuffer->buffer(), 0, pDrawCommandBuffer->GetDrawCommandCount(),
-                                     pDrawCommandBuffer->GetStride());
-            // vkCmdDrawIndexed(cmdBuf, nIndexCount, 1, nIndexOffset, 0, 0);
-            vkCmdEndRendering(cmdBuf);
+            vkCmdDrawIndexedIndirect(ctx.commandBuffer, pDrawCmdBuffer->buffer(), 0, nDrawCommandCount,
+                                     sizeof(VkDrawIndexedIndirectCommand));
         }};
 
     builder.AddNode(drawCommandPrepPass);
@@ -285,7 +248,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: A cube with des
     builder.Build();
 
     {
-        RenderDocScopedCapture capture("test_quad");
+        RenderDocScopedCapture capture("test_cube");
         builder.Execute();
     }
 }

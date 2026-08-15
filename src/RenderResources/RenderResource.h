@@ -104,6 +104,11 @@ public:
         : BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage)
     {
     }
+    BufferResource(VkBufferUsageFlags bufferUsage, VmaMemoryUsage memoryUsage, size_t sizeInByte)
+        : BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage), m_nSize(static_cast<uint32_t>(sizeInByte))
+    {
+        GetMemoryAllocator()->AllocateBuffer(sizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+    }
     virtual VkBuffer buffer() const { return m_buffer; }
     virtual ~BufferResource()
     {

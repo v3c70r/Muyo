@@ -1,122 +1,72 @@
 #pragma once
+#include <variant>
+
+#include <vulkan/vulkan_core.h>
+#include <vk_mem_alloc.h>
+
+#include "RenderGraphResourceHandle.h"
 #include "RenderResource.h"
 #include "RenderResourceManager.h"
-#include "RenderTargetResource.h"
-#include "Utils.h"
-#include <concepts>
-#include <string_view>
-#include <variant>
-#include <MeshVertex.h>
-
-// Note
-// this is messy template playground.
-// I'm experimenting with using concepts and ADL to create a flexible resource allocation system for the render graph.
-
-
-template <class D>
-concept GraphResourceDesc = requires(const D& d, Muyo::RenderResourceManager* rs)
-{
-    { AllocateImp(d, rs) } -> std::convertible_to<Muyo::IRenderResource*>;
-    //{GetDescName(d)} -> std::convertible_to<std::string_view>;
-};
-
-template <GraphResourceDesc D>
-auto Allocate(const D& d, Muyo::RenderResourceManager* renderResourceManager) {
-    return AllocateImp(d, renderResourceManager); // unqualified call → ADL finds it
-}
-
-template <GraphResourceDesc D>
-constexpr std::string_view GetDescName(const D& d)
-{
-    return std::string_view(d.name);
-}
 
 namespace Muyo::RenderGraph
 {
-    // Add this helper trait before your usage:
-    template <typename>
-    struct is_buffer_desc : std::false_type {};
 
-    template <typename T>
-    struct BufferDesc {
-        using value_type = T;
-        size_t count;
-        VkBufferUsageFlags usage;
-        VmaMemoryUsage memoryProperties;
-        static constexpr size_t STRIDE = sizeof(T);
-        auto operator<=>(const BufferDesc&) const = default;
-    };
+// How long a resource lives relative to the graph.
+enum class ResourceLifetime : uint8_t
+{
+    Transient,   // Lives only inside this graph; may be aliased / reused across nodes.
+    Persistent,  // Survives the frame boundary (e.g. TAA history, accumulation buffers).
+    Imported     // Externally owned (old pass system, swapchain images); graph does not allocate.
+};
 
-    template<typename T>
-    inline Muyo::BufferResource* AllocateImp(const BufferDesc<T>& d, Muyo::RenderResourceManager* renderResourceManager)
+// Describes the ALLOCATION of a buffer. Size = count * stride.
+struct BufferResourceDesc
+{
+    uint64_t count = 0;
+    uint64_t stride = 0;
+    VkBufferUsageFlags usage = 0;
+    VmaMemoryUsage memoryProperties = VMA_MEMORY_USAGE_UNKNOWN;
+    ResourceLifetime lifetime = ResourceLifetime::Transient;
+};
+
+// Describes the ALLOCATION of an image (render target / storage image / texture).
+struct ImageResourceDesc
+{
+    VkFormat format = VK_FORMAT_UNDEFINED;
+    VkExtent2D extent = {0, 0};
+    uint32_t mips = 1;
+    uint32_t layers = 1;
+    VkImageUsageFlags usage = 0;
+    ResourceLifetime lifetime = ResourceLifetime::Transient;
+};
+
+// The complete set of resource types the graph knows how to allocate.
+using ResourceDesc = std::variant<BufferResourceDesc, ImageResourceDesc>;
+
+// Allocate a physical resource from a desc. The render graph calls this at Build() time.
+// Uses the existing RenderResourceManager as the backend allocator.
+inline IRenderResource* AllocateResource(const ResourceDesc& desc, RenderResourceManager& renderResourceManager,
+                                         const ResourceHandle& handle)
+{
+    if (IRenderResource* existing = renderResourceManager.GetResource<IRenderResource>(handle))
     {
-        //return renderResourceManager->GetBuffer(d.name, d.count * d.STRIDE, d.usage, d.memoryProperties);
+        return existing;
     }
 
-    // Buffer descriptor trait
-    template <typename U>
-    struct is_buffer_desc<BufferDesc<U>> : std::true_type {};
-
-
-    template<typename T>
-        struct BufferDescHasher {
-            size_t operator()(const BufferDesc<T>& d) const {
-                size_t seed = 0;
-                Muyo::HashCombine(seed, d.count);
-                Muyo::HashCombine(seed, d.usage);
-                Muyo::HashCombine(seed, d.memoryProperties);
-                Muyo::HashCombine(seed, sizeof(T));
-                return seed;
+    return std::visit(
+        [&](const auto& d) -> IRenderResource*
+        {
+            using T = std::decay_t<decltype(d)>;
+            if constexpr (std::is_same_v<T, BufferResourceDesc>)
+            {
+                return renderResourceManager.AllocateBuffer(handle, d.count * d.stride, d.usage, d.memoryProperties);
             }
-        };
-
-    struct RenderTargetDesc
-    {
-        std::string name;
-        VkExtent2D extent{ 0, 0 };
-        VkFormat format{VK_FORMAT_R8G8B8A8_UNORM};
-        uint32_t numMips{1};
-        uint32_t numLayers{1};
-        VkImageUsageFlags usage{VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
-    };
-    inline Muyo::RenderTarget* AllocateImp(const RenderTargetDesc& d, Muyo::RenderResourceManager* renderResourceManager)
-    {
-        //return renderResourceManager->GetRenderTarget(d.name, d.extent, d.format, d.numMips, d.numLayers, d.usage);
-    }
-
-
-    
-       // TODO(qgu): Probalby need to generate known types during compile time
-    using ResourceDesc = std::variant<
-        BufferDesc<uint8_t>, 
-        BufferDesc<uint16_t>,
-        BufferDesc<Vertex>
-        >;
-        //RenderTargetDesc >;
-
-    // Hasher
-    struct ResourceDescHasher {
-            size_t operator()(const ResourceDesc& desc) const {
-                return std::visit([](const auto& d) -> size_t {
-                    // Using a specialized hasher for each type in the variant
-                    using T = std::decay_t<decltype(d)>;
-                    if constexpr (is_buffer_desc<T>::value) {
-                        return BufferDescHasher<typename T::value_type>{}(d);
-                    } else {
-                        // This covers IndexBufferDesc, VertexBufferDesc, StorageBufferDesc
-                        return BufferDescHasher<typename T::value_type>{}(d);
-                    }
-                }, desc);
+            else
+            {
+                return renderResourceManager.GetRenderTarget(handle, d.extent, d.format, d.mips, d.layers, d.usage);
             }
-        };
-
-    template <GraphResourceDesc T>
-    constexpr uint32_t GetDescriptorCount(const T&) { return 1;}
-
-    template <GraphResourceDesc T>
-    constexpr VkDescriptorType GetDescriptorType(const T&) 
-    {
-        return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    }
-
+        },
+        desc);
 }
+
+}  // namespace Muyo::RenderGraph
