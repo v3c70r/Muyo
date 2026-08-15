@@ -6,6 +6,16 @@
 
 namespace Muyo::RenderGraph
 {
+// Which executor / queue a node runs on. CPU is treated as a queue inside the graph.
+enum class QueueType : uint8_t
+{
+    GRAPHICS,
+    COMPUTE,
+    COPY,
+    CPU,
+    COUNT
+};
+
 enum class ResourceKind : uint8_t
 {
     IMAGE,
@@ -88,6 +98,8 @@ struct ResolvedResourceUse
     VkImageLayout imageLayout;  // if image
     VkFormat format;            // optional validation
     VkExtent3D extent;          // optional
+
+    ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;
 };
 
 }  // namespace Muyo::RenderGraph

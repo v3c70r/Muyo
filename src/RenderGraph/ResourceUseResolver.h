@@ -47,7 +47,7 @@ struct UsagePolicy
     VkImageLayout layout;  // ignored for buffers / AS / push constants
 };
 
-constexpr std::array<std::pair<UsageKey, UsagePolicy>, 18> K_USAGE_POLICIES = {{
+constexpr std::array<std::pair<UsageKey, UsagePolicy>, 25> K_USAGE_POLICIES = {{
     // ───────────── Images ─────────────
     {
         {ResourceUsage::SAMPLED, ResourceIOType::READ},
@@ -61,6 +61,10 @@ constexpr std::array<std::pair<UsageKey, UsagePolicy>, 18> K_USAGE_POLICIES = {{
     {
         {ResourceUsage::COLOR_ATTACHMENT, ResourceIOType::WRITE},
         {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}
+    },
+    {
+        {ResourceUsage::COLOR_ATTACHMENT, ResourceIOType::READ_WRITE},
+        {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}
     },
     {
         {ResourceUsage::DEPTH_STENCIL_ATTACHMENT, ResourceIOType::WRITE},
@@ -82,20 +86,44 @@ constexpr std::array<std::pair<UsageKey, UsagePolicy>, 18> K_USAGE_POLICIES = {{
         {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_UNIFORM_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
     },
     {
+        {ResourceUsage::UNIFORM_BUFFER, ResourceIOType::WRITE},
+        {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
+    {
         {ResourceUsage::STORAGE_BUFFER, ResourceIOType::READ_WRITE},
         {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
+    {
+        {ResourceUsage::STORAGE_BUFFER, ResourceIOType::READ},
+        {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
+    {
+        {ResourceUsage::STORAGE_BUFFER, ResourceIOType::WRITE},
+        {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
     },
     {
         {ResourceUsage::VERTEX_BUFFER, ResourceIOType::READ},
         {VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
     },
     {
+        {ResourceUsage::VERTEX_BUFFER, ResourceIOType::WRITE},
+        {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
+    {
         {ResourceUsage::INDEX_BUFFER, ResourceIOType::READ},
         {VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, VK_ACCESS_2_INDEX_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
     },
     {
+        {ResourceUsage::INDEX_BUFFER, ResourceIOType::WRITE},
+        {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
+    {
         {ResourceUsage::INDIRECT_BUFFER, ResourceIOType::READ},
         {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
+    },
+    {
+        {ResourceUsage::INDIRECT_BUFFER, ResourceIOType::WRITE},
+        {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}
     },
     // ───────────── Draw Command / Indirect Buffers ─────────────
     // The Read case
@@ -159,6 +187,7 @@ ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
     resolved.usage = use.usage;
     resolved.stages = policy.stages;
     resolved.access = policy.access;
+    resolved.bindingSemantic = use.bindingSemantic;
 
     if (use.kind == ResourceKind::IMAGE)
     {

@@ -278,6 +278,18 @@ public:
         return nullptr;
     }
 
+    BufferResource* AllocateBuffer(const std::string& name, size_t sizeInByte, VkBufferUsageFlags usage, VmaMemoryUsage memoryProperties
+            )
+    {
+        if (m_mResources.find(name) != m_mResources.end())
+        {
+            return nullptr;
+        }
+
+        m_mResources[name] = std::make_unique<BufferResource>(usage, memoryProperties, sizeInByte);
+        return static_cast<BufferResource*>(m_mResources.at(name).get());
+    }
+
 protected:
     ResourceMap m_mResources;
 };
