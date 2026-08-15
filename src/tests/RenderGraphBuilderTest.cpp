@@ -94,7 +94,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     }
 }
 
-TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: A cube with descriptor sets", "[RenderGraphBuilder]")
+TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene with descriptor sets", "[RenderGraphBuilder]")
 {
     RenderGraphBuilder builder(GetRenderDevice());
 
@@ -188,7 +188,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: A cube with des
         }};
 
     RenderGraphNodeCreateInfo cubePassCreateInfo = {
-        .nodeName = "CubeNode",
+        .nodeName = "OpaquePass",
         .queueType = QueueType::GRAPHICS,
         .resourceUses =
             {
@@ -248,7 +248,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: A cube with des
     builder.Build();
 
     {
-        RenderDocScopedCapture capture("test_cube");
+        RenderDocScopedCapture capture("test_mazda_scene");
         builder.Execute();
     }
 }
