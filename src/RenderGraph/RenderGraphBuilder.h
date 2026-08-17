@@ -121,6 +121,10 @@ private:
 
     void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses);
 
+    // Resolve a handle to its concrete resource: imported resources take priority,
+    // otherwise look in the graph-owned resource manager.
+    const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
+
     // Auto wraps a graphics node's work in vkCmdBeginRendering/vkCmdEndRendering.
     bool BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn, RenderGraphNodeContext& ctx,
                         std::unordered_set<ResourceHandle>& alreadyWritten,

@@ -15,6 +15,7 @@
 #include "RenderResources/Geometry.h"
 #include "PerObjResourceManager.h"
 #include "Camera.h"
+#include "RenderResources/RenderTargetResource.h"
 #include "catch2/catch_message.hpp"
 #include "vulkan/vulkan_core.h"
 
@@ -23,14 +24,66 @@ static constexpr int HEIGHT = 600;
 
 namespace Muyo::RenderGraph
 {
+// Copies the (already rendered) color target back to the host and returns how many
+// pixels are not fully black. A value of 0 means nothing was actually drawn.
+static uint32_t CountNonBlackPixels(RenderTarget* pTarget)
+{
+    const VkExtent2D extent = {WIDTH, HEIGHT};
+    const size_t pixelSize = 8;  // R16G16B16A16_SFLOAT
+    const size_t bufferSize = static_cast<size_t>(extent.width) * extent.height * pixelSize;
+
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, bufferSize);
+
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            // The graph leaves color attachments in COLOR_ATTACHMENT_OPTIMAL.
+            VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.image = pTarget->getImage();
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+            VkBufferImageCopy region{};
+            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.imageExtent = {extent.width, extent.height, 1};
+            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   readback.buffer(), 1, &region);
+        });
+
+    void* pData = readback.Map();
+    const uint16_t* pPixels = static_cast<const uint16_t*>(pData);
+    uint32_t nNonBlack = 0;
+    const size_t nPixels = static_cast<size_t>(extent.width) * extent.height;
+    for (size_t i = 0; i < nPixels; ++i)
+    {
+        if (pPixels[i * 4 + 0] > 0 || pPixels[i * 4 + 1] > 0 || pPixels[i * 4 + 2] > 0)
+        {
+            ++nNonBlack;
+        }
+    }
+    readback.Unmap();
+    return nNonBlack;
+}
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descriptor sets", "[RenderGraphBuilder]")
 {
-    // Prepare the shared quad geometry so we can draw something.
-    GetMeshResourceManager()->PrepareSimpleMeshes();
-    GetMeshResourceManager()->UploadMeshData();
-    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
-    const Mesh& quad = GetMeshResourceManager()->GetQuad();
+    // Create a small quad directly (do NOT use MeshResourceManager — its singleton
+    // state is shared with the mazda scene test and would corrupt the mesh buffers).
+    std::vector<Vertex> quadVertices = {
+        {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}},
+        {{ 1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}},
+        {{ 1.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 0.0f}},
+        {{-1.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
+    };
+    std::vector<uint32_t> quadIndices = {0, 1, 2, 2, 3, 0};
+    auto* pQuadVB = GetRenderResourceManager()->GetVertexBuffer<Vertex>("TestQuadVertexBuffer", quadVertices);
+    auto* pQuadIB = GetRenderResourceManager()->GetIndexBuffer<uint32_t>("TestQuadIndexBuffer", quadIndices);
+    const uint32_t nQuadIndexCount = static_cast<uint32_t>(quadIndices.size());
 
     RenderGraphBuilder builder(GetRenderDevice());
 
@@ -39,21 +92,22 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
                         ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
                                           .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                   VK_IMAGE_USAGE_SAMPLED_BIT});
-    // Externally owned mesh buffers (created by the mesh manager).
-    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
-    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+                                                   VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    // Externally owned quad buffers (created above, not from the mesh manager).
+    builder.ImportResource("TestQuadVertexBuffer", pQuadVB);
+    builder.ImportResource("TestQuadIndexBuffer", pQuadIB);
 
     RenderGraphNodeCreateInfo quadPassCreateInfo = {
         .nodeName = "QuadNode",
         .queueType = QueueType::GRAPHICS,
         .resourceUses =
             {
-                ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
+                ResourceUse{.handle = ResourceHandle("TestQuadVertexBuffer"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::VERTEX_BUFFER,
                             .kind = ResourceKind::BUFFER},
-                ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
+                ResourceUse{.handle = ResourceHandle("TestQuadIndexBuffer"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::INDEX_BUFFER,
                             .kind = ResourceKind::BUFFER},
@@ -70,11 +124,11 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
                                    }}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
         .execute =
-            [&quad](RenderGraphNodeContext& ctx)
+            [nQuadIndexCount](RenderGraphNodeContext& ctx)
         {
             // Render pass begin/end, pipeline, viewport/scissor and descriptor sets are handled by the graph.
-            auto* pVertexBuffer = ctx.GetResource<VertexBuffer<Vertex>>("MeshVertexBuffer");
-            auto* pIndexBuffer = ctx.GetResource<IndexBuffer>("MeshIndexBuffer");
+            auto* pVertexBuffer = ctx.GetResource<VertexBuffer<Vertex>>("TestQuadVertexBuffer");
+            auto* pIndexBuffer = ctx.GetResource<IndexBuffer>("TestQuadIndexBuffer");
             REQUIRE(pVertexBuffer != nullptr);
             REQUIRE(pIndexBuffer != nullptr);
 
@@ -82,7 +136,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
             VkBuffer vertexBuffer = pVertexBuffer->buffer();
             vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
             vkCmdBindIndexBuffer(ctx.commandBuffer, pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(ctx.commandBuffer, quad.m_nIndexCount, 1, quad.m_nIndexOffset, 0, 0);
+            vkCmdDrawIndexed(ctx.commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
         }};
 
     builder.AddNode(quadPassCreateInfo);
@@ -92,6 +146,11 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
         RenderDocScopedCapture capture("test_quad");
         builder.Execute();
     }
+
+    // The quad must actually cover the viewport.
+    auto* pQuadTarget = GetRenderResourceManager()->GetColorTarget("TriangleOutput");
+    REQUIRE(pQuadTarget != nullptr);
+    REQUIRE(CountNonBlackPixels(pQuadTarget) > 0);
 }
 
 TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene with descriptor sets", "[RenderGraphBuilder]")
@@ -103,7 +162,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
                         ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
                                           .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                   VK_IMAGE_USAGE_SAMPLED_BIT});
+                                                   VK_IMAGE_USAGE_SAMPLED_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     builder.AddResource("PreViewData",
                         BufferResourceDesc{.count = 1,
                                            .stride = sizeof(PerViewData),
@@ -181,6 +241,9 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
                 }
             }
             nDrawCommandCount = static_cast<uint32_t>(drawCommands.size());
+            INFO("nDrawCommandCount = " << nDrawCommandCount
+                 << ", opaque nodes = " << vpGeometryNodes.size());
+            REQUIRE(nDrawCommandCount > 0);
 
             auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
             REQUIRE(pDrawCmdBuffer != nullptr);
@@ -244,12 +307,18 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
 
     builder.AddNode(drawCommandPrepPass);
     builder.AddNode(cubePassCreateInfo);
-    builder.AddDependency(cubePassCreateInfo.nodeName, drawCommandPrepPass.nodeName);
+    builder.AddDependency(drawCommandPrepPass.nodeName, cubePassCreateInfo.nodeName);
     builder.Build();
 
     {
         RenderDocScopedCapture capture("test_mazda_scene");
         builder.Execute();
     }
+
+    // The mazda scene must actually produce visible geometry.
+    auto* pSceneTarget = GetRenderResourceManager()->GetColorTarget("TriangleOutput");
+    REQUIRE(pSceneTarget != nullptr);
+
+    REQUIRE(CountNonBlackPixels(pSceneTarget) > 0);
 }
 }  // namespace Muyo::RenderGraph
