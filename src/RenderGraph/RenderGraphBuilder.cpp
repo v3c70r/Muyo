@@ -77,6 +77,15 @@ std::optional<ResourceDesc> RenderGraphBuilder::GetResourceDesc(const ResourceHa
     return it != m_resourceDescRegistry.end() ? std::optional<ResourceDesc>{it->second} : std::nullopt;
 }
 
+const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle& handle) const
+{
+    if (auto it = m_importedResources.find(handle); it != m_importedResources.end())
+    {
+        return it->second;
+    }
+    return GetRenderResourceManager()->template GetResource<IRenderResource>(handle);
+}
+
 RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(
     const RenderGraphBuilder::RenderGraphNode& rgn)
 {
@@ -321,7 +330,7 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
             continue;
         }
 
-        const auto* image = ctx.resourceManager.template GetResource<ImageResource>(use.handle);
+        const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
         if (!image) continue;
 
         VkRenderingAttachmentInfo attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
@@ -420,7 +429,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
 
         if (use.kind == ResourceKind::IMAGE)
         {
-            const auto* image = GetRenderResourceManager()->template GetResource<ImageResource>(use.handle);
+            const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
             if (!image) continue;
 
             VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
@@ -439,7 +448,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         }
         else if (use.kind == ResourceKind::BUFFER)
         {
-            const auto* buffer = GetRenderResourceManager()->template GetResource<BufferResource>(use.handle);
+            const auto* buffer = dynamic_cast<const BufferResource*>(ResolveResource(use.handle));
             if (!buffer) continue;
 
             VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
@@ -467,7 +476,8 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
     VkPipelineStageFlags srcStageMask = 0;
     VkPipelineStageFlags dstStageMask = 0;
     // Conservative stage masks: use ALL_COMMANDS so any prior stage is flushed and any later stage is blocked.
-    srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    // HOST must be included explicitly so CPU-written (host-visible) buffers with HOST_WRITE srcAccess are valid.
+    srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_HOST_BIT;
     dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 
     vkCmdPipelineBarrier(cmdBuf, srcStageMask, dstStageMask, 0, 0, nullptr, bufferBarriers.size(), bufferBarriers.data(),
@@ -541,15 +551,7 @@ void RenderGraphBuilder::Execute()
                 for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
                 {
                     if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
-                    const IRenderResource* pResource = nullptr;
-                    if (use.kind == ResourceKind::BUFFER)
-                    {
-                        pResource = context.resourceManager.template GetResource<BufferResource>(use.handle);
-                    }
-                    else if (use.kind == ResourceKind::IMAGE)
-                    {
-                        pResource = context.resourceManager.template GetResource<ImageResource>(use.handle);
-                    }
+                    const IRenderResource* pResource = ResolveResource(use.handle);
                     if (pResource)
                     {
                         m_descriptorSetManager.BindResourceToDescriptorSet(pResource, use.bindingSemantic, 0);
