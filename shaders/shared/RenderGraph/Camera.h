@@ -19,6 +19,10 @@ struct PerViewData
     GPU_FLOAT fAperture = 3.0F;
     GPU_FLOAT fFocalDistance = 10.0F;
     GPU_FLOAT fLeftSplitScreenRatio = 0.5F;
+
+    // World-space frustum planes (left, right, bottom, top, near, far), packed as
+    // (normal.xyz, distance). Used by the GPU frustum culling pass.
+    GPU_FLOAT4 vFrustumPlanes[6];
 };
 
 struct PerSubmeshData
@@ -35,6 +39,11 @@ struct PerObjData
     GPU_UINT nSubmeshCount;
     GPU_FLOAT3 vPadding;
     PerSubmeshData vSubmeshDatas[MAX_NUM_SUBMESHES];
+    // Object-space (local) axis aligned bounding box, used by GPU frustum culling.
+    GPU_FLOAT3 vAABBMin;
+    GPU_FLOAT  fAABBPadding0;
+    GPU_FLOAT3 vAABBMax;
+    GPU_FLOAT  fAABBPadding1;
 };
 
 // Material

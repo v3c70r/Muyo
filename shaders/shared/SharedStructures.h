@@ -81,6 +81,11 @@ struct PerObjData
     uint nSubmeshCount;
     vec3 vPadding;
     PerSubmeshData vSubmeshDatas[MAX_NUM_SUBMESHES];
+    // Object-space (local) axis aligned bounding box, used by GPU frustum culling.
+    vec3 vAABBMin;
+    float fAABBPadding0;
+    vec3 vAABBMax;
+    float fAABBPadding1;
 };
 
 // Instance Id: 

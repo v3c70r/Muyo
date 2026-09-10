@@ -27,6 +27,11 @@ static constexpr int HEIGHT = 600;
 // The GPU-generated command layout must match the Vulkan indirect draw command exactly.
 static_assert(sizeof(Muyo::DrawIndexedCommand) == sizeof(VkDrawIndexedIndirectCommand),
               "GPU draw command must match VkDrawIndexedIndirectCommand layout");
+// PerObjData is shared with Slang; keep the CPU and GPU layouts in lock-step.
+static_assert(sizeof(Muyo::PerObjData) == 64 + 4 + 12 + 32 * 16 + 32,
+              "PerObjData layout changed; update shaders/shared/RenderGraph/Camera.h to match");
+static_assert(sizeof(Muyo::PerViewData) == 256 + 16 + 16 + 16 + 16 + 96,
+              "PerViewData layout changed; update shaders/shared/RenderGraph/Camera.h to match");
 
 namespace Muyo::RenderGraph
 {
@@ -159,8 +164,21 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     REQUIRE(CountNonBlackPixels(pQuadTarget) > 0);
 }
 
-TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw commands via compute pass",
-                 "[RenderGraphBuilder]")
+// Result of a single GPU-driven frame: how many draw sources the CPU uploaded, how many
+// survived GPU frustum culling, and how many pixels were actually shaded.
+struct GPUCullingResult
+{
+    uint32_t nSourceCount = 0;
+    uint32_t nVisibleCount = 0;
+    uint32_t nNonBlackPixels = 0;
+};
+
+// Builds and runs the GPU-driven graph once for the given camera transform.
+//
+// The CPU only flattens the scene into DrawSource metadata; the compute pass transforms each
+// object's AABB, culls it against the frustum and compacts the surviving draw commands. The
+// graphics pass then issues vkCmdDrawIndexedIndirectCount using the GPU-written count.
+static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const glm::mat4& view, const glm::mat4& proj)
 {
     RenderGraphBuilder builder(GetRenderDevice());
 
@@ -177,7 +195,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     // Scene metadata: one entry per submesh that *may* be drawn. This is the only input the
-    // CPU produces for the GPU-driven path; the actual draw commands are built on the GPU.
+    // CPU produces for the GPU-driven path; culling and command building happen on the GPU.
     builder.AddResource("DrawSources",
                         BufferResourceDesc{.count = 1024,
                                            .stride = sizeof(DrawSource),
@@ -207,8 +225,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
     builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
     builder.ImportResource("PerObjData", GetPerObjResourceManager()->GetPerObjResource());
 
-    // Number of source entries the CPU uploaded; the GPU must produce the same number of draw commands.
-    uint32_t nDrawCommandCount = 0;
+    // Number of source entries the CPU uploaded.
+    uint32_t nSourceCount = 0;
 
     // CPU node: flattens the scene into DrawSource metadata and uploads the camera UBO.
     // It deliberately does NOT build the draw commands: that happens on the GPU below.
@@ -227,19 +245,16 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
                             .kind = ResourceKind::BUFFER},
             },
         .execute =
-            [this, &nDrawCommandCount](RenderGraphNodeContext& ctx)
+            [&nSourceCount, &drawList, view, proj](RenderGraphNodeContext& ctx)
         {
-            // Camera per-view data.
-            Arcball camera(glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F),
-                           glm::lookAt(glm::vec3(0.0F, 0.0F, -2.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)),
-                           0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
-
             PerViewData perView;
-            perView.mProj = camera.GetProjMat();
-            perView.mView = camera.GetViewMat();
+            perView.mProj = proj;
+            perView.mView = view;
             perView.mProjInv = glm::inverse(perView.mProj);
             perView.mViewInv = glm::inverse(perView.mView);
             perView.vScreenExtent = {WIDTH, HEIGHT};
+            // World-space frustum planes consumed by the GPU culling pass.
+            ExtractFrustumPlanes(perView.mProj * perView.mView, perView.vFrustumPlanes);
 
             auto* pPreView = ctx.GetResource<BufferResource>("PreViewData");
             REQUIRE(pPreView != nullptr);
@@ -247,7 +262,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
 
             // Flatten the opaque scene nodes into per-submesh DrawSource metadata.
             std::vector<DrawSource> drawSources;
-            const std::vector<const SceneNode*>& vpGeometryNodes = m_mDrawList.m_aDrawLists[DrawLists::DL_OPAQUE];
+            const std::vector<const SceneNode*>& vpGeometryNodes = drawList.m_aDrawLists[DrawLists::DL_OPAQUE];
             for (const SceneNode* pGeometryNode : vpGeometryNodes)
             {
                 const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
@@ -266,17 +281,15 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
                     drawSources.push_back(source);
                 }
             }
-            nDrawCommandCount = static_cast<uint32_t>(drawSources.size());
-            INFO("nDrawCommandCount = " << nDrawCommandCount
-                 << ", opaque nodes = " << vpGeometryNodes.size());
-            REQUIRE(nDrawCommandCount > 0);
+            nSourceCount = static_cast<uint32_t>(drawSources.size());
+            REQUIRE(nSourceCount > 0);
 
             auto* pDrawSources = ctx.GetResource<BufferResource>("DrawSources");
             REQUIRE(pDrawSources != nullptr);
             pDrawSources->SetData(drawSources.data(), drawSources.size() * sizeof(DrawSource));
         }};
 
-    // Compute node: turns the scene metadata into real draw commands entirely on the GPU.
+    // Compute node: frustum-culls the scene and generates draw commands entirely on the GPU.
     // Descriptors are bound by explicit set/binding taken from the shader reflection, so the
     // pass is free to use its own resource set instead of the built-in semantic sets.
     RenderGraphNodeCreateInfo cullingPass = {
@@ -299,10 +312,20 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
                             .kind = ResourceKind::BUFFER,
                             .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                ResourceUse{.handle = ResourceHandle("PreViewData"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 3}},
+                ResourceUse{.handle = ResourceHandle("PerObjData"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 4}},
             },
         .shaderNames = {"prepareDrawCmdBuffer.comp.slang"},
         .execute =
-            [&nDrawCommandCount](RenderGraphNodeContext& ctx)
+            [&nSourceCount](RenderGraphNodeContext& ctx)
         {
             const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
             const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
@@ -320,13 +343,13 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
             const uint32_t maxDrawCommands =
                 static_cast<uint32_t>(pDrawCmdBuffer->GetSize() / sizeof(VkDrawIndexedIndirectCommand));
             PrepareDrawCmdParams params{};
-            params.sourceCount = nDrawCommandCount;
+            params.sourceCount = nSourceCount;
             params.maxDrawCommands = maxDrawCommands;
             vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params),
                                &params);
 
             const uint32_t nThreads = 256;
-            const uint32_t nGroups = (nDrawCommandCount + nThreads - 1) / nThreads;
+            const uint32_t nGroups = (nSourceCount + nThreads - 1) / nThreads;
             vkCmdDispatch(ctx.commandBuffer, nGroups, 1, 1);
         }};
 
@@ -374,7 +397,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
                                    }}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
         .execute =
-            [&nDrawCommandCount](RenderGraphNodeContext& ctx)
+            [&nSourceCount](RenderGraphNodeContext& ctx)
         {
             const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
             const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
@@ -389,7 +412,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
 
             // The draw count is produced on the GPU; the CPU never touches it.
             vkCmdDrawIndexedIndirectCount(ctx.commandBuffer, pDrawCmdBuffer->buffer(), 0, pDrawCount->buffer(), 0,
-                                          nDrawCommandCount, sizeof(VkDrawIndexedIndirectCommand));
+                                          nSourceCount, sizeof(VkDrawIndexedIndirectCommand));
         }};
 
     builder.AddNode(drawCommandPrepPass);
@@ -398,24 +421,11 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
     builder.AddDependency(drawCommandPrepPass.nodeName, cullingPass.nodeName);
     builder.AddDependency(cullingPass.nodeName, cubePassCreateInfo.nodeName);
     builder.Build();
+    builder.Execute();
 
-    {
-        RenderDocScopedCapture capture("test_mazda_scene");
-        builder.Execute();
-    }
-
-    // The mazda scene must actually produce visible geometry.
-    auto* pSceneTarget = GetRenderResourceManager()->GetColorTarget("TriangleOutput");
-    REQUIRE(pSceneTarget != nullptr);
-
-    REQUIRE(CountNonBlackPixels(pSceneTarget) > 0);
-
-    // The draw count was written by the compute pass on the GPU; read it back and compare
-    // against the number of submeshes the CPU uploaded as DrawSource metadata.
+    // Read back the GPU-generated draw count.
     auto* pDrawCount = GetRenderResourceManager()->GetResource<BufferResource>("DrawCount");
-    auto* pDrawCommands = GetRenderResourceManager()->GetResource<BufferResource>("GBuffer draw commands");
     REQUIRE(pDrawCount != nullptr);
-    REQUIRE(pDrawCommands != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t));
     GetRenderDevice()->ExecuteImmediateCommand(
@@ -425,11 +435,81 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw
             copyRegion.size = sizeof(uint32_t);
             vkCmdCopyBuffer(cmdBuf, pDrawCount->buffer(), readback.buffer(), 1, &copyRegion);
         });
-    const uint32_t nGpuDrawCount = *static_cast<const uint32_t*>(readback.Map());
+    const uint32_t nVisibleCount = *static_cast<const uint32_t*>(readback.Map());
     readback.Unmap();
 
-    INFO("CPU draw sources = " << nDrawCommandCount << ", GPU-generated draw commands = " << nGpuDrawCount);
-    REQUIRE(nGpuDrawCount > 0);
-    REQUIRE(nGpuDrawCount == nDrawCommandCount);
+    GPUCullingResult result;
+    result.nSourceCount = nSourceCount;
+    result.nVisibleCount = nVisibleCount;
+
+    auto* pSceneTarget = GetRenderResourceManager()->GetColorTarget("TriangleOutput");
+    REQUIRE(pSceneTarget != nullptr);
+    result.nNonBlackPixels = CountNonBlackPixels(pSceneTarget);
+    return result;
+}
+
+TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum culling", "[RenderGraphBuilder]")
+{
+    const glm::mat4 proj = glm::perspective(glm::radians(80.0F),
+                                            static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+
+    // Scenario 1: camera two units in front of the scene, looking at the origin. Some geometry
+    // must survive culling and actually be shaded.
+    uint32_t nVisibleWhenFacing = 0;
+    {
+        const glm::mat4 view =
+            glm::lookAt(glm::vec3(0.0F, 0.0F, -2.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+
+        RenderDocScopedCapture capture("test_gpu_frustum_culling_visible");
+        const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, proj);
+        nVisibleWhenFacing = result.nVisibleCount;
+
+        INFO("CPU draw sources = " << result.nSourceCount << ", GPU-visible = " << result.nVisibleCount
+                                   << ", non-black pixels = " << result.nNonBlackPixels);
+
+        REQUIRE(result.nVisibleCount > 0);
+        REQUIRE(result.nNonBlackPixels > 0);
+        // Culling must never add draws.
+        REQUIRE(result.nVisibleCount <= result.nSourceCount);
+    }
+
+    // Scenario 2: same camera position, but rotated 180 degrees so the scene is behind it.
+    // Frustum culling must reject dramatically more objects and nothing may be rendered.
+    {
+        const glm::mat4 view =
+            glm::lookAt(glm::vec3(0.0F, 0.0F, -2.0F), glm::vec3(0.0F, 0.0F, -4.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+
+        RenderDocScopedCapture capture("test_gpu_frustum_culling_away");
+        const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, proj);
+
+        INFO("CPU draw sources = " << result.nSourceCount << ", GPU-visible = " << result.nVisibleCount
+                                   << ", non-black pixels = " << result.nNonBlackPixels);
+
+        REQUIRE(result.nSourceCount > 0);
+        // Behind the camera the frustum keeps far fewer objects (large bounds may still clip).
+        REQUIRE(result.nVisibleCount < nVisibleWhenFacing);
+        // Nothing is actually in front of the camera, so nothing is shaded.
+        REQUIRE(result.nNonBlackPixels == 0);
+    }
+
+    // Scenario 3: a narrow frustum aimed at a slice of the scene. Only the geometry inside the
+    // slice may survive; the rest must be culled on the GPU.
+    {
+        const glm::mat4 narrowProj = glm::perspective(glm::radians(20.0F),
+                                                      static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+        const glm::mat4 view =
+            glm::lookAt(glm::vec3(0.0F, 0.0F, 1.5F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+
+        RenderDocScopedCapture capture("test_gpu_frustum_culling_partial");
+        const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, narrowProj);
+
+        INFO("CPU draw sources = " << result.nSourceCount << ", GPU-visible = " << result.nVisibleCount
+                                   << ", non-black pixels = " << result.nNonBlackPixels);
+
+        // Partial culling: some geometry is kept, some is rejected, and the kept geometry draws.
+        REQUIRE(result.nVisibleCount > 0);
+        REQUIRE(result.nVisibleCount < result.nSourceCount);
+        REQUIRE(result.nNonBlackPixels > 0);
+    }
 }
 }  // namespace Muyo::RenderGraph
