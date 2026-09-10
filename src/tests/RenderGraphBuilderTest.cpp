@@ -12,6 +12,8 @@
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphResourceDesc.h"
 #include "Scene/Scene.h"
+#include "SharedStructures.h"
+#include "RenderGraph/DrawCommands.h"
 #include "RenderResources/Geometry.h"
 #include "PerObjResourceManager.h"
 #include "Camera.h"
@@ -21,6 +23,10 @@
 
 static constexpr int WIDTH = 800;
 static constexpr int HEIGHT = 600;
+
+// The GPU-generated command layout must match the Vulkan indirect draw command exactly.
+static_assert(sizeof(Muyo::DrawIndexedCommand) == sizeof(VkDrawIndexedIndirectCommand),
+              "GPU draw command must match VkDrawIndexedIndirectCommand layout");
 
 namespace Muyo::RenderGraph
 {
@@ -153,7 +159,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     REQUIRE(CountNonBlackPixels(pQuadTarget) > 0);
 }
 
-TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene with descriptor sets", "[RenderGraphBuilder]")
+TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU-driven draw commands via compute pass",
+                 "[RenderGraphBuilder]")
 {
     RenderGraphBuilder builder(GetRenderDevice());
 
@@ -169,12 +176,30 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
                                            .stride = sizeof(PerViewData),
                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
-    // Preallocated scratch buffer that the CPU node fills with actual draw commands.
+    // Scene metadata: one entry per submesh that *may* be drawn. This is the only input the
+    // CPU produces for the GPU-driven path; the actual draw commands are built on the GPU.
+    builder.AddResource("DrawSources",
+                        BufferResourceDesc{.count = 1024,
+                                           .stride = sizeof(DrawSource),
+                                           .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    // GPU-written, indirect-drawn command list (compacted by the compute pass).
     builder.AddResource("GBuffer draw commands",
                         BufferResourceDesc{.count = 1024,
                                            .stride = sizeof(VkDrawIndexedIndirectCommand),
-                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    // GPU-written atomic counter consumed by vkCmdDrawIndexedIndirectCount (and read back for the test).
+    builder.AddResource("DrawCount",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = sizeof(uint32_t),
+                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
 
     // Imported resources (owned by the mesh / per-obj managers).
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
@@ -182,18 +207,19 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
     builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
     builder.ImportResource("PerObjData", GetPerObjResourceManager()->GetPerObjResource());
 
-    // Shared between the CPU node (producer) and the graphics node (consumer).
+    // Number of source entries the CPU uploaded; the GPU must produce the same number of draw commands.
     uint32_t nDrawCommandCount = 0;
 
-    // CPU node: builds draw commands and uploads the camera UBO on the host.
+    // CPU node: flattens the scene into DrawSource metadata and uploads the camera UBO.
+    // It deliberately does NOT build the draw commands: that happens on the GPU below.
     RenderGraphNodeCreateInfo drawCommandPrepPass = {
         .nodeName = "DrawCmdPrep",
         .queueType = QueueType::CPU,
         .resourceUses =
             {
-                ResourceUse{.handle = ResourceHandle("GBuffer draw commands"),
+                ResourceUse{.handle = ResourceHandle("DrawSources"),
                             .io = ResourceIOType::WRITE,
-                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
                             .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("PreViewData"),
                             .io = ResourceIOType::WRITE,
@@ -219,8 +245,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
             REQUIRE(pPreView != nullptr);
             pPreView->SetData(&perView, sizeof(perView));
 
-            // Build indirect draw commands from the opaque scene nodes.
-            std::vector<VkDrawIndexedIndirectCommand> drawCommands;
+            // Flatten the opaque scene nodes into per-submesh DrawSource metadata.
+            std::vector<DrawSource> drawSources;
             const std::vector<const SceneNode*>& vpGeometryNodes = m_mDrawList.m_aDrawLists[DrawLists::DL_OPAQUE];
             for (const SceneNode* pGeometryNode : vpGeometryNodes)
             {
@@ -228,26 +254,80 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
                 uint32_t nSubmeshIndex = 0;
                 for (const auto& pSubmesh : pGeometry->getSubmeshes())
                 {
-                    VkDrawIndexedIndirectCommand drawCommand;
                     const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
 
-                    drawCommand.indexCount = mesh.m_nIndexCount;
-                    drawCommand.instanceCount = 1;
-                    drawCommand.firstIndex = mesh.m_nIndexOffset;
-                    drawCommand.vertexOffset = 0;
-                    drawCommand.firstInstance = PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++);
+                    DrawSource source{};
+                    source.indexCount = mesh.m_nIndexCount;
+                    source.firstIndex = mesh.m_nIndexOffset;
+                    source.vertexOffset = 0;
+                    source.perObjId = static_cast<uint32_t>(pGeometryNode->GetPerObjId());
+                    source.submeshIndex = nSubmeshIndex++;
 
-                    drawCommands.push_back(drawCommand);
+                    drawSources.push_back(source);
                 }
             }
-            nDrawCommandCount = static_cast<uint32_t>(drawCommands.size());
+            nDrawCommandCount = static_cast<uint32_t>(drawSources.size());
             INFO("nDrawCommandCount = " << nDrawCommandCount
                  << ", opaque nodes = " << vpGeometryNodes.size());
             REQUIRE(nDrawCommandCount > 0);
 
-            auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
+            auto* pDrawSources = ctx.GetResource<BufferResource>("DrawSources");
+            REQUIRE(pDrawSources != nullptr);
+            pDrawSources->SetData(drawSources.data(), drawSources.size() * sizeof(DrawSource));
+        }};
+
+    // Compute node: turns the scene metadata into real draw commands entirely on the GPU.
+    // Descriptors are bound by explicit set/binding taken from the shader reflection, so the
+    // pass is free to use its own resource set instead of the built-in semantic sets.
+    RenderGraphNodeCreateInfo cullingPass = {
+        .nodeName = "DrawCmdGenerationPass",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("DrawSources"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                ResourceUse{.handle = ResourceHandle("GBuffer draw commands"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                ResourceUse{.handle = ResourceHandle("DrawCount"),
+                            .io = ResourceIOType::READ_WRITE,
+                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+            },
+        .shaderNames = {"prepareDrawCmdBuffer.comp.slang"},
+        .execute =
+            [&nDrawCommandCount](RenderGraphNodeContext& ctx)
+        {
+            const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
+            const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
+            REQUIRE(pDrawCount != nullptr);
             REQUIRE(pDrawCmdBuffer != nullptr);
-            pDrawCmdBuffer->SetData(drawCommands.data(), drawCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
+
+            // Reset the atomic counter to zero before the dispatch.
+            vkCmdFillBuffer(ctx.commandBuffer, pDrawCount->buffer(), 0, sizeof(uint32_t), 0);
+            VkMemoryBarrier fillBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+            fillBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            fillBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            vkCmdPipelineBarrier(ctx.commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
+
+            const uint32_t maxDrawCommands =
+                static_cast<uint32_t>(pDrawCmdBuffer->GetSize() / sizeof(VkDrawIndexedIndirectCommand));
+            PrepareDrawCmdParams params{};
+            params.sourceCount = nDrawCommandCount;
+            params.maxDrawCommands = maxDrawCommands;
+            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params),
+                               &params);
+
+            const uint32_t nThreads = 256;
+            const uint32_t nGroups = (nDrawCommandCount + nThreads - 1) / nThreads;
+            vkCmdDispatch(ctx.commandBuffer, nGroups, 1, 1);
         }};
 
     RenderGraphNodeCreateInfo cubePassCreateInfo = {
@@ -277,6 +357,10 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
                             .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("DrawCount"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("TriangleOutput"),
                             .io = ResourceIOType::WRITE,
                             .usage = ResourceUsage::COLOR_ATTACHMENT,
@@ -290,10 +374,12 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
                                    }}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
         .execute =
-            [this, &nDrawCommandCount](RenderGraphNodeContext& ctx)
+            [&nDrawCommandCount](RenderGraphNodeContext& ctx)
         {
             const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
+            const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
             REQUIRE(pDrawCmdBuffer != nullptr);
+            REQUIRE(pDrawCount != nullptr);
 
             const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
@@ -301,13 +387,16 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
             vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
             vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
 
-            vkCmdDrawIndexedIndirect(ctx.commandBuffer, pDrawCmdBuffer->buffer(), 0, nDrawCommandCount,
-                                     sizeof(VkDrawIndexedIndirectCommand));
+            // The draw count is produced on the GPU; the CPU never touches it.
+            vkCmdDrawIndexedIndirectCount(ctx.commandBuffer, pDrawCmdBuffer->buffer(), 0, pDrawCount->buffer(), 0,
+                                          nDrawCommandCount, sizeof(VkDrawIndexedIndirectCommand));
         }};
 
     builder.AddNode(drawCommandPrepPass);
+    builder.AddNode(cullingPass);
     builder.AddNode(cubePassCreateInfo);
-    builder.AddDependency(drawCommandPrepPass.nodeName, cubePassCreateInfo.nodeName);
+    builder.AddDependency(drawCommandPrepPass.nodeName, cullingPass.nodeName);
+    builder.AddDependency(cullingPass.nodeName, cubePassCreateInfo.nodeName);
     builder.Build();
 
     {
@@ -320,5 +409,27 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: Mazda scene wit
     REQUIRE(pSceneTarget != nullptr);
 
     REQUIRE(CountNonBlackPixels(pSceneTarget) > 0);
+
+    // The draw count was written by the compute pass on the GPU; read it back and compare
+    // against the number of submeshes the CPU uploaded as DrawSource metadata.
+    auto* pDrawCount = GetRenderResourceManager()->GetResource<BufferResource>("DrawCount");
+    auto* pDrawCommands = GetRenderResourceManager()->GetResource<BufferResource>("GBuffer draw commands");
+    REQUIRE(pDrawCount != nullptr);
+    REQUIRE(pDrawCommands != nullptr);
+
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t));
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            VkBufferCopy copyRegion{};
+            copyRegion.size = sizeof(uint32_t);
+            vkCmdCopyBuffer(cmdBuf, pDrawCount->buffer(), readback.buffer(), 1, &copyRegion);
+        });
+    const uint32_t nGpuDrawCount = *static_cast<const uint32_t*>(readback.Map());
+    readback.Unmap();
+
+    INFO("CPU draw sources = " << nDrawCommandCount << ", GPU-generated draw commands = " << nGpuDrawCount);
+    REQUIRE(nGpuDrawCount > 0);
+    REQUIRE(nGpuDrawCount == nDrawCommandCount);
 }
 }  // namespace Muyo::RenderGraph

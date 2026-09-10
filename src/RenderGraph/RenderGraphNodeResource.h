@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <optional>
 
 #include "RenderGraphResourceHandle.h"
 #include "vulkan/vulkan_core.h"
@@ -70,6 +71,16 @@ enum class ResourceBindingSemantic : uint8_t
     NONE,
 };
 
+// Explicit shader descriptor location (set + binding) for a resource.
+// When set on a ResourceUse the graph builds the node's descriptors from this
+// instead of the built-in semantic sets. Required for arbitrary compute passes
+// (e.g. GPU-driven draw command generation) whose shaders bind raw set/binding.
+struct DescriptorBinding
+{
+    uint32_t set = 0;
+    uint32_t binding = 0;
+};
+
 // Interface ResourceUse that passed into RenderGraphBuilder
 struct ResourceUse
 {
@@ -78,6 +89,8 @@ struct ResourceUse
     ResourceUsage usage;
     ResourceKind kind;
     ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;
+    // Optional explicit descriptor location. Only used when bindingSemantic == NONE.
+    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;
 };
 
 // Resolved ResourceUse used within RenderGraph
@@ -100,6 +113,7 @@ struct ResolvedResourceUse
     VkExtent3D extent;          // optional
 
     ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;
+    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;
 };
 
 }  // namespace Muyo::RenderGraph

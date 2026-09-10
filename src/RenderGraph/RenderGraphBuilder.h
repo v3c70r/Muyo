@@ -111,6 +111,13 @@ private:
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
+        // Descriptor sets actually bound for this node. For semantic nodes these alias the
+        // shared PER_VIEW/PER_OBJ/MATERIAL sets; for reflection-bound (compute) nodes these are
+        // freshly allocated sets owned by this compiled node.
+        std::vector<VkDescriptorSet> descriptorSets;
+        // True when descriptorSetLayouts/descriptorSets were derived from the shader reflection
+        // (raw set/binding) rather than the built-in semantic sets. Such sets are destroyed with the node.
+        bool ownsDescriptorSets = false;
         QueueType queueType = QueueType::GRAPHICS;
         VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         RenderGraphNodeCallback execute;
@@ -118,6 +125,11 @@ private:
 
     CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
     void DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn);
+
+    // Build descriptor set layouts + allocate sets from a compute node's merged shader reflection.
+    // Resources declared with an explicit DescriptorBinding are written into the matching set/binding.
+    void BuildReflectionDescriptorSets(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
+                                       const ShaderReflection& mergedReflection);
 
     void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses);
 

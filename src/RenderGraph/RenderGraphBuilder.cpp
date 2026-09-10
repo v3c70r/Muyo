@@ -116,8 +116,15 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
     {
         ShaderReflection mergedReflection = MergeShaderReflections(shaderReflections);
 
-        // Descriptor set layouts: bind the built-in semantic layouts whenever the shaders declare any descriptors.
-        if (!mergedReflection.descriptorBindings.empty())
+        // Descriptor set layouts.
+        //  * Graphics nodes use the built-in semantic layouts (set 0/1/2 = PER_VIEW/PER_OBJ/MATERIAL).
+        //  * Compute nodes build layouts from the shader reflection so shaders can bind arbitrary
+        //    set/binding (e.g. the GPU-driven draw-command generation pass).
+        if (rgn.queueType == QueueType::COMPUTE)
+        {
+            BuildReflectionDescriptorSets(result, rgn, mergedReflection);
+        }
+        else if (!mergedReflection.descriptorBindings.empty())
         {
             result.descriptorSetLayouts.resize(ENUM_COUNT<ResourceBindingSemantic>);
             result.descriptorSetLayouts[0] =
@@ -126,6 +133,10 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
                 m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::PER_OBJ);
             result.descriptorSetLayouts[2] =
                 m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::MATERIAL);
+            result.descriptorSets = {
+                m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_VIEW),
+                m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_OBJ),
+                m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::MATERIAL)};
         }
 
         std::vector<VkPushConstantRange> pushConstantRanges;
@@ -191,8 +202,106 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
     return result;
 }
 
+void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
+                                                      const ShaderReflection& mergedReflection)
+{
+    if (mergedReflection.descriptorBindings.empty()) return;
+
+    // Group the reflected bindings by set index.
+    uint32_t maxSet = 0;
+    for (const auto& binding : mergedReflection.descriptorBindings)
+    {
+        maxSet = std::max(maxSet, binding.set);
+    }
+    const uint32_t setCount = maxSet + 1;
+
+    std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerSet(setCount);
+    for (const auto& binding : mergedReflection.descriptorBindings)
+    {
+        bindingsPerSet[binding.set].push_back({.binding = binding.binding,
+                                               .descriptorType = binding.type,
+                                               .descriptorCount = binding.count,
+                                               .stageFlags = binding.stageFlags,
+                                               .pImmutableSamplers = nullptr});
+    }
+
+    auto& descriptorManager = *GetDescriptorManager();
+    rgn.descriptorSetLayouts.resize(setCount, VK_NULL_HANDLE);
+    rgn.descriptorSets.resize(setCount, VK_NULL_HANDLE);
+    for (uint32_t set = 0; set < setCount; ++set)
+    {
+        rgn.descriptorSetLayouts[set] = descriptorManager.AllocateDescriptorSetLayout(bindingsPerSet[set]);
+        rgn.descriptorSets[set] = descriptorManager.AllocateDescriptorSet(rgn.descriptorSetLayouts[set]);
+    }
+    rgn.ownsDescriptorSets = true;
+
+    // Write the node's explicitly-bound resources into the matching set/binding.
+    for (const auto& use : logicalNode.resourceUses)
+    {
+        if (!use.descriptorBinding.has_value()) continue;
+        const uint32_t set = use.descriptorBinding->set;
+        const uint32_t binding = use.descriptorBinding->binding;
+        if (set >= setCount) continue;
+
+        const IRenderResource* pResource = ResolveResource(use.handle);
+        if (pResource == nullptr) continue;
+
+        // Resolve the descriptor type from the reflection entry that matches this set/binding.
+        VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+        for (const auto& reflected : mergedReflection.descriptorBindings)
+        {
+            if (reflected.set == set && reflected.binding == binding)
+            {
+                descriptorType = reflected.type;
+                break;
+            }
+        }
+        if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;
+
+        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        write.dstSet = rgn.descriptorSets[set];
+        write.dstBinding = binding;
+        write.dstArrayElement = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = descriptorType;
+
+        VkDescriptorBufferInfo bufferInfo{};
+        VkDescriptorImageInfo imageInfo{};
+        if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
+        {
+            bufferInfo.buffer = pBuffer->buffer();
+            bufferInfo.offset = 0;
+            bufferInfo.range = pBuffer->GetSize();
+            write.pBufferInfo = &bufferInfo;
+        }
+        else if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+        {
+            imageInfo.imageView = pImage->getView();
+            imageInfo.imageLayout = (descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                                        ? VK_IMAGE_LAYOUT_GENERAL
+                                        : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            write.pImageInfo = &imageInfo;
+        }
+        else
+        {
+            continue;
+        }
+
+        vkUpdateDescriptorSets(m_vkDevice, 1, &write, 0, nullptr);
+    }
+}
+
 void RenderGraphBuilder::DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn)
 {
+    if (rgn.ownsDescriptorSets && !rgn.descriptorSets.empty())
+    {
+        vkFreeDescriptorSets(m_vkDevice, GetDescriptorManager()->GetDescriptorPool(),
+                             static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data());
+        for (VkDescriptorSetLayout layout : rgn.descriptorSetLayouts)
+        {
+            if (layout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(m_vkDevice, layout, nullptr);
+        }
+    }
     if (rgn.pipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(m_vkDevice, rgn.pipelineLayout, nullptr);
     if (rgn.pipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_vkDevice, rgn.pipeline, nullptr);
 }
@@ -547,23 +656,30 @@ void RenderGraphBuilder::Execute()
 
             if (!rgn.descriptorSetLayouts.empty())
             {
-                // Write the node's resources into the semantic descriptor sets, then bind all three.
-                for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+                if (rgn.ownsDescriptorSets)
                 {
-                    if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
-                    const IRenderResource* pResource = ResolveResource(use.handle);
-                    if (pResource)
-                    {
-                        m_descriptorSetManager.BindResourceToDescriptorSet(pResource, use.bindingSemantic, 0);
-                    }
+                    // Reflection-bound (compute) node: sets were written at Build() time.
+                    vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
+                                            static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data(),
+                                            0, nullptr);
                 }
+                else
+                {
+                    // Semantic node: write the node's resources into the shared sets, then bind all three.
+                    for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+                    {
+                        if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
+                        const IRenderResource* pResource = ResolveResource(use.handle);
+                        if (pResource)
+                        {
+                            m_descriptorSetManager.BindResourceToDescriptorSet(pResource, use.bindingSemantic, 0);
+                        }
+                    }
 
-                std::array<VkDescriptorSet, 3> sets = {
-                    m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_VIEW),
-                    m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_OBJ),
-                    m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::MATERIAL)};
-                vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
-                                        static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
+                    vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
+                                            static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data(),
+                                            0, nullptr);
+                }
             }
         }
 

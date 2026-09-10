@@ -102,6 +102,22 @@ inline uint PackSubmeshObjectIndex(uint nObjectIndex, uint nSubmeshIndex)
     return (nObjectIndex << 5) | nSubmeshIndex;
 }
 
+// Matches VkDispatchIndirectCommand
+struct DispatchCommand {
+    uint x;
+    uint y;
+    uint z;
+};
+
+// Matches VkDrawIndexedIndirectCommand
+struct DrawIndexedCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
+
 #ifdef SHADER_CODE
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #define DeviceAddress uint64_t
