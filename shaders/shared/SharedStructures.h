@@ -70,7 +70,9 @@ struct PBRMaterial
 struct PerSubmeshData
 {
     uint nMaterialIndex;
-    vec3 vPadding;
+    // Explicit 32-bit padding so this matches the std430 layout in the shaders
+    // (a vec3/float3 member would be 16-byte aligned there and double the stride).
+    float vPadding[3];
 };
 
 const uint MAX_NUM_SUBMESHES = 32;
@@ -79,12 +81,14 @@ struct PerObjData
 {
     mat4 mWorldMatrix;
     uint nSubmeshCount;
-    vec3 vPadding;
+    // Scalar float padding instead of vec3: std430 aligns float3 to 16 bytes, which would
+    // desynchronise this struct from the C++ definition used to upload it.
+    float vPadding[3];
     PerSubmeshData vSubmeshDatas[MAX_NUM_SUBMESHES];
     // Object-space (local) axis aligned bounding box, used by GPU frustum culling.
-    vec3 vAABBMin;
+    float vAABBMin[3];
     float fAABBPadding0;
-    vec3 vAABBMax;
+    float vAABBMax[3];
     float fAABBPadding1;
 };
 

@@ -42,7 +42,8 @@ struct PerViewData
 };
 
 // Extract the 6 world-space frustum planes from a view-projection matrix
-// (Gribb-Hartmann). Works with Vulkan's [0,1] depth range.
+// (Gribb-Hartmann). Matches glm::perspective's default OpenGL depth range [-1, 1].
+// Plane normals point inward: a point is inside when dot(normal, p) + distance >= 0.
 inline void ExtractFrustumPlanes(const glm::mat4& mViewProj, glm::vec4 outPlanes[6])
 {
     const glm::vec4 row0 = glm::row(mViewProj, 0);
@@ -50,12 +51,12 @@ inline void ExtractFrustumPlanes(const glm::mat4& mViewProj, glm::vec4 outPlanes
     const glm::vec4 row2 = glm::row(mViewProj, 2);
     const glm::vec4 row3 = glm::row(mViewProj, 3);
 
-    outPlanes[0] = row3 + row0;  // left
-    outPlanes[1] = row3 - row0;  // right
-    outPlanes[2] = row3 + row1;  // bottom
-    outPlanes[3] = row3 - row1;  // top
-    outPlanes[4] = row2;          // near ([0,1] depth convention)
-    outPlanes[5] = row3 - row2;  // far
+    outPlanes[0] = row3 + row0;  // left:   clip.x >= -clip.w
+    outPlanes[1] = row3 - row0;  // right:  clip.x <=  clip.w
+    outPlanes[2] = row3 + row1;  // bottom: clip.y >= -clip.w
+    outPlanes[3] = row3 - row1;  // top:    clip.y <=  clip.w
+    outPlanes[4] = row3 + row2;  // near:   clip.z >= -clip.w (OpenGL depth range)
+    outPlanes[5] = row3 - row2;  // far:    clip.z <=  clip.w
 
     for (int i = 0; i < 6; ++i)
     {

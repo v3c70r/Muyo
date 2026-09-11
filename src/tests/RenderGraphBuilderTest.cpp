@@ -27,7 +27,10 @@ static constexpr int HEIGHT = 600;
 // The GPU-generated command layout must match the Vulkan indirect draw command exactly.
 static_assert(sizeof(Muyo::DrawIndexedCommand) == sizeof(VkDrawIndexedIndirectCommand),
               "GPU draw command must match VkDrawIndexedIndirectCommand layout");
-// PerObjData is shared with Slang; keep the CPU and GPU layouts in lock-step.
+// PerObjData is shared with Slang. Its members must be 4-byte aligned scalars/arrays; a
+// vec3/float3 member would be 16-byte aligned under std430 and silently desynchronise the
+// shader from this C++ definition (which is what uploading relies on).
+static_assert(sizeof(Muyo::PerSubmeshData) == 16, "PerSubmeshData must be tightly packed to match std430");
 static_assert(sizeof(Muyo::PerObjData) == 64 + 4 + 12 + 32 * 16 + 32,
               "PerObjData layout changed; update shaders/shared/RenderGraph/Camera.h to match");
 static_assert(sizeof(Muyo::PerViewData) == 256 + 16 + 16 + 16 + 16 + 96,
@@ -453,12 +456,18 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     const glm::mat4 proj = glm::perspective(glm::radians(80.0F),
                                             static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
 
-    // Scenario 1: camera two units in front of the scene, looking at the origin. Some geometry
-    // must survive culling and actually be shaded.
+    // The Mazda model has its length along +Y and its height along +Z (the importer applies a
+    // model-correction rotation), and sits around (0.94, -0.17, 0.54). Look down at it from
+    // above so the whole car is in frame.
+    const glm::vec3 carCenter(0.94F, -0.17F, 0.54F);
+    const glm::vec3 up(0.0F, 1.0F, 0.0F);
+    const glm::vec3 topDownEye = carCenter + glm::vec3(0.0F, 0.0F, 3.5F);
+
+    // Scenario 1: top-down camera looking at the car. Most of the car must survive culling and
+    // actually be shaded.
     uint32_t nVisibleWhenFacing = 0;
     {
-        const glm::mat4 view =
-            glm::lookAt(glm::vec3(0.0F, 0.0F, -2.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+        const glm::mat4 view = glm::lookAt(topDownEye, carCenter, up);
 
         RenderDocScopedCapture capture("test_gpu_frustum_culling_visible");
         const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, proj);
@@ -473,11 +482,10 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
         REQUIRE(result.nVisibleCount <= result.nSourceCount);
     }
 
-    // Scenario 2: same camera position, but rotated 180 degrees so the scene is behind it.
-    // Frustum culling must reject dramatically more objects and nothing may be rendered.
+    // Scenario 2: same camera position, but rotated so the car is behind it. Frustum culling must
+    // reject dramatically more objects and nothing may be rendered.
     {
-        const glm::mat4 view =
-            glm::lookAt(glm::vec3(0.0F, 0.0F, -2.0F), glm::vec3(0.0F, 0.0F, -4.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+        const glm::mat4 view = glm::lookAt(topDownEye, topDownEye + glm::vec3(0.0F, 0.0F, 1.0F), up);
 
         RenderDocScopedCapture capture("test_gpu_frustum_culling_away");
         const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, proj);
@@ -492,16 +500,15 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
         REQUIRE(result.nNonBlackPixels == 0);
     }
 
-    // Scenario 3: a narrow frustum aimed at a slice of the scene. Only the geometry inside the
-    // slice may survive; the rest must be culled on the GPU.
+    // Scenario 3: same top-down view but with a reduced far plane, so the far half of the car is
+    // clipped by the frustum. Some objects must survive and still draw, others must be culled.
     {
-        const glm::mat4 narrowProj = glm::perspective(glm::radians(20.0F),
-                                                      static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-        const glm::mat4 view =
-            glm::lookAt(glm::vec3(0.0F, 0.0F, 1.5F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+        const glm::mat4 clippedProj = glm::perspective(glm::radians(80.0F),
+                                                       static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 3.6F);
+        const glm::mat4 view = glm::lookAt(topDownEye, carCenter, up);
 
         RenderDocScopedCapture capture("test_gpu_frustum_culling_partial");
-        const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, narrowProj);
+        const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, clippedProj);
 
         INFO("CPU draw sources = " << result.nSourceCount << ", GPU-visible = " << result.nVisibleCount
                                    << ", non-black pixels = " << result.nNonBlackPixels);

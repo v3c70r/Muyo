@@ -104,7 +104,9 @@ void main(uint3 dtid : SV_DispatchThreadID)
     // Frustum cull: transform the object's local AABB to world space and reject it
     // if it lies fully outside the camera frustum.
     PerObjData obj = gPerObjData[src.perObjId];
-    WorldAABB worldAABB = TransformAABB(obj.vAABBMin, obj.vAABBMax, obj.mWorldMatrix);
+    WorldAABB worldAABB = TransformAABB(float3(obj.vAABBMin[0], obj.vAABBMin[1], obj.vAABBMin[2]),
+                                        float3(obj.vAABBMax[0], obj.vAABBMax[1], obj.vAABBMax[2]),
+                                        obj.mWorldMatrix);
     if (!IsAABBVisible(worldAABB, gPerView.vFrustumPlanes))
     {
         return;

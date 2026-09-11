@@ -28,7 +28,9 @@ struct PerViewData
 struct PerSubmeshData
 {
     GPU_UINT nMaterialIndex;
-    GPU_FLOAT3 vPadding;
+    // Explicit 32-bit padding instead of float3: a float3 would be 16-byte aligned under
+    // std430, making the shader-side stride 32 bytes while the C++ struct is 16 bytes.
+    GPU_FLOAT vPadding[3];
 };
 
 static const GPU_UINT MAX_NUM_SUBMESHES = 32;
@@ -37,13 +39,15 @@ struct PerObjData
 {
     GPU_MAT4 mWorldMatrix;
     GPU_UINT nSubmeshCount;
-    GPU_FLOAT3 vPadding;
+    // Scalar float padding instead of float3: std430 aligns float3 to 16 bytes, which would
+    // desynchronise this struct from the C++ definition used to upload it.
+    GPU_FLOAT vPadding[3];
     PerSubmeshData vSubmeshDatas[MAX_NUM_SUBMESHES];
     // Object-space (local) axis aligned bounding box, used by GPU frustum culling.
-    GPU_FLOAT3 vAABBMin;
-    GPU_FLOAT  fAABBPadding0;
-    GPU_FLOAT3 vAABBMax;
-    GPU_FLOAT  fAABBPadding1;
+    GPU_FLOAT vAABBMin[3];
+    GPU_FLOAT fAABBPadding0;
+    GPU_FLOAT vAABBMax[3];
+    GPU_FLOAT fAABBPadding1;
 };
 
 // Material
