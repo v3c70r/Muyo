@@ -67,9 +67,11 @@ struct PBRMaterial
     float fRoughness;
     float fMetalness;
     GPU_UINT uvIndices[TEX_COUNT];
-    GPU_FLOAT3 vEmissiveFactor;
+    // Scalar arrays instead of float3: float3 is 16-byte aligned under std430, which would make
+    // this struct larger than the C++ one used to upload the material buffer.
+    GPU_FLOAT vEmissiveFactor[3];
     GPU_UINT textureIds[TEX_COUNT];
-    GPU_FLOAT3 vPadding;
+    GPU_FLOAT vPadding[3];
 };
 
 // Instance Id: 

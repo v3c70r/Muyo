@@ -31,6 +31,9 @@ static_assert(sizeof(Muyo::DrawIndexedCommand) == sizeof(VkDrawIndexedIndirectCo
 // vec3/float3 member would be 16-byte aligned under std430 and silently desynchronise the
 // shader from this C++ definition (which is what uploading relies on).
 static_assert(sizeof(Muyo::PerSubmeshData) == 16, "PerSubmeshData must be tightly packed to match std430");
+// PBRMaterial is read by GLSL (scalar layout) and Slang (std430) shaders; its members must be
+// 4-byte aligned so both agree with the C++ definition used to upload the material buffer.
+static_assert(sizeof(Muyo::PBRMaterial) == 96, "PBRMaterial layout changed; update shaders/shared/RenderGraph/Camera.h");
 static_assert(sizeof(Muyo::PerObjData) == 64 + 4 + 12 + 32 * 16 + 32,
               "PerObjData layout changed; update shaders/shared/RenderGraph/Camera.h to match");
 static_assert(sizeof(Muyo::PerViewData) == 256 + 16 + 16 + 16 + 16 + 96,

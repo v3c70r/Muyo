@@ -90,7 +90,7 @@ Material &Material::SetMaterialParameterFactors(const PBRMaterial &factors, cons
     material.fRoughness = factors.fRoughness;
     material.fMetalness = factors.fMetalness;
     memcpy(material.UVIndices, factors.UVIndices, sizeof(uint32_t) * TEX_COUNT);
-    material.vEmissiveFactor = factors.vEmissiveFactor;
+    memcpy(material.vEmissiveFactor, factors.vEmissiveFactor, sizeof(float) * 3);
 
     return *this;
 }

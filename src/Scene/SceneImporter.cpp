@@ -504,7 +504,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode,
                 {aUVIndices[0], aUVIndices[1],                                                                                                        // UVs
                  aUVIndices[2], aUVIndices[3],
                  aUVIndices[4], aUVIndices[5]},
-                vEmissiveFactors,
+                {vEmissiveFactors.x, vEmissiveFactors.y, vEmissiveFactors.z},
                 {0, 0, 0, 0, 0, 0}};
 
             material.SetMaterialParameterFactors(pbrMaterial, gltfMaterial.name)

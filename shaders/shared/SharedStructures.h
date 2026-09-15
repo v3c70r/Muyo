@@ -62,9 +62,11 @@ struct PBRMaterial
     float fRoughness;
     float fMetalness;
     uint UVIndices[TEX_COUNT];
-    vec3 vEmissiveFactor;
+    // Scalar arrays instead of vec3: vec3 is 16-byte aligned under std430, which would make the
+    // shader-side struct larger than the C++ one used to upload the material buffer.
+    float vEmissiveFactor[3];
     uint textureIds[TEX_COUNT];
-    vec3 vPadding;
+    float vPadding[3];
 };
 
 struct PerSubmeshData
