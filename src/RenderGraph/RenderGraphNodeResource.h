@@ -13,6 +13,7 @@ enum class QueueType : uint8_t
     GRAPHICS,
     COMPUTE,
     COPY,
+    RAY_TRACING,
     CPU,
     COUNT
 };

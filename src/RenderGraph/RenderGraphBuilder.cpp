@@ -9,7 +9,9 @@
 #include <vector>
 
 #include "RenderGraph/ResourceUseResolver.h"
+#include "PipelineStateBuilder.h"
 #include "ShaderReflectionFetcher.h"
+#include "VkExtFuncsLoader.h"
 #include "vulkan/vulkan_core.h"
 
 namespace
@@ -34,6 +36,11 @@ VkImageAspectFlags AspectForFormat(VkFormat format)
 {
     if (IsDepthFormat(format)) return VK_IMAGE_ASPECT_DEPTH_BIT;
     return VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment)
+{
+    return (nSize + nAlignment - 1) / nAlignment * nAlignment;
 }
 }  // namespace
 
@@ -93,7 +100,10 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
     CompiledRenderGraphNode result{
         .logicalRenderGraphNode = &rgn, .pipeline = VK_NULL_HANDLE, .pipelineLayout = VK_NULL_HANDLE};
     result.queueType = rgn.queueType;
-    result.bindingPoint = (rgn.queueType == QueueType::COMPUTE) ? VK_PIPELINE_BIND_POINT_COMPUTE : VK_PIPELINE_BIND_POINT_GRAPHICS;
+    result.isRayTracing = (rgn.queueType == QueueType::RAY_TRACING);
+    result.bindingPoint = (rgn.queueType == QueueType::COMPUTE)  ? VK_PIPELINE_BIND_POINT_COMPUTE
+                          : (rgn.queueType == QueueType::RAY_TRACING) ? VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR
+                                                                      : VK_PIPELINE_BIND_POINT_GRAPHICS;
 
     // Retrive and merge shader reflections
     std::vector<ShaderReflection> shaderReflections;
@@ -110,6 +120,21 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
             }
         }
     }
+    // Ray tracing pipeline stages, in the order the RT builder expects (raygen, miss, hit).
+    std::vector<VkShaderModule> rtShaderModules;
+    for (const auto& shaderKey : rgn.rtShaders)
+    {
+        if (shaderKey.IsValid())
+        {
+            const auto* shaderAsset = m_shaderAssetManager.GetShaderAsset(shaderKey);
+            if (shaderAsset)
+            {
+                shaderReflections.push_back(shaderAsset->shaderReflection);
+                shaderModules.push_back(shaderAsset->shaderModule);
+                rtShaderModules.push_back(shaderAsset->shaderModule);
+            }
+        }
+    }
     result.execute = rgn.execute;
 
     if (shaderReflections.size() > 0)
@@ -118,9 +143,9 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
 
         // Descriptor set layouts.
         //  * Graphics nodes use the built-in semantic layouts (set 0/1/2 = PER_VIEW/PER_OBJ/MATERIAL).
-        //  * Compute nodes build layouts from the shader reflection so shaders can bind arbitrary
-        //    set/binding (e.g. the GPU-driven draw-command generation pass).
-        if (rgn.queueType == QueueType::COMPUTE)
+        //  * Compute and ray tracing nodes build layouts from the shader reflection so shaders can
+        //    bind arbitrary set/binding (TLAS, storage images, ...).
+        if (rgn.queueType == QueueType::COMPUTE || rgn.queueType == QueueType::RAY_TRACING)
         {
             BuildReflectionDescriptorSets(result, rgn, mergedReflection);
         }
@@ -197,6 +222,21 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
             pipelineInfo.layout = result.pipelineLayout;
             VK_ASSERT(vkCreateComputePipelines(m_vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &result.pipeline));
         }
+        else if (rgn.queueType == QueueType::RAY_TRACING)
+        {
+            result.bindingPoint = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
+            BuildRayTracingPipeline(result, rgn, rtShaderModules);
+
+            // Trace extent: use the first storage image the node writes to.
+            for (const auto& resourceUse : rgn.resourceUses)
+            {
+                if (resourceUse.usage == ResourceUsage::STORAGE_IMAGE && resourceUse.extent.width > 0)
+                {
+                    result.traceExtent = {resourceUse.extent.width, resourceUse.extent.height};
+                    break;
+                }
+            }
+        }
     }
 
     return result;
@@ -267,7 +307,15 @@ void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& 
 
         VkDescriptorBufferInfo bufferInfo{};
         VkDescriptorImageInfo imageInfo{};
-        if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
+        VkWriteDescriptorSetAccelerationStructureKHR asWrite{
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
+        if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
+        {
+            asWrite.accelerationStructureCount = 1;
+            asWrite.pAccelerationStructures = &pAccel->GetAccelerationStructure();
+            write.pNext = &asWrite;
+        }
+        else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
         {
             bufferInfo.buffer = pBuffer->buffer();
             bufferInfo.offset = 0;
@@ -289,6 +337,65 @@ void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& 
 
         vkUpdateDescriptorSets(m_vkDevice, 1, &write, 0, nullptr);
     }
+}
+
+void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
+                                                 const std::vector<VkShaderModule>& shaderModules)
+{
+    if (shaderModules.size() < 3)
+    {
+        throw std::runtime_error("Ray tracing node '" + logicalNode.name +
+                                 "' needs raygen, miss and closest-hit shaders");
+    }
+
+    RayTracingPipelineBuilder builder;
+    builder.AddShaderModule(shaderModules[0], VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+        .AddShaderModule(shaderModules[1], VK_SHADER_STAGE_MISS_BIT_KHR)
+        .AddShaderModule(shaderModules[2], VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+
+    builder.SetPipelineLayout(rgn.pipelineLayout).SetMaxRecursionDepth(1);
+    VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
+    VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(m_vkDevice, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr,
+                                                    &rgn.pipeline));
+
+    // ── Shader binding table ──────────────────────────────────────────────
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProps{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
+    GetRenderDevice()->GetPhysicalDeviceProperties(rtProps);
+
+    const uint32_t nHandleSize = rtProps.shaderGroupHandleSize;
+    const uint32_t nHandleSizeAligned = AlignUp(nHandleSize, rtProps.shaderGroupHandleAlignment);
+
+    // 1 raygen, 1 miss, 1 hit group.
+    VkStridedDeviceAddressRegionKHR& rgenRegion = rgn.sbtRegions[0];
+    VkStridedDeviceAddressRegionKHR& missRegion = rgn.sbtRegions[1];
+    VkStridedDeviceAddressRegionKHR& hitRegion = rgn.sbtRegions[2];
+
+    rgenRegion.stride = AlignUp(nHandleSizeAligned, rtProps.shaderGroupBaseAlignment);
+    rgenRegion.size = rgenRegion.stride;
+    missRegion.stride = nHandleSizeAligned;
+    missRegion.size = AlignUp(nHandleSizeAligned, rtProps.shaderGroupBaseAlignment);
+    hitRegion.stride = nHandleSizeAligned;
+    hitRegion.size = AlignUp(nHandleSizeAligned, rtProps.shaderGroupBaseAlignment);
+
+    const uint32_t sbtSize = rgenRegion.size + missRegion.size + hitRegion.size;
+    const uint32_t nHandleCount = 3;
+    std::vector<uint8_t> handles(nHandleCount * nHandleSize);
+    VK_ASSERT(VkExt::vkGetRayTracingShaderGroupHandlesKHR(m_vkDevice, rgn.pipeline, 0, nHandleCount, handles.size(),
+                                                          handles.data()));
+
+    ShaderBindingTableBuffer* pSBT = GetRenderResourceManager()->GetShaderBindingTableBuffer(
+        "SBT_" + logicalNode.name, sbtSize);
+    const VkDeviceAddress sbtAddress = GetRenderDevice()->GetBufferDeviceAddress(pSBT->buffer());
+    rgenRegion.deviceAddress = sbtAddress;
+    missRegion.deviceAddress = sbtAddress + rgenRegion.size;
+    hitRegion.deviceAddress = sbtAddress + rgenRegion.size + missRegion.size;
+
+    uint8_t* pMapped = static_cast<uint8_t*>(pSBT->Map());
+    memcpy(pMapped, handles.data() + 0 * nHandleSize, nHandleSize);
+    memcpy(pMapped + rgenRegion.size, handles.data() + 1 * nHandleSize, nHandleSize);
+    memcpy(pMapped + rgenRegion.size + missRegion.size, handles.data() + 2 * nHandleSize, nHandleSize);
+    pSBT->Unmap();
 }
 
 void RenderGraphBuilder::DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn)
@@ -330,6 +437,16 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
         if (key)
         {
             rgn.shaders[shaderIdx++] = key.value();
+        }
+    }
+
+    // Load ray tracing shaders (raygen / miss / closest hit).
+    for (size_t i = 0; i < nodeCreateInfo.rtShaderNames.size() && i < rgn.rtShaders.size(); ++i)
+    {
+        auto key = m_shaderAssetManager.LoadShader(nodeCreateInfo.rtShaderNames[i]);
+        if (key)
+        {
+            rgn.rtShaders[i] = key.value();
         }
     }
 
@@ -685,6 +802,14 @@ void RenderGraphBuilder::Execute()
 
         // 4. User GPU work.
         rgn.execute(context);
+
+        // 4b. Ray tracing nodes issue the trace automatically; the SBT is graph-managed.
+        if (rgn.isRayTracing && rgn.pipeline != VK_NULL_HANDLE && rgn.traceExtent.width > 0)
+        {
+            const VkStridedDeviceAddressRegionKHR callable{0, 0, 0};
+            VkExt::vkCmdTraceRaysKHR(cmdBuf, &rgn.sbtRegions[0], &rgn.sbtRegions[1], &rgn.sbtRegions[2], &callable,
+                                     rgn.traceExtent.width, rgn.traceExtent.height, 1);
+        }
 
         // 5. End auto render pass.
         if (rendering)

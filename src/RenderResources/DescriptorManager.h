@@ -184,7 +184,11 @@ private:
 
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
     static constexpr uint32_t DESCRIPTOR_COUNT_EACH_TYPE = 500;
+#ifdef FEATURE_RAY_TRACING
+    static constexpr std::size_t DESCRIPTOR_TYPE_COUNT = 12;
+#else
     static constexpr std::size_t DESCRIPTOR_TYPE_COUNT = 11;
+#endif
 
     static constexpr std::array<VkDescriptorPoolSize, DESCRIPTOR_TYPE_COUNT> POOL_SIZES{{
         {.type = VK_DESCRIPTOR_TYPE_SAMPLER, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
@@ -198,6 +202,10 @@ private:
         {.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
         {.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
         {.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+#ifdef FEATURE_RAY_TRACING
+        // Needed by ray tracing nodes that bind a top-level acceleration structure.
+        {.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, .descriptorCount = DESCRIPTOR_COUNT_EACH_TYPE},
+#endif
     }};
     // UI texture descriptor tracker
     // ImGui uses textureId to track the bond texture in each draw command.
