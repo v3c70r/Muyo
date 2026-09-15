@@ -40,7 +40,7 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
         triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(indexBuffer) + nIndexOffset * sizeof(uint32_t);
         // misc
         triangles.transformData = {};
-        triangles.maxVertex = mesh.m_nVertexCount;
+        triangles.maxVertex = mesh.m_nVertexOffset + mesh.m_nVertexCount;
 
         VkAccelerationStructureGeometryKHR geometry = {};
         geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -163,7 +163,7 @@ AccelerationStructure* RayTracingSceneManager::BuildSceneFromMeshes(const std::v
         triangles.vertexStride = sizeof(Vertex);
         triangles.indexType = VK_INDEX_TYPE_UINT32;
         triangles.indexData.deviceAddress = indexBufferAddress + mesh.m_nIndexOffset * sizeof(uint32_t);
-        triangles.maxVertex = mesh.m_nVertexCount;
+        triangles.maxVertex = mesh.m_nVertexOffset + mesh.m_nVertexCount;
 
         VkAccelerationStructureGeometryKHR geometry = {};
         geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;

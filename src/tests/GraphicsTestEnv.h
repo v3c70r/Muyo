@@ -1,6 +1,8 @@
 #pragma once
 #include "DescriptorManager.h"
+#include "Material.h"
 #include "MeshResourceManager.h"
+#include "PerObjResourceManager.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "SceneManager.h"
@@ -78,10 +80,18 @@ private:
 class GraphicsTestEnvMazdaScene : public GraphicsTestEnv {
 public:
   GraphicsTestEnvMazdaScene() {
-    // Prepare a scene
-    GetSceneManager()->LoadSceneFromFile(
-        "assets/mazda_mx-5_spot/untitled.gltf");
+    // SceneManager / MeshResourceManager / PerObjResourceManager are process-wide caches, while
+    // the device (and therefore every GPU resource) is recreated for each test case. Load the
+    // scene once and re-upload the shared buffers against the new device.
+    if (GetSceneManager()->GetAllScenes().empty()) {
+      GetSceneManager()->LoadSceneFromFile(
+          "assets/mazda_mx-5_spot/untitled.gltf");
+    }
+    // GatherDrawLists populates the per-object data on first use.
     m_mDrawList = GetSceneManager()->GatherDrawLists();
+    GetMeshResourceManager()->UploadMeshData();
+    GetPerObjResourceManager()->Upload();
+    GetMaterialManager()->RefreshGPUResources();
   }
 };
 } // namespace Muyo

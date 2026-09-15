@@ -44,6 +44,13 @@ public:
     Material& LoadTexture(TextureType type, const std::string& path, const std::string& name);
     Material& SetMaterialParameterFactors(const PBRMaterial& factors, const std::string& sMaterialName);
 
+    // Recreate the GPU-side factor uniform buffer after the device has been recreated (tests
+    // rebuild the device per case while materials are cached process-wide).
+    void RefreshGPUResources(const PBRMaterial& factors)
+    {
+        SetMaterialParameterFactors(factors, m_sFactorName);
+    }
+
     void FillPbrTextureIndices(std::array<uint32_t, TEX_COUNT>& aIndices) const
     {
         aIndices = m_materialParameters.m_aTextureIndices;
@@ -74,6 +81,7 @@ private:
         "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO", "TEX_EMISSIVE"};
     VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
     bool m_bIsTransparent = false;
+    std::string m_sFactorName;
 
     uint32_t m_nMaterialIndex = 0;      // Material index in material resource manager
 };
@@ -92,6 +100,9 @@ public:
 
     void UploadMaterialBuffer() const;
     const StorageBuffer<PBRMaterial>* GetMaterialBuffer() const;
+
+    // Recreate all material factor buffers against the current device.
+    void RefreshGPUResources();
 
 
 private:

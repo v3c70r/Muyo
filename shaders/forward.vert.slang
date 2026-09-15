@@ -23,13 +23,17 @@ CAMERA()
 OBJECT_DATA()
 
 [shader("vertex")]
-VS_OUTPUT main(VS_INPUT input, uint instanceID : SV_InstanceID)
+VS_OUTPUT main(VS_INPUT input, uint instanceID : SV_InstanceID, uint startInstance : SV_StartInstanceLocation)
 {
     VS_OUTPUT output = (VS_OUTPUT)0;
 
+    // SV_InstanceID is relative to the draw's start instance, so add it back to recover the absolute
+    // instance index. The draw's firstInstance encodes (object, submesh) as PackSubmeshObjectIndex.
+    const uint absoluteInstanceID = instanceID + startInstance;
+
     output.outTexCoords0 = input.inTexCoord.xy;
     output.outTexCoords1 = input.inTexCoord.zw;
-    output.outObjSubmeshIndex = uint2(GetObjectIndex(instanceID), GetSubmeshIndex(instanceID));
+    output.outObjSubmeshIndex = uint2(GetObjectIndex(absoluteInstanceID), GetSubmeshIndex(absoluteInstanceID));
     matrix<float, 4, 4>  mWorldMatrix = perObjData[output.outObjSubmeshIndex.x].mWorldMatrix;
     output.outWorldPos = mul(mWorldMatrix, float4(input.inPos, 1.0));
     output.outWorldNormal = mul(mWorldMatrix, float4(input.inNormal, 0.0));

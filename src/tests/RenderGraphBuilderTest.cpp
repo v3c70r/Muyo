@@ -589,7 +589,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     // Frame the quad with the existing camera class.
     const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
                                             static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-    const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, 5.0F),
+    const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, 10.0F), glm::vec3(0.0F, 0.0F, 5.0F),
                                        glm::vec3(0.0F, 1.0F, 0.0F));
     Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
 
@@ -785,6 +785,247 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     REQUIRE(nRasterGeometry > 0);
     REQUIRE(nRayGeometry > 0);
     // Allow a single edge pixel of difference between raster sample coverage and ray hits.
+    const float fCoverage = static_cast<float>(nBothGeometry) /
+                            static_cast<float>(std::max(nRasterGeometry, nRayGeometry));
+    const float fMatch = static_cast<float>(nMatching) / static_cast<float>(std::max(nBothGeometry, 1u));
+    REQUIRE(fCoverage > 0.999F);
+    REQUIRE(fMatch > 0.999F);
+}
+TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing matches rasterization (Mazda scene)",
+                 "[RenderGraphBuilder][RayTracing]")
+{
+    // Acceleration structures for the whole scene, built by the shared scene manager which
+    // reuses the MeshResourceManager vertex/index buffers.
+    RayTracingSceneManager rtSceneManager;
+    rtSceneManager.BuildScene(m_mDrawList.m_aDrawLists[DrawLists::DL_OPAQUE]);
+    AccelerationStructure* pTLAS = GetRenderResourceManager()->GetResource<AccelerationStructure>("TLAS");
+    REQUIRE(pTLAS != nullptr);
+
+    // Frame the car with the existing camera class.
+    const glm::vec3 carCenter(0.94F, -0.17F, 0.54F);
+    const glm::mat4 proj = glm::perspective(glm::radians(80.0F),
+                                            static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+    const glm::mat4 view =
+        glm::lookAt(carCenter + glm::vec3(0.0F, 0.0F, 3.5F), carCenter, glm::vec3(0.0F, 1.0F, 0.0F));
+    Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
+
+    RenderGraphBuilder builder(GetRenderDevice());
+
+    builder.AddResource("RTMazdaCamera",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = sizeof(PerViewData),
+                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("RTMazdaRasterOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("RTMazdaDepth",
+                        ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
+    builder.AddResource("RTMazdaRayOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("RTMazdaDrawCommands",
+                        BufferResourceDesc{.count = 1024,
+                                           .stride = sizeof(VkDrawIndexedIndirectCommand),
+                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
+    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+    builder.ImportResource("PerObjData", GetPerObjResourceManager()->GetPerObjResource());
+    builder.ImportResource("RTMazdaTLAS", pTLAS);
+
+    uint32_t nDrawCommandCount = 0;
+
+    RenderGraphNodeCreateInfo cameraPass = {
+        .nodeName = "RTMazdaCameraPrep",
+        .queueType = QueueType::CPU,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("RTMazdaCamera"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("RTMazdaDrawCommands"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+            },
+        .execute =
+            [this, &camera, &nDrawCommandCount](RenderGraphNodeContext& ctx)
+        {
+            PerViewData perView;
+            perView.mProj = camera.GetProjMat();
+            perView.mView = camera.GetViewMat();
+            perView.mProjInv = glm::inverse(perView.mProj);
+            perView.mViewInv = glm::inverse(perView.mView);
+            perView.vScreenExtent = {WIDTH, HEIGHT};
+
+            auto* pCamera = ctx.GetResource<BufferResource>("RTMazdaCamera");
+            REQUIRE(pCamera != nullptr);
+            pCamera->SetData(&perView, sizeof(perView));
+
+            std::vector<VkDrawIndexedIndirectCommand> drawCommands;
+            for (const SceneNode* pGeometryNode : m_mDrawList.m_aDrawLists[DrawLists::DL_OPAQUE])
+            {
+                const Geometry* pGeometry = static_cast<const GeometrySceneNode*>(pGeometryNode)->GetGeometry();
+                uint32_t nSubmeshIndex = 0;
+                for (const auto& pSubmesh : pGeometry->getSubmeshes())
+                {
+                    const Mesh& mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+                    VkDrawIndexedIndirectCommand cmd{};
+                    cmd.indexCount = mesh.m_nIndexCount;
+                    cmd.instanceCount = 1;
+                    cmd.firstIndex = mesh.m_nIndexOffset;
+                    cmd.vertexOffset = 0;
+                    cmd.firstInstance = PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), nSubmeshIndex++);
+                    drawCommands.push_back(cmd);
+                }
+            }
+            nDrawCommandCount = static_cast<uint32_t>(drawCommands.size());
+            REQUIRE(nDrawCommandCount > 0);
+
+            auto* pCommands = ctx.GetResource<BufferResource>("RTMazdaDrawCommands");
+            REQUIRE(pCommands != nullptr);
+            pCommands->SetData(drawCommands.data(), drawCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
+        }};
+
+    RenderGraphNodeCreateInfo rasterPass = {
+        .nodeName = "RTMazdaRasterPass",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("RTMazdaCamera"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                ResourceUse{.handle = ResourceHandle("PerObjData"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .bindingSemantic = ResourceBindingSemantic::PER_OBJ},
+                ResourceUse{.handle = ResourceHandle("RTMazdaDrawCommands"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("RTMazdaRasterOutput"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+                ResourceUse{.handle = ResourceHandle("RTMazdaDepth"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::DEPTH_STENCIL_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
+        .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
+                    .depthStencilState = {.depthTestEnable = true, .depthWriteEnable = true, .stencilEnable = false},
+                    .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute =
+            [&nDrawCommandCount](RenderGraphNodeContext& ctx)
+        {
+            const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
+            const auto* pCommands = ctx.GetResource<BufferResource>("RTMazdaDrawCommands");
+            REQUIRE(pCommands != nullptr);
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexedIndirect(ctx.commandBuffer, pCommands->buffer(), 0, nDrawCommandCount,
+                                     sizeof(VkDrawIndexedIndirectCommand));
+        }};
+
+    RenderGraphNodeCreateInfo rayTracingPass = {
+        .nodeName = "RTMazdaRayTracingPass",
+        .queueType = QueueType::RAY_TRACING,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("RTMazdaCamera"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                ResourceUse{.handle = ResourceHandle("RTMazdaTLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                ResourceUse{.handle = ResourceHandle("RTMazdaRayOutput"),
+                            .io = ResourceIOType::READ_WRITE,
+                            .usage = ResourceUsage::STORAGE_IMAGE,
+                            .kind = ResourceKind::IMAGE,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+            },
+        .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
+        .execute = [](RenderGraphNodeContext&) {}};
+
+    builder.AddNode(cameraPass);
+    builder.AddNode(rasterPass);
+    builder.AddNode(rayTracingPass);
+    builder.AddDependency(cameraPass.nodeName, rasterPass.nodeName);
+    builder.AddDependency(cameraPass.nodeName, rayTracingPass.nodeName);
+    builder.Build();
+    {
+        RenderDocScopedCapture capture("test_ray_tracing_mazda");
+        builder.Execute();
+    }
+
+    auto* pRasterOutput = GetRenderResourceManager()->GetColorTarget("RTMazdaRasterOutput");
+    auto* pRayOutput = GetRenderResourceManager()->GetColorTarget("RTMazdaRayOutput");
+    REQUIRE(pRasterOutput != nullptr);
+    REQUIRE(pRayOutput != nullptr);
+
+    const std::vector<glm::vec4> rasterPixels =
+        ReadTargetFloats(pRasterOutput, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    const std::vector<glm::vec4> rayPixels =
+        ReadTargetFloats(pRayOutput, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT,
+                         VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+
+    const size_t nPixels = rasterPixels.size();
+    uint32_t nRasterGeometry = 0;
+    uint32_t nRayGeometry = 0;
+    uint32_t nBothGeometry = 0;
+    uint32_t nMatching = 0;
+    const float kTolerance = 1e-3F;
+    for (size_t i = 0; i < nPixels; ++i)
+    {
+        const glm::vec3 r = glm::vec3(rasterPixels[i]);
+        const glm::vec3 t = glm::vec3(rayPixels[i]);
+        const bool bRasterHit = glm::length(r) > kTolerance;
+        const bool bRayHit = glm::length(t) > kTolerance;
+        if (bRasterHit) ++nRasterGeometry;
+        if (bRayHit) ++nRayGeometry;
+        if (bRasterHit && bRayHit)
+        {
+            ++nBothGeometry;
+            if (glm::length(r - t) < kTolerance) ++nMatching;
+        }
+    }
+
+    INFO("raster geometry px = " << nRasterGeometry << ", ray geometry px = " << nRayGeometry
+                                 << ", overlap = " << nBothGeometry << ", matching = " << nMatching);
+
+    // The scene must be visible in both results and they must agree on the front-most surface.
+    REQUIRE(nRasterGeometry > 0);
+    REQUIRE(nRayGeometry > 0);
+    // Allow a few edge pixels of difference between raster sample coverage and ray hits.
     const float fCoverage = static_cast<float>(nBothGeometry) /
                             static_cast<float>(std::max(nRasterGeometry, nRayGeometry));
     const float fMatch = static_cast<float>(nMatching) / static_cast<float>(std::max(nBothGeometry, 1u));
