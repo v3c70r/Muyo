@@ -20,6 +20,7 @@
 #include "PerObjResourceManager.h"
 #include "Camera.h"
 #include "RenderResources/RenderTargetResource.h"
+#include "Scene/RayTracingSceneManager.h"
 #include "VkExtFuncsLoader.h"
 #include "catch2/catch_message.hpp"
 #include "vulkan/vulkan_core.h"
@@ -527,128 +528,9 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
 }
 
 #ifdef FEATURE_RAY_TRACING
-namespace
-{
-// Build a bottom-level acceleration structure from a raw vertex/index buffer pair.
-AccelerationStructure* BuildTestBLAS(const std::string& name, VkBuffer vertexBuffer, VkBuffer indexBuffer,
-                                     uint32_t nVertexCount, uint32_t nIndexCount)
-{
-    VkAccelerationStructureGeometryTrianglesDataKHR triangles{
-        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR};
-    triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-    triangles.vertexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(vertexBuffer);
-    triangles.vertexStride = sizeof(Vertex);
-    triangles.indexType = VK_INDEX_TYPE_UINT32;
-    triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(indexBuffer);
-    triangles.maxVertex = nVertexCount;
-
-    VkAccelerationStructureGeometryKHR geometry{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
-    geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-    geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-    geometry.geometry.triangles = triangles;
-
-    VkAccelerationStructureBuildRangeInfoKHR range{};
-    range.primitiveCount = nIndexCount / 3;
-
-    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
-        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
-    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-    buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-    buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-    buildInfo.geometryCount = 1;
-    buildInfo.pGeometries = &geometry;
-
-    uint32_t primCount = range.primitiveCount;
-    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{
-        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
-    VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
-                                                   VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
-                                                   &primCount, &sizeInfo);
-
-    AccelerationStructure* pBLAS = GetRenderResourceManager()->CreateBLAS(name, sizeInfo.accelerationStructureSize);
-    buildInfo.dstAccelerationStructure = pBLAS->GetAccelerationStructure();
-
-    AccelerationStructureBuffer scratch(sizeInfo.buildScratchSize);
-    buildInfo.scratchData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(scratch.buffer());
-
-    const VkAccelerationStructureBuildRangeInfoKHR* pRange = &range;
-    GetRenderDevice()->ExecuteImmediateCommand(
-        [&](VkCommandBuffer cmdBuf)
-        {
-            VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pRange);
-            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-            barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-            barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-            vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                                 VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &barrier, 0, nullptr,
-                                 0, nullptr);
-        });
-    return pBLAS;
-}
-
-// Build a top-level acceleration structure containing a single instance of the BLAS.
-AccelerationStructure* BuildTestTLAS(const std::string& name, AccelerationStructure* pBLAS)
-{
-    VkAccelerationStructureInstanceKHR instance{};
-    instance.transform.matrix[0][0] = 1.0f;
-    instance.transform.matrix[1][1] = 1.0f;
-    instance.transform.matrix[2][2] = 1.0f;
-    instance.mask = 0xFF;
-    instance.instanceShaderBindingTableRecordOffset = 0;
-    instance.accelerationStructureReference = pBLAS->GetAccelerationStructureAddress();
-
-    AccelerationStructureBuffer* pInstanceBuffer = GetRenderResourceManager()->GetAccelerationStructureBuffer(
-        name + "_instances", &instance, sizeof(instance));
-
-    VkAccelerationStructureGeometryInstancesDataKHR instancesData{
-        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR};
-    instancesData.arrayOfPointers = VK_FALSE;
-    instancesData.data.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(pInstanceBuffer->buffer());
-
-    VkAccelerationStructureGeometryKHR geometry{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
-    geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-    geometry.geometry.instances = instancesData;
-
-    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
-        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR};
-    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-    buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-    buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-    buildInfo.geometryCount = 1;
-    buildInfo.pGeometries = &geometry;
-
-    uint32_t count = 1;
-    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{
-        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
-    VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
-                                                   VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
-                                                   &count, &sizeInfo);
-
-    AccelerationStructure* pTLAS = GetRenderResourceManager()->CreateTLAS(name, sizeInfo.accelerationStructureSize);
-    buildInfo.dstAccelerationStructure = pTLAS->GetAccelerationStructure();
-
-    AccelerationStructureBuffer scratch(sizeInfo.buildScratchSize);
-    buildInfo.scratchData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(scratch.buffer());
-
-    VkAccelerationStructureBuildRangeInfoKHR range{1, 0, 0, 0};
-    const VkAccelerationStructureBuildRangeInfoKHR* pRange = &range;
-    GetRenderDevice()->ExecuteImmediateCommand(
-        [&](VkCommandBuffer cmdBuf)
-        {
-            VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pRange);
-            VkMemoryBarrier barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
-            barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
-            barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-            vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                                 VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0,
-                                 nullptr);
-        });
-    return pTLAS;
-}
-
 // Copy an image back to the host and decode the R32G32B32A32_SFLOAT pixels.
-std::vector<glm::vec4> ReadTargetFloats(RenderTarget* pTarget, VkImageLayout oldLayout, VkAccessFlags srcAccess,
-                                        VkPipelineStageFlags srcStage)
+static std::vector<glm::vec4> ReadTargetFloats(RenderTarget* pTarget, VkImageLayout oldLayout, VkAccessFlags srcAccess,
+                                               VkPipelineStageFlags srcStage)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
     const size_t pixelSize = 16;
@@ -685,137 +567,165 @@ std::vector<glm::vec4> ReadTargetFloats(RenderTarget* pTarget, VkImageLayout old
     readback.Unmap();
     return result;
 }
-}  // namespace
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches rasterization",
                  "[RenderGraphBuilder][RayTracing]")
 {
-    // A quad in world space at z = 5 so a hit position is never mistaken for the black background.
-    const float kQuadZ = 5.0f;
-    std::vector<Vertex> quadVertices = {
-        {{-1.0f, -1.0f, kQuadZ}, {0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}},
-        {{ 1.0f, -1.0f, kQuadZ}, {0.0f, 0.0f, -1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}},
-        {{ 1.0f,  1.0f, kQuadZ}, {0.0f, 0.0f, -1.0f}, {1.0f, 1.0f, 1.0f, 0.0f}},
-        {{-1.0f,  1.0f, kQuadZ}, {0.0f, 0.0f, -1.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
-    };
-    std::vector<uint32_t> quadIndices = {0, 1, 2, 2, 3, 0};
-    auto* pQuadVB = GetRenderResourceManager()->GetVertexBuffer<Vertex>("RTTestQuadVB", quadVertices);
-    auto* pQuadIB = GetRenderResourceManager()->GetIndexBuffer<uint32_t>("RTTestQuadIB", quadIndices);
-    const uint32_t nQuadIndexCount = static_cast<uint32_t>(quadIndices.size());
+    // Use the shared simple quad mesh from the MeshResourceManager.
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
 
-    // Acceleration structures: one BLAS for the quad, one TLAS with a single instance.
-    AccelerationStructure* pBLAS = BuildTestBLAS("RTTestBLAS", pQuadVB->buffer(), pQuadIB->buffer(),
-                                                 static_cast<uint32_t>(quadVertices.size()), nQuadIndexCount);
-    AccelerationStructure* pTLAS = BuildTestTLAS("RTTestTLAS", pBLAS);
+    // Place it with a rotation + translation. Both the raster pass (through PerObjData) and the
+    // TLAS instance transform use this same matrix, so the two must agree.
+    const glm::mat4 model = glm::translate(glm::mat4(1.0F), glm::vec3(0.4F, -0.2F, 5.0F)) *
+                            glm::rotate(glm::mat4(1.0F), glm::radians(35.0F), glm::vec3(0.0F, 0.0F, 1.0F));
+
+    // BLAS/TLAS built by the scene manager, sharing the MeshResourceManager buffers.
+    RayTracingSceneManager rtSceneManager;
+    AccelerationStructure* pTLAS = rtSceneManager.BuildSceneFromMeshes({{&quadMesh, model}});
+    REQUIRE(pTLAS != nullptr);
+
+    // Frame the quad with the existing camera class.
+    const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
+                                            static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+    const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, 5.0F),
+                                       glm::vec3(0.0F, 1.0F, 0.0F));
+    Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
 
     RenderGraphBuilder builder(GetRenderDevice());
 
-    builder.AddResource("RTTestCamera",
+    builder.AddResource("RTParityCamera",
                         BufferResourceDesc{.count = 1,
                                            .stride = sizeof(PerViewData),
                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
-    builder.AddResource("RTTestRasterOutput",
+    builder.AddResource("RTParityRasterOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
                                           .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("RTTestRayOutput",
+    builder.AddResource("RTParityDepth",
+                        ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
+    builder.AddResource("RTParityRayOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
                                           .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("RTParityPerObjData",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = sizeof(PerObjData),
+                                           .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
-    builder.ImportResource("RTTestQuadVB", pQuadVB);
-    builder.ImportResource("RTTestQuadIB", pQuadIB);
-    builder.ImportResource("RTTestTLAS", pTLAS);
+    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
+    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+    builder.ImportResource("RTParityTLAS", pTLAS);
 
-    // CPU node: upload the camera.
     RenderGraphNodeCreateInfo cameraPass = {
-        .nodeName = "RTTestCameraPrep",
+        .nodeName = "RTParityCameraPrep",
         .queueType = QueueType::CPU,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("RTTestCamera"),
-                                     .io = ResourceIOType::WRITE,
-                                     .usage = ResourceUsage::UNIFORM_BUFFER,
-                                     .kind = ResourceKind::BUFFER}},
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("RTParityCamera"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("RTParityPerObjData"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+            },
         .execute =
-            [](RenderGraphNodeContext& ctx)
+            [&camera, model](RenderGraphNodeContext& ctx)
         {
-            const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
-                                                    static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-            const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, 5.0F),
-                                               glm::vec3(0.0F, 1.0F, 0.0F));
             PerViewData perView;
-            perView.mProj = proj;
-            perView.mView = view;
-            perView.mProjInv = glm::inverse(proj);
-            perView.mViewInv = glm::inverse(view);
+            perView.mProj = camera.GetProjMat();
+            perView.mView = camera.GetViewMat();
+            perView.mProjInv = glm::inverse(perView.mProj);
+            perView.mViewInv = glm::inverse(perView.mView);
             perView.vScreenExtent = {WIDTH, HEIGHT};
 
-            auto* pCamera = ctx.GetResource<BufferResource>("RTTestCamera");
+            auto* pCamera = ctx.GetResource<BufferResource>("RTParityCamera");
             REQUIRE(pCamera != nullptr);
             pCamera->SetData(&perView, sizeof(perView));
+
+            PerObjData objData{};
+            objData.mWorldMatrix = model;
+            objData.nSubmeshCount = 1;
+            objData.vSubmeshDatas[0].nMaterialIndex = 0;
+            auto* pPerObj = ctx.GetResource<BufferResource>("RTParityPerObjData");
+            REQUIRE(pPerObj != nullptr);
+            pPerObj->SetData(&objData, sizeof(objData));
         }};
 
-    // Raster node: draws the quad, writing interpolated world position to the color target.
     RenderGraphNodeCreateInfo rasterPass = {
-        .nodeName = "RTTestRasterPass",
+        .nodeName = "RTParityRasterPass",
         .queueType = QueueType::GRAPHICS,
         .resourceUses =
             {
-                ResourceUse{.handle = ResourceHandle("RTTestQuadVB"),
+                ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::VERTEX_BUFFER,
                             .kind = ResourceKind::BUFFER},
-                ResourceUse{.handle = ResourceHandle("RTTestQuadIB"),
+                ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::INDEX_BUFFER,
                             .kind = ResourceKind::BUFFER},
-                ResourceUse{.handle = ResourceHandle("RTTestCamera"),
+                ResourceUse{.handle = ResourceHandle("RTParityCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER,
                             .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
-                ResourceUse{.handle = ResourceHandle("RTTestRasterOutput"),
+                ResourceUse{.handle = ResourceHandle("RTParityPerObjData"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .bindingSemantic = ResourceBindingSemantic::PER_OBJ},
+                ResourceUse{.handle = ResourceHandle("RTParityRasterOutput"),
                             .io = ResourceIOType::WRITE,
                             .usage = ResourceUsage::COLOR_ATTACHMENT,
                             .kind = ResourceKind::IMAGE},
+                ResourceUse{.handle = ResourceHandle("RTParityDepth"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::DEPTH_STENCIL_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
             },
-        .shaderNames = {"testWorldPos.vert.slang", "testWorldPos.frag.slang"},
+        .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
         .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
-                    .depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false, .stencilEnable = false},
+                    .depthStencilState = {.depthTestEnable = true, .depthWriteEnable = true, .stencilEnable = false},
                     .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
         .execute =
-            [nQuadIndexCount](RenderGraphNodeContext& ctx)
+            [&quadMesh](RenderGraphNodeContext& ctx)
         {
-            auto* pVB = ctx.GetResource<VertexBuffer<Vertex>>("RTTestQuadVB");
-            auto* pIB = ctx.GetResource<IndexBuffer>("RTTestQuadIB");
-            REQUIRE(pVB != nullptr);
-            REQUIRE(pIB != nullptr);
+            const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
-            VkBuffer vb = pVB->buffer();
-            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vb, &offset);
-            vkCmdBindIndexBuffer(ctx.commandBuffer, pIB->buffer(), 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(ctx.commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
+            VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(ctx.commandBuffer, quadMesh.m_nIndexCount, 1, quadMesh.m_nIndexOffset, 0,
+                             PackSubmeshObjectIndex(0, 0));
         }};
 
-    // Ray tracing node: same camera, primary rays only, writing world position to a storage image.
     RenderGraphNodeCreateInfo rayTracingPass = {
-        .nodeName = "RTTestRayTracingPass",
+        .nodeName = "RTParityRayTracingPass",
         .queueType = QueueType::RAY_TRACING,
         .resourceUses =
             {
-                ResourceUse{.handle = ResourceHandle("RTTestCamera"),
+                ResourceUse{.handle = ResourceHandle("RTParityCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER,
                             .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
-                ResourceUse{.handle = ResourceHandle("RTTestTLAS"),
+                ResourceUse{.handle = ResourceHandle("RTParityTLAS"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::ACCEL_STRUCTURE,
                             .kind = ResourceKind::ACCELERATION_STRUCTURE,
                             .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
-                ResourceUse{.handle = ResourceHandle("RTTestRayOutput"),
+                ResourceUse{.handle = ResourceHandle("RTParityRayOutput"),
                             .io = ResourceIOType::READ_WRITE,
                             .usage = ResourceUsage::STORAGE_IMAGE,
                             .kind = ResourceKind::IMAGE,
@@ -835,17 +745,17 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
         builder.Execute();
     }
 
-    // Read both images back and compare the world positions they stored.
-    auto* pRasterOutput = GetRenderResourceManager()->GetColorTarget("RTTestRasterOutput");
-    auto* pRayOutput = GetRenderResourceManager()->GetColorTarget("RTTestRayOutput");
+    auto* pRasterOutput = GetRenderResourceManager()->GetColorTarget("RTParityRasterOutput");
+    auto* pRayOutput = GetRenderResourceManager()->GetColorTarget("RTParityRayOutput");
     REQUIRE(pRasterOutput != nullptr);
     REQUIRE(pRayOutput != nullptr);
 
-    const std::vector<glm::vec4> rasterPixels = ReadTargetFloats(
-        pRasterOutput, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-    const std::vector<glm::vec4> rayPixels = ReadTargetFloats(pRayOutput, VK_IMAGE_LAYOUT_GENERAL,
-                                                              VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+    const std::vector<glm::vec4> rasterPixels =
+        ReadTargetFloats(pRasterOutput, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    const std::vector<glm::vec4> rayPixels =
+        ReadTargetFloats(pRayOutput, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_SHADER_WRITE_BIT,
+                         VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 
     const size_t nPixels = rasterPixels.size();
     uint32_t nRasterGeometry = 0;
@@ -871,14 +781,15 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     INFO("raster geometry px = " << nRasterGeometry << ", ray geometry px = " << nRayGeometry
                                  << ", overlap = " << nBothGeometry << ", matching = " << nMatching);
 
-    // The quad must actually be visible in both results.
+    // The quad must be visible in both results and they must agree.
     REQUIRE(nRasterGeometry > 0);
     REQUIRE(nRayGeometry > 0);
-    // The two must cover essentially the same pixels and agree on the world position.
-    const float kMatchRequirement = 0.98F;
-    REQUIRE(static_cast<float>(nBothGeometry) / static_cast<float>(std::max(nRasterGeometry, nRayGeometry)) >
-            kMatchRequirement);
-    REQUIRE(static_cast<float>(nMatching) / static_cast<float>(nBothGeometry) > kMatchRequirement);
+    // Allow a single edge pixel of difference between raster sample coverage and ray hits.
+    const float fCoverage = static_cast<float>(nBothGeometry) /
+                            static_cast<float>(std::max(nRasterGeometry, nRayGeometry));
+    const float fMatch = static_cast<float>(nMatching) / static_cast<float>(std::max(nBothGeometry, 1u));
+    REQUIRE(fCoverage > 0.999F);
+    REQUIRE(fMatch > 0.999F);
 }
 #endif  // FEATURE_RAY_TRACING
 }  // namespace Muyo::RenderGraph
