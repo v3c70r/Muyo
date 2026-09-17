@@ -36,8 +36,8 @@ execute_process(COMMAND bash -c "echo $WAYLAND_DISPLAY"
 
 if(WAYLAND_SESSION)
     message(STATUS "Wayland session detected")
-    set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
-    set(GLFW_USE_X11 OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_X11 OFF CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
 endif()
