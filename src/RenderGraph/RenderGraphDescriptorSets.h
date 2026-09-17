@@ -10,36 +10,43 @@
 namespace Muyo::RenderGraph
 {
 
+/// Number of enumerators in an enum that has a trailing `COUNT` value.
 template <typename E>
 constexpr auto ENUM_COUNT = static_cast<size_t>(E::COUNT);
 
+/// Converts an enum value to its underlying index.
 template <typename E>
 constexpr size_t EnumIndex(E e)
 {
     return static_cast<size_t>(e);
 }
 
+/// `std::array` indexed by an enum value.
 template <typename E, typename T>
 struct EnumArray
 {
     static_assert(std::is_enum_v<E>);
 
-    std::array<T, ENUM_COUNT<E>> data{};
+    std::array<T, ENUM_COUNT<E>> data{};  ///< Backing storage.
 
+    /// @return Mutable reference to the element for enum value `e`.
     constexpr T& operator[](E e) { return data[EnumIndex(e)]; }
 
+    /// @return Const reference to the element for enum value `e`.
     constexpr const T& operator[](E e) const { return data[EnumIndex(e)]; }
 };
 
+/// Descriptor binding location (set + binding).
 struct BindingInfo
 {
-    uint32_t bindingIndex;
-
-    uint32_t setIndex;
+    uint32_t bindingIndex;  ///< Binding index within the set.
+    uint32_t setIndex;      ///< Descriptor set index.
 };
 
+/// Capacity of the bindless texture array in the MATERIAL set.
 static const uint32_t MAX_BINDLESS_TEXTURE_COUNT = 1024;
 
+/// Static descriptor bindings of the three built-in semantic sets.
 static std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerSet = {
     // PER_VIEW
     {
@@ -70,9 +77,15 @@ static std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerSet = {
 
 };
 
+/// Owns and writes the three built-in semantic descriptor sets used by graphics nodes.
+///
+/// `PER_VIEW`, `PER_OBJ` and `MATERIAL` layouts/sets are allocated once per builder and reused for
+/// every graphics node; `BindResourceToDescriptorSet` updates the binding before the node is bound.
 class RenderGraphDescriptorSets
 {
 public:
+    /// Allocate the three semantic set layouts and their descriptor sets.
+    /// @param descManager Descriptor manager owning the pool and layout cache.
     explicit RenderGraphDescriptorSets(DescriptorManager& descManager) : m_descManager(descManager)
     {
         m_descriptorSetLayouts[ResourceBindingSemantic::PER_VIEW] =
@@ -88,6 +101,7 @@ public:
         m_descriptorSets[ResourceBindingSemantic::MATERIAL] =
             m_descManager.AllocateDescriptorSet(m_descriptorSetLayouts[ResourceBindingSemantic::MATERIAL]);
     }
+    /// Destroy the semantic set layouts owned by this instance.
     ~RenderGraphDescriptorSets()
     {
         m_descManager.DestroyDescriptorSetLayout(m_descriptorSetLayouts[ResourceBindingSemantic::PER_VIEW]);
@@ -95,15 +109,18 @@ public:
         m_descManager.DestroyDescriptorSetLayout(m_descriptorSetLayouts[ResourceBindingSemantic::MATERIAL]);
     }
 
+    /// @return The descriptor set for a semantic set index.
     VkDescriptorSet GetDescriptorSet(ResourceBindingSemantic bindingSemantic) const
     {
         return m_descriptorSets[bindingSemantic];
     }
+    /// @return The descriptor set layout for a semantic set index.
     VkDescriptorSetLayout GetDescriptorSetLayout(ResourceBindingSemantic bindingSemantic) const
     {
         return m_descriptorSetLayouts[bindingSemantic];
     }
 
+    /// @return The semantic set corresponding to a raw descriptor set index (0/1/2).
     static ResourceBindingSemantic GetSemantic(uint32_t setIndex)
     {
         switch (setIndex)
@@ -119,6 +136,10 @@ public:
         }
     }
 
+    /// Write a resource into a semantic descriptor set.
+    /// @param pResource       Buffer or image to bind.
+    /// @param bindingSemantic Target semantic set.
+    /// @param bindingIndex    Binding within the set.
     void BindResourceToDescriptorSet(const IRenderResource* pResource, 
             ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)
     {

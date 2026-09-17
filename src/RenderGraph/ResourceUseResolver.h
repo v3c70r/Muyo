@@ -32,21 +32,28 @@
 
 namespace Muyo::RenderGraph
 {
+/// Lookup key for the barrier policy table.
 struct UsageKey
 {
-    ResourceUsage usage;
-    ResourceIOType io;
+    ResourceUsage usage;   ///< Semantic usage.
+    ResourceIOType io;     ///< Read/write direction.
 
-    constexpr bool operator==(const UsageKey&) const = default;
+    constexpr bool operator==(const UsageKey&) const = default;  ///< Equality for table lookup.
 };
 
+/// Barrier policy (stages/access/layout) for a (usage, io) pair.
 struct UsagePolicy
 {
-    VkPipelineStageFlags2 stages;
-    VkAccessFlags2 access;
-    VkImageLayout layout;  // ignored for buffers / AS / push constants
+    VkPipelineStageFlags2 stages;  ///< Destination pipeline stages.
+    VkAccessFlags2 access;         ///< Destination access mask.
+    VkImageLayout layout;          ///< Target image layout (ignored for buffers / AS / push constants).
 };
 
+/// Barrier policy table: maps every supported (`ResourceUsage`, `ResourceIOType`) pair to the
+/// pipeline stages, access mask and image layout the graph uses when a node touches it.
+///
+/// This is the authoritative reference for how the graph synchronises resources; a use with no
+/// entry here is rejected by `ResolvePolicy`.
 constexpr std::array<std::pair<UsageKey, UsagePolicy>, 26> K_USAGE_POLICIES = {{
     // ───────────── Images ─────────────
     {
@@ -166,6 +173,7 @@ constexpr std::array<std::pair<UsageKey, UsagePolicy>, 26> K_USAGE_POLICIES = {{
     }
 }};
 
+/// Looks up the `UsagePolicy` for a key; throws if the pair is unsupported.
 constexpr UsagePolicy ResolvePolicy(UsageKey key)
 {
     for (auto&& [k, v] : K_USAGE_POLICIES)
@@ -175,6 +183,13 @@ constexpr UsagePolicy ResolvePolicy(UsageKey key)
     throw "Missing ResourceUsage policy";
 }
 
+/// Resolve a node's `ResourceUse` into a `ResolvedResourceUse`.
+///
+/// Fills in the barrier stages/access and (for images) the target layout from
+/// `K_USAGE_POLICIES`, and copies the binding information through.
+///
+/// @param use The declared resource use.
+/// @return The resolved use consumed by the graph's barrier and binding logic.
 ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
 {
     // Special handling

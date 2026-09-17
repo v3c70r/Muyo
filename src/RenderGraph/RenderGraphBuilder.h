@@ -22,24 +22,32 @@
 
 namespace Muyo::RenderGraph
 {
+/// Map of every declared resource handle to its allocation description.
 using ResourceDescRegistry = std::unordered_map<ResourceHandle, ResourceDesc>;
 
+/// Maximum number of shader stages a node may declare (vertex + fragment, or raygen/miss/hit...).
 static constexpr int MAX_SHADER_STAGES = 8;
 
-// Context handed to a node's execute callback.
+/// Context handed to a node's execute callback.
+///
+/// The graph has already recorded the barriers, opened the render pass (graphics nodes) and bound
+/// the pipeline and descriptor sets, so most callbacks only issue draw/dispatch/trace commands.
 struct RenderGraphNodeContext
 {
-    QueueType queueType = QueueType::GRAPHICS;
-    RenderResourceManager& resourceManager;
-    MeshResourceManager& meshManager;
+    QueueType queueType = QueueType::GRAPHICS;  ///< Queue this node is running on.
+    RenderResourceManager& resourceManager;    ///< Global resource manager (graph-owned resources).
+    MeshResourceManager& meshManager;          ///< Mesh manager (shared vertex/index buffers).
 
     // GPU-side fields (valid only for GPU nodes)
-    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;                        ///< Command buffer to record into.
+    VkPipeline pipeline = VK_NULL_HANDLE;                                  ///< Bound pipeline.
+    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;                      ///< Bound pipeline layout.
+    VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;    ///< Bind point for the pipeline.
 
-    // Resolve a graph-declared resource to its concrete pointer (allocated at Build()).
+    /// Resolve a graph-declared resource to its concrete pointer (allocated at Build()).
+    /// @tparam T Concrete resource type (e.g. `BufferResource`, `RenderTarget`).
+    /// @param handle Resource name used in the node's `resourceUses`.
+    /// @return The resource, or `nullptr` if it is not of type `T`.
     template <class T>
     T* GetResource(const ResourceHandle& handle) const
     {
@@ -47,57 +55,85 @@ struct RenderGraphNodeContext
     }
 };
 
+/// Callback a node provides to record its GPU or host work.
 using RenderGraphNodeCallback = std::function<void(RenderGraphNodeContext&)>;
 
-// User-facing declaration of a single render graph node (pass).
+/// User-facing declaration of a single render graph node (pass).
 struct RenderGraphNodeCreateInfo
 {
-    std::string nodeName;
-    QueueType queueType = QueueType::GRAPHICS;
-    // Opt-in: only when set (and queueType == COMPUTE) may the node be scheduled on the dedicated
-    // async compute queue and run concurrently with the graphics queue. Without it the node is
-    // recorded on the graphics queue, so no cross-queue synchronization is generated for it.
+    std::string nodeName;                       ///< Unique node name (used by AddDependency).
+    QueueType queueType = QueueType::GRAPHICS;  ///< Queue the node runs on.
+    /// Opt-in: only when set (and queueType == COMPUTE) may the node be scheduled on the dedicated
+    /// async compute queue and run concurrently with the graphics queue. Without it the node is
+    /// recorded on the graphics queue, so no cross-queue synchronization is generated for it.
     bool async = false;
-    std::vector<ResourceUse> resourceUses;
-    std::vector<std::string> shaderNames;
-    // Ray tracing only: ray generation / miss / closest-hit shader names, in that order.
-    // When queueType == RAY_TRACING these are compiled into a ray tracing pipeline (with a
-    // graph-managed shader binding table) and the node automatically issues vkCmdTraceRaysKHR
-    // over the extent of its first STORAGE_IMAGE resource. Resources are bound by their
-    // explicit DescriptorBinding (reflection-derived set/binding), so a node can bind the TLAS,
-    // storage images and uniform buffers it declares.
+    std::vector<ResourceUse> resourceUses;      ///< Resources the node reads/writes.
+    std::vector<std::string> shaderNames;       ///< Shader names for graphics (vert+frag) or compute.
+    /// Ray tracing only: ray generation / miss / closest-hit shader names, in that order.
+    /// When queueType == RAY_TRACING these are compiled into a ray tracing pipeline (with a
+    /// graph-managed shader binding table) and the node automatically issues vkCmdTraceRaysKHR
+    /// over the extent of its first STORAGE_IMAGE resource. Resources are bound by their
+    /// explicit DescriptorBinding (reflection-derived set/binding), so a node can bind the TLAS,
+    /// storage images and uniform buffers it declares.
     std::vector<std::string> rtShaderNames;
-    PSODesc psoDesc = {};
-    uint32_t costHint = 1;  // reserved for the future scheduler
-    // Optional clear values for the node's attachments, in attachment declaration order.
+    PSODesc psoDesc = {};                       ///< Graphics pipeline state (ignored for compute/RT).
+    uint32_t costHint = 1;                      ///< Reserved for the future scheduler.
+    /// Optional clear values for the node's attachments, in attachment declaration order.
     std::vector<VkClearValue> attachmentClearValues;
-    RenderGraphNodeCallback execute;
+    RenderGraphNodeCallback execute;            ///< Records the node's work.
 };
 
+/// Declares and runs a render graph.
+///
+/// Typical use:
+/// @code
+/// RenderGraphBuilder builder(GetRenderDevice());
+/// builder.AddResource("Color", ImageResourceDesc{ .format = ..., .extent = ..., .usage = ... });
+/// builder.ImportResource("Vertices", meshManager.m_pVertexBuffer);
+/// builder.AddNode({ .nodeName = "Opaque", .queueType = QueueType::GRAPHICS, ... });
+/// builder.Build();
+/// builder.Execute();
+/// @endcode
+///
+/// `Build()` is idempotent for a fixed declaration: it topologically sorts the nodes, allocates
+/// graph-owned resources, compiles pipelines/descriptor sets and plans barriers. `Execute()`
+/// records and submits the frame, splitting work across queues when nodes opt into async compute.
 class RenderGraphBuilder
 {
 public:
+    /// @param renderDevice Device used to create pipelines, command buffers and synchronisation.
     explicit RenderGraphBuilder(VkRenderDevice* renderDevice);
+    /// Releases compiled pipelines, descriptor sets and command buffers.
     ~RenderGraphBuilder();
 
     // ── Resource declaration (data) ──────────────────────────────────────────
-    // Graph-owned: allocated at Build() via the desc.
+    /// Declare a graph-owned resource. It is allocated at `Build()` from `desc`.
+    /// @return `*this` for chaining.
     RenderGraphBuilder& AddResource(const ResourceHandle& handle, ResourceDesc desc);
-    // Externally owned: used by graph nodes but not allocated by the graph.
+    /// Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated
+    /// or freed by the graph.
+    /// @return `*this` for chaining.
     RenderGraphBuilder& ImportResource(const ResourceHandle& handle, const IRenderResource* resource);
 
+    /// @return The allocation description for a graph-owned resource, if any.
     std::optional<ResourceDesc> GetResourceDesc(const ResourceHandle& handle) const;
 
     // ── Node declaration ─────────────────────────────────────────────────────
+    /// Declare a node. Throws if the name is already used.
     void AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo);
+    /// Add an ordering edge: `toNode` runs after `fromNode`. Throws if either node is unknown or
+    /// if the edge would create a cycle.
     void AddDependency(const std::string& fromNode, const std::string& toNode);
 
     // ── Build / Execute ──────────────────────────────────────────────────────
-    // Compiles the graph: topo sort, resource allocation, pipeline compilation, barrier planning.
+    /// Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation
+    /// and barrier planning. Call after all resources and nodes are declared.
     void Build();
-    // Runs every node once in execution order, inserting barriers between them.
+    /// Run every node once in execution order, inserting barriers between nodes and synchronising
+    /// cross-queue handovers.
     void Execute();
 
+    /// @return The node names in dependency (topological) order.
     std::vector<std::string> GetExecutionOrder() const;
 
 private:

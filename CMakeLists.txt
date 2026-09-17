@@ -315,6 +315,32 @@ target_compile_definitions(helloVulkan PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfi
 target_compile_definitions(PSOCompiler PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
 target_compile_definitions(tests PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
 
+# ── RenderGraph API documentation ────────────────────────────────────────────
+# Doxygen + Python are optional. When both are present, `render_graph_docs`
+# regenerates docs/RenderGraph-api.md and fails if any public RenderGraph entity
+# is undocumented; CTest runs the same check via the RenderGraphApiDocs test.
+# See docs/README.md.
+find_program(DOXYGEN_EXECUTABLE
+    NAMES doxygen
+    HINTS ${CMAKE_SOURCE_DIR}/.tools/doxygen/bin ${CMAKE_SOURCE_DIR}/.tools/doxygen/usr/bin)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
+if(DOXYGEN_EXECUTABLE AND Python3_Interpreter_FOUND)
+    set(RENDER_GRAPH_DOCS_SCRIPT ${CMAKE_SOURCE_DIR}/scripts/render_graph_docs.py)
+    set(RENDER_GRAPH_DOCS_DIR ${CMAKE_BINARY_DIR}/docs/render_graph)
+    add_custom_target(render_graph_docs
+        COMMAND ${CMAKE_COMMAND} -E env DOXYGEN=${DOXYGEN_EXECUTABLE}
+                ${Python3_EXECUTABLE} ${RENDER_GRAPH_DOCS_SCRIPT} --output-dir ${RENDER_GRAPH_DOCS_DIR}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating RenderGraph API documentation (fails on undocumented API)"
+        VERBATIM)
+    add_test(NAME RenderGraphApiDocs
+        COMMAND ${CMAKE_COMMAND} -E env DOXYGEN=${DOXYGEN_EXECUTABLE}
+                ${Python3_EXECUTABLE} ${RENDER_GRAPH_DOCS_SCRIPT} --check --output-dir ${RENDER_GRAPH_DOCS_DIR})
+else()
+    message(STATUS "RenderGraph docs disabled (doxygen/Python3 not found); see docs/README.md")
+endif()
+
 # Disable tests for now until proper method has been found to load the gltf
 #add_executable(testSceneImporter
 #    src/Geometry.cpp

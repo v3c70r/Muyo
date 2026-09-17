@@ -5,6 +5,7 @@
 
 namespace Hash
 {
+/// FNV-1a 64-bit string hash. Reserved for a future hashed resource handle.
 constexpr uint64_t StrFnV1A64(std::string_view str)
 {
     uint64_t hash = 14695981039346656037ULL;  // FNV offset basis
@@ -19,26 +20,10 @@ constexpr uint64_t StrFnV1A64(std::string_view str)
 
 namespace Muyo::RenderGraph
 {
-
-//class ResourceHandle
-//{
-//public:
-//    ResourceHandle(const ResourceHandle&) = default;
-//    ResourceHandle(ResourceHandle&&) = default;
-//    ResourceHandle& operator=(const ResourceHandle&) = delete;
-//    ResourceHandle& operator=(ResourceHandle&&) = delete;
-//    explicit ResourceHandle(const std::string& name) : m_name(name), m_nameHash(Hash::StrFnV1A64(name)) {}
-//    bool operator==(const ResourceHandle& other) const
-//    {
-//        return m_nameHash == other.m_nameHash;
-//    }
-//    std::string_view GetName() const { return m_name; }
-//
-//private:
-//    const std::string m_name;
-//    const uint64_t m_nameHash;
-//};
-//
+/// Stable string name identifying a resource, node or imported object in the graph.
+///
+/// The same name used in `AddResource` / `ImportResource` is how nodes refer to it in their
+/// `ResourceUse` lists.
 using ResourceHandle = std::string;
 
-};  // namespace Muyo
+}  // namespace Muyo::RenderGraph

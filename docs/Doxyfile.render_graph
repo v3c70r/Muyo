@@ -1,0 +1,57 @@
+# Doxygen configuration for the RenderGraph public API.
+#
+# Rendered with `cmake --build <build> --target render_graph_docs` (see
+# docs/README.md). Coverage is enforced: any undocumented public entity in
+# src/RenderGraph fails the build via WARN_AS_ERROR below.
+
+PROJECT_NAME           = "Muyo RenderGraph"
+PROJECT_BRIEF          = "Data-driven render graph for the Vulkan renderer"
+OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIR@
+
+INPUT                  = @RENDERGRAPH_HEADER_DIR@ \
+                         @RENDERGRAPH_OVERVIEW@
+FILE_PATTERNS          = *.h *.md
+RECURSIVE              = NO
+USE_MDFILE_AS_MAINPAGE = @RENDERGRAPH_OVERVIEW@
+
+# Extract the whole public surface so undocumented entities are reported.
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = NO
+EXTRACT_ANON_NSPACES   = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+
+# Entities marked \internal are excluded from the public reference and from the coverage check.
+INTERNAL_DOCS          = NO
+
+# ── Coverage enforcement ─────────────────────────────────────────────────────
+# Undocumented public classes/structs/enums/functions/members are errors.
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+WARN_AS_ERROR          = FAIL_ON_WARNINGS
+WARN_LOGFILE           = @DOXYGEN_WARNLOG@
+
+QUIET                  = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+XML_PROGRAMLISTING     = NO
+SOURCE_BROWSER         = NO
+REFERENCED_BY_RELATION = NO
+REFERENCES_RELATION    = NO
+
+# Do not require graphviz; the API reference is read as text/markdown.
+HAVE_DOT               = NO
+CLASS_GRAPH            = NO
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+DIRECTORY_GRAPH        = NO
+GRAPHICAL_HIERARCHY    = NO
+
+# Macros that would otherwise confuse the parser.
+PREDEFINED             = FEATURE_RAY_TRACING
+MACRO_EXPANSION        = NO

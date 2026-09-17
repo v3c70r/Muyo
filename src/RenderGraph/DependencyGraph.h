@@ -7,6 +7,12 @@
 
 namespace Muyo
 {
+/// A directed acyclic graph used to order render graph nodes.
+///
+/// Edges are `from -> to` ("`to` depends on `from`"). Adding an edge that would introduce a cycle
+/// is rejected by `AddEdge`. The graph is generic over the node identifier type.
+///
+/// @tparam T Node identifier (e.g. `std::string` for node names).
 template <typename T>
 class DependencyGraph
 {
@@ -15,6 +21,8 @@ private:
     std::unordered_map<T, int> m_inDegree;  // Track in-degrees for parallel execution
 
 public:
+    /// Add a dependency edge `from -> to` (i.e. `to` must run after `from`).
+    /// @return `false` if the edge would create a cycle (the edge is still inserted).
     bool AddEdge(const T& from, const T& to)
     {
         m_adjacencyList[from].insert(to);
@@ -25,6 +33,8 @@ public:
         return !HasCycle();
     }
 
+    /// Order all nodes so that every node appears after its dependencies.
+    /// @return The nodes in a valid execution order.
     std::vector<T> TopologicalSort() const
     {
         std::unordered_map<T, bool> visited;
@@ -48,6 +58,8 @@ public:
         return result;
     }
 
+    /// Group nodes into levels that can run in parallel (Kahn's algorithm).
+    /// @return One vector of nodes per dependency level, in order.
     std::vector<std::vector<T>> GetParallelExecutionLevels()
     {
         std::queue<T> q;
@@ -84,11 +96,13 @@ public:
         return levels;
     }
 
+    /// @return `true` if a direct edge `from -> to` exists.
     bool IsAdjacentTo(const T& from, const T& to) const
     {
         return std::ranges::find(m_adjacencyList.at(from).begin(), m_adjacencyList.at(from).end(), to) != m_adjacencyList.at(from).end();
     }
 
+    /// @return `true` if the graph currently contains a cycle.
     bool HasCycle()
     {
         std::unordered_map<T, bool> visited;

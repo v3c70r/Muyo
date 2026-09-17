@@ -10,41 +10,47 @@
 
 namespace Muyo::RenderGraph
 {
-
-// How long a resource lives relative to the graph.
+/// How long a resource lives relative to the graph.
 enum class ResourceLifetime : uint8_t
 {
-    Transient,   // Lives only inside this graph; may be aliased / reused across nodes.
-    Persistent,  // Survives the frame boundary (e.g. TAA history, accumulation buffers).
-    Imported     // Externally owned (old pass system, swapchain images); graph does not allocate.
+    Transient,   ///< Lives only inside this graph; may be aliased / reused across nodes.
+    Persistent,  ///< Survives the frame boundary (e.g. TAA history, accumulation buffers).
+    Imported     ///< Externally owned (old pass system, swapchain images); graph does not allocate.
 };
 
-// Describes the ALLOCATION of a buffer. Size = count * stride.
+/// Describes the allocation of a buffer. Size = count * stride.
 struct BufferResourceDesc
 {
-    uint64_t count = 0;
-    uint64_t stride = 0;
-    VkBufferUsageFlags usage = 0;
-    VmaMemoryUsage memoryProperties = VMA_MEMORY_USAGE_UNKNOWN;
-    ResourceLifetime lifetime = ResourceLifetime::Transient;
+    uint64_t count = 0;                                           ///< Number of elements.
+    uint64_t stride = 0;                                          ///< Size of one element in bytes.
+    VkBufferUsageFlags usage = 0;                                 ///< Vulkan buffer usage flags.
+    VmaMemoryUsage memoryProperties = VMA_MEMORY_USAGE_UNKNOWN;   ///< VMA memory usage.
+    ResourceLifetime lifetime = ResourceLifetime::Transient;      ///< Lifetime relative to the graph.
 };
 
-// Describes the ALLOCATION of an image (render target / storage image / texture).
+/// Describes the allocation of an image (render target / storage image / texture).
 struct ImageResourceDesc
 {
-    VkFormat format = VK_FORMAT_UNDEFINED;
-    VkExtent2D extent = {0, 0};
-    uint32_t mips = 1;
-    uint32_t layers = 1;
-    VkImageUsageFlags usage = 0;
-    ResourceLifetime lifetime = ResourceLifetime::Transient;
+    VkFormat format = VK_FORMAT_UNDEFINED;                       ///< Pixel format.
+    VkExtent2D extent = {0, 0};                                  ///< Width x height.
+    uint32_t mips = 1;                                           ///< Mip level count.
+    uint32_t layers = 1;                                         ///< Array layer count (6 = cubemap).
+    VkImageUsageFlags usage = 0;                                 ///< Vulkan image usage flags.
+    ResourceLifetime lifetime = ResourceLifetime::Transient;     ///< Lifetime relative to the graph.
 };
 
-// The complete set of resource types the graph knows how to allocate.
+/// The complete set of resource types the graph knows how to allocate.
 using ResourceDesc = std::variant<BufferResourceDesc, ImageResourceDesc>;
 
-// Allocate a physical resource from a desc. The render graph calls this at Build() time.
-// Uses the existing RenderResourceManager as the backend allocator.
+/// Allocate a physical resource from a desc. The render graph calls this at Build() time.
+///
+/// Uses the existing RenderResourceManager as the backend allocator and returns the existing
+/// resource if the handle is already allocated, so repeated builds reuse it.
+///
+/// @param desc                  Allocation description (buffer or image).
+/// @param renderResourceManager Backend allocator.
+/// @param handle                Name to allocate under.
+/// @return The allocated (or pre-existing) resource.
 inline IRenderResource* AllocateResource(const ResourceDesc& desc, RenderResourceManager& renderResourceManager,
                                          const ResourceHandle& handle)
 {
