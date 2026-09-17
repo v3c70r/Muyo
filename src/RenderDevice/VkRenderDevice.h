@@ -52,6 +52,14 @@ public:
     VkQueue& GetImmediateQueue() { return m_graphicsQueue; }  // TODO: Handle copy queue
     VkQueue& GetPresentQueue() { return m_presentQueue; }
     VkQueue& GetComputeQueue() { return m_computeQueue; }
+    // Queue family indices, needed for cross-queue resource ownership transfers.
+    uint32_t GetGraphicsQueueFamily() const { return static_cast<uint32_t>(m_queueFamilyIndices.nGraphicsQueueFamily); }
+    uint32_t GetComputeQueueFamily() const { return static_cast<uint32_t>(m_queueFamilyIndices.nComputeQueueFamily); }
+    bool IsComputeQueueDedicated() const
+    {
+        return m_queueFamilyIndices.nComputeQueueFamily >= 0 &&
+               m_queueFamilyIndices.nComputeQueueFamily != m_queueFamilyIndices.nGraphicsQueueFamily;
+    }
     VkInstance& GetInstance() { return m_instance; }
 
     void SetDevice(VkDevice device) { m_device = device; }

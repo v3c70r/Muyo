@@ -300,8 +300,9 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
         }};
 
     // Compute node: frustum-culls the scene and generates draw commands entirely on the GPU.
-    // Descriptors are bound by explicit set/binding taken from the shader reflection, so the
-    // pass is free to use its own resource set instead of the built-in semantic sets.
+    // queueType == COMPUTE routes this node to the dedicated async compute queue (when the device
+    // exposes one); the graph inserts a queue-family ownership handover plus a semaphore so the
+    // graphics pass below can consume the generated draw commands.
     RenderGraphNodeCreateInfo cullingPass = {
         .nodeName = "DrawCmdGenerationPass",
         .queueType = QueueType::COMPUTE,
@@ -458,7 +459,8 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
     return result;
 }
 
-TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum culling", "[RenderGraphBuilder]")
+TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum culling (async compute queue)",
+                 "[RenderGraphBuilder][AsyncCompute]")
 {
     const glm::mat4 proj = glm::perspective(glm::radians(80.0F),
                                             static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);

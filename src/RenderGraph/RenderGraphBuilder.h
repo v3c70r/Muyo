@@ -149,11 +149,24 @@ private:
     void BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
                                  const std::vector<VkShaderModule>& shaderModules);
 
-    void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses);
+    void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
+                        uint32_t queueFamily);
+
+    // Emit queue-family ownership transfer barriers for resources crossing queues.
+    void RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily, uint32_t dstQueueFamily,
+                                     bool bAcquire, const std::vector<ResourceHandle>& handles);
 
     // Resolve a handle to its concrete resource: imported resources take priority,
     // otherwise look in the graph-owned resource manager.
     const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
+
+    // Queue routing. RAY_TRACING / COPY follow the graphics queue; only COMPUTE can run on the
+    // dedicated async compute queue.
+    static QueueType GetQueueKey(QueueType type);
+    VkQueue GetQueueForType(QueueType type) const;
+    uint32_t GetQueueFamilyForType(QueueType type) const;
+    VkCommandBuffer AllocateCommandBufferForType(QueueType type) const;
+    void FreeCommandBufferForType(QueueType type, VkCommandBuffer cmdBuf) const;
 
     // Auto wraps a graphics node's work in vkCmdBeginRendering/vkCmdEndRendering.
     bool BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn, RenderGraphNodeContext& ctx,
@@ -169,6 +182,10 @@ private:
         VkAccessFlags2 lastAccess = 0;
         VkImageLayout lastLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         bool writtenByCpu = false;  // last writer was a CPU node; needs host flush
+        uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;  // queue family that currently owns the resource
+        // Set before recording a queue segment when the resource is handed over from another queue
+        // family; consumed by RecordBarriers to emit an acquire barrier instead of a normal one.
+        int32_t pendingAcquireFamily = -1;
     };
 
     std::unordered_map<ResourceHandle, ResourceAccessState> m_resourceAccessStates;
@@ -180,7 +197,6 @@ private:
     std::unordered_map<ResourceHandle, uint32_t> m_resourceLastUsedVersion;  // Track last used version of resources
     ShaderAssetManager m_shaderAssetManager;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
-    std::array<VkCommandBuffer, static_cast<size_t>(QueueType::COUNT)> m_commandBuffers;
     RenderGraphDescriptorSets m_descriptorSetManager;
 
     ResourceDescRegistry m_resourceDescRegistry;

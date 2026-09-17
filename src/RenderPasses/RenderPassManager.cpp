@@ -358,9 +358,9 @@ void RenderPassManager::SubmitCommandBuffers()
     
     vWaitForSemaphores.push_back(m_imageAvailable);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-    vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     vSignalSemaphores.push_back(m_renderFinished);
-    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetComputeQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages, m_aGPUExecutionFence[m_uImageIdx2Present]);
+    // UI and final passes write the swapchain image; they must run on the graphics queue.
+    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages, m_aGPUExecutionFence[m_uImageIdx2Present]);
 }
 
 }  // namespace Muyo

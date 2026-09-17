@@ -1,6 +1,7 @@
 #include "RenderGraphBuilder.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
@@ -52,9 +53,6 @@ RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
     , m_vkDevice(renderDevice->GetDevice())
     , m_descriptorSetManager(*GetDescriptorManager())
 {
-    m_commandBuffers[static_cast<size_t>(QueueType::GRAPHICS)] = renderDevice->AllocateReusablePrimaryCommandbuffer();
-    m_commandBuffers[static_cast<size_t>(QueueType::COMPUTE)] = renderDevice->AllocateComputeCommandBuffer();
-    m_commandBuffers[static_cast<size_t>(QueueType::COPY)] = renderDevice->AllocateImmediateCommandBuffer();
 }
 
 RenderGraphBuilder::~RenderGraphBuilder()
@@ -622,7 +620,8 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
     return true;
 }
 
-void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses)
+void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
+                                        uint32_t queueFamily)
 {
     std::vector<VkImageMemoryBarrier> imageBarriers;
     std::vector<VkBufferMemoryBarrier> bufferBarriers;
@@ -630,6 +629,12 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
     for (const auto& use : resourceUses)
     {
         ResourceAccessState& state = m_resourceAccessStates[use.handle];
+
+        // A pending acquire means this resource is being handed over from another queue family;
+        // the first use emits a queue-family transfer barrier instead of a normal one.
+        const bool bAcquire = state.pendingAcquireFamily >= 0;
+        const uint32_t acquireSrcFamily =
+            bAcquire ? static_cast<uint32_t>(state.pendingAcquireFamily) : VK_QUEUE_FAMILY_IGNORED;
 
         VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         VkAccessFlags srcAccess = 0;
@@ -649,7 +654,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             oldLayout = state.lastLayout;
         }
 
-        const bool needsBarrier = fromCpu || !state.seen ||
+        const bool needsBarrier = bAcquire || fromCpu || !state.seen ||
                                   (state.lastAccess != static_cast<VkAccessFlags2>(use.access)) ||
                                   (state.lastLayout != use.imageLayout);
 
@@ -659,12 +664,12 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             if (!image) continue;
 
             VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-            barrier.srcAccessMask = srcAccess;
+            barrier.srcAccessMask = bAcquire ? 0 : srcAccess;
             barrier.dstAccessMask = static_cast<VkAccessFlags>(use.access);
             barrier.oldLayout = state.seen ? oldLayout : VK_IMAGE_LAYOUT_UNDEFINED;
             barrier.newLayout = use.imageLayout;
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.srcQueueFamilyIndex = bAcquire ? acquireSrcFamily : VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = bAcquire ? queueFamily : VK_QUEUE_FAMILY_IGNORED;
             barrier.image = image->getImage();
             barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
             if (needsBarrier)
@@ -678,10 +683,10 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             if (!buffer) continue;
 
             VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-            barrier.srcAccessMask = srcAccess;
+            barrier.srcAccessMask = bAcquire ? 0 : srcAccess;
             barrier.dstAccessMask = static_cast<VkAccessFlags>(use.access);
-            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.srcQueueFamilyIndex = bAcquire ? acquireSrcFamily : VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = bAcquire ? queueFamily : VK_QUEUE_FAMILY_IGNORED;
             barrier.buffer = buffer->buffer();
             barrier.offset = 0;
             barrier.size = VK_WHOLE_SIZE;
@@ -695,6 +700,8 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         state.lastStages = use.stages;
         state.lastAccess = use.access;
         state.lastLayout = use.imageLayout;
+        state.queueFamily = queueFamily;
+        state.pendingAcquireFamily = -1;
     }
 
     if (imageBarriers.empty() && bufferBarriers.empty()) return;
@@ -710,6 +717,100 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
                          imageBarriers.size(), imageBarriers.data());
 }
 
+void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily,
+                                                     uint32_t dstQueueFamily, bool bAcquire,
+                                                     const std::vector<ResourceHandle>& handles)
+{
+    if (bAcquire)
+    {
+        // The actual barrier is emitted by RecordBarriers on the first use in this queue.
+        for (const auto& handle : handles)
+        {
+            m_resourceAccessStates[handle].pendingAcquireFamily = static_cast<int32_t>(srcQueueFamily);
+        }
+        return;
+    }
+
+    // Release: hand ownership of the resource from the producing queue family to the consumer.
+    std::vector<VkImageMemoryBarrier> imageBarriers;
+    std::vector<VkBufferMemoryBarrier> bufferBarriers;
+    for (const auto& handle : handles)
+    {
+        ResourceAccessState& state = m_resourceAccessStates[handle];
+        const IRenderResource* pResource = ResolveResource(handle);
+        if (pResource == nullptr) continue;
+
+        if (const auto* image = dynamic_cast<const ImageResource*>(pResource))
+        {
+            VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            barrier.srcAccessMask = static_cast<VkAccessFlags>(state.lastAccess);
+            barrier.dstAccessMask = 0;
+            barrier.oldLayout = state.lastLayout;
+            barrier.newLayout = state.lastLayout;
+            barrier.srcQueueFamilyIndex = srcQueueFamily;
+            barrier.dstQueueFamilyIndex = dstQueueFamily;
+            barrier.image = image->getImage();
+            barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
+            imageBarriers.push_back(barrier);
+        }
+        else if (const auto* buffer = dynamic_cast<const BufferResource*>(pResource))
+        {
+            VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+            barrier.srcAccessMask = static_cast<VkAccessFlags>(state.lastAccess);
+            barrier.dstAccessMask = 0;
+            barrier.srcQueueFamilyIndex = srcQueueFamily;
+            barrier.dstQueueFamilyIndex = dstQueueFamily;
+            barrier.buffer = buffer->buffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            bufferBarriers.push_back(barrier);
+        }
+    }
+
+    if (imageBarriers.empty() && bufferBarriers.empty()) return;
+
+    vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
+                         nullptr, static_cast<uint32_t>(bufferBarriers.size()), bufferBarriers.data(),
+                         static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
+}
+
+QueueType RenderGraphBuilder::GetQueueKey(QueueType type)
+{
+    // Only compute runs on the dedicated async queue; RT / copy follow the graphics queue.
+    return (type == QueueType::COMPUTE) ? QueueType::COMPUTE : QueueType::GRAPHICS;
+}
+
+VkQueue RenderGraphBuilder::GetQueueForType(QueueType type) const
+{
+    if (type == QueueType::COMPUTE) return GetRenderDevice()->GetComputeQueue();
+    return GetRenderDevice()->GetGraphicsQueue();
+}
+
+uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
+{
+    if (type == QueueType::COMPUTE) return GetRenderDevice()->GetComputeQueueFamily();
+    return GetRenderDevice()->GetGraphicsQueueFamily();
+}
+
+VkCommandBuffer RenderGraphBuilder::AllocateCommandBufferForType(QueueType type) const
+{
+    if (type == QueueType::COMPUTE) return GetRenderDevice()->AllocateComputeCommandBuffer();
+    return GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
+}
+
+void RenderGraphBuilder::FreeCommandBufferForType(QueueType type, VkCommandBuffer cmdBuf) const
+{
+    if (cmdBuf == VK_NULL_HANDLE) return;
+    if (type == QueueType::COMPUTE)
+    {
+        GetRenderDevice()->FreeComputeCommandBuffer(cmdBuf);
+    }
+    else
+    {
+        GetRenderDevice()->FreeReusablePrimaryCommandbuffer(cmdBuf);
+    }
+}
+
 void RenderGraphBuilder::Execute()
 {
     m_resourceAccessStates.clear();
@@ -720,17 +821,25 @@ void RenderGraphBuilder::Execute()
         .meshManager = *GetMeshResourceManager(),
     };
 
-    VkCommandBuffer cmdBuf = m_commandBuffers[static_cast<size_t>(QueueType::GRAPHICS)];
-    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
-
     std::unordered_set<ResourceHandle> alreadyWritten;
     std::vector<VkRenderingAttachmentInfo> colorAttachments;
     std::vector<VkClearValue> clearValues;
 
-    for (const auto& rgn : m_compiledGraphNodes)
+    // ── Split the graph into contiguous per-queue segments; CPU nodes run inline on the host. ──
+    struct Segment
     {
+        QueueType queueType = QueueType::GRAPHICS;
+        size_t begin = 0;  // first compiled node index (inclusive)
+        size_t end = 0;    // one past the last compiled node index
+    };
+    std::vector<Segment> segments;
+    size_t segmentBegin = 0;
+    QueueType segmentQueue = QueueType::COUNT;
+    bool bInSegment = false;
+
+    for (size_t i = 0; i < m_compiledGraphNodes.size(); ++i)
+    {
+        const auto& rgn = m_compiledGraphNodes[i];
         context.queueType = rgn.queueType;
 
         if (rgn.queueType == QueueType::CPU)
@@ -751,77 +860,221 @@ void RenderGraphBuilder::Execute()
             continue;
         }
 
-        context.commandBuffer = cmdBuf;
-        context.pipeline = rgn.pipeline;
-        context.pipelineLayout = rgn.pipelineLayout;
-        context.bindingPoint = rgn.bindingPoint;
-
-        // 1. Barrier batch: transition all resources used by this node.
-        RecordBarriers(cmdBuf, rgn.logicalRenderGraphNode->resourceUses);
-
-        // 2. Auto render pass wrap for graphics nodes.
-        bool rendering = false;
-        if (rgn.queueType == QueueType::GRAPHICS)
+        const QueueType key = GetQueueKey(rgn.queueType);
+        if (!bInSegment || key != segmentQueue)
         {
-            rendering = BeginRendering(cmdBuf, rgn, context, alreadyWritten, colorAttachments, clearValues);
+            if (bInSegment) segments.push_back({segmentQueue, segmentBegin, i});
+            segmentBegin = i;
+            segmentQueue = key;
+            bInSegment = true;
         }
+    }
+    if (bInSegment) segments.push_back({segmentQueue, segmentBegin, m_compiledGraphNodes.size()});
 
-        // 3. Bind pipeline + descriptor sets.
-        if (rgn.pipeline != VK_NULL_HANDLE)
+    if (segments.empty()) return;
+
+    // ── Detect resources handed from one queue family to another. ──────────────────────────────
+    struct Transfer
+    {
+        size_t producer = 0;
+        size_t consumer = 0;
+        ResourceHandle handle;
+        uint32_t producerFamily = VK_QUEUE_FAMILY_IGNORED;
+        uint32_t consumerFamily = VK_QUEUE_FAMILY_IGNORED;
+    };
+    std::vector<Transfer> transfers;
+    {
+        std::unordered_map<ResourceHandle, size_t> lastSegmentForResource;
+        for (size_t s = 0; s < segments.size(); ++s)
         {
-            vkCmdBindPipeline(cmdBuf, rgn.bindingPoint, rgn.pipeline);
-
-            if (!rgn.descriptorSetLayouts.empty())
+            std::unordered_set<ResourceHandle> resourcesInSegment;
+            for (size_t i = segments[s].begin; i < segments[s].end; ++i)
             {
-                if (rgn.ownsDescriptorSets)
+                for (const auto& use : m_compiledGraphNodes[i].logicalRenderGraphNode->resourceUses)
                 {
-                    // Reflection-bound (compute) node: sets were written at Build() time.
-                    vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
-                                            static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data(),
-                                            0, nullptr);
-                }
-                else
-                {
-                    // Semantic node: write the node's resources into the shared sets, then bind all three.
-                    for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
-                    {
-                        if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
-                        const IRenderResource* pResource = ResolveResource(use.handle);
-                        if (pResource)
-                        {
-                            m_descriptorSetManager.BindResourceToDescriptorSet(pResource, use.bindingSemantic, 0);
-                        }
-                    }
-
-                    vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
-                                            static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data(),
-                                            0, nullptr);
+                    resourcesInSegment.insert(use.handle);
                 }
             }
-        }
-
-        // 4. User GPU work.
-        rgn.execute(context);
-
-        // 4b. Ray tracing nodes issue the trace automatically; the SBT is graph-managed.
-        if (rgn.isRayTracing && rgn.pipeline != VK_NULL_HANDLE && rgn.traceExtent.width > 0)
-        {
-            const VkStridedDeviceAddressRegionKHR callable{0, 0, 0};
-            VkExt::vkCmdTraceRaysKHR(cmdBuf, &rgn.sbtRegions[0], &rgn.sbtRegions[1], &rgn.sbtRegions[2], &callable,
-                                     rgn.traceExtent.width, rgn.traceExtent.height, 1);
-        }
-
-        // 5. End auto render pass.
-        if (rendering)
-        {
-            vkCmdEndRendering(cmdBuf);
+            for (const auto& handle : resourcesInSegment)
+            {
+                auto it = lastSegmentForResource.find(handle);
+                if (it != lastSegmentForResource.end() && it->second != s)
+                {
+                    const uint32_t producerFamily = GetQueueFamilyForType(segments[it->second].queueType);
+                    const uint32_t consumerFamily = GetQueueFamilyForType(segments[s].queueType);
+                    if (producerFamily != consumerFamily)
+                    {
+                        transfers.push_back({it->second, s, handle, producerFamily, consumerFamily});
+                    }
+                }
+                lastSegmentForResource[handle] = s;
+            }
         }
     }
 
-    VK_ASSERT(vkEndCommandBuffer(cmdBuf));
+    // ── Record each segment into its own command buffer. ───────────────────────────────────────
+    std::vector<VkCommandBuffer> segmentCmdBuffers(segments.size(), VK_NULL_HANDLE);
+    for (size_t s = 0; s < segments.size(); ++s)
+    {
+        const uint32_t queueFamily = GetQueueFamilyForType(segments[s].queueType);
+        VkCommandBuffer cmdBuf = AllocateCommandBufferForType(segments[s].queueType);
+        segmentCmdBuffers[s] = cmdBuf;
 
-    std::vector<VkCommandBuffer> cmdBuffers = {cmdBuf};
-    GetRenderDevice()->SubmitCommandBuffersAndWait(cmdBuffers);
+        VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
+
+        // Mark resources handed over from another queue; RecordBarriers emits the acquire barrier.
+        for (const auto& transfer : transfers)
+        {
+            if (transfer.consumer == s)
+            {
+                RecordQueueTransferBarriers(cmdBuf, transfer.producerFamily, transfer.consumerFamily, true,
+                                            {transfer.handle});
+            }
+        }
+
+        for (size_t i = segments[s].begin; i < segments[s].end; ++i)
+        {
+            const auto& rgn = m_compiledGraphNodes[i];
+            context.queueType = rgn.queueType;
+            context.commandBuffer = cmdBuf;
+            context.pipeline = rgn.pipeline;
+            context.pipelineLayout = rgn.pipelineLayout;
+            context.bindingPoint = rgn.bindingPoint;
+
+            // 1. Barrier batch: transition all resources used by this node.
+            RecordBarriers(cmdBuf, rgn.logicalRenderGraphNode->resourceUses, queueFamily);
+
+            // 2. Auto render pass wrap for graphics nodes.
+            bool rendering = false;
+            if (rgn.queueType == QueueType::GRAPHICS)
+            {
+                rendering = BeginRendering(cmdBuf, rgn, context, alreadyWritten, colorAttachments, clearValues);
+            }
+
+            // 3. Bind pipeline + descriptor sets.
+            if (rgn.pipeline != VK_NULL_HANDLE)
+            {
+                vkCmdBindPipeline(cmdBuf, rgn.bindingPoint, rgn.pipeline);
+
+                if (!rgn.descriptorSetLayouts.empty())
+                {
+                    if (rgn.ownsDescriptorSets)
+                    {
+                        vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
+                                                static_cast<uint32_t>(rgn.descriptorSets.size()),
+                                                rgn.descriptorSets.data(), 0, nullptr);
+                    }
+                    else
+                    {
+                        for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+                        {
+                            if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
+                            const IRenderResource* pResource = ResolveResource(use.handle);
+                            if (pResource)
+                            {
+                                m_descriptorSetManager.BindResourceToDescriptorSet(pResource, use.bindingSemantic, 0);
+                            }
+                        }
+
+                        vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
+                                                static_cast<uint32_t>(rgn.descriptorSets.size()),
+                                                rgn.descriptorSets.data(), 0, nullptr);
+                    }
+                }
+            }
+
+            // 4. User GPU work.
+            rgn.execute(context);
+
+            // 4b. Ray tracing nodes issue the trace automatically; the SBT is graph-managed.
+            if (rgn.isRayTracing && rgn.pipeline != VK_NULL_HANDLE && rgn.traceExtent.width > 0)
+            {
+                const VkStridedDeviceAddressRegionKHR callable{0, 0, 0};
+                VkExt::vkCmdTraceRaysKHR(cmdBuf, &rgn.sbtRegions[0], &rgn.sbtRegions[1], &rgn.sbtRegions[2], &callable,
+                                         rgn.traceExtent.width, rgn.traceExtent.height, 1);
+            }
+
+            // 5. End auto render pass.
+            if (rendering)
+            {
+                vkCmdEndRendering(cmdBuf);
+            }
+        }
+
+        // Release ownership of resources consumed by a later queue.
+        for (const auto& transfer : transfers)
+        {
+            if (transfer.producer == s)
+            {
+                RecordQueueTransferBarriers(cmdBuf, transfer.producerFamily, transfer.consumerFamily, false,
+                                            {transfer.handle});
+            }
+        }
+
+        VK_ASSERT(vkEndCommandBuffer(cmdBuf));
+    }
+
+    // ── Submit each queue, synchronizing cross-queue handovers with semaphores. ────────────────
+    std::map<std::pair<size_t, size_t>, VkSemaphore> transitionSemaphores;
+    for (const auto& transfer : transfers)
+    {
+        const auto key = std::make_pair(transfer.producer, transfer.consumer);
+        if (transitionSemaphores.find(key) == transitionSemaphores.end())
+        {
+            VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+            VkSemaphore semaphore = VK_NULL_HANDLE;
+            VK_ASSERT(vkCreateSemaphore(m_vkDevice, &semaphoreInfo, nullptr, &semaphore));
+            transitionSemaphores[key] = semaphore;
+        }
+    }
+
+    for (size_t s = 0; s < segments.size(); ++s)
+    {
+        std::vector<VkSemaphore> waitSemaphores;
+        std::vector<VkPipelineStageFlags> waitStages;
+        std::vector<VkSemaphore> signalSemaphores;
+        for (const auto& [key, semaphore] : transitionSemaphores)
+        {
+            if (key.second == s)
+            {
+                waitSemaphores.push_back(semaphore);
+                waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+            }
+            if (key.first == s)
+            {
+                signalSemaphores.push_back(semaphore);
+            }
+        }
+
+        VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
+        submitInfo.pWaitSemaphores = waitSemaphores.empty() ? nullptr : waitSemaphores.data();
+        submitInfo.pWaitDstStageMask = waitStages.empty() ? nullptr : waitStages.data();
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &segmentCmdBuffers[s];
+        submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphores.size());
+        submitInfo.pSignalSemaphores = signalSemaphores.empty() ? nullptr : signalSemaphores.data();
+
+        VK_ASSERT(vkQueueSubmit(GetQueueForType(segments[s].queueType), 1, &submitInfo, VK_NULL_HANDLE));
+    }
+
+    // Wait for all queues that participated in this frame.
+    vkQueueWaitIdle(GetRenderDevice()->GetGraphicsQueue());
+    if (GetRenderDevice()->IsComputeQueueDedicated())
+    {
+        vkQueueWaitIdle(GetRenderDevice()->GetComputeQueue());
+    }
+
+    for (const auto& [key, semaphore] : transitionSemaphores)
+    {
+        vkDestroySemaphore(m_vkDevice, semaphore, nullptr);
+    }
+    for (size_t s = 0; s < segments.size(); ++s)
+    {
+        FreeCommandBufferForType(segments[s].queueType, segmentCmdBuffers[s]);
+    }
 }
 
 std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const { return m_dependencyGraph.TopologicalSort(); }

@@ -243,38 +243,44 @@ void VkRenderDevice::CreateDevice(
     std::set<VkDeviceQueueCreateInfo, decltype(cmp)> sQueueCreateInfos(cmp);
 
     // Find the first queue families support all the queues
-    int nQueueFamilyIdx = 0;
-    for (const auto& queueFamily : queueFamilies)
+    m_queueFamilyIndices.nGraphicsQueueFamily = -1;
+    m_queueFamilyIndices.nPresentQueneFamily = -1;
+    m_queueFamilyIndices.nComputeQueueFamily = -1;
+    bool bComputeFamilyIsDedicated = false;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilies.size()); ++i)
     {
+        const auto& queueFamily = queueFamilies[i];
+        const bool bSupportsGraphics = queueFamily.queueCount > 0 && (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT);
+        const bool bSupportsCompute = queueFamily.queueCount > 0 && (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT);
+
         // Check for graphics support
-        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        if (bSupportsGraphics && m_queueFamilyIndices.nGraphicsQueueFamily < 0)
         {
-            m_queueFamilyIndices.nGraphicsQueueFamily = nQueueFamilyIdx;
+            m_queueFamilyIndices.nGraphicsQueueFamily = static_cast<int>(i);
         }
 
         // Check for presentation support ( they can be in the same queeu family)
-        if (pSurface)
+        if (pSurface && m_queueFamilyIndices.nPresentQueneFamily < 0)
         {
             VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, nQueueFamilyIdx, *pSurface, &presentSupport);
-
-            if (queueFamily.queueCount > 0 && presentSupport)
+            vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, *pSurface, &presentSupport);
+            if (presentSupport)
             {
-                m_queueFamilyIndices.nPresentQueneFamily = nQueueFamilyIdx;
+                m_queueFamilyIndices.nPresentQueneFamily = static_cast<int>(i);
             }
         }
 
-        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+        // Prefer a dedicated compute-only queue family so compute work can run asynchronously;
+        // otherwise fall back to any compute-capable family (usually the graphics family).
+        if (bSupportsCompute)
         {
-            m_queueFamilyIndices.nComputeQueueFamily = nQueueFamilyIdx;
+            const bool bDedicated = !bSupportsGraphics;
+            if (m_queueFamilyIndices.nComputeQueueFamily < 0 || (bDedicated && !bComputeFamilyIsDedicated))
+            {
+                m_queueFamilyIndices.nComputeQueueFamily = static_cast<int>(i);
+                bComputeFamilyIsDedicated = bDedicated;
+            }
         }
-
-        if (m_queueFamilyIndices.isComplete())
-        {
-            break;
-        }
-
-        nQueueFamilyIdx++;
     }
 
     // We should at least have one graphics queue
