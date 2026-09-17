@@ -424,6 +424,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
 
     auto& rgn = m_renderGraphNodes.at(nodeName);
     rgn.queueType = nodeCreateInfo.queueType;
+    rgn.async = nodeCreateInfo.async;
     rgn.costHint = nodeCreateInfo.costHint;
     rgn.attachmentClearValues = nodeCreateInfo.attachmentClearValues;
 
@@ -774,10 +775,11 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
                          static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
 }
 
-QueueType RenderGraphBuilder::GetQueueKey(QueueType type)
+QueueType RenderGraphBuilder::GetQueueKey(QueueType type, bool bAsync)
 {
-    // Only compute runs on the dedicated async queue; RT / copy follow the graphics queue.
-    return (type == QueueType::COMPUTE) ? QueueType::COMPUTE : QueueType::GRAPHICS;
+    // Only an explicitly-marked compute node may run on the dedicated async compute queue;
+    // everything else (including non-async compute) follows the graphics queue.
+    return (type == QueueType::COMPUTE && bAsync) ? QueueType::COMPUTE : QueueType::GRAPHICS;
 }
 
 VkQueue RenderGraphBuilder::GetQueueForType(QueueType type) const
@@ -860,7 +862,7 @@ void RenderGraphBuilder::Execute()
             continue;
         }
 
-        const QueueType key = GetQueueKey(rgn.queueType);
+        const QueueType key = GetQueueKey(rgn.queueType, rgn.logicalRenderGraphNode->async);
         if (!bInSegment || key != segmentQueue)
         {
             if (bInSegment) segments.push_back({segmentQueue, segmentBegin, i});

@@ -300,12 +300,13 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
         }};
 
     // Compute node: frustum-culls the scene and generates draw commands entirely on the GPU.
-    // queueType == COMPUTE routes this node to the dedicated async compute queue (when the device
-    // exposes one); the graph inserts a queue-family ownership handover plus a semaphore so the
-    // graphics pass below can consume the generated draw commands.
+    // It is explicitly marked async, so the graph schedules it on the dedicated async compute
+    // queue and inserts a queue-family ownership handover plus a semaphore so the graphics pass
+    // below can consume the generated draw commands.
     RenderGraphNodeCreateInfo cullingPass = {
         .nodeName = "DrawCmdGenerationPass",
         .queueType = QueueType::COMPUTE,
+        .async = true,
         .resourceUses =
             {
                 ResourceUse{.handle = ResourceHandle("DrawSources"),

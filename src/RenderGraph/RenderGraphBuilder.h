@@ -54,6 +54,10 @@ struct RenderGraphNodeCreateInfo
 {
     std::string nodeName;
     QueueType queueType = QueueType::GRAPHICS;
+    // Opt-in: only when set (and queueType == COMPUTE) may the node be scheduled on the dedicated
+    // async compute queue and run concurrently with the graphics queue. Without it the node is
+    // recorded on the graphics queue, so no cross-queue synchronization is generated for it.
+    bool async = false;
     std::vector<ResourceUse> resourceUses;
     std::vector<std::string> shaderNames;
     // Ray tracing only: ray generation / miss / closest-hit shader names, in that order.
@@ -101,6 +105,7 @@ private:
     {
         std::string name;
         QueueType queueType = QueueType::GRAPHICS;
+        bool async = false;
         std::vector<ResolvedResourceUse> resourceUses;
         std::array<ShaderKey, MAX_SHADER_STAGES> shaders;
         // Ray tracing shader keys: [0] = raygen, [1] = miss, [2] = closest hit.
@@ -160,9 +165,9 @@ private:
     // otherwise look in the graph-owned resource manager.
     const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
 
-    // Queue routing. RAY_TRACING / COPY follow the graphics queue; only COMPUTE can run on the
-    // dedicated async compute queue.
-    static QueueType GetQueueKey(QueueType type);
+    // Queue routing. A node may only run on the dedicated async compute queue when it is
+    // explicitly marked async (and is a compute node); everything else follows the graphics queue.
+    static QueueType GetQueueKey(QueueType type, bool bAsync);
     VkQueue GetQueueForType(QueueType type) const;
     uint32_t GetQueueFamilyForType(QueueType type) const;
     VkCommandBuffer AllocateCommandBufferForType(QueueType type) const;
