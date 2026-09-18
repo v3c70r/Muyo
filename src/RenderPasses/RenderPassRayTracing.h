@@ -21,6 +21,16 @@ public:
     VkPipeline GetPipeline() const { return m_pipeline; }
     void DestroyPipeline();
 
+    const std::vector<const IRenderResource*>& GetInputResources() const override
+    {
+        return m_renderPassParameters.GetInputResources();
+    }
+    const std::vector<const IRenderResource*>& GetOutputResources() const override
+    {
+        return m_renderPassParameters.GetOutputResources();
+    }
+    std::string GetName() const override { return m_renderPassParameters.GetName(); }
+
 private:
     void AllocateShaderBindingTable();
     const VkStridedDeviceAddressRegionKHR* GetRayGenRegion() const { return &m_aSBTRegions[SBT_REGION_RAY_GEN]; }

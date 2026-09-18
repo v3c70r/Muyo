@@ -93,11 +93,19 @@ const DrawLists &Scene::GatherDrawLists()
             // Setup per obj data
             if (pNode->GetPerObjId() == -1)
             {
-                PerObjData perObjData;
+                PerObjData perObjData{};
 
                 perObjData.mWorldMatrix = mWorldMatrix;
                 perObjData.nSubmeshCount = nSubmeshCount;
                 memcpy(perObjData.vSubmeshDatas, aSubmeshDatas.data(), nSubmeshCount * sizeof(PerSubmeshData));
+                // Local-space bounds, used by the GPU culling pass (transformed by mWorldMatrix).
+                const AABB aabb = pNode->GetAABB();
+                perObjData.vAABBMin[0] = aabb.vMin.x;
+                perObjData.vAABBMin[1] = aabb.vMin.y;
+                perObjData.vAABBMin[2] = aabb.vMin.z;
+                perObjData.vAABBMax[0] = aabb.vMax.x;
+                perObjData.vAABBMax[1] = aabb.vMax.y;
+                perObjData.vAABBMax[2] = aabb.vMax.z;
                 pNode->SetPerObjId(static_cast<int>(GetPerObjResourceManager()->AppendPerObjData(perObjData)));
             }
             else

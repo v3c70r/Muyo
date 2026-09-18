@@ -31,7 +31,7 @@ enum RenderPassNames
     RENDERPASS_SKYBOX,
     RENDERPASS_TRANSPARENT,
 
-    // Render directpy to swapchain
+    // Render directly to swapchain
     RENDERPASS_FINAL,
     RENDERPASS_UI,
 
@@ -52,7 +52,7 @@ public:
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
     void RecordDynamicCmdBuffers();
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
-    VkExtent2D GetViewportSize() const { return VkExtent2D({m_uWidth, m_uHeight}); }
+    VkExtent2D GetViewportSize() const { return VkExtent2D({.width=m_uWidth, .height=m_uHeight}); }
 
     void SubmitCommandBuffers();
 
@@ -64,6 +64,17 @@ public:
         m_pRayTracingSceneManager = pSceneManager;
     }
 #endif
+
+    std::vector<const IRenderPass*> GetRenderPasses() const
+    {
+        std::vector<const IRenderPass*> vpRenderPasses;
+        vpRenderPasses.reserve(m_vpRenderPasses.size());
+        for (const auto& pRenderPass : m_vpRenderPasses)
+        {
+            vpRenderPasses.push_back(pRenderPass.get());
+        }
+        return vpRenderPasses;
+    }
 
 private:
 #ifdef __APPLE__

@@ -82,13 +82,26 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     VkPipeline res = VK_NULL_HANDLE;
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = (uint32_t)m_vShaderStageInfos.size();
+    pipelineInfo.stageCount = static_cast<uint32_t>(m_vShaderStageInfos.size());
     pipelineInfo.pStages = m_vShaderStageInfos.data();
 
     pipelineInfo.pVertexInputState = m_vertexInputInfo.has_value() ? &m_vertexInputInfo.value() : nullptr;
 
     pipelineInfo.pInputAssemblyState = m_inputAssemblyInfo.has_value() ? &m_inputAssemblyInfo.value() : nullptr;
 
+    // dynamic viewport and scissor
+    if (m_viewPortState.sType != VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO)
+    {
+        m_viewPortState = 
+            {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .viewportCount = 1,
+            .pViewports = nullptr, // ignored
+            .scissorCount = 1,
+            .pScissors  = nullptr  // ignored
+};
+    }
+    
     pipelineInfo.pViewportState = &m_viewPortState;
 
     pipelineInfo.pRasterizationState = &m_rasterizerInfo;
@@ -103,7 +116,15 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
 
     pipelineInfo.layout = m_pipelineLayout;
 
-    pipelineInfo.renderPass = mRenderPass;
+    if (mRenderingInfo.sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO)
+    {
+        pipelineInfo.pNext = &mRenderingInfo;
+        pipelineInfo.renderPass = mRenderPass;
+    }
+    else
+    {
+        pipelineInfo.renderPass = mRenderPass;
+    }
     pipelineInfo.subpass = mSubpassIndex;
 
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;

@@ -20,7 +20,7 @@ template <class VertexType>
 class VertexBuffer : public BufferResource
 {
 public:
-    VertexBuffer(bool bStagedUpoload = true)
+    explicit VertexBuffer(bool bStagedUpoload = true)
         : BufferResource(
               VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | (bStagedUpoload ? VK_BUFFER_USAGE_TRANSFER_DST_BIT : 0)  // Staged upload needs to be transfer dist bit
 #ifdef FEATURE_RAY_TRACING
@@ -30,7 +30,7 @@ public:
               bStagedUpoload ? VMA_MEMORY_USAGE_GPU_ONLY : VMA_MEMORY_USAGE_CPU_TO_GPU)
     {
     }
-    VertexBuffer(const std::vector<VertexType>& vVertexData, bool bStagedUpoload = true) : VertexBuffer(bStagedUpoload)
+    explicit VertexBuffer(const std::vector<VertexType>& vVertexData, bool bStagedUpoload = true) : VertexBuffer(bStagedUpoload)
     {
         size_t nSizeInByte = vVertexData.size() * sizeof(VertexType);
         GetMemoryAllocator()->AllocateBuffer(nSizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "VertexBuffer");

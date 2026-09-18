@@ -1,5 +1,6 @@
 #include "RenderPassManager.h"
 
+#include <algorithm>
 #include <cassert>
 #include <memory>
 
@@ -97,7 +98,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_FINAL] = std::make_unique<RenderPassFinal>(*m_pSwapchain, true);
     // UI Pass
     m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(vp);
-    RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
     pUIPass->PrepareRenderPass();
     pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
     // Register debug ui pages
@@ -105,7 +106,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
     pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
     pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
-    CameraDebugPage *pCameraDebugPage = pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
+    auto *pCameraDebugPage = pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
 
     // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
 
@@ -128,7 +129,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = nullptr;
 #endif
 
-    RenderTarget *pDepthResource = GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
+    GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
 
     // Create semaphores
 
@@ -155,19 +156,20 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 
     // Allocate an arcball camera
     // TODO: Allocate camera as needed if we ever support mulit render targets
-    const float FAR = 100.0f;
+    const float far = 100.0F;
     m_pCamera = std::make_unique<Arcball>(
         glm::perspective(glm::radians(80.0f),
-                         (float)m_uWidth / (float)m_uHeight, 0.1f,
-                         FAR),
+                         static_cast<float>(m_uWidth) / static_cast<float>(m_uHeight), 0.1F,
+                         far),
         glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
                     glm::vec3(0.0f, 0.0f, 0.0f),   // Center
                     glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
         0.1f,                                      // near
-        FAR,                                       // far
-        (float)m_uWidth,
-        (float)m_uHeight);
+        far,                                       // far
+        static_cast<float>(m_uWidth),
+        static_cast<float>(m_uHeight));
     pCameraDebugPage->SetCamera(GetCamera());
+
 }
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
@@ -223,13 +225,13 @@ void RenderPassManager::Unintialize()
 void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 {
     {
-        RenderPassCubeMapGeneration* pCubeMapGenerationPass = static_cast<RenderPassCubeMapGeneration*>(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION].get());
+        auto* pCubeMapGenerationPass = static_cast<RenderPassCubeMapGeneration*>(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION].get());
         pCubeMapGenerationPass->PrepareRenderPass();
         pCubeMapGenerationPass->RecordCommandBuffers();
     }
 
     {
-        RenderPassGBufferMeshShader* pMeshShaderPass = static_cast<RenderPassGBufferMeshShader*>(m_vpRenderPasses[RENDERPASS_MESH_SHADER].get());
+        auto* pMeshShaderPass = static_cast<RenderPassGBufferMeshShader*>(m_vpRenderPasses[RENDERPASS_MESH_SHADER].get());
         pMeshShaderPass->PrepareRenderPass();
         pMeshShaderPass->RecordCommandBuffers();
     }
@@ -241,18 +243,18 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         m_pShadowPassManager->RecordCommandBuffers(opaqueDrawList);
     }
     {
-        RenderPassGBuffer *pGBufferPass = static_cast<RenderPassGBuffer*>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
+        auto *pGBufferPass = static_cast<RenderPassGBuffer*>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
         pGBufferPass->PrepareRenderPass();
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         pGBufferPass->RecordCommandBuffers(opaqueDrawList);
     }
     {
-        RenderPassOpaqueLighting *pOpaqueLightingPass = static_cast<RenderPassOpaqueLighting *>(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING].get());
+        auto *pOpaqueLightingPass = static_cast<RenderPassOpaqueLighting *>(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING].get());
         pOpaqueLightingPass->PrepareRenderPass();
         pOpaqueLightingPass->RecordCommandBuffers();
     }
     {
-        RenderPassTransparent *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
+        auto *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
         const std::vector<const SceneNode *> &transparentDrawList = drawLists.m_aDrawLists[DrawLists::DL_TRANSPARENT];
         pTransparentPass->PrepareRenderPass();
         pTransparentPass->RecordCommandBuffers(transparentDrawList);
@@ -266,11 +268,11 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         pRTPass->RecordCommandBuffer();
     }
 #endif
-    RenderPassSkybox *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
+    auto *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
     pSkybox->PrepareRenderPass();
     pSkybox->RecordCommandBuffers();
 
-    RenderPassFinal *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
+    auto *pFinalPass = static_cast<RenderPassFinal *>(m_vpRenderPasses[RENDERPASS_FINAL].get());
     pFinalPass->PrepareRenderPass();
     pFinalPass->RecordCommandBuffers();
 }
@@ -278,7 +280,7 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
 void RenderPassManager::RecordDynamicCmdBuffers()
 {
     VkExtent2D vpExtent = {m_uWidth, m_uHeight};
-    RenderPassUI *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
+    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
     pUIPass->NewFrame(vpExtent);
     pUIPass->UpdateBuffers();
     pUIPass->RecordCommandBuffer();
@@ -286,7 +288,7 @@ void RenderPassManager::RecordDynamicCmdBuffers()
 
 void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
 {
-    RenderLayerIBL *pIBLPass = static_cast<RenderLayerIBL *>(m_vpRenderPasses[RENDERPASS_IBL].get());
+    auto *pIBLPass = static_cast<RenderLayerIBL *>(m_vpRenderPasses[RENDERPASS_IBL].get());
     pIBLPass->ReloadEnvironmentMap(sNewEnvMapPath);
 
     m_bIsIrradianceGenerated = false;
@@ -310,7 +312,7 @@ void RenderPassManager::SubmitCommandBuffers()
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION]->GetCommandBuffer());
    
     // Mesh shader
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_MESH_SHADER]->GetCommandBuffer());
+    //vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_MESH_SHADER]->GetCommandBuffer());
 
     // Shadow pass
     // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
@@ -328,7 +330,7 @@ void RenderPassManager::SubmitCommandBuffers()
 
     // Submit other graphics tasks
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SKYBOX]->GetCommandBuffer());
-    if (auto cmdBuf = m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer())
+    if (auto *cmdBuf = m_vpRenderPasses[RENDERPASS_TRANSPARENT]->GetCommandBuffer())
     {
         vCmdBufs.push_back(cmdBuf);
     }
@@ -356,9 +358,9 @@ void RenderPassManager::SubmitCommandBuffers()
     
     vWaitForSemaphores.push_back(m_imageAvailable);
     vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
-    vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     vSignalSemaphores.push_back(m_renderFinished);
-    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetComputeQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages, m_aGPUExecutionFence[m_uImageIdx2Present]);
+    // UI and final passes write the swapchain image; they must run on the graphics queue.
+    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages, m_aGPUExecutionFence[m_uImageIdx2Present]);
 }
 
 }  // namespace Muyo

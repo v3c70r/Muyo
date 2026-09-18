@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.10.0)
 project(Muyo)
 # Compile time features
 option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
@@ -36,8 +36,8 @@ execute_process(COMMAND bash -c "echo $WAYLAND_DISPLAY"
 
 if(WAYLAND_SESSION)
     message(STATUS "Wayland session detected")
-    set(GLFW_USE_WAYLAND ON CACHE BOOL "" FORCE)
-    set(GLFW_USE_X11 OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_X11 OFF CACHE BOOL "" FORCE)
 endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/glfw)
 endif()
@@ -59,10 +59,28 @@ add_library(imgui
     thirdparty/imgui/imgui_widgets.cpp
     thirdparty/imgui/imgui_tables.cpp
     )
+# Use a project-local imgui config (ImTextureID_Invalid override) instead of editing the submodule.
+target_include_directories(imgui PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(imgui PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+
+set(SPIRV-Reflect_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/SPIRV-Reflect)
+add_library(SPIRV-Reflect ${CMAKE_SOURCE_DIR}/thirdparty/SPIRV-Reflect/spirv_reflect.cpp)
 
 ## ImGuizmo
-set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo)
-add_library(imguizmo thirdparty/ImGuizmo/ImGuizmo.cpp)
+set(IMGUIZMO_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/ImGuizmo/src)
+add_library(imguizmo ${IMGUIZMO_INCLUDE_DIRS}/ImGuizmo.cpp)
+#add_library(ImGuizmo STATIC
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImGuizmo.cpp
+#    # Include these if you are also using the curve/gradient/graph editors
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImCurveEdit.cpp
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImGradient.cpp
+#    ${IMGUIZMO_INCLUDE_DIRS}/ImSequencer.cpp
+#    ${IMGUIZMO_INCLUDE_DIRS}/GraphEditor.cpp
+#)
+
+## imnodes
+set(IMNODES_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/thirdparty/imnodes)
+add_library(imnodes thirdparty/imnodes/imnodes.cpp)
 
 ## VULKAN
 if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
@@ -72,10 +90,6 @@ endif()
 # Cap vulkan version to avoid validation layer error
 find_package(Vulkan REQUIRED)
 
-
-## Vulkan Memory Allocator
-add_subdirectory(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator)
-include_directories(${CMAKE_SOURCE_DIR}/thirdparty/VulkanMemoryAllocator/include)
 
 ## tiny obj
 include_directories(${CMAKE_SOURCE_DIR}/thirdparty/tinyobjloader)
@@ -108,17 +122,28 @@ if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
   unset(_Vulkan_hint_executable_search_paths)
 endif()
 
+
 if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
     message(FATAL_ERROR "Can't find slang executable")
 endif()
 
+set(SANITIZE_CONDITION "$<CONFIG:Sanitize>")
 if (UNIX)
     set (CMAKE_CXX_FLAGS "-std=c++20 -Wall -pthread -Wno-missing-braces -g")
     set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
     set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
+    set(SANITIZE_FLAGS
+      "$<${SANITIZE_CONDITION}:-fsanitize=address,undefined>"
+      "$<${SANITIZE_CONDITION}:-fno-omit-frame-pointer>"
+    )
 elseif(MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")
+    set(SANITIZE_FLAGS "$<${SANITIZE_CONDITION}:/fsanitize=address,undefined,thread,memory>")
+    add_compile_options("$<${SANITIZE_CONDITION}:/Zi>")
 endif()
+
+add_compile_options(${SANITIZE_FLAGS})
+add_link_options(${SANITIZE_FLAGS})
 
 # Headers that shared between shader and cpp 
 set (SHARED_HEADER_DIR "${CMAKE_SOURCE_DIR}/shaders/shared")
@@ -130,6 +155,8 @@ include_directories(
     ${IMGUI_INCLUDE_DIRS}
     ${SHARED_HEADER_DIR}
     ${IMGUIZMO_INCLUDE_DIRS}
+    ${IMNODES_INCLUDE_DIRS}
+    ${SPIRV-Reflect_INCLUDE_DIRS}
     )
 
     
@@ -158,12 +185,24 @@ file(GLOB muyo_SRC
     "src/RenderResources/*.cpp"
     "src/Scene/*.h"
     "src/Scene/*.cpp"
-    "src/tests/*.h"
-    "src/tests/*.cpp"
     )
 
 add_library(muyo STATIC ${muyo_SRC})
-target_link_libraries(muyo imgui imguizmo ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
+
+add_library(muyo_rg "src/RenderGraph/RenderGraphBuilder.cpp")
+
+#fetch VMA from Github
+include(FetchContent)
+FetchContent_Declare(
+  VMA
+  GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+  GIT_TAG master
+)
+FetchContent_MakeAvailable(VMA)
+target_include_directories(muyo PRIVATE ${vma_SOURCE_DIR}/include)
+target_include_directories(muyo_rg PRIVATE ${vma_SOURCE_DIR}/include)
+
+target_link_libraries(muyo imgui imguizmo imnodes ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 
 file(GLOB main_SRC
     "src/app/helloVulkan.cpp"
@@ -245,6 +284,63 @@ add_custom_command(
 message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Tests
+
+enable_testing()
+include(CTest)
+
+Include(FetchContent)
+
+FetchContent_Declare(
+  Catch2
+  GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+  GIT_TAG        v3.8.0 # or a later release
+)
+
+FetchContent_MakeAvailable(Catch2)
+add_executable(tests 
+    src/ShaderReflectionFetcher.cpp
+    src/RenderGraph/RenderGraphBuilder.cpp
+    src/tests/RenderGraphBuilderTest.cpp
+    src/tests/ShaderReflectionTests.cpp
+)
+message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
+target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/RenderDoc)
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain SPIRV-Reflect muyo muyo_rg)
+include(Catch)
+catch_discover_tests(tests)
+
+# Keep ImTextureID_Invalid consistent (see src/ImGuiUserConfig.h) across all imgui consumers.
+target_compile_definitions(muyo PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+target_compile_definitions(helloVulkan PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+target_compile_definitions(PSOCompiler PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+target_compile_definitions(tests PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+
+# ── RenderGraph API documentation ────────────────────────────────────────────
+# Doxygen + Python are optional. When both are present, `render_graph_docs`
+# regenerates docs/RenderGraph-api.md and fails if any public RenderGraph entity
+# is undocumented; CTest runs the same check via the RenderGraphApiDocs test.
+# See docs/README.md.
+find_program(DOXYGEN_EXECUTABLE
+    NAMES doxygen
+    HINTS ${CMAKE_SOURCE_DIR}/.tools/doxygen/bin ${CMAKE_SOURCE_DIR}/.tools/doxygen/usr/bin)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
+if(DOXYGEN_EXECUTABLE AND Python3_Interpreter_FOUND)
+    set(RENDER_GRAPH_DOCS_SCRIPT ${CMAKE_SOURCE_DIR}/scripts/render_graph_docs.py)
+    set(RENDER_GRAPH_DOCS_DIR ${CMAKE_BINARY_DIR}/docs/render_graph)
+    add_custom_target(render_graph_docs
+        COMMAND ${CMAKE_COMMAND} -E env DOXYGEN=${DOXYGEN_EXECUTABLE}
+                ${Python3_EXECUTABLE} ${RENDER_GRAPH_DOCS_SCRIPT} --output-dir ${RENDER_GRAPH_DOCS_DIR}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Generating RenderGraph API documentation (fails on undocumented API)"
+        VERBATIM)
+    add_test(NAME RenderGraphApiDocs
+        COMMAND ${CMAKE_COMMAND} -E env DOXYGEN=${DOXYGEN_EXECUTABLE}
+                ${Python3_EXECUTABLE} ${RENDER_GRAPH_DOCS_SCRIPT} --check --output-dir ${RENDER_GRAPH_DOCS_DIR})
+else()
+    message(STATUS "RenderGraph docs disabled (doxygen/Python3 not found); see docs/README.md")
+endif()
+
 # Disable tests for now until proper method has been found to load the gltf
 #add_executable(testSceneImporter
 #    src/Geometry.cpp

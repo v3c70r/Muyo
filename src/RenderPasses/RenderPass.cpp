@@ -70,11 +70,13 @@ RenderPassFinal::RenderPassFinal(const Swapchain& swapchain, bool bClearAttachme
         // Create pipelines
         VkPipelineLayout pipelineLayout = m_vRenderPassParameters[i].GetPipelineLayout();
 #ifdef FEATURE_RAY_TRACING
-        VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/triangle_rt.frag.spv"));
+        // The ray tracing final pass blits the ray tracing output with a fullscreen triangle.
+        VkShaderModule vertexShader = CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
+        VkShaderModule fragShader = CreateShaderModule(ReadSpv("shaders/triangle_rt.frag.spv"));
 #else
         VkShaderModule vertexShader = CreateShaderModule(ReadSpv("shaders/triangle.vert.spv"));
-#endif    // FEATURE_RAY_TRACING
         VkShaderModule fragShader = CreateShaderModule(ReadSpv("shaders/triangle.frag.spv"));
+#endif    // FEATURE_RAY_TRACING
 
         ViewportBuilder vpBuilder;
         VkViewport viewport = vpBuilder.setWH(swapchain.GetSwapchainExtent()).Build();
