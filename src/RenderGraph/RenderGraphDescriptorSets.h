@@ -47,7 +47,7 @@ struct BindingInfo
 static const uint32_t MAX_BINDLESS_TEXTURE_COUNT = 1024;
 
 /// Static descriptor bindings of the three built-in semantic sets.
-static std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerSet = {
+inline const std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerSet = {
     // PER_VIEW
     {
         {.binding = 0,
@@ -77,10 +77,10 @@ static std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerSet = {
 
 };
 
-/// Owns and writes the three built-in semantic descriptor sets used by graphics nodes.
+/// Owns the three built-in semantic descriptor set layouts used by graphics nodes.
 ///
-/// `PER_VIEW`, `PER_OBJ` and `MATERIAL` layouts/sets are allocated once per builder and reused for
-/// every graphics node; `BindResourceToDescriptorSet` updates the binding before the node is bound.
+/// The layouts are shared by all graphics nodes; each node gets its own descriptor sets (allocated
+/// with `AllocateSemanticSet`) so that binding different resources in different nodes cannot clash.
 class RenderGraphDescriptorSets
 {
 public:
@@ -94,25 +94,42 @@ public:
             m_descManager.AllocateDescriptorSetLayout(bindingsPerSet[EnumIndex(ResourceBindingSemantic::PER_OBJ)]);
         m_descriptorSetLayouts[ResourceBindingSemantic::MATERIAL] =
             m_descManager.AllocateDescriptorSetLayout(bindingsPerSet[EnumIndex(ResourceBindingSemantic::MATERIAL)]);
-        m_descriptorSets[ResourceBindingSemantic::PER_VIEW] =
-            m_descManager.AllocateDescriptorSet(m_descriptorSetLayouts[ResourceBindingSemantic::PER_VIEW]);
-        m_descriptorSets[ResourceBindingSemantic::PER_OBJ] =
-            m_descManager.AllocateDescriptorSet(m_descriptorSetLayouts[ResourceBindingSemantic::PER_OBJ]);
-        m_descriptorSets[ResourceBindingSemantic::MATERIAL] =
-            m_descManager.AllocateDescriptorSet(m_descriptorSetLayouts[ResourceBindingSemantic::MATERIAL]);
     }
     /// Destroy the semantic set layouts owned by this instance.
     ~RenderGraphDescriptorSets()
     {
-        m_descManager.DestroyDescriptorSetLayout(m_descriptorSetLayouts[ResourceBindingSemantic::PER_VIEW]);
-        m_descManager.DestroyDescriptorSetLayout(m_descriptorSetLayouts[ResourceBindingSemantic::PER_OBJ]);
-        m_descManager.DestroyDescriptorSetLayout(m_descriptorSetLayouts[ResourceBindingSemantic::MATERIAL]);
+        for (const ResourceBindingSemantic semantic : {ResourceBindingSemantic::PER_VIEW,
+                                                       ResourceBindingSemantic::PER_OBJ,
+                                                       ResourceBindingSemantic::MATERIAL})
+        {
+            m_descManager.DestroyDescriptorSetLayout(m_descriptorSetLayouts[semantic]);
+        }
     }
 
     /// @return The descriptor set for a semantic set index.
-    VkDescriptorSet GetDescriptorSet(ResourceBindingSemantic bindingSemantic) const
+    /// Allocate a fresh descriptor set for one node from the shared layout of a semantic set.
+    /// The caller owns the set and must free it with `DescriptorManager::FreeDescriptorSet`.
+    VkDescriptorSet AllocateSemanticSet(ResourceBindingSemantic bindingSemantic)
     {
-        return m_descriptorSets[bindingSemantic];
+        return m_descManager.AllocateDescriptorSet(m_descriptorSetLayouts[bindingSemantic]);
+    }
+
+    /// @return The descriptor type a semantic binding expects, or `VK_DESCRIPTOR_TYPE_MAX_ENUM`.
+    static VkDescriptorType GetBindingType(ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)
+    {
+        switch (bindingSemantic)
+        {
+            case ResourceBindingSemantic::PER_VIEW:
+                return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            case ResourceBindingSemantic::PER_OBJ:
+                return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            case ResourceBindingSemantic::MATERIAL:
+                if (bindingIndex == BINDING_PBR_MATERIAL) return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                if (bindingIndex == BINDING_TEXTURS) return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                return VK_DESCRIPTOR_TYPE_MAX_ENUM;
+            default:
+                return VK_DESCRIPTOR_TYPE_MAX_ENUM;
+        }
     }
     /// @return The descriptor set layout for a semantic set index.
     VkDescriptorSetLayout GetDescriptorSetLayout(ResourceBindingSemantic bindingSemantic) const
@@ -136,48 +153,21 @@ public:
         }
     }
 
-    /// Write a resource into a semantic descriptor set.
-    /// @param pResource       Buffer or image to bind.
-    /// @param bindingSemantic Target semantic set.
-    /// @param bindingIndex    Binding within the set.
-    void BindResourceToDescriptorSet(const IRenderResource* pResource, 
-            ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)
+    /// Write a resource into a specific descriptor set.
+    /// @param descriptorSet Target set (per node).
+    /// @param descriptorType Type resolved via `GetBindingType`.
+    /// @param pResource     Buffer or image to bind.
+    /// @param bindingIndex  Binding within the set.
+    void BindResourceToDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType descriptorType,
+                                     const IRenderResource* pResource, uint32_t bindingIndex)
     {
-        VkDescriptorSet descriptorSet = m_descriptorSets[bindingSemantic];
-
         VkWriteDescriptorSet writeDescSet = {};
         writeDescSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writeDescSet.dstSet = descriptorSet;
         writeDescSet.dstBinding = bindingIndex;
         writeDescSet.dstArrayElement = 0;
         writeDescSet.descriptorCount = 1;
-        switch (bindingSemantic)
-        {
-            case ResourceBindingSemantic::PER_VIEW:
-                writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                break;
-            case ResourceBindingSemantic::PER_OBJ:
-                writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                break;
-            case ResourceBindingSemantic::MATERIAL:
-                if (bindingIndex == BINDING_PBR_MATERIAL)
-                {
-                    writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                }
-                else if (bindingIndex == BINDING_TEXTURS)
-                {
-                    writeDescSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-                }
-                else
-                {
-                    assert(false && "Invalid binding index for MATERIAL descriptor set");
-                    return;
-                }
-                break;
-            default:
-                assert(false && "Unsupported binding semantic");
-                return;
-        }
+        writeDescSet.descriptorType = descriptorType;
 
         if (const auto* pBufferResource = dynamic_cast<const BufferResource*>(pResource))
         {
@@ -205,7 +195,8 @@ public:
 
 private:
     DescriptorManager& m_descManager;
-    EnumArray<ResourceBindingSemantic, VkDescriptorSet> m_descriptorSets{};
+    // Note: descriptor sets are allocated per node (see AllocateSemanticSet); only the shared
+    // layouts live here.
     EnumArray<ResourceBindingSemantic, VkDescriptorSetLayout> m_descriptorSetLayouts{};
 };
 }  // namespace Muyo::RenderGraph

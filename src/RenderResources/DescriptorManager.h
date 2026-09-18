@@ -40,6 +40,8 @@ public:
     VkDescriptorSetLayout AllocateDescriptorSetLayout(const std::vector<VkDescriptorSetLayoutBinding> &bindings);
     void DestroyDescriptorSetLayout(VkDescriptorSetLayout layout);
     VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout);
+    // Return a set to the pool. The pool is created with VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT.
+    void FreeDescriptorSet(VkDescriptorSet descriptorSet);
     
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);

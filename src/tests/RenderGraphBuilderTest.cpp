@@ -1036,4 +1036,199 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
     REQUIRE(fMatch > 0.999F);
 }
 #endif  // FEATURE_RAY_TRACING
+
+TEST_CASE("DependencyGraph: rejects invalid edges and stays usable", "[RenderGraph]")
+{
+    DependencyGraph<std::string> graph;
+    graph.AddNode("a");
+    graph.AddNode("b");
+    graph.AddNode("c");
+
+    REQUIRE(graph.AddEdge("a", "b"));
+    REQUIRE(graph.AddEdge("a", "b"));       // duplicate is idempotent
+    REQUIRE_FALSE(graph.AddEdge("b", "b")); // self edge is rejected
+    REQUIRE(graph.AddEdge("b", "c"));
+    REQUIRE_FALSE(graph.AddEdge("c", "a")); // cycle is rejected, without mutating the graph
+
+    REQUIRE_FALSE(graph.HasCycle());
+    REQUIRE(graph.NodeCount() == 3);
+    REQUIRE(graph.TopologicalSort().size() == 3);
+    REQUIRE(graph.IsAdjacentTo("a", "b"));
+    REQUIRE_FALSE(graph.IsAdjacentTo("c", "a"));
+
+    // An isolated node is still scheduled (regression: it used to be dropped).
+    REQUIRE(graph.GetParallelExecutionLevels().size() >= 2);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: schedules nodes without dependency edges",
+                 "[RenderGraphBuilder]")
+{
+    RenderGraphBuilder builder(GetRenderDevice());
+
+    int nExecuted = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+        builder.AddNode({.nodeName = "Node" + std::to_string(i),
+                         .queueType = QueueType::CPU,
+                         .execute = [&nExecuted](RenderGraphNodeContext&) { ++nExecuted; }});
+    }
+
+    // Only Node0 -> Node1 is connected; Node2 has no edges at all.
+    builder.AddDependency("Node0", "Node1");
+    builder.Build();
+
+    // Every declared node must appear in the execution order (regression: edgeless nodes were
+    // silently dropped from the topological sort).
+    REQUIRE(builder.GetExecutionOrder().size() == 3);
+
+    builder.Execute();
+    REQUIRE(nExecuted == 3);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: rejects undeclared resources and GPU->CPU deps",
+                 "[RenderGraphBuilder]")
+{
+    RenderGraphBuilder builder(GetRenderDevice());
+
+    // A resource use that was never declared or imported must fail at declaration time.
+    REQUIRE_THROWS(builder.AddNode({.nodeName = "Typo",
+                                    .queueType = QueueType::CPU,
+                                    .resourceUses = {ResourceUse{.handle = ResourceHandle("NotAResource"),
+                                                                 .io = ResourceIOType::READ,
+                                                                 .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                 .kind = ResourceKind::BUFFER}},
+                                    .execute = [](RenderGraphNodeContext&) {}}));
+
+    // CPU nodes run before GPU work is submitted, so they cannot depend on a GPU node.
+    builder.AddNode({.nodeName = "Gpu", .queueType = QueueType::GRAPHICS, .execute = [](RenderGraphNodeContext&) {}});
+    builder.AddNode({.nodeName = "Cpu", .queueType = QueueType::CPU, .execute = [](RenderGraphNodeContext&) {}});
+    REQUIRE_THROWS(builder.AddDependency("Gpu", "Cpu"));
+}
+
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind semantic sets independently",
+                 "[RenderGraphBuilder]")
+{
+    // Two graphics nodes bind *different* PER_VIEW buffers. They must each get their own descriptor
+    // set, otherwise the single submitted command buffer would run both with whichever camera was
+    // written last (regression: the three semantic sets used to be shared per builder).
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    for (const char* name : {"CameraA", "CameraB"})
+    {
+        builder.AddResource(name, BufferResourceDesc{.count = 1,
+                                                     .stride = sizeof(PerViewData),
+                                                     .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                     .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    }
+    for (const char* name : {"TargetA", "TargetB"})
+    {
+        builder.AddResource(name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                    .extent = {WIDTH, HEIGHT},
+                                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    }
+
+    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
+    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+
+    RenderGraphNodeCreateInfo cameraPass = {
+        .nodeName = "CameraPrep",
+        .queueType = QueueType::CPU,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("CameraA"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::UNIFORM_BUFFER,
+                                     .kind = ResourceKind::BUFFER},
+                         ResourceUse{.handle = ResourceHandle("CameraB"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::UNIFORM_BUFFER,
+                                     .kind = ResourceKind::BUFFER}},
+        .execute =
+            [](RenderGraphNodeContext& ctx)
+        {
+            const auto makePerView = [](const glm::vec3& eye, const glm::vec3& center)
+            {
+                const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
+                                                        static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+                const glm::mat4 view = glm::lookAt(eye, center, glm::vec3(0.0F, 1.0F, 0.0F));
+                PerViewData perView;
+                perView.mProj = proj;
+                perView.mView = view;
+                perView.mProjInv = glm::inverse(proj);
+                perView.mViewInv = glm::inverse(view);
+                perView.vScreenExtent = {WIDTH, HEIGHT};
+                return perView;
+            };
+
+            // CameraA looks at the quad (at the origin); CameraB looks away from it.
+            const PerViewData a = makePerView({0.0F, 0.0F, -3.0F}, {0.0F, 0.0F, 0.0F});
+            const PerViewData b = makePerView({0.0F, 0.0F, 3.0F}, {0.0F, 0.0F, 6.0F});
+            ctx.GetResource<BufferResource>("CameraA")->SetData(&a, sizeof(a));
+            ctx.GetResource<BufferResource>("CameraB")->SetData(&b, sizeof(b));
+        }};
+
+    const auto makeRasterNode = [&quadMesh](const std::string& nodeName, const std::string& camera,
+                                            const std::string& target)
+    {
+        return RenderGraphNodeCreateInfo{
+            .nodeName = nodeName,
+            .queueType = QueueType::GRAPHICS,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::VERTEX_BUFFER,
+                                         .kind = ResourceKind::BUFFER},
+                             ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::INDEX_BUFFER,
+                                         .kind = ResourceKind::BUFFER},
+                             ResourceUse{.handle = ResourceHandle(camera),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::UNIFORM_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                             ResourceUse{.handle = ResourceHandle(target),
+                                         .io = ResourceIOType::WRITE,
+                                         .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                         .kind = ResourceKind::IMAGE}},
+            .shaderNames = {"testWorldPos.vert.slang", "testWorldPos.frag.slang"},
+            .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
+                        .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+            .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+            .execute =
+                [&quadMesh](RenderGraphNodeContext& ctx)
+            {
+                const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
+                VkDeviceSize offset = 0;
+                VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
+                vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(ctx.commandBuffer, quadMesh.m_nIndexCount, 1, quadMesh.m_nIndexOffset, 0, 0);
+            }};
+    };
+
+    builder.AddNode(cameraPass);
+    const RenderGraphNodeCreateInfo nodeA = makeRasterNode("NodeA", "CameraA", "TargetA");
+    const RenderGraphNodeCreateInfo nodeB = makeRasterNode("NodeB", "CameraB", "TargetB");
+    builder.AddNode(nodeA);
+    builder.AddNode(nodeB);
+    builder.AddDependency(cameraPass.nodeName, nodeA.nodeName);
+    builder.AddDependency(cameraPass.nodeName, nodeB.nodeName);
+    builder.Build();
+    builder.Execute();
+
+    auto* pTargetA = GetRenderResourceManager()->GetColorTarget("TargetA");
+    auto* pTargetB = GetRenderResourceManager()->GetColorTarget("TargetB");
+    REQUIRE(pTargetA != nullptr);
+    REQUIRE(pTargetB != nullptr);
+
+    // NodeA sees the quad; NodeB looks away. If the two nodes shared PER_VIEW, both would run with
+    // the last-written camera and one of these assertions would fail.
+    REQUIRE(CountNonBlackPixels(pTargetA) > 0);
+    REQUIRE(CountNonBlackPixels(pTargetB) == 0);
+}
+
 }  // namespace Muyo::RenderGraph

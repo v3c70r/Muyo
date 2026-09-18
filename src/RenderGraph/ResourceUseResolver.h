@@ -180,7 +180,7 @@ constexpr UsagePolicy ResolvePolicy(UsageKey key)
     {
         if (k == key) return v;
     }
-    throw "Missing ResourceUsage policy";
+    throw std::runtime_error("No barrier policy for this ResourceUsage/ResourceIOType pair");
 }
 
 /// Resolve a node's `ResourceUse` into a `ResolvedResourceUse`.

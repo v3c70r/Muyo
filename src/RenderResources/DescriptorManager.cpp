@@ -37,6 +37,12 @@ void DescriptorManager::DestroyDescriptorSetLayout(VkDescriptorSetLayout layout)
     vkDestroyDescriptorSetLayout(GetRenderDevice()->GetDevice(), layout, nullptr);
 }
 
+void DescriptorManager::FreeDescriptorSet(VkDescriptorSet descriptorSet)
+{
+    if (descriptorSet == VK_NULL_HANDLE) return;
+    vkFreeDescriptorSets(GetRenderDevice()->GetDevice(), m_descriptorPool, 1, &descriptorSet);
+}
+
 VkDescriptorSet DescriptorManager::AllocateDescriptorSet(VkDescriptorSetLayout layout)
 {
     // Create descriptor sets

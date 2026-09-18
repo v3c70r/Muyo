@@ -149,17 +149,27 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
         }
         else if (!mergedReflection.descriptorBindings.empty())
         {
-            result.descriptorSetLayouts.resize(ENUM_COUNT<ResourceBindingSemantic>);
-            result.descriptorSetLayouts[0] =
-                m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::PER_VIEW);
-            result.descriptorSetLayouts[1] =
-                m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::PER_OBJ);
-            result.descriptorSetLayouts[2] =
-                m_descriptorSetManager.GetDescriptorSetLayout(ResourceBindingSemantic::MATERIAL);
-            result.descriptorSets = {
-                m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_VIEW),
-                m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::PER_OBJ),
-                m_descriptorSetManager.GetDescriptorSet(ResourceBindingSemantic::MATERIAL)};
+            // Only wire up the semantic sets the shader actually declares. The MATERIAL set carries
+            // a large bindless array, so allocating it for a shader that never samples materials
+            // would waste most of the descriptor pool.
+            uint32_t nSetCount = 1;
+            for (const auto& binding : mergedReflection.descriptorBindings)
+            {
+                nSetCount = std::max(nSetCount, binding.set + 1);
+            }
+            nSetCount = std::min<uint32_t>(nSetCount, ENUM_COUNT<ResourceBindingSemantic>);
+
+            result.descriptorSetLayouts.resize(nSetCount);
+            // One set per node (from the shared layouts) so binding different resources in
+            // different graphics nodes cannot clobber each other.
+            result.descriptorSets.resize(nSetCount);
+            for (uint32_t set = 0; set < nSetCount; ++set)
+            {
+                const auto semantic = static_cast<ResourceBindingSemantic>(set);
+                result.descriptorSetLayouts[set] = m_descriptorSetManager.GetDescriptorSetLayout(semantic);
+                result.descriptorSets[set] = m_descriptorSetManager.AllocateSemanticSet(semantic);
+            }
+            result.ownsDescriptorSets = true;
         }
 
         std::vector<VkPushConstantRange> pushConstantRanges;
@@ -272,6 +282,7 @@ void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& 
         rgn.descriptorSets[set] = descriptorManager.AllocateDescriptorSet(rgn.descriptorSetLayouts[set]);
     }
     rgn.ownsDescriptorSets = true;
+    rgn.ownsDescriptorSetLayouts = true;
 
     // Write the node's explicitly-bound resources into the matching set/binding.
     for (const auto& use : logicalNode.resourceUses)
@@ -402,6 +413,9 @@ void RenderGraphBuilder::DestroyCompiledRenderGraphNode(CompiledRenderGraphNode&
     {
         vkFreeDescriptorSets(m_vkDevice, GetDescriptorManager()->GetDescriptorPool(),
                              static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data());
+    }
+    if (rgn.ownsDescriptorSetLayouts)
+    {
         for (VkDescriptorSetLayout layout : rgn.descriptorSetLayouts)
         {
             if (layout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(m_vkDevice, layout, nullptr);
@@ -421,6 +435,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     }
 
     m_renderGraphNodes[nodeName] = {.name = nodeName};
+    m_dependencyGraph.AddNode(nodeName);
 
     auto& rgn = m_renderGraphNodes.at(nodeName);
     rgn.queueType = nodeCreateInfo.queueType;
@@ -429,6 +444,10 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     rgn.attachmentClearValues = nodeCreateInfo.attachmentClearValues;
 
     // Load shaders
+    if (nodeCreateInfo.shaderNames.size() > static_cast<size_t>(MAX_SHADER_STAGES))
+    {
+        throw std::runtime_error("Node '" + nodeName + "' declares more shaders than MAX_SHADER_STAGES.");
+    }
     int shaderIdx = 0;
     for (const auto& shaderName : nodeCreateInfo.shaderNames)
     {
@@ -452,6 +471,12 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     // Resolve resource uses
     for (const auto& resourceUse : nodeCreateInfo.resourceUses)
     {
+        if (m_resourceDescRegistry.find(resourceUse.handle) == m_resourceDescRegistry.end() &&
+            m_importedResources.find(resourceUse.handle) == m_importedResources.end())
+        {
+            throw std::runtime_error("Node '" + nodeName + "' uses resource '" + resourceUse.handle +
+                                     "' which is neither declared with AddResource nor imported.");
+        }
         ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
         // Fill in allocation-time properties (format / extent) so pipeline + barrier generation can use them.
         if (const auto desc = GetResourceDesc(resourceUse.handle))
@@ -480,6 +505,15 @@ void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::s
         throw std::runtime_error("Node '" + toNode + "' does not exist in the render graph.");
     }
 
+    // CPU nodes are executed host-side before any GPU segment is submitted, so they cannot
+    // consume GPU results. Reject the ordering rather than silently running it too early.
+    if (m_renderGraphNodes.at(toNode).queueType == QueueType::CPU &&
+        m_renderGraphNodes.at(fromNode).queueType != QueueType::CPU)
+    {
+        throw std::runtime_error("Dependency '" + fromNode + "' -> '" + toNode +
+                                 "': CPU nodes run before GPU work is submitted and cannot depend on a GPU node.");
+    }
+
     if (!m_dependencyGraph.AddEdge(fromNode, toNode))
     {
         throw std::runtime_error("Adding dependency from '" + fromNode + "' to '" + toNode +
@@ -494,11 +528,17 @@ void RenderGraphBuilder::Build()
         throw std::runtime_error("Render graph contains a cycle!");
     }
 
+    for (auto& compiledNode : m_compiledGraphNodes)
+    {
+        DestroyCompiledRenderGraphNode(compiledNode);
+    }
     m_compiledGraphNodes.clear();
     m_compiledGraphNodes.reserve(m_renderGraphNodes.size());
-    std::vector<std::string> executionOrder = m_renderGraphNodes.size() == 1
-                                                  ? std::vector<std::string>{m_renderGraphNodes.begin()->first}
-                                                  : m_dependencyGraph.TopologicalSort();
+    std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
+    if (executionOrder.size() != m_renderGraphNodes.size())
+    {
+        throw std::runtime_error("Render graph contains a cycle; topological sort is incomplete.");
+    }
 
     // Allocate all graph-owned resources before compiling nodes.
     for (const auto& [handle, desc] : m_resourceDescRegistry)
@@ -564,9 +604,12 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
                                      ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
                                      : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         const bool firstWrite = alreadyWritten.find(use.handle) == alreadyWritten.end();
-        attachment.loadOp = firstWrite ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
+        // Clear only a pure first write. A READ_WRITE (or READ) attachment means "keep what is
+        // already there", e.g. blending on top of a previous pass, so it must LOAD.
+        const bool bClearAttachment = firstWrite && use.io == ResourceIOType::WRITE;
+        attachment.loadOp = bClearAttachment ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_LOAD;
         attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        if (firstWrite)
+        if (bClearAttachment)
         {
             VkClearValue clearValue{};
             if (use.usage == ResourceUsage::DEPTH_STENCIL_ATTACHMENT)
@@ -655,9 +698,12 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             oldLayout = state.lastLayout;
         }
 
+        // A barrier is also required whenever either side of the transition is a write: with the
+        // same declared usage the access mask and layout are identical, yet a WAW/WAR hazard remains.
+        const bool bHazard = state.lastIo != ResourceIOType::READ || use.io != ResourceIOType::READ;
         const bool needsBarrier = bAcquire || fromCpu || !state.seen ||
                                   (state.lastAccess != static_cast<VkAccessFlags2>(use.access)) ||
-                                  (state.lastLayout != use.imageLayout);
+                                  (state.lastLayout != use.imageLayout) || bHazard;
 
         if (use.kind == ResourceKind::IMAGE)
         {
@@ -701,6 +747,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         state.lastStages = use.stages;
         state.lastAccess = use.access;
         state.lastLayout = use.imageLayout;
+        state.lastIo = use.io;
         state.queueFamily = queueFamily;
         state.pendingAcquireFamily = -1;
     }
@@ -962,22 +1009,28 @@ void RenderGraphBuilder::Execute()
 
                 if (!rgn.descriptorSetLayouts.empty())
                 {
-                    if (rgn.ownsDescriptorSets)
+                    if (rgn.ownsDescriptorSetLayouts)
                     {
+                        // Reflection-bound (compute / RT) node: its sets were written at Build().
                         vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
                                                 static_cast<uint32_t>(rgn.descriptorSets.size()),
                                                 rgn.descriptorSets.data(), 0, nullptr);
                     }
                     else
                     {
+                        // Semantic graphics node: write its resources into its own sets, then bind.
                         for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
                         {
                             if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
                             const IRenderResource* pResource = ResolveResource(use.handle);
-                            if (pResource)
-                            {
-                                m_descriptorSetManager.BindResourceToDescriptorSet(pResource, use.bindingSemantic, 0);
-                            }
+                            if (pResource == nullptr) continue;
+                            const size_t nSetIndex = static_cast<size_t>(use.bindingSemantic);
+                            if (nSetIndex >= rgn.descriptorSets.size()) continue;  // shader does not use this set
+                            const VkDescriptorType descriptorType =
+                                RenderGraphDescriptorSets::GetBindingType(use.bindingSemantic, 0);
+                            if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;
+                            m_descriptorSetManager.BindResourceToDescriptorSet(rgn.descriptorSets[nSetIndex],
+                                                                               descriptorType, pResource, 0);
                         }
 
                         vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,

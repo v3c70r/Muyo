@@ -4,8 +4,21 @@ The RenderGraph is a declarative, data-driven frame graph for the Vulkan rendere
 described as a set of **resources** and **nodes** (passes); the graph derives execution order,
 GPU synchronisation and queue scheduling from the declared reads/writes.
 
-It replaces the hand-written `RenderPassManager` pipeline and is the intended home for GPU-driven
-rendering (compute-generated draws, frustum culling), async compute and ray tracing.
+It is intended to replace the hand-written `RenderPassManager` pipeline and is the home for
+GPU-driven rendering (compute-generated draws, frustum culling), async compute and ray tracing.
+
+## Status
+
+The RenderGraph currently drives the **tests**; `helloVulkan` still renders through
+`RenderPassManager`. Note the following while the migration is in flight:
+
+- **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
+  resource does *not* yet create an implicit edge, so declare every ordering you rely on.
+- **Execution synchronises at frame end.** `Execute()` submits and waits (`vkQueueWaitIdle`) before
+  returning, so the `async` flag expresses intent and generates the correct cross-queue
+  synchronisation, but does not yet overlap work across frames.
+- **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
+  only feed data into the graph; a GPU-to-CPU dependency is rejected.
 
 ## Core concepts
 
@@ -52,7 +65,8 @@ builder.Execute();
 ```
 
 `Build()` topologically sorts the nodes, allocates every graph-owned resource, compiles pipelines
-and descriptor sets, and plans the barriers. `Execute()` records and submits the frame.
+and descriptor sets, and plans the barriers. `Execute()` records and submits the frame. Nodes with
+no edges are still scheduled.
 
 ## What the graph handles for you
 

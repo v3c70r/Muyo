@@ -14,11 +14,13 @@ A directed acyclic graph used to order render graph nodes.
 
 | Member | Description |
 | --- | --- |
-| `bool Muyo::DependencyGraph< T >::AddEdge(const T &from, const T &to)` | Add a dependency edge from -> to (i.e. to must run after from). false if the edge would create a cycle (the edge is still inserted). |
-| `std::vector< T > Muyo::DependencyGraph< T >::TopologicalSort() const` | Order all nodes so that every node appears after its dependencies. The nodes in a valid execution order. |
-| `std::vector< std::vector< T > > Muyo::DependencyGraph< T >::GetParallelExecutionLevels()` | Group nodes into levels that can run in parallel (Kahn's algorithm). One vector of nodes per dependency level, in order. |
+| `void Muyo::DependencyGraph< T >::AddNode(const T &node)` | Register a node with no edges (in-degree 0) so it is included in the ordering. |
+| `bool Muyo::DependencyGraph< T >::AddEdge(const T &from, const T &to)` | Add a dependency edge from -> to (i.e. to must run after from). |
+| `std::vector< T > Muyo::DependencyGraph< T >::TopologicalSort() const` | Order all nodes so that every node appears after its dependencies (Kahn's algorithm). |
+| `std::vector< std::vector< T > > Muyo::DependencyGraph< T >::GetParallelExecutionLevels() const` | Group nodes into levels that can run in parallel (Kahn's algorithm). One vector of nodes per dependency level, in order. |
 | `bool Muyo::DependencyGraph< T >::IsAdjacentTo(const T &from, const T &to) const` | true if a direct edge from -> to exists. |
-| `bool Muyo::DependencyGraph< T >::HasCycle()` | true if the graph currently contains a cycle. |
+| `bool Muyo::DependencyGraph< T >::HasCycle() const` | true if the graph currently contains a cycle. |
+| `size_t Muyo::DependencyGraph< T >::NodeCount() const` | Number of registered nodes. |
 
 
 ## `PSODesc.h`
@@ -337,18 +339,19 @@ Capacity of the bindless texture array in the MATERIAL set.
 
 ### `class Muyo::RenderGraph::RenderGraphDescriptorSets`
 
-Owns and writes the three built-in semantic descriptor sets used by graphics nodes.
+Owns the three built-in semantic descriptor set layouts used by graphics nodes.
 
 | Member | Description |
 | --- | --- |
 | `RenderGraphDescriptorSets(DescriptorManager &descManager)` | Allocate the three semantic set layouts and their descriptor sets. descManager Descriptor manager owning the pool and layout cache. |
 | `~RenderGraphDescriptorSets()` | Destroy the semantic set layouts owned by this instance. |
-| `VkDescriptorSet GetDescriptorSet(ResourceBindingSemantic bindingSemantic) const` | The descriptor set for a semantic set index. |
+| `VkDescriptorSet AllocateSemanticSet(ResourceBindingSemantic bindingSemantic)` | The descriptor set for a semantic set index. Allocate a fresh descriptor set for one node from the shared layout of a semantic set. The caller owns the set and must free it with DescriptorManager::FreeDescriptorSet. |
 | `VkDescriptorSetLayout GetDescriptorSetLayout(ResourceBindingSemantic bindingSemantic) const` | The descriptor set layout for a semantic set index. |
-| `void BindResourceToDescriptorSet(const IRenderResource *pResource, ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)` | Write a resource into a semantic descriptor set. pResource Buffer or image to bind. bindingSemantic Target semantic set. bindingIndex Binding within the set. |
+| `void BindResourceToDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType descriptorType, const IRenderResource *pResource, uint32_t bindingIndex)` | Write a resource into a specific descriptor set. descriptorSet Target set (per node). descriptorType Type resolved via GetBindingType. pResource Buffer or image to bind. bindingIndex Binding within the set. |
+| `static VkDescriptorType GetBindingType(ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)` | The descriptor type a semantic binding expects, or VK_DESCRIPTOR_TYPE_MAX_ENUM. |
 | `static ResourceBindingSemantic GetSemantic(uint32_t setIndex)` | The semantic set corresponding to a raw descriptor set index (0/1/2). |
 
-### `std::vector< std::vector< VkDescriptorSetLayoutBinding > > bindingsPerSet`
+### `const std::vector< std::vector< VkDescriptorSetLayoutBinding > > bindingsPerSet`
 
 Static descriptor bindings of the three built-in semantic sets.
 

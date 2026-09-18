@@ -165,9 +165,12 @@ private:
         // shared PER_VIEW/PER_OBJ/MATERIAL sets; for reflection-bound (compute/RT) nodes these are
         // freshly allocated sets owned by this compiled node.
         std::vector<VkDescriptorSet> descriptorSets;
-        // True when descriptorSetLayouts/descriptorSets were derived from the shader reflection
-        // (raw set/binding) rather than the built-in semantic sets. Such sets are destroyed with the node.
+        // True when the node owns (and must free) its descriptor sets. Reflection-bound nodes and
+        // semantic graphics nodes each get their own sets.
         bool ownsDescriptorSets = false;
+        // True when the node owns its descriptor set *layouts* (reflection-bound nodes create their
+        // own; semantic graphics nodes share the three built-in layouts).
+        bool ownsDescriptorSetLayouts = false;
         // True when this node is a ray tracing dispatch (pipeline is a RT pipeline).
         bool isRayTracing = false;
         // Shader binding table regions for ray tracing nodes.
@@ -222,6 +225,7 @@ private:
         VkPipelineStageFlags2 lastStages = 0;
         VkAccessFlags2 lastAccess = 0;
         VkImageLayout lastLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ResourceIOType lastIo = ResourceIOType::READ;  // previous access direction (WAW/WAR hazards)
         bool writtenByCpu = false;  // last writer was a CPU node; needs host flush
         uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;  // queue family that currently owns the resource
         // Set before recording a queue segment when the resource is handed over from another queue
