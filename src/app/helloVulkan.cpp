@@ -147,7 +147,9 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+        // VK_EXT_descriptor_indexing is core in Vulkan 1.2. Enabling the extension while
+        // chaining VkPhysicalDeviceVulkan12Features requires descriptorIndexing = VK_TRUE
+        // (VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-02833), so rely on the core feature instead.
 #endif
     };
     return vDeviceExtensions;
@@ -193,8 +195,10 @@ int main(int argc, char **argv)
 
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature   = {};
     rayTracingFeature.sType                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rayTracingFeature.rayTracingPipeline                              = VK_TRUE;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
     accStructFeature.sType                                            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accStructFeature.accelerationStructure                            = VK_TRUE;
 
     // Mesh shader feature
     VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeature = {};

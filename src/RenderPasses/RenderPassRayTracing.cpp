@@ -27,13 +27,17 @@ void RenderPassRayTracing::PrepareRenderPass()
     m_renderPassParameters.AddParameter(pTLAS, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // Binding 2: Accumulation buffer
+    // The ray gen shader declares these as rgba32f storage images and reads/writes them
+    // directly. The output image is a cross-frame accumulation buffer, so a 32-bit float
+    // format is used to avoid overflow/clamping of bright HDR samples. The format must
+    // match the shader's format qualifier (see the SPIR-V format validation rules).
     m_renderPassParameters.AddImageParameter(
-        GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Accumulated", m_imageSize, VK_FORMAT_R16G16B16A16_SFLOAT),
+        GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Accumulated", m_imageSize, VK_FORMAT_R32G32B32A32_SFLOAT),
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, VK_IMAGE_LAYOUT_GENERAL);
 
     // Binding 3: Ray tracing output
     m_renderPassParameters.AddImageParameter(
-        GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", m_imageSize, VK_FORMAT_R16G16B16A16_SFLOAT),
+        GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", m_imageSize, VK_FORMAT_R32G32B32A32_SFLOAT),
         VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, VK_IMAGE_LAYOUT_GENERAL);
 
     // Binding 4: submesh descriptions

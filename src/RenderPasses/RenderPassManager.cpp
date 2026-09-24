@@ -346,6 +346,15 @@ void RenderPassManager::SubmitCommandBuffers()
     vSignalSemaphores.clear();
     vWaitStages.clear();
 
+#ifdef FEATURE_RAY_TRACING
+    // The ray tracing pass produces the image consumed by the final pass, so it must be
+    // submitted before the UI/final batch.
+    if (m_vpRenderPasses[RENDERPASS_RAY_TRACING])
+    {
+        vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_RAY_TRACING]->GetCommandBuffer());
+    }
+#endif
+
     // Submit UI pass
     VkCommandBuffer uiCmdBuffer = m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer();
     if (uiCmdBuffer != VK_NULL_HANDLE)    // it's possible there's no UI to draw

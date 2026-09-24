@@ -192,6 +192,11 @@ void VkRenderDevice::CreateDevice(
 
     VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     features2.features.multiDrawIndirect = VK_TRUE;
+    // Required by shaders that use 64-bit integers / buffer references (pathTracing.rchit)
+    // and by shaders that read/write storage images with unknown formats (testPrimary.rgen).
+    features2.features.shaderInt64 = VK_TRUE;
+    features2.features.shaderStorageImageReadWithoutFormat = VK_TRUE;
+    features2.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
 
     VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     features13.maintenance4 = VK_TRUE;
@@ -200,7 +205,12 @@ void VkRenderDevice::CreateDevice(
     features12.bufferDeviceAddress = VK_TRUE;
     features12.separateDepthStencilLayouts = VK_TRUE;
     features12.runtimeDescriptorArray = VK_TRUE;
+    features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     features12.drawIndirectCount = VK_TRUE;
+    // Shaders declare layout(scalar) / layout(buffer_reference, scalar); e.g. the packed
+    // Vertex array in pathTracing.rchit has a 40-byte stride, which is only valid with
+    // scalar block layout.
+    features12.scalarBlockLayout = VK_TRUE;
     VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
     features11.multiview = VK_TRUE;
     features11.shaderDrawParameters = VK_TRUE;

@@ -47,12 +47,15 @@ RenderPassFinal::RenderPassFinal(const Swapchain& swapchain, bool bClearAttachme
           0);
 #ifdef FEATURE_RAY_TRACING
         // Descriptor set 1
+        // The ray tracing output is a storage image written by the ray tracing pass and
+        // read back with imageLoad() in triangle_rt.frag, so it must be bound as a storage
+        // image in the GENERAL layout (not a sampled image).
         m_vRenderPassParameters[i].AddImageParameter(
-          GetRenderResourceManager()->GetResource<RenderTarget>("Ray Tracing Output"),
-          VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+          GetRenderResourceManager()->GetResource<ImageResource>("Ray Tracing Output"),
+          VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
           VK_SHADER_STAGE_FRAGMENT_BIT,
-          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-          GetSamplerManager()->getSampler(SAMPLER_1_MIPS),
+          VK_IMAGE_LAYOUT_GENERAL,
+          VK_NULL_HANDLE,
           1);
 
         // Descriptor set 2
@@ -60,7 +63,8 @@ RenderPassFinal::RenderPassFinal(const Swapchain& swapchain, bool bClearAttachme
         m_vRenderPassParameters[i].AddParameter(
           GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView"),
           VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-          VK_SHADER_STAGE_FRAGMENT_BIT);
+          VK_SHADER_STAGE_FRAGMENT_BIT,
+          2);
 #endif
 
 
@@ -124,31 +128,22 @@ RenderPassFinal::~RenderPassFinal()
 
 void RenderPassFinal::RecordCommandBuffers()
 {
-    //VkImageView imgView = GetRenderResourceManager()->GetColorTarget("opaqueLightingOutput", VkExtent2D({0, 0}))->getView();
-    auto* colorOutputResource = GetRenderResourceManager()->GetResource<RenderTarget>("opaqueLightingOutput");
-
-#ifdef FEATURE_RAY_TRACING
-    // VkImageView rtOutputView = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", VkExtent2D({1, 1}), VK_FORMAT_R16G16B16A16_SFLOAT)->getView();
-    ImageResource* pRTOutput = GetRenderResourceManager()->GetResource<ImageResource>("Ray Tracing Output");
-    assert(pRTOutput);
-    VkImageView rtOutputView = pRTOutput->getView();
-    UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView");
-
-    std::vector<VkDescriptorSet>
-        descSets = {
-            GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(colorOutputResource->getView()),
-            GetDescriptorManager()->AllocateSingleStorageImageDescriptorSet(rtOutputView),
-            GetDescriptorManager()->AllocatePerviewDataDescriptorSet(*perView)};
-#else
-    std::vector<VkDescriptorSet> descSets = {
-        GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(colorOutputResource->getView())};
-#endif
-
     VkCommandBufferBeginInfo beginInfo = {};
 
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     beginInfo.pInheritanceInfo = nullptr;
+
+    // Resolve inputs at record time: the ray tracing output is created by
+    // RenderPassRayTracing::PrepareRenderPass(), which runs after this pass is constructed.
+    std::vector<const IRenderResource*> vSet0Resources = {
+        GetRenderResourceManager()->GetResource<ImageResource>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME)};
+#ifdef FEATURE_RAY_TRACING
+    std::vector<const IRenderResource*> vSet1Resources = {
+        GetRenderResourceManager()->GetResource<ImageResource>("Ray Tracing Output")};
+    std::vector<const IRenderResource*> vSet2Resources = {
+        GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView")};
+#endif
 
     for (size_t i = 0; i < m_vRenderPassParameters.size(); i++)
     {
@@ -184,7 +179,15 @@ void RenderPassFinal::RecordCommandBuffers()
             vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             {
-                std::vector<VkDescriptorSet> vDescSets = renderPassParameters.AllocateDescriptorSets();
+                // Allocate the descriptor sets from this pass's own layouts so that they are
+                // compatible with GetPipelineLayout() (the descriptor set layouts must be
+                // identically defined, including stageFlags).
+                std::vector<VkDescriptorSet> descSets;
+                descSets.push_back(renderPassParameters.AllocateDescriptorSet("Final pass set 0", vSet0Resources, 0));
+#ifdef FEATURE_RAY_TRACING
+                descSets.push_back(renderPassParameters.AllocateDescriptorSet("Final pass set 1", vSet1Resources, 1));
+                descSets.push_back(renderPassParameters.AllocateDescriptorSet("Final pass set 2", vSet2Resources, 2));
+#endif
 
                 const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
                 const MeshVertexResources& meshVertexResources = GetMeshResourceManager()->GetMeshVertexResources();
