@@ -1,9 +1,11 @@
 [submodule "thirdparty/glfw"]
 	path = thirdparty/glfw
 	url = https://github.com/glfw/glfw.git
+	branch = master
 [submodule "thirdparty/glm"]
 	path = thirdparty/glm
 	url = https://github.com/g-truc/glm.git
+	branch = master
 [submodule "thirdparty/imgui"]
 	path = thirdparty/imgui
 	url = https://github.com/ocornut/imgui.git
@@ -11,12 +13,16 @@
 [submodule "thirdparty/ImGuizmo"]
 	path = thirdparty/ImGuizmo
 	url = https://github.com/CedricGuillemet/ImGuizmo.git
+	branch = master
 [submodule "thirdparty/meshoptimizer"]
 	path = thirdparty/meshoptimizer
 	url = git@github.com:zeux/meshoptimizer.git
+	branch = master
 [submodule "thirdparty/imnodes"]
 	path = thirdparty/imnodes
 	url = https://github.com/Nelarius/imnodes.git
+	branch = master
 [submodule "thirdparty/SPIRV-Reflect"]
 	path = thirdparty/SPIRV-Reflect
 	url = https://github.com/KhronosGroup/SPIRV-Reflect.git
+	branch = main
