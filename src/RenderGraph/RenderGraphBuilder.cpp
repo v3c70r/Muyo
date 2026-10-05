@@ -155,9 +155,15 @@ RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGra
             uint32_t nSetCount = 1;
             for (const auto& binding : mergedReflection.descriptorBindings)
             {
+                if (binding.set >= ENUM_COUNT<ResourceBindingSemantic>)
+                {
+                    throw std::runtime_error(
+                        "Graphics node '" + rgn.name + "' binds descriptor set " + std::to_string(binding.set) +
+                        ", but graphics nodes only support the built-in semantic sets 0-2. Use a compute or ray "
+                        "tracing node with explicit DescriptorBindings instead.");
+                }
                 nSetCount = std::max(nSetCount, binding.set + 1);
             }
-            nSetCount = std::min<uint32_t>(nSetCount, ENUM_COUNT<ResourceBindingSemantic>);
 
             result.descriptorSetLayouts.resize(nSetCount);
             // One set per node (from the shared layouts) so binding different resources in
@@ -1025,7 +1031,12 @@ void RenderGraphBuilder::Execute()
                             const IRenderResource* pResource = ResolveResource(use.handle);
                             if (pResource == nullptr) continue;
                             const size_t nSetIndex = static_cast<size_t>(use.bindingSemantic);
-                            if (nSetIndex >= rgn.descriptorSets.size()) continue;  // shader does not use this set
+                            if (nSetIndex >= rgn.descriptorSets.size())
+                            {
+                                throw std::runtime_error("Node '" + rgn.logicalRenderGraphNode->name +
+                                                         "' declares a bindingSemantic for descriptor set " +
+                                                         std::to_string(nSetIndex) + " which its shaders do not use.");
+                            }
                             const VkDescriptorType descriptorType =
                                 RenderGraphDescriptorSets::GetBindingType(use.bindingSemantic, 0);
                             if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;

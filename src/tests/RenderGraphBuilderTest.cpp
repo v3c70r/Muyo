@@ -91,6 +91,64 @@ static uint32_t CountNonBlackPixels(RenderTarget* pTarget)
     return nNonBlack;
 }
 
+// Decode an IEEE-754 half float (R16G16B16A16_SFLOAT stores each channel as one).
+static float HalfToFloat(uint16_t h)
+{
+    const uint32_t sign = (h >> 15) & 1u;
+    const uint32_t exponent = (h >> 10) & 0x1Fu;
+    const uint32_t mantissa = h & 0x3FFu;
+    uint32_t f;
+    if (exponent == 0) { f = sign << 31; }
+    else if (exponent == 31) { f = (sign << 31) | 0x7F800000u | (mantissa << 13); }
+    else { f = (sign << 31) | ((exponent - 15 + 127) << 23) | (mantissa << 13); }
+    float out;
+    memcpy(&out, &f, 4);
+    return out;
+}
+
+// Copies the color target back and counts pixels whose channels are all at least the given minimum.
+static uint32_t CountPixelsMatching(RenderTarget* pTarget, const glm::vec3& vMin)
+{
+    const VkExtent2D extent = {WIDTH, HEIGHT};
+    const size_t pixelSize = 8;  // R16G16B16A16_SFLOAT
+    const size_t bufferSize = static_cast<size_t>(extent.width) * extent.height * pixelSize;
+
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, bufferSize);
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.image = pTarget->getImage();
+            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+            VkBufferImageCopy region{};
+            region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.imageExtent = {extent.width, extent.height, 1};
+            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                   readback.buffer(), 1, &region);
+        });
+
+    const uint16_t* pPixels = static_cast<const uint16_t*>(readback.Map());
+    uint32_t nCount = 0;
+    const size_t nPixels = static_cast<size_t>(extent.width) * extent.height;
+    for (size_t i = 0; i < nPixels; ++i)
+    {
+        if (HalfToFloat(pPixels[i * 4 + 0]) >= vMin.r && HalfToFloat(pPixels[i * 4 + 1]) >= vMin.g &&
+            HalfToFloat(pPixels[i * 4 + 2]) >= vMin.b)
+        {
+            ++nCount;
+        }
+    }
+    readback.Unmap();
+    return nCount;
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descriptor sets", "[RenderGraphBuilder]")
 {
     // Create a small quad directly (do NOT use MeshResourceManager — its singleton
@@ -1229,6 +1287,239 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
     // the last-written camera and one of these assertions would fail.
     REQUIRE(CountNonBlackPixels(pTargetA) > 0);
     REQUIRE(CountNonBlackPixels(pTargetB) == 0);
+}
+
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment keeps earlier content",
+                 "[RenderGraphBuilder]")
+{
+    // A compute node fills a storage image green; a graphics node then blends a 50%-alpha red quad
+    // over it while declaring the image COLOR_ATTACHMENT/READ_WRITE. The result must still contain
+    // the compute output, i.e. the attachment has to be LOADed. Clearing on write-order instead of
+    // io (the old behaviour) would discard the green and make the test fail.
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Overlay", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                     .extent = {WIDTH, HEIGHT},
+                                                     .usage = VK_IMAGE_USAGE_STORAGE_BIT |
+                                                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("OverlayCamera",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = sizeof(PerViewData),
+                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
+    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+
+    RenderGraphNodeCreateInfo cameraPass = {
+        .nodeName = "OverlayCameraPrep",
+        .queueType = QueueType::CPU,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("OverlayCamera"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::UNIFORM_BUFFER,
+                                     .kind = ResourceKind::BUFFER}},
+        .execute =
+            [](RenderGraphNodeContext& ctx)
+        {
+            const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
+                                                    static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+            const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, -3.0F), glm::vec3(0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+            PerViewData perView;
+            perView.mProj = proj;
+            perView.mView = view;
+            perView.mProjInv = glm::inverse(proj);
+            perView.mViewInv = glm::inverse(view);
+            perView.vScreenExtent = {WIDTH, HEIGHT};
+            ctx.GetResource<BufferResource>("OverlayCamera")->SetData(&perView, sizeof(perView));
+        }};
+
+    RenderGraphNodeCreateInfo fillPass = {
+        .nodeName = "FillGreen",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("Overlay"),
+                                     .io = ResourceIOType::READ_WRITE,
+                                     .usage = ResourceUsage::STORAGE_IMAGE,
+                                     .kind = ResourceKind::IMAGE,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"testFillColor.comp.slang"},
+        .execute =
+            [](RenderGraphNodeContext& ctx)
+        { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+
+    RenderGraphNodeCreateInfo overlayPass = {
+        .nodeName = "RedOverlay",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("OverlayCamera"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                // Read-write: blend this pass over whatever is already in the attachment.
+                ResourceUse{.handle = ResourceHandle("Overlay"),
+                            .io = ResourceIOType::READ_WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"testWorldPos.vert.slang", "testSolidColor.frag.slang"},
+        .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
+                    .blendState = {.attachmentCount = 1,
+                                   .attachments = {{{.blendEnable = true,
+                                                     .srcColor = BlendFactor::SRC_ALPHA,
+                                                     .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA}}}}},
+        .execute =
+            [&quadMesh](RenderGraphNodeContext& ctx)
+        {
+            const glm::vec4 color(1.0F, 0.0F, 0.0F, 0.5F);  // 50%-alpha red
+            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(color),
+                               &color);
+            const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(ctx.commandBuffer, quadMesh.m_nIndexCount, 1, quadMesh.m_nIndexOffset, 0, 0);
+        }};
+
+    builder.AddNode(cameraPass);
+    builder.AddNode(fillPass);
+    builder.AddNode(overlayPass);
+    builder.AddDependency(cameraPass.nodeName, overlayPass.nodeName);
+    builder.AddDependency(fillPass.nodeName, overlayPass.nodeName);
+    builder.Build();
+    builder.Execute();
+
+    auto* pTarget = GetRenderResourceManager()->GetColorTarget("Overlay");
+    REQUIRE(pTarget != nullptr);
+
+    // Green survives only if the attachment was loaded rather than cleared; the red overlay is
+    // 50% alpha, so the blended green is ~0.5.
+    REQUIRE(CountPixelsMatching(pTarget, {0.0F, 0.25F, 0.0F}) > 0);
+}
+
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same attachment both land",
+                 "[RenderGraphBuilder]")
+{
+    // Two graphics nodes write the same color target with the *same* declared usage
+    // (COLOR_ATTACHMENT/WRITE), so the access mask and layout are identical and only the WAW
+    // hazard forces a barrier. The second pass blends over the first, so the result must contain
+    // both contributions. (The memory-ordering half of this is checked by the validation layer;
+    // pixels alone cannot distinguish a missing barrier on a single queue.)
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("WawTarget", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                       .extent = {WIDTH, HEIGHT},
+                                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("WawCamera",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = sizeof(PerViewData),
+                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
+    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
+
+    RenderGraphNodeCreateInfo cameraPass = {
+        .nodeName = "WawCameraPrep",
+        .queueType = QueueType::CPU,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("WawCamera"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::UNIFORM_BUFFER,
+                                     .kind = ResourceKind::BUFFER}},
+        .execute =
+            [](RenderGraphNodeContext& ctx)
+        {
+            const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
+                                                    static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+            const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, -3.0F), glm::vec3(0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+            PerViewData perView;
+            perView.mProj = proj;
+            perView.mView = view;
+            perView.mProjInv = glm::inverse(proj);
+            perView.mViewInv = glm::inverse(view);
+            perView.vScreenExtent = {WIDTH, HEIGHT};
+            ctx.GetResource<BufferResource>("WawCamera")->SetData(&perView, sizeof(perView));
+        }};
+
+    const auto makeWriteNode = [&quadMesh](const std::string& nodeName, const glm::vec4& color, bool bBlend)
+    {
+        return RenderGraphNodeCreateInfo{
+            .nodeName = nodeName,
+            .queueType = QueueType::GRAPHICS,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::VERTEX_BUFFER,
+                                         .kind = ResourceKind::BUFFER},
+                             ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::INDEX_BUFFER,
+                                         .kind = ResourceKind::BUFFER},
+                             ResourceUse{.handle = ResourceHandle("WawCamera"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::UNIFORM_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                             // Same declared usage in both nodes: only the WAW hazard differs.
+                             ResourceUse{.handle = ResourceHandle("WawTarget"),
+                                         .io = ResourceIOType::WRITE,
+                                         .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                         .kind = ResourceKind::IMAGE}},
+            .shaderNames = {"testWorldPos.vert.slang", "testSolidColor.frag.slang"},
+            .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
+                        .blendState = {.attachmentCount = 1,
+                                       .attachments = {{{.blendEnable = bBlend,
+                                                         .srcColor = BlendFactor::SRC_ALPHA,
+                                                         .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA}}}}},
+            .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+            .execute =
+                [&quadMesh, color](RenderGraphNodeContext& ctx)
+            {
+                vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(color), &color);
+                const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
+                VkDeviceSize offset = 0;
+                VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
+                vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(ctx.commandBuffer, quadMesh.m_nIndexCount, 1, quadMesh.m_nIndexOffset, 0, 0);
+            }};
+    };
+
+    // First pass writes opaque red; second blends 50%-alpha green over it.
+    const RenderGraphNodeCreateInfo first = makeWriteNode("FirstWrite", {1.0F, 0.0F, 0.0F, 1.0F}, false);
+    const RenderGraphNodeCreateInfo second = makeWriteNode("SecondWrite", {0.0F, 1.0F, 0.0F, 0.5F}, true);
+    builder.AddNode(cameraPass);
+    builder.AddNode(first);
+    builder.AddNode(second);
+    builder.AddDependency(cameraPass.nodeName, first.nodeName);
+    builder.AddDependency(first.nodeName, second.nodeName);
+    builder.Build();
+    builder.Execute();
+
+    auto* pTarget = GetRenderResourceManager()->GetColorTarget("WawTarget");
+    REQUIRE(pTarget != nullptr);
+    // The blend keeps both: red * 0.5 + green * 0.5.
+    REQUIRE(CountPixelsMatching(pTarget, {0.25F, 0.25F, 0.0F}) > 0);
 }
 
 }  // namespace Muyo::RenderGraph
