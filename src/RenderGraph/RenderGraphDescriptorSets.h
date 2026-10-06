@@ -79,6 +79,10 @@ inline const std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerS
 
 /// Owns the three built-in semantic descriptor set layouts used by graphics nodes.
 ///
+/// Known debt: sets are allocated per node, so a shader declaring the MATERIAL set takes a
+/// 1024-descriptor bindless array each. See docs/DescriptorSet-Lifecycle-Design.md for the intended
+/// content-addressed replacement.
+///
 /// The layouts are shared by all graphics nodes; each node gets its own descriptor sets (allocated
 /// with `AllocateSemanticSet`) so that binding different resources in different nodes cannot clash.
 class RenderGraphDescriptorSets

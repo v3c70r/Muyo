@@ -9,7 +9,8 @@ PROJECT_BRIEF          = "Data-driven render graph for the Vulkan renderer"
 OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIR@
 
 INPUT                  = @RENDERGRAPH_HEADER_DIR@ \
-                         @RENDERGRAPH_OVERVIEW@
+                         @RENDERGRAPH_OVERVIEW@ \
+                         @RENDERGRAPH_DESIGN_NOTE@
 FILE_PATTERNS          = *.h *.md
 RECURSIVE              = NO
 USE_MDFILE_AS_MAINPAGE = @RENDERGRAPH_OVERVIEW@

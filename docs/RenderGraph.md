@@ -19,6 +19,9 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
   synchronisation, but does not yet overlap work across frames.
 - **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
   only feed data into the graph; a GPU-to-CPU dependency is rejected.
+- **Descriptor sets are per node today.** That is correct but costs one bindless array per
+  material-binding node. The intended content-addressed redesign is written up in
+  [DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md).
 
 ## Core concepts
 
