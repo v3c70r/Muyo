@@ -67,6 +67,12 @@ public:
     // Multiview mask
     void SetMultiviewMask(uint32_t nMultiviewMask) { m_nMultiviewMask = nMultiviewMask; }
 
+    // Get input and output resources
+    const std::vector<const IRenderResource*>& GetInputResources() const { return m_vpInputResources; }
+    const std::vector<const IRenderResource*>& GetOutputResources() const { return m_vpOutputResources; }
+
+    std::string GetName() const { return m_sName; }
+
   private:
     void AddBinding(VkDescriptorType type, uint32_t nCount, VkShaderStageFlags stages, uint32_t nDescSetIdx);
     void AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler = VK_NULL_HANDLE, uint32_t nDescSetIdx = 0);
@@ -122,5 +128,10 @@ private:
     VkExtent2D m_renderArea = {0, 0};
 
     bool m_bIsFinalized = false;
+
+    // Track input and output resources for the render pass
+    std::vector<const IRenderResource*> m_vpInputResources;
+    std::vector<const IRenderResource*> m_vpOutputResources;
+    std::string m_sName = "undefined";
 };
 }  // namespace Muyo

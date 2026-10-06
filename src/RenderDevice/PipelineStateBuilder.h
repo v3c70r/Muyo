@@ -91,6 +91,12 @@ public:
         return *this;
     }
 
+    PipelineStateBuilder& setRenderingCreateInfo(VkPipelineRenderingCreateInfo renderingInfo)
+    {
+        mRenderingInfo = renderingInfo;
+        return *this;
+    }
+
     VkPipeline Build(VkDevice device);
 
 private:
@@ -108,6 +114,7 @@ private:
     VkPipelineDynamicStateCreateInfo m_dynamicStatesInfo = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, nullptr, 0, 0, nullptr};
     VkRenderPass mRenderPass = {};
     uint32_t mSubpassIndex = 0;
+    VkPipelineRenderingCreateInfo mRenderingInfo = {};
 };
 
 // TODO: Finish other builders
@@ -308,6 +315,14 @@ public:
     {
         blendAttachmentStates.resize(numAttachments, getAttachmentBlendState(bEnabled));
         m_info.attachmentCount = numAttachments;
+        m_info.pAttachments = blendAttachmentStates.data();
+        return *this;
+    }
+    BlendStateCIBuilder& AddAttachment(VkPipelineColorBlendAttachmentState attachment)
+
+    {
+        blendAttachmentStates.push_back(attachment);
+        m_info.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
         m_info.pAttachments = blendAttachmentStates.data();
         return *this;
     }

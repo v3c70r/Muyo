@@ -11,17 +11,20 @@ void RenderPassParameters::AddParameter(const IRenderResource* pResource, VkDesc
 {
     AddBinding(type, 1, stages, nDescSetIdx);
     AddDescriptorWrite(pResource, type, nDescSetIdx);
+    m_vpInputResources.push_back(pResource);
 }
 
 void RenderPassParameters::AddImageParameter(const ImageResource* pResource, VkDescriptorType type, VkShaderStageFlags stages, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
 {
     AddBinding(type, 1, stages, nDescSetIdx);
     AddImageDescriptorWrite(pResource, type, imageLayout, sampler, nDescSetIdx);
+    m_vpInputResources.push_back(pResource);
 }
 void RenderPassParameters::AddImageParameter(std::vector<const ImageResource*>& vpResource, VkDescriptorType type, VkShaderStageFlags stages, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
 {
     AddBinding(type, vpResource.size(), stages, nDescSetIdx);
     AddImageDescriptorWrite(vpResource, type, imageLayout, sampler, nDescSetIdx);
+    m_vpInputResources.insert(m_vpInputResources.end(), vpResource.begin(), vpResource.end());
 }
 
 void RenderPassParameters::AddImageDescriptorWrite(const ImageResource* pResource, VkDescriptorType type, VkImageLayout imageLayout, VkSampler sampler, uint32_t nDescSetIdx)
@@ -305,6 +308,8 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImage
     }
 
     m_vAttachmentResources.push_back(pResource);
+
+    m_vpOutputResources.push_back(pResource);
 }
 
 void RenderPassParameters::CreatePipelineLayout()
@@ -394,20 +399,23 @@ void RenderPassParameters::CreateFrameBuffer()
 
 void RenderPassParameters::Finalize(const std::string& sPassName)
 {
+    assert(!m_bIsFinalized);
+
+    m_sName = sPassName;
     if (!m_vBindings.empty())
     {
         CreateDescriptorSetLayout();
     }
 
     CreatePipelineLayout();
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, sPassName.c_str());
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, sPassName);
 
     if (!m_vAttachmentResources.empty())
     {
         CreateRenderPass();
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass), VK_OBJECT_TYPE_RENDER_PASS, sPassName.c_str());
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_renderPass), VK_OBJECT_TYPE_RENDER_PASS, sPassName);
         CreateFrameBuffer();
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_framebuffer), VK_OBJECT_TYPE_FRAMEBUFFER, sPassName.c_str());
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_framebuffer), VK_OBJECT_TYPE_FRAMEBUFFER, sPassName);
     }
 
     m_bIsFinalized = true;

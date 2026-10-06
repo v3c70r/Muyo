@@ -63,6 +63,14 @@ const StorageBuffer<PBRMaterial>* MaterialManager::GetMaterialBuffer() const
     return GetRenderResourceManager()->GetResource<StorageBuffer<PBRMaterial>>(sMaterialBufferName);
 }
 
+void MaterialManager::RefreshGPUResources()
+{
+    for (size_t i = 0; i < m_vMaterials.size() && i < m_vMaterialBufferCPU.size(); ++i)
+    {
+        m_vMaterials[i].RefreshGPUResources(m_vMaterialBufferCPU[i]);
+    }
+}
+
 MaterialManager *GetMaterialManager()
 {
     return &s_materialManager;
@@ -81,6 +89,7 @@ Material &Material::LoadTexture(TextureType type, const std::string &path, const
 
 Material &Material::SetMaterialParameterFactors(const PBRMaterial &factors, const std::string &sMaterialName)
 {
+    m_sFactorName = sMaterialName;
     auto *pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PBRMaterial>(sMaterialName);
     pUniformBuffer->SetData(factors);
     m_materialParameters.m_pFactors = pUniformBuffer;
@@ -90,7 +99,7 @@ Material &Material::SetMaterialParameterFactors(const PBRMaterial &factors, cons
     material.fRoughness = factors.fRoughness;
     material.fMetalness = factors.fMetalness;
     memcpy(material.UVIndices, factors.UVIndices, sizeof(uint32_t) * TEX_COUNT);
-    material.vEmissiveFactor = factors.vEmissiveFactor;
+    memcpy(material.vEmissiveFactor, factors.vEmissiveFactor, sizeof(float) * 3);
 
     return *this;
 }

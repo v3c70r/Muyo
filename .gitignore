@@ -12,3 +12,6 @@ cscope.out
 compile_commands.json
 /.cache/
 .vs
+
+# Local toolchain downloads (see docs/README.md)
+/.tools/

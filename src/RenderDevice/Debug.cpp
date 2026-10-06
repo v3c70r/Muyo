@@ -160,7 +160,7 @@ VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
     info.objectType = objectType;
     info.objectHandle = objectHandle;
 
-    static auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(
+    auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(
         GetRenderDevice()->GetInstance(), "vkSetDebugUtilsObjectNameEXT");
     if (func != nullptr)
         return func(GetRenderDevice()->GetDevice(), &info);
@@ -175,16 +175,19 @@ void beginMarker(VkQueue queue, std::string&& name, uint64_t)
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = name.data();
 
-    static auto func = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+    // Note: the function pointer is re-resolved on every call. Caching it in a static binds it to
+    // the device that happened to be current the first time and goes stale if the device is
+    // recreated (which tests do per case).
+    auto func = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
         GetRenderDevice()->GetDevice(), "vkQueueBeginDebugUtilsLabelEXT");
-    func(queue, &labelInfo);
+    if (func != nullptr) func(queue, &labelInfo);
 }
 
 void endMarker(VkQueue queue)
 {
-    static auto func = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+    auto func = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
         GetRenderDevice()->GetDevice(), "vkQueueEndDebugUtilsLabelEXT");
-    func(queue);
+    if (func != nullptr) func(queue);
 }
 
 // specialization for VkQueue and VkCommandBuffer
@@ -194,16 +197,16 @@ void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t)
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = name.data();
 
-    static auto func = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+    auto func = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
         GetRenderDevice()->GetDevice(), "vkCmdBeginDebugUtilsLabelEXT");
-    func(cmd, &labelInfo);
+    if (func != nullptr) func(cmd, &labelInfo);
 }
 
 void endMarker(VkCommandBuffer cmd)
 {
-    static auto func = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
+    auto func = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
         GetRenderDevice()->GetDevice(), "vkCmdEndDebugUtilsLabelEXT");
-    func(cmd);
+    if (func != nullptr) func(cmd);
 }
 
 void VK_ASSERT(VkResult result)

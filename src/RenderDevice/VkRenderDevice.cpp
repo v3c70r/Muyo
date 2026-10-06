@@ -192,15 +192,28 @@ void VkRenderDevice::CreateDevice(
 
     VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     features2.features.multiDrawIndirect = VK_TRUE;
+    // Required by shaders that use 64-bit integers / buffer references (pathTracing.rchit)
+    // and by shaders that read/write storage images with unknown formats (testPrimary.rgen).
+    features2.features.shaderInt64 = VK_TRUE;
+    features2.features.shaderStorageImageReadWithoutFormat = VK_TRUE;
+    features2.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
 
     VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     features13.maintenance4 = VK_TRUE;
+    features13.dynamicRendering = VK_TRUE;
     VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     features12.bufferDeviceAddress = VK_TRUE;
     features12.separateDepthStencilLayouts = VK_TRUE;
     features12.runtimeDescriptorArray = VK_TRUE;
+    features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    features12.drawIndirectCount = VK_TRUE;
+    // Shaders declare layout(scalar) / layout(buffer_reference, scalar); e.g. the packed
+    // Vertex array in pathTracing.rchit has a 40-byte stride, which is only valid with
+    // scalar block layout.
+    features12.scalarBlockLayout = VK_TRUE;
     VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
     features11.multiview = VK_TRUE;
+    features11.shaderDrawParameters = VK_TRUE;
 
     features2.pNext = &features11;
     features11.pNext = &features12;
@@ -240,38 +253,44 @@ void VkRenderDevice::CreateDevice(
     std::set<VkDeviceQueueCreateInfo, decltype(cmp)> sQueueCreateInfos(cmp);
 
     // Find the first queue families support all the queues
-    int nQueueFamilyIdx = 0;
-    for (const auto& queueFamily : queueFamilies)
+    m_queueFamilyIndices.nGraphicsQueueFamily = -1;
+    m_queueFamilyIndices.nPresentQueneFamily = -1;
+    m_queueFamilyIndices.nComputeQueueFamily = -1;
+    bool bComputeFamilyIsDedicated = false;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilies.size()); ++i)
     {
+        const auto& queueFamily = queueFamilies[i];
+        const bool bSupportsGraphics = queueFamily.queueCount > 0 && (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT);
+        const bool bSupportsCompute = queueFamily.queueCount > 0 && (queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT);
+
         // Check for graphics support
-        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
+        if (bSupportsGraphics && m_queueFamilyIndices.nGraphicsQueueFamily < 0)
         {
-            m_queueFamilyIndices.nGraphicsQueueFamily = nQueueFamilyIdx;
+            m_queueFamilyIndices.nGraphicsQueueFamily = static_cast<int>(i);
         }
 
         // Check for presentation support ( they can be in the same queeu family)
-        if (pSurface)
+        if (pSurface && m_queueFamilyIndices.nPresentQueneFamily < 0)
         {
             VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, nQueueFamilyIdx, *pSurface, &presentSupport);
-
-            if (queueFamily.queueCount > 0 && presentSupport)
+            vkGetPhysicalDeviceSurfaceSupportKHR(m_physicalDevice, i, *pSurface, &presentSupport);
+            if (presentSupport)
             {
-                m_queueFamilyIndices.nPresentQueneFamily = nQueueFamilyIdx;
+                m_queueFamilyIndices.nPresentQueneFamily = static_cast<int>(i);
             }
         }
 
-        if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_COMPUTE_BIT)
+        // Prefer a dedicated compute-only queue family so compute work can run asynchronously;
+        // otherwise fall back to any compute-capable family (usually the graphics family).
+        if (bSupportsCompute)
         {
-            m_queueFamilyIndices.nComputeQueueFamily = nQueueFamilyIdx;
+            const bool bDedicated = !bSupportsGraphics;
+            if (m_queueFamilyIndices.nComputeQueueFamily < 0 || (bDedicated && !bComputeFamilyIsDedicated))
+            {
+                m_queueFamilyIndices.nComputeQueueFamily = static_cast<int>(i);
+                bComputeFamilyIsDedicated = bDedicated;
+            }
         }
-
-        if (m_queueFamilyIndices.isComplete())
-        {
-            break;
-        }
-
-        nQueueFamilyIdx++;
     }
 
     // We should at least have one graphics queue
@@ -429,6 +448,7 @@ void VkRenderDevice::DestroyCommandPools()
 void VkRenderDevice::Unintialize()
 {
     vkDestroyInstance(m_instance, nullptr);
+    m_instance = VK_NULL_HANDLE;
 }
 
 VkCommandBuffer VkRenderDevice::AllocateComputeCommandBuffer()

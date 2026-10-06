@@ -22,6 +22,7 @@ TabWidth: 4
 UseTab: Never
 
 SortIncludes: true
+NamespaceIndentation: None
 
 ---
 #AlignAfterOpenBracket: true

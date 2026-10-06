@@ -3,6 +3,7 @@
 #include "glm/ext/quaternion_geometric.hpp"
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_access.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/string_cast.hpp>
 #include <glm/gtx/transform.hpp>
@@ -33,11 +34,41 @@ struct PerViewData
     float fAperture = 3.0f;
     float fFocalDistance = 10.0f;
     float fLeftSplitScreenRatio = 0.5f;
+
+    // World-space frustum planes (left, right, bottom, top, near, far), packed as
+    // (normal.xyz, distance). Used by the GPU frustum culling pass. Plane normals point
+    // inward: a point is inside when dot(normal, p) + distance >= 0.
+    glm::vec4 vFrustumPlanes[6] = {glm::vec4(0.0f)};
 };
+
+// Extract the 6 world-space frustum planes from a view-projection matrix
+// (Gribb-Hartmann). Matches glm::perspective's default OpenGL depth range [-1, 1].
+// Plane normals point inward: a point is inside when dot(normal, p) + distance >= 0.
+inline void ExtractFrustumPlanes(const glm::mat4& mViewProj, glm::vec4 outPlanes[6])
+{
+    const glm::vec4 row0 = glm::row(mViewProj, 0);
+    const glm::vec4 row1 = glm::row(mViewProj, 1);
+    const glm::vec4 row2 = glm::row(mViewProj, 2);
+    const glm::vec4 row3 = glm::row(mViewProj, 3);
+
+    outPlanes[0] = row3 + row0;  // left:   clip.x >= -clip.w
+    outPlanes[1] = row3 - row0;  // right:  clip.x <=  clip.w
+    outPlanes[2] = row3 + row1;  // bottom: clip.y >= -clip.w
+    outPlanes[3] = row3 - row1;  // top:    clip.y <=  clip.w
+    outPlanes[4] = row3 + row2;  // near:   clip.z >= -clip.w (OpenGL depth range)
+    outPlanes[5] = row3 - row2;  // far:    clip.z <=  clip.w
+
+    for (int i = 0; i < 6; ++i)
+    {
+        const float len = glm::length(glm::vec3(outPlanes[i]));
+        if (len > 0.0f) outPlanes[i] /= len;
+    }
+}
 
 class Camera
 {
 public:
+    virtual ~Camera() = default;
     Camera(glm::mat4 mProj, glm::mat4 mView, float fNear, float fFar, float width, float height)
     {
         m_perViewData.mProj = mProj;

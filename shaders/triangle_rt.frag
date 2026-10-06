@@ -8,7 +8,7 @@ layout(location = 0) in vec2 texCoords;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform sampler2D inTexture;
-layout(rgba32f, set = 1, binding = 0) uniform image2D inRtTarget;
+layout(rgba32f, set = 1, binding = 0) readonly uniform image2D inRtTarget;
 
 CAMERA_UBO(2)
 

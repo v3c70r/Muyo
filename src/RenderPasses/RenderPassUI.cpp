@@ -29,6 +29,7 @@ void ImGuiResource::CreateResources()
     // UI font texture has texture id of 0. It has to be inserted before other texture
     GetRenderResourceManager()->GetTexture("ui_font_texture", fontData, texWidth, texHeight);
     GetDescriptorManager()->GetImGuiTextureId("ui_font_texture");
+    io.Fonts->SetTexID((ImTextureID)0);
 
     // use dummy geometry data because they will be updated later in UpdateBuffers().
     std::vector<ImDrawVert> vDummyVert = {ImDrawVert{
@@ -256,7 +257,7 @@ void RenderPassUI::RecordCommandBuffer()
                         // Bind correct texture
                         vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                                 m_renderPassParameters.GetPipelineLayout(), 0, 1,
-                                                &GetDescriptorManager()->GetImGuiTextureDescriptorSet((size_t)drawCmd.TextureId), 0, nullptr);
+                                                &GetDescriptorManager()->GetImGuiTextureDescriptorSet((size_t)drawCmd.GetTexID()), 0, nullptr);
                         // Setup scissor rect according to the draw cmd
                         VkRect2D scissorRect;
                         scissorRect.offset.x = std::max((int32_t)(drawCmd.ClipRect.x), 0);

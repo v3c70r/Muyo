@@ -49,6 +49,9 @@ bool g_bWaylandExt = false;
 const int WIDTH    = 1920;
 const int HEIGHT   = 1080;
 
+static int s_framebufferWidth  = WIDTH;
+static int s_framebufferHeight = HEIGHT;
+
 ///
 // Arcball callbacks
 static void clickArcballCallback(int button, int action)
@@ -144,7 +147,9 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+        // VK_EXT_descriptor_indexing is core in Vulkan 1.2. Enabling the extension while
+        // chaining VkPhysicalDeviceVulkan12Features requires descriptorIndexing = VK_TRUE
+        // (VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-02833), so rely on the core feature instead.
 #endif
     };
     return vDeviceExtensions;
@@ -152,8 +157,8 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 
 void cleanup()
 {
-    GetDescriptorManager()->destroyDescriptorSetLayouts();
-    GetDescriptorManager()->destroyDescriptorPool();
+    GetDescriptorManager()->DestroyDescriptorSetLayouts();
+    GetDescriptorManager()->DestroyDescriptorPool();
 
     GetRenderPassManager()->Unintialize();
     GetRenderDevice()->DestroyCommandPools();
@@ -176,7 +181,7 @@ int main(int argc, char **argv)
 
     // Create Instace
     std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
-    GetRenderDevice()->Initialize(vInstanceExtensions);
+    GetRenderDevice()->Initialize(vInstanceExtensions, {});
     VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
 
     // Create swapchain
@@ -190,8 +195,10 @@ int main(int argc, char **argv)
 
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature   = {};
     rayTracingFeature.sType                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rayTracingFeature.rayTracingPipeline                              = VK_TRUE;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
     accStructFeature.sType                                            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accStructFeature.accelerationStructure                            = VK_TRUE;
 
     // Mesh shader feature
     VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeature = {};
@@ -220,8 +227,8 @@ int main(int argc, char **argv)
     GetRenderDevice()->CreateCommandPools();
 
     // Initialize managers
-    GetDescriptorManager()->createDescriptorPool();
-    GetDescriptorManager()->createDescriptorSetLayouts();
+    GetDescriptorManager()->CreateDescriptorPool();
+    GetDescriptorManager()->CreateDescriptorSetLayouts();
 
     GetSamplerManager()->createSamplers();
 
@@ -267,7 +274,9 @@ int main(int argc, char **argv)
         GetMaterialManager()->CreateDefaultMaterial();
         GetMaterialManager()->UploadMaterialBuffer();
 
-        GetRenderPassManager()->Initialize(WIDTH, HEIGHT, surface);
+        // update framebuffer size
+        Window::GetFramebufferSize(s_framebufferWidth, s_framebufferHeight);
+        GetRenderPassManager()->Initialize(s_framebufferWidth, s_framebufferHeight, surface);
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
@@ -333,15 +342,16 @@ int main(int argc, char **argv)
             {
                 // TODO: Resizing doesn't work properly, need to investigate
                 VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
-                int width, height;
-                std::tie(width, height) = Window::GetWindowSize();
+                int width;
+                int height;
+                Window::GetFramebufferSize(width, height);
                 VkExtent2D currentVp    = GetRenderPassManager()->GetViewportSize();
-                if (width != (int)currentVp.width || height != (int)currentVp.height)
-                {
-                    // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
-                    GetRenderPassManager()->OnResize(width, height);
-                    GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-                }
+                //if (width != static_cast<int>(currentVp.width) || height != static_cast<int>(currentVp.height))
+                //{
+                //    // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
+                //    GetRenderPassManager()->OnResize(width, height);
+                //    GetRenderPassManager()->RecordStaticCmdBuffers(dl);
+                //}
             }
         }
         std::cout << "Closing window, wait for device to finish..."

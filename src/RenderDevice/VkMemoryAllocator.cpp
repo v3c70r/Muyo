@@ -1,6 +1,7 @@
 #include <cassert>
 #include <string>
 
+#define VMA_IMPLEMENTATION
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 
@@ -59,9 +60,12 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 
 void VkMemoryAllocator::Unintialize()
 {
+#ifdef FEATURE_RAY_TRACING
     vmaDestroyPool(m_allocator, m_SBTPool);
     vmaDestroyPool(m_allocator, m_BVHPool);
+#endif
     vmaDestroyAllocator(m_allocator);
+
 }
 
 void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize,

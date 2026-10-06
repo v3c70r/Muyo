@@ -62,15 +62,19 @@ struct PBRMaterial
     float fRoughness;
     float fMetalness;
     uint UVIndices[TEX_COUNT];
-    vec3 vEmissiveFactor;
+    // Scalar arrays instead of vec3: vec3 is 16-byte aligned under std430, which would make the
+    // shader-side struct larger than the C++ one used to upload the material buffer.
+    float vEmissiveFactor[3];
     uint textureIds[TEX_COUNT];
-    vec3 vPadding;
+    float vPadding[3];
 };
 
 struct PerSubmeshData
 {
     uint nMaterialIndex;
-    vec3 vPadding;
+    // Explicit 32-bit padding so this matches the std430 layout in the shaders
+    // (a vec3/float3 member would be 16-byte aligned there and double the stride).
+    float vPadding[3];
 };
 
 const uint MAX_NUM_SUBMESHES = 32;
@@ -79,8 +83,15 @@ struct PerObjData
 {
     mat4 mWorldMatrix;
     uint nSubmeshCount;
-    vec3 vPadding;
+    // Scalar float padding instead of vec3: std430 aligns float3 to 16 bytes, which would
+    // desynchronise this struct from the C++ definition used to upload it.
+    float vPadding[3];
     PerSubmeshData vSubmeshDatas[MAX_NUM_SUBMESHES];
+    // Object-space (local) axis aligned bounding box, used by GPU frustum culling.
+    float vAABBMin[3];
+    float fAABBPadding0;
+    float vAABBMax[3];
+    float fAABBPadding1;
 };
 
 // Instance Id: 
@@ -101,6 +112,22 @@ inline uint PackSubmeshObjectIndex(uint nObjectIndex, uint nSubmeshIndex)
 {
     return (nObjectIndex << 5) | nSubmeshIndex;
 }
+
+// Matches VkDispatchIndirectCommand
+struct DispatchCommand {
+    uint x;
+    uint y;
+    uint z;
+};
+
+// Matches VkDrawIndexedIndirectCommand
+struct DrawIndexedCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int  vertexOffset;
+    uint firstInstance;
+};
 
 #ifdef SHADER_CODE
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require

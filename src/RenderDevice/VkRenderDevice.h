@@ -24,15 +24,15 @@ public:
 #endif
     }
 
-    virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers = std::vector<const char*>());
+    virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers);
 
     virtual void Unintialize();
 
     virtual void CreateDevice(
         const std::vector<const char*>& extensions,
         const std::vector<const char*>& layers,
-        const VkSurfaceKHR* pSurface = nullptr,
-        const std::vector<void*>& vpFeatures = {});
+        const VkSurfaceKHR* pSurface,
+        const std::vector<void*>& vpFeatures);
 
     void DestroyDevice();
 
@@ -52,6 +52,14 @@ public:
     VkQueue& GetImmediateQueue() { return m_graphicsQueue; }  // TODO: Handle copy queue
     VkQueue& GetPresentQueue() { return m_presentQueue; }
     VkQueue& GetComputeQueue() { return m_computeQueue; }
+    // Queue family indices, needed for cross-queue resource ownership transfers.
+    uint32_t GetGraphicsQueueFamily() const { return static_cast<uint32_t>(m_queueFamilyIndices.nGraphicsQueueFamily); }
+    uint32_t GetComputeQueueFamily() const { return static_cast<uint32_t>(m_queueFamilyIndices.nComputeQueueFamily); }
+    bool IsComputeQueueDedicated() const
+    {
+        return m_queueFamilyIndices.nComputeQueueFamily >= 0 &&
+               m_queueFamilyIndices.nComputeQueueFamily != m_queueFamilyIndices.nGraphicsQueueFamily;
+    }
     VkInstance& GetInstance() { return m_instance; }
 
     void SetDevice(VkDevice device) { m_device = device; }

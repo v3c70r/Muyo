@@ -7,6 +7,51 @@ namespace ImGui
 {
 static uint32_t g_Time = 0.0;
 
+static ImGuiKey KeyToImGuiKey(Input::Key key)
+{
+    switch (key)
+    {
+        case Input::KEY_TAB: return ImGuiKey_Tab;
+        case Input::KEY_LEFT: return ImGuiKey_LeftArrow;
+        case Input::KEY_RIGHT: return ImGuiKey_RightArrow;
+        case Input::KEY_UP: return ImGuiKey_UpArrow;
+        case Input::KEY_DOWN: return ImGuiKey_DownArrow;
+        case Input::KEY_PAGEUP: return ImGuiKey_PageUp;
+        case Input::KEY_PAGEDOWN: return ImGuiKey_PageDown;
+        case Input::KEY_HOME: return ImGuiKey_Home;
+        case Input::KEY_END: return ImGuiKey_End;
+        case Input::KEY_INSERT: return ImGuiKey_Insert;
+        case Input::KEY_DELETE: return ImGuiKey_Delete;
+        case Input::KEY_BACKSPACE: return ImGuiKey_Backspace;
+        case Input::KEY_SPACE: return ImGuiKey_Space;
+        case Input::KEY_RETURN: return ImGuiKey_Enter;
+        case Input::KEY_ENTER: return ImGuiKey_Enter;
+        case Input::KEY_ESCAPE: return ImGuiKey_Escape;
+        case Input::KEY_CAPSLOCK: return ImGuiKey_CapsLock;
+        case Input::KEY_SCROLLLOCK: return ImGuiKey_ScrollLock;
+        case Input::KEY_PRINTSCREEN: return ImGuiKey_PrintScreen;
+        case Input::KEY_PAUSE: return ImGuiKey_Pause;
+        case Input::KEY_LCTRL: return ImGuiKey_LeftCtrl;
+        case Input::KEY_RCTRL: return ImGuiKey_RightCtrl;
+        case Input::KEY_LSHIFT: return ImGuiKey_LeftShift;
+        case Input::KEY_RSHIFT: return ImGuiKey_RightShift;
+        case Input::KEY_LALT: return ImGuiKey_LeftAlt;
+        case Input::KEY_RALT: return ImGuiKey_RightAlt;
+        case Input::KEY_LGUI: return ImGuiKey_LeftSuper;
+        case Input::KEY_RGUI: return ImGuiKey_RightSuper;
+        default: break;
+    }
+    if (key >= Input::KEY_0 && key <= Input::KEY_9)
+    {
+        return static_cast<ImGuiKey>(ImGuiKey_0 + (key - Input::KEY_0));
+    }
+    if (key >= Input::KEY_A && key <= Input::KEY_Z)
+    {
+        return static_cast<ImGuiKey>(ImGuiKey_A + (key - Input::KEY_A));
+    }
+    return ImGuiKey_None;
+}
+
 static void installEventHandlers()
 {
     // install callbacks
@@ -23,7 +68,7 @@ static void installEventHandlers()
                 {
         ImGuiIO& io = ImGui::GetIO();
         if (io.WantCaptureKeyboard) {
-            io.KeysDown[key] = (state == EventState::PRESSED) ? true : false;
+            io.AddKeyEvent(KeyToImGuiKey(key), state == EventState::PRESSED);
             io.KeyCtrl = (mods & Input::MOD_CTRL);
             io.KeyShift = (mods & Input::MOD_SHIFT);
             io.KeyAlt = (mods & Input::MOD_ALT);
@@ -71,30 +116,6 @@ static bool Init()
     io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors;  // We can honor GetMouseCursor() values (optional)
     io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos;   // We can honor io.WantSetMousePos requests (optional, rarely used)
     // io.BackendPlatformName = "imgui_impl_glfw";
-
-    // Keyboard mapping. ImGui will use those indices to peek into the io.KeysDown[] array.
-    io.KeyMap[ImGuiKey_Tab] = Input::KEY_TAB;
-    io.KeyMap[ImGuiKey_LeftArrow] = Input::KEY_LEFT;
-    io.KeyMap[ImGuiKey_RightArrow] = Input::KEY_RIGHT;
-    io.KeyMap[ImGuiKey_UpArrow] = Input::KEY_UP;
-    io.KeyMap[ImGuiKey_DownArrow] = Input::KEY_DOWN;
-    io.KeyMap[ImGuiKey_PageUp] = Input::KEY_PAGEUP;
-    io.KeyMap[ImGuiKey_PageDown] = Input::KEY_PAGEDOWN;
-    io.KeyMap[ImGuiKey_Home] = Input::KEY_HOME;
-    io.KeyMap[ImGuiKey_End] = Input::KEY_END;
-    io.KeyMap[ImGuiKey_Insert] = Input::KEY_INSERT;
-    io.KeyMap[ImGuiKey_Delete] = Input::KEY_DELETE;
-    io.KeyMap[ImGuiKey_Backspace] = Input::KEY_BACKSPACE;
-    io.KeyMap[ImGuiKey_Space] = Input::KEY_SPACE;
-    io.KeyMap[ImGuiKey_Enter] = Input::KEY_RETURN;
-    io.KeyMap[ImGuiKey_Escape] = Input::KEY_ESCAPE;
-    // io.KeyMap[ImGuiKey_KeyPadEnter] = GLFW_KEY_KP_ENTER;
-    io.KeyMap[ImGuiKey_A] = Input::KEY_A;
-    io.KeyMap[ImGuiKey_C] = Input::KEY_C;
-    io.KeyMap[ImGuiKey_V] = Input::KEY_V;
-    io.KeyMap[ImGuiKey_X] = Input::KEY_X;
-    io.KeyMap[ImGuiKey_Y] = Input::KEY_Y;
-    io.KeyMap[ImGuiKey_Z] = Input::KEY_Z;
 
     installEventHandlers();
 

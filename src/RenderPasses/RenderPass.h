@@ -15,16 +15,28 @@ class Geometry;
 class IRenderPass
 {
   public:
-    virtual ~IRenderPass(){};
+    virtual ~IRenderPass()= default;
     virtual VkCommandBuffer GetCommandBuffer() const = 0;
     virtual void CreatePipeline()                    = 0;
     virtual void PrepareRenderPass()                 = 0;
+    virtual const std::vector<const IRenderResource*>& GetInputResources() const = 0;
+    virtual const std::vector<const IRenderResource*>& GetOutputResources() const = 0;
+    virtual std::string GetName() const = 0;
 };
 
 class RenderPass : public IRenderPass
 {
 public:
-    virtual void PrepareRenderPass() override{};
+     void PrepareRenderPass() override{};
+     const std::vector<const IRenderResource*>& GetInputResources() const override
+     {
+         return m_renderPassParameters.GetInputResources();
+     }
+     const std::vector<const IRenderResource*>& GetOutputResources() const override
+     {
+         return m_renderPassParameters.GetOutputResources();
+     }
+     std::string GetName() const override { return m_renderPassParameters.GetName(); }
 
 protected:
     VkPipeline m_pipeline = VK_NULL_HANDLE;
@@ -34,21 +46,31 @@ protected:
 // The pass render to swap chain
 class RenderPassFinal : public IRenderPass
 {
-  public:
+public:
     RenderPassFinal(const Swapchain& swapchain, bool bClearAttachments);
-    virtual ~RenderPassFinal() override;
+    ~RenderPassFinal() override;
     virtual void RecordCommandBuffers();
 
-    virtual VkCommandBuffer GetCommandBuffer() const override
+    VkCommandBuffer GetCommandBuffer() const override
     {
         assert(m_nCurrentSwapchainImageIndex < m_vCommandBuffers.size());
         return m_vCommandBuffers[m_nCurrentSwapchainImageIndex];
     }
-    virtual void CreatePipeline() override{};
+    void CreatePipeline() override{};
     void SetCurrentSwapchainImageIndex(uint32_t nIndex) { m_nCurrentSwapchainImageIndex = nIndex; }
     void PrepareRenderPass() override{};
 
-  protected:
+    const std::vector<const IRenderResource*>& GetInputResources() const override
+    {
+        return m_vRenderPassParameters[0].GetInputResources();
+    }
+    const std::vector<const IRenderResource*>& GetOutputResources() const override
+    {
+        return m_vRenderPassParameters[0].GetOutputResources();
+    }
+    std::string GetName() const override { return m_vRenderPassParameters[0].GetName(); }
+
+protected:
     VkExtent2D m_renderArea           = { 0, 0 };
 
     std::vector<VkCommandBuffer> m_vCommandBuffers;

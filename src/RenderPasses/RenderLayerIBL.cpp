@@ -159,10 +159,10 @@ void RenderLayerIBL::CreatePipeline()
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+            GetDescriptorManager()->GetDescriptorLayout(
+                DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->GetDescriptorLayout(
+                DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants;
 
@@ -234,10 +234,10 @@ void RenderLayerIBL::CreatePipeline()
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+            GetDescriptorManager()->GetDescriptorLayout(
+                DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->GetDescriptorLayout(
+                DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants;
 
@@ -309,10 +309,10 @@ void RenderLayerIBL::CreatePipeline()
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-            GetDescriptorManager()->getDescriptorLayout(
-                DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+            GetDescriptorManager()->GetDescriptorLayout(
+                DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->GetDescriptorLayout(
+                DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants{
             GetPushConstantRange<SingleFloatPushConstant>(VK_SHADER_STAGE_FRAGMENT_BIT)};

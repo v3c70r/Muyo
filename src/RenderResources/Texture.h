@@ -22,7 +22,7 @@ public:
 
     void LoadPixels(void* pixels, int width, int height);
 
-    void LoadImage(const std::string path);
+    void LoadImage(const std::string& path);
 
     VkSampler getSamper() const { return m_textureSampler; }
 
