@@ -518,7 +518,7 @@ void RenderGraphBuilder::Build()
     }
 
     m_compiledGraph.Destroy(m_vkDevice, GetDescriptorManager()->GetDescriptorPool());
-    m_compiledGraph.GetNodes().reserve(m_renderGraphNodes.size());
+    m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())
     {
@@ -555,11 +555,15 @@ void RenderGraphBuilder::Build()
         }
 
         // Compile RenderGraphNode
-        m_compiledGraph.GetNodes().push_back(CompileRenderGraphNode(node));
+        m_compiledGraph.AddNode(CompileRenderGraphNode(node));
     }
 
     // Derive the scheduling plan (queue segments + cross-queue transfers) once, so Execute() reads
     // it rather than recomputing it every frame.
+    //
+    // The plan freezes the device's queue family indices, so it must be rebuilt if the device
+    // changes. Today Build() always reruns after a device change (a builder is recreated), but a
+    // caller that reused a compiled graph across devices would have to rebuild it.
     m_compiledGraph.RebuildExecutionPlan(GetQueueFamilies());
 }
 
@@ -925,6 +929,9 @@ void RenderGraphBuilder::Execute()
         for (size_t i = segments[s].begin; i < segments[s].end; ++i)
         {
             const auto& rgn = nodes[i];
+            // Segments contain GPU nodes only (see RebuildExecutionPlan); guard anyway so a CPU node
+            // can never be recorded as GPU work.
+            if (rgn.queueType == QueueType::CPU) continue;
             context.queueType = rgn.queueType;
             context.commandBuffer = cmdBuf;
             context.pipeline = rgn.pipeline;

@@ -1,5 +1,6 @@
 #include "CompiledRenderGraph.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -19,6 +20,15 @@ void CompiledRenderGraph::RebuildExecutionPlan(const RenderGraphQueueFamilies& f
         const CompiledRenderGraphNode& node = m_nodes[i];
         if (node.queueType == QueueType::CPU)
         {
+            // A host-side node belongs to no queue segment, and a segment must never span one: the
+            // recording loop would otherwise process the CPU node as GPU work, running its callback
+            // a second time and emitting a barrier whose destination access mask is a HOST bit.
+            // Close the open segment so every range contains GPU nodes only.
+            if (bInSegment)
+            {
+                m_executionPlan.segments.push_back({segmentQueue, segmentBegin, i});
+                bInSegment = false;
+            }
             m_executionPlan.cpuNodes.push_back(i);
             continue;
         }
@@ -65,6 +75,17 @@ void CompiledRenderGraph::RebuildExecutionPlan(const RenderGraphQueueFamilies& f
             lastSegmentForResource[handle] = s;
         }
     }
+
+    // Deterministic order: transfers are collected from unordered sets, and a stable plan makes
+    // submission order (and therefore captures and logs) reproducible once the executor keys
+    // semaphores off these entries.
+    std::sort(m_executionPlan.transfers.begin(), m_executionPlan.transfers.end(),
+              [](const RenderGraphQueueTransfer& a, const RenderGraphQueueTransfer& b)
+              {
+                  if (a.producer != b.producer) return a.producer < b.producer;
+                  if (a.consumer != b.consumer) return a.consumer < b.consumer;
+                  return a.handle < b.handle;
+              });
 }
 
 void CompiledRenderGraph::Destroy(VkDevice device, VkDescriptorPool descriptorPool)
@@ -87,5 +108,8 @@ void CompiledRenderGraph::Destroy(VkDevice device, VkDescriptorPool descriptorPo
         if (rgn.pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, rgn.pipeline, nullptr);
     }
     m_nodes.clear();
+    // The plan holds indices into m_nodes; leaving it populated would make a later Execute() index
+    // out of range.
+    m_executionPlan = RenderGraphExecutionPlan{};
 }
 }  // namespace Muyo::RenderGraph

@@ -15,8 +15,9 @@ The compiled, reusable result of RenderGraphBuilder::Build().
 | Member | Description |
 | --- | --- |
 | `const std::vector< CompiledRenderGraphNode > & GetNodes() const` | The compiled nodes, in execution (topological) order. |
-| `std::vector< CompiledRenderGraphNode > & GetNodes()` | Mutable access to the compiled nodes, used by the compile step in Build(). |
 | `std::size_t GetNodeCount() const` | Number of compiled nodes. |
+| `void AddNode(CompiledRenderGraphNode node)` | Append a compiled node. Used by RenderGraphBuilder::Build() when compiling. node Compiled node to append. |
+| `void ReserveNodes(std::size_t count)` | Reserve room for count nodes, to avoid reallocation while compiling. count Number of nodes expected. |
 | `void RebuildExecutionPlan(const RenderGraphQueueFamilies &families)` | Recompute the scheduling plan from the current nodes. Called by RenderGraphBuilder::Build() after the nodes are compiled. families Queue family indices used to decide which resources cross a queue family. |
 | `const RenderGraphExecutionPlan & GetExecutionPlan() const` | The scheduling plan for the current nodes. Read-only during execution. |
 | `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy every node's GPU objects and clear the node list. Safe to call repeatedly. device Device the objects were created on. descriptorPool Pool the per-node descriptor sets were allocated from. |

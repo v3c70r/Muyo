@@ -63,10 +63,15 @@ class CompiledRenderGraph
 public:
     /// @return The compiled nodes, in execution (topological) order.
     const std::vector<CompiledRenderGraphNode>& GetNodes() const { return m_nodes; }
-    /// @return Mutable access to the compiled nodes, used by the compile step in `Build()`.
-    std::vector<CompiledRenderGraphNode>& GetNodes() { return m_nodes; }
     /// @return Number of compiled nodes.
     std::size_t GetNodeCount() const { return m_nodes.size(); }
+
+    /// Append a compiled node. Used by `RenderGraphBuilder::Build()` when compiling.
+    /// @param node Compiled node to append.
+    void AddNode(CompiledRenderGraphNode node) { m_nodes.push_back(std::move(node)); }
+    /// Reserve room for `count` nodes, to avoid reallocation while compiling.
+    /// @param count Number of nodes expected.
+    void ReserveNodes(std::size_t count) { m_nodes.reserve(count); }
 
     /// Recompute the scheduling plan from the current nodes. Called by `RenderGraphBuilder::Build()`
     /// after the nodes are compiled.
