@@ -146,11 +146,11 @@ private:
     // otherwise look in the graph-owned resource manager.
     const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
 
-    // Queue routing. A node may only run on the dedicated async compute queue when it is
-    // explicitly marked async (and is a compute node); everything else follows the graphics queue.
-    static QueueType GetQueueKey(QueueType type, bool bAsync);
+    // Queue routing. `GetQueueKey` (which node runs where) lives with the execution plan in
+    // RenderGraphExecutionPlan.h; these resolve a queue key against this device.
     VkQueue GetQueueForType(QueueType type) const;
     uint32_t GetQueueFamilyForType(QueueType type) const;
+    RenderGraphQueueFamilies GetQueueFamilies() const;
     VkCommandBuffer AllocateCommandBufferForType(QueueType type) const;
     void FreeCommandBufferForType(QueueType type, VkCommandBuffer cmdBuf) const;
 

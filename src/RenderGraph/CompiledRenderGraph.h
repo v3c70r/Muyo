@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "RenderGraphExecutionPlan.h"
 #include "RenderGraphNodeContext.h"
 #include "RenderGraphNodeResource.h"
 
@@ -67,6 +68,13 @@ public:
     /// @return Number of compiled nodes.
     std::size_t GetNodeCount() const { return m_nodes.size(); }
 
+    /// Recompute the scheduling plan from the current nodes. Called by `RenderGraphBuilder::Build()`
+    /// after the nodes are compiled.
+    /// @param families Queue family indices used to decide which resources cross a queue family.
+    void RebuildExecutionPlan(const RenderGraphQueueFamilies& families);
+    /// @return The scheduling plan for the current nodes. Read-only during execution.
+    const RenderGraphExecutionPlan& GetExecutionPlan() const { return m_executionPlan; }
+
     /// Destroy every node's GPU objects and clear the node list. Safe to call repeatedly.
     /// @param device Device the objects were created on.
     /// @param descriptorPool Pool the per-node descriptor sets were allocated from.
@@ -74,5 +82,6 @@ public:
 
 private:
     std::vector<CompiledRenderGraphNode> m_nodes;
+    RenderGraphExecutionPlan m_executionPlan;
 };
 }  // namespace Muyo::RenderGraph

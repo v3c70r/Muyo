@@ -557,6 +557,10 @@ void RenderGraphBuilder::Build()
         // Compile RenderGraphNode
         m_compiledGraph.GetNodes().push_back(CompileRenderGraphNode(node));
     }
+
+    // Derive the scheduling plan (queue segments + cross-queue transfers) once, so Execute() reads
+    // it rather than recomputing it every frame.
+    m_compiledGraph.RebuildExecutionPlan(GetQueueFamilies());
 }
 
 bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn,
@@ -818,13 +822,6 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-QueueType RenderGraphBuilder::GetQueueKey(QueueType type, bool bAsync)
-{
-    // Only an explicitly-marked compute node may run on the dedicated async compute queue;
-    // everything else (including non-async compute) follows the graphics queue.
-    return (type == QueueType::COMPUTE && bAsync) ? QueueType::COMPUTE : QueueType::GRAPHICS;
-}
-
 VkQueue RenderGraphBuilder::GetQueueForType(QueueType type) const
 {
     if (type == QueueType::COMPUTE) return GetRenderDevice()->GetComputeQueue();
@@ -833,8 +830,13 @@ VkQueue RenderGraphBuilder::GetQueueForType(QueueType type) const
 
 uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
 {
-    if (type == QueueType::COMPUTE) return GetRenderDevice()->GetComputeQueueFamily();
-    return GetRenderDevice()->GetGraphicsQueueFamily();
+    return GetQueueFamilyForQueueType(type, GetQueueFamilies());
+}
+
+RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
+{
+    return RenderGraphQueueFamilies{GetRenderDevice()->GetGraphicsQueueFamily(),
+                                    GetRenderDevice()->GetComputeQueueFamily()};
 }
 
 VkCommandBuffer RenderGraphBuilder::AllocateCommandBufferForType(QueueType type) const
@@ -870,92 +872,33 @@ void RenderGraphBuilder::Execute()
     std::vector<VkRenderingAttachmentInfo> colorAttachments;
     std::vector<VkClearValue> clearValues;
 
-    // ── Split the graph into contiguous per-queue segments; CPU nodes run inline on the host. ──
-    struct Segment
-    {
-        QueueType queueType = QueueType::GRAPHICS;
-        size_t begin = 0;  // first compiled node index (inclusive)
-        size_t end = 0;    // one past the last compiled node index
-    };
-    std::vector<Segment> segments;
-    size_t segmentBegin = 0;
-    QueueType segmentQueue = QueueType::COUNT;
-    bool bInSegment = false;
+    const std::vector<CompiledRenderGraphNode>& nodes = m_compiledGraph.GetNodes();
+    const RenderGraphExecutionPlan& plan = m_compiledGraph.GetExecutionPlan();
 
-    for (size_t i = 0; i < m_compiledGraph.GetNodes().size(); ++i)
+    // ── CPU nodes run host-side, before any GPU segment is recorded. ──────────────────────────
+    for (const std::size_t i : plan.cpuNodes)
     {
-        const auto& rgn = m_compiledGraph.GetNodes()[i];
+        const CompiledRenderGraphNode& rgn = nodes[i];
         context.queueType = rgn.queueType;
-
-        if (rgn.queueType == QueueType::CPU)
+        context.commandBuffer = VK_NULL_HANDLE;
+        context.pipeline = VK_NULL_HANDLE;
+        rgn.execute(context);
+        for (const auto& use : rgn.resourceUses)
         {
-            // Pure CPU node: run host-side work, mark its written resources for a lazy host flush.
-            context.commandBuffer = VK_NULL_HANDLE;
-            context.pipeline = VK_NULL_HANDLE;
-            rgn.execute(context);
-            for (const auto& use : rgn.resourceUses)
+            if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
             {
-                if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
-                {
-                    ResourceAccessState& state = m_resourceAccessStates[use.handle];
-                    state.writtenByCpu = true;
-                    state.seen = false;
-                }
-            }
-            continue;
-        }
-
-        const QueueType key = GetQueueKey(rgn.queueType, rgn.async);
-        if (!bInSegment || key != segmentQueue)
-        {
-            if (bInSegment) segments.push_back({segmentQueue, segmentBegin, i});
-            segmentBegin = i;
-            segmentQueue = key;
-            bInSegment = true;
-        }
-    }
-    if (bInSegment) segments.push_back({segmentQueue, segmentBegin, m_compiledGraph.GetNodes().size()});
-
-    if (segments.empty()) return;
-
-    // ── Detect resources handed from one queue family to another. ──────────────────────────────
-    struct Transfer
-    {
-        size_t producer = 0;
-        size_t consumer = 0;
-        ResourceHandle handle;
-        uint32_t producerFamily = VK_QUEUE_FAMILY_IGNORED;
-        uint32_t consumerFamily = VK_QUEUE_FAMILY_IGNORED;
-    };
-    std::vector<Transfer> transfers;
-    {
-        std::unordered_map<ResourceHandle, size_t> lastSegmentForResource;
-        for (size_t s = 0; s < segments.size(); ++s)
-        {
-            std::unordered_set<ResourceHandle> resourcesInSegment;
-            for (size_t i = segments[s].begin; i < segments[s].end; ++i)
-            {
-                for (const auto& use : m_compiledGraph.GetNodes()[i].resourceUses)
-                {
-                    resourcesInSegment.insert(use.handle);
-                }
-            }
-            for (const auto& handle : resourcesInSegment)
-            {
-                auto it = lastSegmentForResource.find(handle);
-                if (it != lastSegmentForResource.end() && it->second != s)
-                {
-                    const uint32_t producerFamily = GetQueueFamilyForType(segments[it->second].queueType);
-                    const uint32_t consumerFamily = GetQueueFamilyForType(segments[s].queueType);
-                    if (producerFamily != consumerFamily)
-                    {
-                        transfers.push_back({it->second, s, handle, producerFamily, consumerFamily});
-                    }
-                }
-                lastSegmentForResource[handle] = s;
+                ResourceAccessState& state = m_resourceAccessStates[use.handle];
+                state.writtenByCpu = true;
+                state.seen = false;
             }
         }
     }
+
+    if (plan.IsEmpty()) return;
+
+    // Queue segments and cross-queue transfers were derived from the compiled graph at Build().
+    const std::vector<RenderGraphQueueSegment>& segments = plan.segments;
+    const std::vector<RenderGraphQueueTransfer>& transfers = plan.transfers;
 
     // ── Record each segment into its own command buffer. ───────────────────────────────────────
     std::vector<VkCommandBuffer> segmentCmdBuffers(segments.size(), VK_NULL_HANDLE);
@@ -981,7 +924,7 @@ void RenderGraphBuilder::Execute()
 
         for (size_t i = segments[s].begin; i < segments[s].end; ++i)
         {
-            const auto& rgn = m_compiledGraph.GetNodes()[i];
+            const auto& rgn = nodes[i];
             context.queueType = rgn.queueType;
             context.commandBuffer = cmdBuf;
             context.pipeline = rgn.pipeline;

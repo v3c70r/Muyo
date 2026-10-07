@@ -17,6 +17,8 @@ The compiled, reusable result of RenderGraphBuilder::Build().
 | `const std::vector< CompiledRenderGraphNode > & GetNodes() const` | The compiled nodes, in execution (topological) order. |
 | `std::vector< CompiledRenderGraphNode > & GetNodes()` | Mutable access to the compiled nodes, used by the compile step in Build(). |
 | `std::size_t GetNodeCount() const` | Number of compiled nodes. |
+| `void RebuildExecutionPlan(const RenderGraphQueueFamilies &families)` | Recompute the scheduling plan from the current nodes. Called by RenderGraphBuilder::Build() after the nodes are compiled. families Queue family indices used to decide which resources cross a queue family. |
+| `const RenderGraphExecutionPlan & GetExecutionPlan() const` | The scheduling plan for the current nodes. Read-only during execution. |
 | `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy every node's GPU objects and clear the node list. Safe to call repeatedly. device Device the objects were created on. descriptorPool Pool the per-node descriptor sets were allocated from. |
 
 ### `struct Muyo::RenderGraph::CompiledRenderGraphNode`
@@ -372,6 +374,61 @@ Owns the three built-in semantic descriptor set layouts used by graphics nodes.
 ### `const std::vector< std::vector< VkDescriptorSetLayoutBinding > > bindingsPerSet`
 
 Static descriptor bindings of the three built-in semantic sets.
+
+
+## `RenderGraphExecutionPlan.h`
+
+### `uint32_t Muyo::RenderGraph::GetQueueFamilyForQueueType(QueueType queueType, const RenderGraphQueueFamilies &families)`
+
+queueType A resolved queue key (as returned by GetQueueKey). families Queue family indices for this device. The Vulkan queue family the key runs on. Compute uses the compute family; graphics, ray tracing and CPU work follow the graphics family.
+
+### `QueueType Muyo::RenderGraph::GetQueueKey(QueueType type, bool bAsync)`
+
+Resolve which queue a node's work runs on.
+
+### `struct Muyo::RenderGraph::RenderGraphExecutionPlan`
+
+The scheduling plan derived from a compiled graph.
+
+| Member | Description |
+| --- | --- |
+| `std::vector< std::size_t > cpuNodes` | Compiled node indices that run host-side (QueueType::CPU). They all run before any GPU segment is recorded, and belong to no segment. |
+| `std::vector< RenderGraphQueueSegment > segments` | Contiguous per-queue runs of compiled nodes, in execution order. |
+| `std::vector< RenderGraphQueueTransfer > transfers` | Resources crossing a queue-family boundary between two segments. |
+| `bool IsEmpty() const` | True when the graph has no GPU work to run. |
+| `std::size_t GetSegmentCount() const` | Number of queue segments. |
+| `std::size_t GetTransferCount() const` | Number of cross-queue transfers. |
+
+### `struct Muyo::RenderGraph::RenderGraphQueueFamilies`
+
+Queue family indices a plan resolves queue keys against.
+
+| Member | Description |
+| --- | --- |
+| `uint32_t graphics` | Family that runs graphics and ray tracing work. |
+| `uint32_t compute` | Family that runs compute work. |
+
+### `struct Muyo::RenderGraph::RenderGraphQueueSegment`
+
+A contiguous run of compiled nodes that executes on one queue.
+
+| Member | Description |
+| --- | --- |
+| `QueueType queueType` | Resolved queue this segment runs on. |
+| `std::size_t begin` | First compiled node index (inclusive). |
+| `std::size_t end` | One past the last compiled node index. |
+
+### `struct Muyo::RenderGraph::RenderGraphQueueTransfer`
+
+A resource handed from one queue segment to another across a queue-family boundary.
+
+| Member | Description |
+| --- | --- |
+| `std::size_t producer` | Segment that last used the resource. |
+| `std::size_t consumer` | Segment that next uses it. |
+| `ResourceHandle handle` | Resource being handed over. |
+| `uint32_t producerFamily` | Queue family handing it over. |
+| `uint32_t consumerFamily` | Queue family taking ownership. |
 
 
 ## `RenderGraphNodeContext.h`
