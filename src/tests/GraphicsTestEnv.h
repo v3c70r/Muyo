@@ -1,4 +1,6 @@
 #pragma once
+#include <iostream>
+
 #include "DescriptorManager.h"
 #include "Material.h"
 #include "MeshResourceManager.h"
@@ -9,8 +11,6 @@
 #include "VkExtFuncsLoader.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
-
-#include <iostream>
 
 namespace Muyo
 {

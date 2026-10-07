@@ -408,8 +408,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destr
     }
 }
 
-TEST_CASE("RenderGraphExecutionPlan: a handover is recorded only across differing queue families",
-          "[RenderGraph]")
+TEST_CASE("RenderGraphExecutionPlan: a handover is recorded only across differing queue families", "[RenderGraph]")
 {
     // RebuildExecutionPlan compares the two segments' families and skips the transfer when they
     // match. That matched-family branch is the *only* one a single-family device ever takes -
