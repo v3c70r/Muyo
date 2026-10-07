@@ -16,8 +16,6 @@ private:
     VkDebugUtilsMessengerEXT m_debugUtilsMessenger = VK_NULL_HANDLE;
 };
 
-const std::vector<const char*>& GetValidationLayerNames();
-
 const char* GetValidationExtensionName();
 const char* GetValidationLayerName();
 
