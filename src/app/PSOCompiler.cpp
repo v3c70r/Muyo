@@ -1,15 +1,17 @@
 /* This is an example to serialize PSO cache file to disk
  */
 
-#include "PipelineStateBuilder.h"
-#include "VkMemoryAllocator.h"
-#include "VkRenderDevice.h"
+#include <vulkan/vulkan_core.h>
+
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <ios>
-#include <vulkan/vulkan_core.h>
-#include <chrono>
 #include <iostream>
+
+#include "PipelineStateBuilder.h"
+#include "VkMemoryAllocator.h"
+#include "VkRenderDevice.h"
 
 std::vector<VkDescriptorSetLayout> CreateDescriptorSetLayout()
 {
@@ -17,15 +19,15 @@ std::vector<VkDescriptorSetLayout> CreateDescriptorSetLayout()
 
     // Set0, binding 0
     VkDescriptorSetLayoutBinding bindingInfo = {};
-    bindingInfo.binding                      = 0;
-    bindingInfo.descriptorType               = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindingInfo.descriptorCount              = 1;
-    bindingInfo.stageFlags                   = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindingInfo.binding = 0;
+    bindingInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindingInfo.descriptorCount = 1;
+    bindingInfo.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo = {};
-    layoutInfo.sType                           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.pBindings                       = &bindingInfo;
-    layoutInfo.bindingCount                    = 1;
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.pBindings = &bindingInfo;
+    layoutInfo.bindingCount = 1;
 
     Muyo::VK_ASSERT(vkCreateDescriptorSetLayout(Muyo::GetRenderDevice()->GetDevice(), &layoutInfo, nullptr, &res[0]));
 
@@ -42,7 +44,7 @@ VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& 
     createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     createInfo.setLayoutCount = static_cast<uint32_t>(descLayouts.size());
     createInfo.pSetLayouts = descLayouts.data();
-    
+
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     Muyo::VK_ASSERT(
         vkCreatePipelineLayout(Muyo::GetRenderDevice()->GetDevice(), &createInfo, nullptr, &pipelineLayout));
@@ -55,7 +57,8 @@ VkPipeline CreatePipeline(VkPipelineLayout pipelineLayout, VkPipelineCache pipel
 
     VkShaderModule compShader = Muyo::CreateShaderModule(Muyo::ReadSpv("shaders/linearizeDepth.comp.spv"));
 
-    VkComputePipelineCreateInfo createInfo = builder.AddShaderModule(compShader).SetPipelineLayout(pipelineLayout).Build();
+    VkComputePipelineCreateInfo createInfo =
+        builder.AddShaderModule(compShader).SetPipelineLayout(pipelineLayout).Build();
 
     VkPipeline computePipeline = VK_NULL_HANDLE;
     vkCreateComputePipelines(Muyo::GetRenderDevice()->GetDevice(), pipelineCache, 1, &createInfo, nullptr,
@@ -67,9 +70,9 @@ VkPipeline CreatePipeline(VkPipelineLayout pipelineLayout, VkPipelineCache pipel
 VkPipelineCache CreatePipelineCache()
 {
     VkPipelineCacheCreateInfo info = {};
-    info.sType                     = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-    info.initialDataSize           = 0;
-    info.pInitialData              = nullptr;
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    info.initialDataSize = 0;
+    info.pInitialData = nullptr;
 
     VkPipelineCache cache = VK_NULL_HANDLE;
     vkCreatePipelineCache(Muyo::GetRenderDevice()->GetDevice(), &info, nullptr, &cache);
@@ -81,8 +84,7 @@ void SerializeCacheData(VkPipelineCache pipelineCache, std::filesystem::path fil
 {
     size_t bufferSize = 0;
     Muyo::VK_ASSERT(vkGetPipelineCacheData(Muyo::GetRenderDevice()->GetDevice(), pipelineCache, &bufferSize, nullptr));
-    bufferSize += sizeof(size_t); // buffer contains buffer size and buffer
-
+    bufferSize += sizeof(size_t);  // buffer contains buffer size and buffer
 
     uint8_t* buffer = new uint8_t[bufferSize + sizeof(size_t)];
     memcpy(buffer, &bufferSize, sizeof(size_t));
@@ -116,14 +118,14 @@ VkPipelineCache DeserializeCacheData(std::filesystem::path filePath)
     std::ifstream inFile(filePath, std::ios::binary);
     size_t fileSize = 0;
     inFile.read(reinterpret_cast<char*>(&fileSize), sizeof(size_t));
-    assert (fileSize != 0);
+    assert(fileSize != 0);
     uint8_t* buffer = new uint8_t[fileSize];
     inFile.read(reinterpret_cast<char*>(buffer), fileSize);
 
     VkPipelineCacheCreateInfo info = {};
-    info.sType                     = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-    info.initialDataSize           = fileSize;
-    info.pInitialData              = buffer+sizeof(size_t);
+    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    info.initialDataSize = fileSize;
+    info.pInitialData = buffer + sizeof(size_t);
 
     VkPipelineCache cache = VK_NULL_HANDLE;
     vkCreatePipelineCache(Muyo::GetRenderDevice()->GetDevice(), &info, nullptr, &cache);
@@ -137,11 +139,8 @@ using std::chrono::milliseconds;
 
 class ScopedTimer
 {
-  public:
-    ScopedTimer()
-      : m_StartTime(high_resolution_clock::now())
-    {
-    }
+public:
+    ScopedTimer() : m_StartTime(high_resolution_clock::now()) {}
     ~ScopedTimer()
     {
         auto endTime = high_resolution_clock::now();
@@ -149,7 +148,7 @@ class ScopedTimer
         std::cout << elapsedTime.count() << "ns\n";
     }
 
-  private:
+private:
     std::chrono::high_resolution_clock::time_point m_StartTime;
 };
 
@@ -211,4 +210,3 @@ int main()
     Muyo::GetRenderDevice()->Unintialize();
     return 0;
 }
-

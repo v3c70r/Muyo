@@ -26,38 +26,17 @@ public:
     void SetName(const std::string& name) { m_sName = name; }
     const std::string& GetName() const { return m_sName; }
 
-    void SetMatrix(const glm::mat4& mMat)
-    {
-        m_mTransformation = mMat;
-    }
-    const glm::mat4& GetMatrix() const
-    {
-        return m_mTransformation;
-    }
+    void SetMatrix(const glm::mat4& mMat) { m_mTransformation = mMat; }
+    const glm::mat4& GetMatrix() const { return m_mTransformation; }
     virtual void AppendChild(SceneNode*);
-    const std::vector<std::unique_ptr<SceneNode>>& GetChildren() const
-    {
-        return m_vpChildren;
-    }
+    const std::vector<std::unique_ptr<SceneNode>>& GetChildren() const { return m_vpChildren; }
 
-    void SetAABB(AABB aabb)
-    {
-        m_AABB = aabb;
-    }
-    AABB GetAABB() const
-    {
-        return m_AABB;
-    }
-    
-    void SetPerObjId(int perObjId) 
-    {
-        m_nPerObjId = perObjId;
-    }
-    
-    int GetPerObjId() const
-    {
-        return m_nPerObjId;
-    }
+    void SetAABB(AABB aabb) { m_AABB = aabb; }
+    AABB GetAABB() const { return m_AABB; }
+
+    void SetPerObjId(int perObjId) { m_nPerObjId = perObjId; }
+
+    int GetPerObjId() const { return m_nPerObjId; }
 
 protected:
     std::string m_sName;
@@ -65,7 +44,7 @@ protected:
     glm::mat4 m_mTransformation = glm::mat4(1.0);
     AABB m_AABB;
     uint32_t m_uFlag = 0;
-    int m_nPerObjId = -1;   // id to track the node in perobject data
+    int m_nPerObjId = -1;  // id to track the node in perobject data
 };
 
 using DrawList = std::vector<const SceneNode*>;
@@ -98,16 +77,10 @@ public:
     static bool IsMat4Valid(const glm::mat4& mat)
     {
         bool valid = true;
-        valid &=
-            !glm::any(glm::isnan(mat[0])) &&
-            !glm::any(glm::isnan(mat[1])) &&
-            !glm::any(glm::isnan(mat[2])) &&
-            !glm::any(glm::isnan(mat[3]));
-        valid &=
-            !glm::any(glm::isinf(mat[0])) &&
-            !glm::any(glm::isinf(mat[1])) &&
-            !glm::any(glm::isinf(mat[2])) &&
-            !glm::any(glm::isinf(mat[3]));
+        valid &= !glm::any(glm::isnan(mat[0])) && !glm::any(glm::isnan(mat[1])) && !glm::any(glm::isnan(mat[2])) &&
+                 !glm::any(glm::isnan(mat[3]));
+        valid &= !glm::any(glm::isinf(mat[0])) && !glm::any(glm::isinf(mat[1])) && !glm::any(glm::isinf(mat[2])) &&
+                 !glm::any(glm::isinf(mat[3]));
         return valid;
     }
     void SetName(const std::string& sName) { m_sName = sName; }
@@ -141,18 +114,9 @@ public:
     void SetLightSourceType(GeometryLightSourceType type) { m_lightSourceType = type; }
     GeometryLightSourceType GetLightSourceType() const { return m_lightSourceType; }
 
-    void SetGeometry(Geometry* pGeometry)
-    {
-        m_pGeometry = pGeometry;
-    }
-    const Geometry* GetGeometry() const
-    {
-        return m_pGeometry;
-    }
-    Geometry* GetGeometry()
-    {
-        return m_pGeometry;
-    }
+    void SetGeometry(Geometry* pGeometry) { m_pGeometry = pGeometry; }
+    const Geometry* GetGeometry() const { return m_pGeometry; }
+    Geometry* GetGeometry() { return m_pGeometry; }
 
 protected:
     Geometry* m_pGeometry;

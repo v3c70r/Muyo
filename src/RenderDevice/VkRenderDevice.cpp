@@ -20,14 +20,10 @@ static VkDebugRenderDevice renderDevice;
 static VkRenderDevice renderDevice;
 #endif
 
-VkRenderDevice* GetRenderDevice()
-{
-    return &renderDevice;
-}
+VkRenderDevice* GetRenderDevice() { return &renderDevice; }
 
-void VkRenderDevice::Initialize(
-    const std::vector<const char*>& vExtensionNames,
-    const std::vector<const char*>& vLayerNames)
+void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
+                                const std::vector<const char*>& vLayerNames)
 {
     HWInfo info;
     for (const auto& slayerName : vLayerNames)
@@ -67,13 +63,8 @@ void VkRenderDevice::Initialize(
     PickPhysicalDevice();
 }
 
-void VkRenderDevice::TransitImageLayout(
-    VkCommandBuffer commandBuffer,
-    VkImage image,
-    VkImageLayout oldLayout,
-    VkImageLayout newLayout,
-    uint32_t nMipCount,
-    uint32_t nLayerCount)
+void VkRenderDevice::TransitImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
+                                        VkImageLayout newLayout, uint32_t nMipCount, uint32_t nLayerCount)
 {
     VkPipelineStageFlags2 sourceStage;
     VkPipelineStageFlags2 destinationStage;
@@ -99,8 +90,7 @@ void VkRenderDevice::TransitImageLayout(
     barrier.subresourceRange.layerCount = nLayerCount;
 
     // UNDEFINED -> DST
-    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-        newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -109,8 +99,7 @@ void VkRenderDevice::TransitImageLayout(
         destinationStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     }
     // DST -> SHADER READ ONLY
-    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
         barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
@@ -119,20 +108,17 @@ void VkRenderDevice::TransitImageLayout(
         destinationStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
     // UNDEFINED -> DEPTH_ATTACHMENT
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask =
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
         sourceStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
     }
     // UNDEFINED -> COLOR_ATTACHMENT
-    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
@@ -154,11 +140,7 @@ void VkRenderDevice::TransitImageLayout(
 
     if (commandBuffer == VK_NULL_HANDLE)
     {
-        ExecuteImmediateCommand(
-            [&](VkCommandBuffer cmdBuf)
-            {
-                vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
-            });
+        ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf) { vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo); });
     }
     else
     {
@@ -177,11 +159,10 @@ void VkRenderDevice::PickPhysicalDevice()
     m_physicalDevice = devices[0];
 }
 
-void VkRenderDevice::CreateDevice(
-    const std::vector<const char*>& vDeviceExtensions,
-    const std::vector<const char*>& layers,
-    const VkSurfaceKHR* pSurface,  // surface for compatibility check
-    const std::vector<void*>& vpFeatures)
+void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensions,
+                                  const std::vector<const char*>& layers,
+                                  const VkSurfaceKHR* pSurface,  // surface for compatibility check
+                                  const std::vector<void*>& vpFeatures)
 {
     // Device layers were removed in Vulkan 1.0, and passing one fails device creation on a loader
     // that enforces VUID-VkDeviceCreateInfo-enabledLayerCount-12384 (Vulkan SDK 1.4.363 onwards).
@@ -202,7 +183,6 @@ void VkRenderDevice::CreateDevice(
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, queueFamilies.data());
-
 
     struct ExtensionHeader  // Helper struct to link extensions together
     {
@@ -356,36 +336,36 @@ void VkRenderDevice::CreateDevice(
     if (m_queueFamilyIndices.nGraphicsQueueFamily >= 0)
     {
         sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,             // sType;
-          nullptr,                                                // pNext;
-          0,                                                      // flags;
-          (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,    // queueFamilyIndex;
-          1,                                                      // queueCount;
-          &fQueuePriority                                         // pQueuePriorities;
+            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           // sType;
+            nullptr,                                              // pNext;
+            0,                                                    // flags;
+            (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,  // queueFamilyIndex;
+            1,                                                    // queueCount;
+            &fQueuePriority                                       // pQueuePriorities;
         }));
     }
 
     if (m_queueFamilyIndices.nPresentQueneFamily >= 0)
     {
         sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,            // sType;
-          nullptr,                                               // pNext;
-          0,                                                     // flags;
-          (uint32_t)m_queueFamilyIndices.nPresentQueneFamily,    // queueFamilyIndex;
-          1,                                                     // queueCount;
-          &fQueuePriority                                        // pQueuePriorities;
+            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,          // sType;
+            nullptr,                                             // pNext;
+            0,                                                   // flags;
+            (uint32_t)m_queueFamilyIndices.nPresentQueneFamily,  // queueFamilyIndex;
+            1,                                                   // queueCount;
+            &fQueuePriority                                      // pQueuePriorities;
         }));
     }
 
     if (m_queueFamilyIndices.nComputeQueueFamily >= 0)
     {
         sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,            // sType;
-          nullptr,                                               // pNext;
-          0,                                                     // flags;
-          (uint32_t)m_queueFamilyIndices.nComputeQueueFamily,    // queueFamilyIndex;
-          1,                                                     // queueCount;
-          &fQueuePriority                                        // pQueuePriorities;
+            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,          // sType;
+            nullptr,                                             // pNext;
+            0,                                                   // flags;
+            (uint32_t)m_queueFamilyIndices.nComputeQueueFamily,  // queueFamilyIndex;
+            1,                                                   // queueCount;
+            &fQueuePriority                                      // pQueuePriorities;
         }));
     }
 
@@ -422,11 +402,13 @@ void VkRenderDevice::CreateDevice(
             vkGetDeviceQueue(m_device, m_queueFamilyIndices.nPresentQueneFamily, 0, &m_presentQueue);
             if (m_presentQueue == m_graphicsQueue)
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present Queue");
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE,
+                                        "Graphics/Present Queue");
             }
             else
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE, "Present Queue");
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE,
+                                        "Present Queue");
             }
         }
 
@@ -437,20 +419,24 @@ void VkRenderDevice::CreateDevice(
             {
                 if (m_computeQueue == m_presentQueue)
                 {
-                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Present/Compute Queue");
+                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
+                                            "Graphics/Present/Compute Queue");
                 }
                 else
                 {
-                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Graphics/Compute Queue");
+                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
+                                            "Graphics/Compute Queue");
                 }
             }
             else if (m_computeQueue == m_presentQueue)
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Prsent/Compute Queue");
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
+                                        "Prsent/Compute Queue");
             }
             else
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE, "Compute Queue");
+                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
+                                        "Compute Queue");
             }
         }
     }
@@ -556,8 +542,7 @@ VkCommandBuffer VkRenderDevice::AllocateSecondaryCommandBuffer()
 }
 void VkRenderDevice::FreeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer)
 {
-    vkFreeCommandBuffers(m_device, m_aCommandPools[MAIN_CMD_POOL], 1,
-                         &commandBuffer);
+    vkFreeCommandBuffers(m_device, m_aCommandPools[MAIN_CMD_POOL], 1, &commandBuffer);
 }
 
 // Helper functions
@@ -613,13 +598,15 @@ VkCommandBuffer VkRenderDevice::AllocatePrimaryCommandbuffer(CommandPools pool)
     return commandBuffer;
 }
 
-void VkRenderDevice::FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer,
-                                              CommandPools pool)
+void VkRenderDevice::FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool)
 {
     vkFreeCommandBuffers(m_device, m_aCommandPools[pool], 1, &commandBuffer);
 }
 
-void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags2> flags, VkFence signalFence)
+void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue,
+                                          std::vector<VkSemaphore>& waitSemaphores,
+                                          std::vector<VkSemaphore>& signalSemaphores,
+                                          std::vector<VkPipelineStageFlags2> flags, VkFence signalFence)
 {
     // sync2: the wait stage is attached to each semaphore instead of to the submit.
     std::vector<VkSemaphoreSubmitInfo> waitSemaphoreInfos(waitSemaphores.size());
@@ -628,8 +615,7 @@ void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuff
         waitSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
         waitSemaphoreInfos[i].semaphore = waitSemaphores[i];
         waitSemaphoreInfos[i].value = 0;  // ignored for binary semaphores
-        waitSemaphoreInfos[i].stageMask =
-            i < flags.size() ? flags[i] : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        waitSemaphoreInfos[i].stageMask = i < flags.size() ? flags[i] : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
         waitSemaphoreInfos[i].deviceIndex = 0;
     }
 
@@ -690,9 +676,8 @@ VkDeviceAddress VkRenderDevice::GetBufferDeviceAddress(VkBuffer buffer) const
     VkDeviceAddress deviceAddress = vkGetBufferDeviceAddress(m_device, &addInfo);
     return deviceAddress;
 }
-VkPipelineLayout VkRenderDevice::CreatePipelineLayout(
-    const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
-    const std::vector<VkPushConstantRange>& pushConstantRanges)
+VkPipelineLayout VkRenderDevice::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
+                                                      const std::vector<VkPushConstantRange>& pushConstantRanges)
 {
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
@@ -712,9 +697,8 @@ VkPipelineLayout VkRenderDevice::CreatePipelineLayout(
 
 // Debug device
 //
-void VkDebugRenderDevice::Initialize(
-    const std::vector<const char*>& vExtensionNames,
-    const std::vector<const char*>& vLayerNames)
+void VkDebugRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
+                                     const std::vector<const char*>& vLayerNames)
 {
     // Append debug extension and layer names to the device
     std::vector<const char*> vDebugExtNames = vExtensionNames;

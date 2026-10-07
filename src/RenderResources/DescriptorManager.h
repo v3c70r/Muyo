@@ -15,7 +15,7 @@ namespace Muyo
 struct PrimitiveDescription;
 struct LightData;
 
-enum class DescriptorLayoutType: uint8_t
+enum class DescriptorLayoutType : uint8_t
 {
     DESCRIPTOR_LAYOUT_SINGLE_SAMPLER,  // A single sampler descriptor set layout at binding 0
     DESCRIPTOR_LAYOUT_SIGNLE_STORAGE_IMAGE,
@@ -42,7 +42,7 @@ public:
     VkDescriptorSet AllocateDescriptorSet(VkDescriptorSetLayout layout);
     // Return a set to the pool. The pool is created with VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT.
     void FreeDescriptorSet(VkDescriptorSet descriptorSet);
-    
+
     VkDescriptorSet AllocateSingleSamplerDescriptorSet(VkImageView textureView);
     void UpdateSingleSamplerDescriptorSet(VkDescriptorSet &descriptorSet, VkImageView textureView);
     VkDescriptorSet AllocateSingleStorageImageDescriptorSet(VkImageView imageView);
@@ -174,12 +174,12 @@ private:
         const VkDescriptorSetLayout &operator[](DescriptorLayoutType type) const
         {
             return std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_TYPE_COUNT>::operator[](
-                    static_cast<size_t>(type));
+                static_cast<size_t>(type));
         }
         VkDescriptorSetLayout &operator[](DescriptorLayoutType type)
         {
             return std::array<VkDescriptorSetLayout, DESCRIPTOR_LAYOUT_TYPE_COUNT>::operator[](
-                    static_cast<size_t>(type));
+                static_cast<size_t>(type));
         }
     };
     DescriptorSetLayoutArray m_aDescriptorSetLayouts = {VK_NULL_HANDLE};

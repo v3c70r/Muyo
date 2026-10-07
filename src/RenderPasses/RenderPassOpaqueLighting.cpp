@@ -20,8 +20,10 @@ void RenderPassOpaqueLighting::PrepareRenderPass()
     m_renderPassParameters.SetRenderArea(m_renderArea);
 
     // opaque lighting output
-    const RenderTarget* pRenderTarget = GetRenderResourceManager()->GetRenderTarget(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME, m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_renderPassParameters.AddAttachment(pRenderTarget, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true);
+    const RenderTarget* pRenderTarget = GetRenderResourceManager()->GetRenderTarget(
+        OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME, m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    m_renderPassParameters.AddAttachment(pRenderTarget, VK_IMAGE_LAYOUT_UNDEFINED,
+                                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, true);
 
     // Set 0: Camera UBO
     const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
@@ -31,25 +33,38 @@ void RenderPassOpaqueLighting::PrepareRenderPass()
     for (int i = 0; i < RenderPassGBuffer::COLOR_ATTACHMENT_COUNT; i++)
     {
         const RenderPassGBuffer::GBufferAttachment& attachment = RenderPassGBuffer::attachments[i];
-        m_renderPassParameters.AddImageParameter(GetRenderResourceManager()->GetResource<ImageResource>(attachment.sName),
-                                                 VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
-                                                 GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
+        m_renderPassParameters.AddImageParameter(
+            GetRenderResourceManager()->GetResource<ImageResource>(attachment.sName),
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+            GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 1);
     }
 
     // Set 2: IBL textures
-    const RenderTarget* pIrradianceMap = GetRenderResourceManager()->GetRenderTarget("irr_cube_map", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
-    const RenderTarget* pPrefilteredCubeMap = GetRenderResourceManager()->GetRenderTarget("prefiltered_cubemap", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
-    const RenderTarget* pSpecularBrdfLut = GetRenderResourceManager()->GetRenderTarget("specular_brdf_lut", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    const RenderTarget* pIrradianceMap =
+        GetRenderResourceManager()->GetRenderTarget("irr_cube_map", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    const RenderTarget* pPrefilteredCubeMap =
+        GetRenderResourceManager()->GetRenderTarget("prefiltered_cubemap", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    const RenderTarget* pSpecularBrdfLut =
+        GetRenderResourceManager()->GetRenderTarget("specular_brdf_lut", m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
 
-    m_renderPassParameters.AddImageParameter(pIrradianceMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 2);
-    m_renderPassParameters.AddImageParameter(pPrefilteredCubeMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_8_MIPS), 2);
-    m_renderPassParameters.AddImageParameter(pSpecularBrdfLut, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_8_MIPS), 2);
+    m_renderPassParameters.AddImageParameter(pIrradianceMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                             VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                                             GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 2);
+    m_renderPassParameters.AddImageParameter(pPrefilteredCubeMap, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                             VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                                             GetSamplerManager()->getSampler(SAMPLER_8_MIPS), 2);
+    m_renderPassParameters.AddImageParameter(pSpecularBrdfLut, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                             VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                                             GetSamplerManager()->getSampler(SAMPLER_8_MIPS), 2);
 
     // Set 3: Light UBO
 
-    m_renderPassParameters.AddParameter(GetRenderResourceManager()->GetResource<UniformBuffer<uint32_t>>("light count"), VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
-    const StorageBuffer<LightData>* lightDataStorageBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
-    m_renderPassParameters.AddParameter(lightDataStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
+    m_renderPassParameters.AddParameter(GetRenderResourceManager()->GetResource<UniformBuffer<uint32_t>>("light count"),
+                                        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
+    const StorageBuffer<LightData>* lightDataStorageBuffer =
+        GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
+    m_renderPassParameters.AddParameter(lightDataStorageBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                        VK_SHADER_STAGE_FRAGMENT_BIT, 3);
 
     // Set 4: Shadows
 
@@ -62,9 +77,7 @@ void RenderPassOpaqueLighting::PrepareRenderPass()
         std::vector<const ImageResource*> vpPositionResources;
         std::vector<const ImageResource*> vpFluxResources;
         std::for_each(vpShadowMaps.begin(), vpShadowMaps.end(),
-                      [&vpDepthResources,
-                       &vpNormalResources,
-                       &vpPositionResources,
+                      [&vpDepthResources, &vpNormalResources, &vpPositionResources,
                        &vpFluxResources](const RSMResources& rsmResources)
                       {
                           vpDepthResources.push_back(rsmResources.pDepth);
@@ -73,10 +86,18 @@ void RenderPassOpaqueLighting::PrepareRenderPass()
                           vpFluxResources.push_back(rsmResources.pFlux);
                       });
 
-        m_renderPassParameters.AddImageParameter(vpDepthResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
-        m_renderPassParameters.AddImageParameter(vpNormalResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
-        m_renderPassParameters.AddImageParameter(vpPositionResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
-        m_renderPassParameters.AddImageParameter(vpFluxResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
+        m_renderPassParameters.AddImageParameter(vpDepthResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                 VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                 GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
+        m_renderPassParameters.AddImageParameter(vpNormalResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                 VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                 GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
+        m_renderPassParameters.AddImageParameter(vpPositionResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                 VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                 GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
+        m_renderPassParameters.AddImageParameter(vpFluxResources, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                                 VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                 GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 4);
     }
     m_renderPassParameters.Finalize("Lighting");
 
@@ -106,8 +127,7 @@ void RenderPassOpaqueLighting::CreatePipeline()
 
     m_pipeline =
         builder.setShaderModules({vertexShader, fragShader})
-            .setVertextInfo({Vertex::getBindingDescription()},
-                            Vertex::getAttributeDescriptions())
+            .setVertextInfo({Vertex::getBindingDescription()}, Vertex::getAttributeDescriptions())
             .setAssembly(iaBuilder.Build())
             .setViewport(viewport, scissorRect)
             .setRasterizer(rsBuilder.Build())
@@ -140,13 +160,12 @@ void RenderPassOpaqueLighting::RecordCommandBuffers()
 
         RenderPassBeginInfoBuilder builder;
 
-        std::vector<VkClearValue> clearValues = {{.color={0.0f, 0.0f, 0.0f, 1.0f}}};
-        VkRenderPassBeginInfo renderPassBeginInfo =
-            builder.setRenderPass(m_renderPassParameters.GetRenderPass())
-                .setFramebuffer(m_renderPassParameters.GetFramebuffer())
-                .setRenderArea(m_renderArea)
-                .setClearValues(clearValues)
-                .Build();
+        std::vector<VkClearValue> clearValues = {{.color = {0.0f, 0.0f, 0.0f, 1.0f}}};
+        VkRenderPassBeginInfo renderPassBeginInfo = builder.setRenderPass(m_renderPassParameters.GetRenderPass())
+                                                        .setFramebuffer(m_renderPassParameters.GetFramebuffer())
+                                                        .setRenderArea(m_renderArea)
+                                                        .setClearValues(clearValues)
+                                                        .Build();
         vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
@@ -157,28 +176,20 @@ void RenderPassOpaqueLighting::RecordCommandBuffers()
         uint32_t nIndexCount = quadMesh.m_nIndexCount;
         uint32_t nIndexOffset = quadMesh.m_nIndexOffset;
 
-
         std::vector<VkDescriptorSet> vDescSets = {
-            m_renderPassParameters.AllocateDescriptorSet("", 0),
-            m_renderPassParameters.AllocateDescriptorSet("", 1),
-            m_renderPassParameters.AllocateDescriptorSet("", 2),
-            m_renderPassParameters.AllocateDescriptorSet("", 3),
-            m_renderPassParameters.AllocateDescriptorSet("", 4)
-        };
+            m_renderPassParameters.AllocateDescriptorSet("", 0), m_renderPassParameters.AllocateDescriptorSet("", 1),
+            m_renderPassParameters.AllocateDescriptorSet("", 2), m_renderPassParameters.AllocateDescriptorSet("", 3),
+            m_renderPassParameters.AllocateDescriptorSet("", 4)};
 
-        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
-                               &offset);
-        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          m_pipeline);
-        vkCmdBindDescriptorSets(
-            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_renderPassParameters.GetPipelineLayout(), 0, vDescSets.size(),
-            vDescSets.data(), 0, nullptr);
+        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_renderPassParameters.GetPipelineLayout(), 0, vDescSets.size(), vDescSets.data(), 0,
+                                nullptr);
         vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
         vkCmdEndRenderPass(m_commandBuffer);
     }
     vkEndCommandBuffer(m_commandBuffer);
 }
-}
+}  // namespace Muyo

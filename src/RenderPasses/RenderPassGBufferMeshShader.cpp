@@ -1,6 +1,8 @@
 
 #include "RenderPassGBufferMeshShader.h"
+
 #include <vulkan/vulkan_core.h>
+
 #include "Camera.h"
 #include "PipelineStateBuilder.h"
 #include "RenderResourceManager.h"
@@ -80,9 +82,7 @@ void RenderPassGBufferMeshShader::RecordCommandBuffers()
                                                 .Build();
         vkCmdBeginRenderPass(m_commandBuffer, &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         {
-            std::vector<VkDescriptorSet> vDescSets = {
-                m_renderPassParameters.AllocateDescriptorSet("", 0)
-            };
+            std::vector<VkDescriptorSet> vDescSets = {m_renderPassParameters.AllocateDescriptorSet("", 0)};
             vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     m_renderPassParameters.GetPipelineLayout(), 0,
                                     static_cast<uint32_t>(vDescSets.size()), vDescSets.data(), 0, nullptr);
@@ -100,4 +100,3 @@ RenderPassGBufferMeshShader::~RenderPassGBufferMeshShader()
     vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
 }
 }  // namespace Muyo
-

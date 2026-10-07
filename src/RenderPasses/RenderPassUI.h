@@ -44,24 +44,24 @@ struct ImGuiResource
 class RenderPassUI : public RenderPass
 {
 public:
-  explicit RenderPassUI(const VkExtent2D& renderArea);
-  ~RenderPassUI() override;
+    explicit RenderPassUI(const VkExtent2D& renderArea);
+    ~RenderPassUI() override;
 
-  void PrepareRenderPass() override;
-  void CreatePipeline() override;
-  void RecordCommandBuffer();
-  VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
+    void PrepareRenderPass() override;
+    void CreatePipeline() override;
+    void RecordCommandBuffer();
+    VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
-  // ImGui Related functions
-  void NewFrame(VkExtent2D screenExtent);
-  void UpdateBuffers();
-  void CreateImGuiResources();
-  template<class DebugPageType>
-  DebugPageType* RegisterDebugPage(const std::string& sName)
-  {
-      m_vpDebugPages.emplace_back(new DebugPageType(sName));
-      return static_cast<DebugPageType*>(m_vpDebugPages.back().get());
-  }
+    // ImGui Related functions
+    void NewFrame(VkExtent2D screenExtent);
+    void UpdateBuffers();
+    void CreateImGuiResources();
+    template <class DebugPageType>
+    DebugPageType* RegisterDebugPage(const std::string& sName)
+    {
+        m_vpDebugPages.emplace_back(new DebugPageType(sName));
+        return static_cast<DebugPageType*>(m_vpDebugPages.back().get());
+    }
 
 private:
     struct PushConstBlock
@@ -73,7 +73,7 @@ private:
     std::vector<std::unique_ptr<IDebugUIPage>> m_vpDebugPages;
 
     VkExtent2D m_renderArea;
-    VkPipeline m_pipeline           = VK_NULL_HANDLE;
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
 };
 }  // namespace Muyo

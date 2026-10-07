@@ -13,27 +13,30 @@
 namespace Muyo
 {
 
-RenderPassTransparent::RenderPassTransparent(VkExtent2D renderArea) : m_renderArea(renderArea)
-{
-}
+RenderPassTransparent::RenderPassTransparent(VkExtent2D renderArea) : m_renderArea(renderArea) {}
 
 void RenderPassTransparent::PrepareRenderPass()
 {
     m_renderPassParameters.SetRenderArea(m_renderArea);
 
     // Attachments
-    auto* colorAttachment = GetRenderResourceManager()->GetResource<RenderTarget>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME);
-    m_renderPassParameters.AddAttachment(colorAttachment, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
+    auto* colorAttachment =
+        GetRenderResourceManager()->GetResource<RenderTarget>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME);
+    m_renderPassParameters.AddAttachment(colorAttachment, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, false);
 
     auto* depthAttachment = GetRenderResourceManager()->GetResource<RenderTarget>("GBufferDepth_");
-    m_renderPassParameters.AddAttachment(depthAttachment, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, false);
+    m_renderPassParameters.AddAttachment(depthAttachment, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, false);
 
     // Set 0: Perview
     const UniformBuffer<PerViewData>* perView = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
     m_renderPassParameters.AddParameter(perView, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT);
 
     // Set 1: Per object
-    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+    m_renderPassParameters.AddParameter(GetPerObjResourceManager()->GetPerObjResource(),
+                                        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 
     // Set 2 Binding 0: All textures
     const auto& vpUniquePtrTextures = GetTextureResourceManager()->GetTextures();
@@ -43,11 +46,14 @@ void RenderPassTransparent::PrepareRenderPass()
     {
         vpTextures.push_back(pTexture.get());
     }
-    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 2);
+    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                             VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                                             GetSamplerManager()->getSampler(SAMPLER_1_MIPS), 2);
 
     // Set 2, Binding 1: All materials
     const auto* materialBuffer = GetMaterialManager()->GetMaterialBuffer();
-    m_renderPassParameters.AddParameter(materialBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+    m_renderPassParameters.AddParameter(materialBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        2);
 
     m_renderPassParameters.Finalize("transparent pass");
     CreatePipeline();
@@ -72,12 +78,9 @@ void RenderPassTransparent::CreatePipeline()
 
     // Descriptor layouts
     std::vector<VkDescriptorSetLayout> descLayouts = {
-        GetDescriptorManager()->GetDescriptorLayout(
-            DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-        GetDescriptorManager()->GetDescriptorLayout(
-            DescriptorLayoutType::DESCRIPTOR_LAYOUT_MATERIALS),
-        GetDescriptorManager()->GetDescriptorLayout(
-            DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_OBJ_DATA)};
+        GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+        GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_MATERIALS),
+        GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_OBJ_DATA)};
 
     std::vector<VkPushConstantRange> pushConstants;
 
@@ -94,27 +97,24 @@ void RenderPassTransparent::CreatePipeline()
 
     PipelineStateBuilder builder;
 
-    m_pipeline =
-        builder.setShaderModules({vertShader, fragShader})
-            .setVertextInfo({Vertex::getBindingDescription()},
-                            Vertex::getAttributeDescriptions())
-            .setAssembly(iaBuilder.Build())
-            .setViewport(viewport, scissorRect)
-            .setRasterizer(rsBuilder.Build())
-            .setMSAA(msBuilder.Build())
-            .setColorBlending(blendBuilder.Build())
-            .setPipelineLayout(pipelineLayout)
-            .setDepthStencil(depthStencilBuilder.Build())
-            .setRenderPass(m_renderPassParameters.GetRenderPass())
-            .setSubpassIndex(0)
-            .Build(GetRenderDevice()->GetDevice());
+    m_pipeline = builder.setShaderModules({vertShader, fragShader})
+                     .setVertextInfo({Vertex::getBindingDescription()}, Vertex::getAttributeDescriptions())
+                     .setAssembly(iaBuilder.Build())
+                     .setViewport(viewport, scissorRect)
+                     .setRasterizer(rsBuilder.Build())
+                     .setMSAA(msBuilder.Build())
+                     .setColorBlending(blendBuilder.Build())
+                     .setPipelineLayout(pipelineLayout)
+                     .setDepthStencil(depthStencilBuilder.Build())
+                     .setRenderPass(m_renderPassParameters.GetRenderPass())
+                     .setSubpassIndex(0)
+                     .Build(GetRenderDevice()->GetDevice());
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShader, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShader, nullptr);
 
     // Set debug name for the pipeline
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline),
-                            VK_OBJECT_TYPE_PIPELINE, "Transparent");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "Transparent");
 }
 
 void RenderPassTransparent::RecordCommandBuffers(const std::vector<const SceneNode*>& vpGeometryNodes)
@@ -150,14 +150,12 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const SceneNo
     vkBeginCommandBuffer(m_commandBuffer, &beginInfo);
     {
         RenderPassBeginInfoBuilder builder;
-        std::vector<VkClearValue> vClearValeus = {{{.color = {0.0f, 0.0f, 0.0f, 0.0f}},
-                                                   {.depthStencil = {1.0f, 0}}}};
-        VkRenderPassBeginInfo renderPassBeginInfo =
-            builder.setRenderPass(m_renderPassParameters.GetRenderPass())
-                .setFramebuffer(m_renderPassParameters.GetFramebuffer())
-                .setRenderArea(m_renderArea)
-                .setClearValues(vClearValeus)
-                .Build();
+        std::vector<VkClearValue> vClearValeus = {{{.color = {0.0f, 0.0f, 0.0f, 0.0f}}, {.depthStencil = {1.0f, 0}}}};
+        VkRenderPassBeginInfo renderPassBeginInfo = builder.setRenderPass(m_renderPassParameters.GetRenderPass())
+                                                        .setFramebuffer(m_renderPassParameters.GetFramebuffer())
+                                                        .setRenderArea(m_renderArea)
+                                                        .setClearValues(vClearValeus)
+                                                        .Build();
 
         vkCmdBeginRenderPass(m_commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -168,24 +166,20 @@ void RenderPassTransparent::RecordCommandBuffers(const std::vector<const SceneNo
         const VkBuffer& indexBuffer = vertexResource.m_pIndexBuffer->buffer();
 
         // Upload draw commands
-        const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer = GetRenderResourceManager()->GetDrawCommandBuffer("transparent draw commands", drawCommands);
+        const DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommandBuffer =
+            GetRenderResourceManager()->GetDrawCommandBuffer("transparent draw commands", drawCommands);
 
         std::vector<VkDescriptorSet> vDescSets = m_renderPassParameters.AllocateDescriptorSets();
-        vkCmdBindDescriptorSets(
-            m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_renderPassParameters.GetPipelineLayout(), 0,
-            static_cast<uint32_t>(vDescSets.size()),
-            vDescSets.data(), 0, nullptr);
+        vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_renderPassParameters.GetPipelineLayout(), 0, static_cast<uint32_t>(vDescSets.size()),
+                                vDescSets.data(), 0, nullptr);
 
-        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer,
-                               &offset);
-        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdBindPipeline(m_commandBuffer,
-                          VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          m_pipeline);
+        vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, &offset);
+        vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
 
-        vkCmdDrawIndexedIndirect(m_commandBuffer, pDrawCommandBuffer->buffer(), 0, pDrawCommandBuffer->GetDrawCommandCount(), pDrawCommandBuffer->GetStride());
+        vkCmdDrawIndexedIndirect(m_commandBuffer, pDrawCommandBuffer->buffer(), 0,
+                                 pDrawCommandBuffer->GetDrawCommandCount(), pDrawCommandBuffer->GetStride());
         vkCmdEndRenderPass(m_commandBuffer);
     }
     vkEndCommandBuffer(m_commandBuffer);

@@ -2,4 +2,4 @@
 namespace Muyo
 {
 
-}    // namespace Muyo
+}  // namespace Muyo

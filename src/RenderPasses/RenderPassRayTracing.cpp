@@ -19,30 +19,37 @@ void RenderPassRayTracing::PrepareRenderPass()
 
     // Set 0
     // Binding 0: PerViewData
-    UniformBuffer<PerViewData>* perViewDataUniformBuffer = GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView");
-    m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    UniformBuffer<PerViewData>* perViewDataUniformBuffer =
+        GetRenderResourceManager()->GetResource<UniformBuffer<PerViewData>>("perView");
+    m_renderPassParameters.AddParameter(perViewDataUniformBuffer, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                                        VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // Binding 1: TLAS
     AccelerationStructure* pTLAS = GetRenderResourceManager()->GetResource<AccelerationStructure>("TLAS");
-    m_renderPassParameters.AddParameter(pTLAS, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    m_renderPassParameters.AddParameter(pTLAS, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+                                        VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // Binding 2: Accumulation buffer
     // The ray gen shader declares these as rgba32f storage images and reads/writes them
     // directly. The output image is a cross-frame accumulation buffer, so a 32-bit float
     // format is used to avoid overflow/clamping of bright HDR samples. The format must
     // match the shader's format qualifier (see the SPIR-V format validation rules).
-    m_renderPassParameters.AddImageParameter(
-        GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Accumulated", m_imageSize, VK_FORMAT_R32G32B32A32_SFLOAT),
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, VK_IMAGE_LAYOUT_GENERAL);
+    m_renderPassParameters.AddImageParameter(GetRenderResourceManager()->GetStorageImageResource(
+                                                 "Ray Tracing Accumulated", m_imageSize, VK_FORMAT_R32G32B32A32_SFLOAT),
+                                             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+                                             VK_IMAGE_LAYOUT_GENERAL);
 
     // Binding 3: Ray tracing output
-    m_renderPassParameters.AddImageParameter(
-        GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", m_imageSize, VK_FORMAT_R32G32B32A32_SFLOAT),
-        VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, VK_IMAGE_LAYOUT_GENERAL);
+    m_renderPassParameters.AddImageParameter(GetRenderResourceManager()->GetStorageImageResource(
+                                                 "Ray Tracing Output", m_imageSize, VK_FORMAT_R32G32B32A32_SFLOAT),
+                                             VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+                                             VK_IMAGE_LAYOUT_GENERAL);
 
     // Binding 4: submesh descriptions
-    StorageBuffer<SubmeshDescription>* pSubmeshDescBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<SubmeshDescription>>("submesh descs");
-    m_renderPassParameters.AddParameter(pSubmeshDescBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    StorageBuffer<SubmeshDescription>* pSubmeshDescBuffer =
+        GetRenderResourceManager()->GetResource<StorageBuffer<SubmeshDescription>>("submesh descs");
+    m_renderPassParameters.AddParameter(pSubmeshDescBuffer, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                                        VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
     // Binding 5: All of textures in materials
     const auto& vpUniquePtrTextures = GetTextureResourceManager()->GetTextures();
@@ -52,12 +59,15 @@ void RenderPassRayTracing::PrepareRenderPass()
     {
         vpTextures.push_back(pTexture.get());
     }
-    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
+    m_renderPassParameters.AddImageParameter(vpTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                             VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                                             GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
 
     // Binding 6: Environment map
     m_renderPassParameters.AddImageParameter(
         GetRenderResourceManager()->GetResource<RenderTarget>("env_cube_map"),
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
 
     m_renderPassParameters.Finalize("Render Pass Raytracing");
     CreatePipeline();
@@ -67,13 +77,16 @@ void RenderPassRayTracing::CreatePipeline()
 {
     // shader stages
     VkShaderModule rayGenShdr = CreateShaderModule(ReadSpv("shaders/pathTracing.rgen.spv"));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(rayGenShdr), VK_OBJECT_TYPE_SHADER_MODULE, "pathTracing.rgen.spv");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(rayGenShdr), VK_OBJECT_TYPE_SHADER_MODULE,
+                            "pathTracing.rgen.spv");
 
     VkShaderModule missShdr = CreateShaderModule(ReadSpv("shaders/pathTracing.rmiss.spv"));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(missShdr), VK_OBJECT_TYPE_SHADER_MODULE, "pathTracing.rmiss.spv");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(missShdr), VK_OBJECT_TYPE_SHADER_MODULE,
+                            "pathTracing.rmiss.spv");
 
     VkShaderModule chitShdr = CreateShaderModule(ReadSpv("shaders/pathTracing.rchit.spv"));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(chitShdr), VK_OBJECT_TYPE_SHADER_MODULE, "pathTracing.rchit.spv");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(chitShdr), VK_OBJECT_TYPE_SHADER_MODULE,
+                            "pathTracing.rchit.spv");
 
     RayTracingPipelineBuilder builder;
     builder.AddShaderModule(rayGenShdr, VK_SHADER_STAGE_RAYGEN_BIT_KHR)
@@ -88,17 +101,13 @@ void RenderPassRayTracing::CreatePipeline()
         GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_LIGHT_DATA)};
 
     m_pipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT, "Ray Tracing");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipelineLayout), VK_OBJECT_TYPE_PIPELINE_LAYOUT,
+                            "Ray Tracing");
     builder.SetPipelineLayout(m_pipelineLayout).SetMaxRecursionDepth(1);
     VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
 
-    VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(),
-                                                    VK_NULL_HANDLE,
-                                                    VK_NULL_HANDLE,
-                                                    1,
-                                                    &createInfo,
-                                                    nullptr,
-                                                    &m_pipeline));
+    VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(GetRenderDevice()->GetDevice(), VK_NULL_HANDLE, VK_NULL_HANDLE, 1,
+                                                    &createInfo, nullptr, &m_pipeline));
 
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), rayGenShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), missShdr, nullptr);
@@ -117,17 +126,18 @@ void RenderPassRayTracing::DestroyPipeline()
 
 void RenderPassRayTracing::RecordCommandBuffer()
 {
-    const StorageBuffer<LightData>* lightDataBuffer = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
+    const StorageBuffer<LightData>* lightDataBuffer =
+        GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>("light data");
 
-    std::vector<VkDescriptorSet> vDescSets =
-        {
-            m_renderPassParameters.AllocateDescriptorSet("Ray Tracing Pass"),
-            GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)};
+    std::vector<VkDescriptorSet> vDescSets = {
+        m_renderPassParameters.AllocateDescriptorSet("Ray Tracing Pass"),
+        GetDescriptorManager()->AllocateLightDataDescriptorSet(lightDataBuffer->GetNumStructs(), *lightDataBuffer)};
 
     m_commandBuffer = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
 
     {
-        StorageImageResource* pOutputImage = GetRenderResourceManager()->GetResource<StorageImageResource>("Ray Tracing Output");
+        StorageImageResource* pOutputImage =
+            GetRenderResourceManager()->GetResource<StorageImageResource>("Ray Tracing Output");
 
         VkCommandBufferBeginInfo beginInfo = {};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -137,7 +147,8 @@ void RenderPassRayTracing::RecordCommandBuffer()
         {
             // Transit output image to general layout using Image memory barrier 2
 
-            StorageImageResource* pAccumulatedStorage = GetRenderResourceManager()->GetResource<StorageImageResource>("Ray Tracing Accumulated");
+            StorageImageResource* pAccumulatedStorage =
+                GetRenderResourceManager()->GetResource<StorageImageResource>("Ray Tracing Accumulated");
             VkImage outputImage = pOutputImage->getImage();
 #ifdef FEATURE_SYNCHRONIZATION2
             VkImageMemoryBarrier2KHR imgBarrier = {
@@ -167,18 +178,17 @@ void RenderPassRayTracing::RecordCommandBuffer()
             accumulatedImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 
             std::array<VkImageMemoryBarrier2KHR, 2> barriers = {imgBarrier, accumulatedImageBarrier};
-            VkDependencyInfoKHR dependency =
-                {
-                    VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,   // sType;
-                    nullptr,                                 // pNext;
-                    0,                                       // dependencyFlags;
-                    0,                                       // memoryBarrierCount;
-                    nullptr,                                 // pMemoryBarriers;
-                    0,                                       // bufferMemoryBarrierCount;
-                    nullptr,                                 // pBufferMemoryBarriers;
-                    static_cast<uint32_t>(barriers.size()),  // imageMemoryBarrierCount;
-                    barriers.data()                          // pImageMemoryBarriers;
-                };
+            VkDependencyInfoKHR dependency = {
+                VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR,   // sType;
+                nullptr,                                 // pNext;
+                0,                                       // dependencyFlags;
+                0,                                       // memoryBarrierCount;
+                nullptr,                                 // pMemoryBarriers;
+                0,                                       // bufferMemoryBarrierCount;
+                nullptr,                                 // pBufferMemoryBarriers;
+                static_cast<uint32_t>(barriers.size()),  // imageMemoryBarrierCount;
+                barriers.data()                          // pImageMemoryBarriers;
+            };
             VkExt::vkCmdPipelineBarrier2KHR(m_commandBuffer, &dependency);
 #else
             ImageResourceBarrier barrier(outputImage, VK_IMAGE_LAYOUT_GENERAL);
@@ -189,26 +199,20 @@ void RenderPassRayTracing::RecordCommandBuffer()
 
             SCOPED_MARKER(m_commandBuffer, "Trace Ray");
             vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipeline);
-            vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0, (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);
+            vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_pipelineLayout, 0,
+                                    (uint32_t)vDescSets.size(), vDescSets.data(), 0, nullptr);
 
             VkStridedDeviceAddressRegionKHR callable = {};
 
-            VkExt::vkCmdTraceRaysKHR(
-                m_commandBuffer,
-                &m_aSBTRegions[SBT_REGION_RAY_GEN],
-                &m_aSBTRegions[SBT_REGION_RAY_MISS],
-                &m_aSBTRegions[SBT_REGION_RAY_HIT],
-                &callable,
-                m_imageSize.width, m_imageSize.height, 1);
+            VkExt::vkCmdTraceRaysKHR(m_commandBuffer, &m_aSBTRegions[SBT_REGION_RAY_GEN],
+                                     &m_aSBTRegions[SBT_REGION_RAY_MISS], &m_aSBTRegions[SBT_REGION_RAY_HIT], &callable,
+                                     m_imageSize.width, m_imageSize.height, 1);
         };
         vkEndCommandBuffer(m_commandBuffer);
     }
 }
 
-uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment)
-{
-    return (nSize + nAlignment - 1) / nAlignment * nAlignment;
-}
+uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment) { return (nSize + nAlignment - 1) / nAlignment * nAlignment; }
 
 void RenderPassRayTracing::AllocateShaderBindingTable()
 {
@@ -219,7 +223,8 @@ void RenderPassRayTracing::AllocateShaderBindingTable()
     uint32_t nHitGroupCount = 1;
     uint32_t nRayGenGroupCount = 1;  // can have only one
 
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR, nullptr};
+    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR, nullptr};
     GetRenderDevice()->GetPhysicalDeviceProperties(raytracingProperties);
 
     uint32_t nHandleSize = raytracingProperties.shaderGroupHandleSize;
@@ -244,7 +249,8 @@ void RenderPassRayTracing::AllocateShaderBindingTable()
     uint32_t nHandleCount = nRayGenGroupCount + nMissGroupCount + nHitGroupCount;
     uint32_t nDataSize = nHandleCount * nHandleSize;
     std::vector<uint8_t> handleBuffer(nDataSize);
-    (VkExt::vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nHandleCount, nDataSize, handleBuffer.data()));
+    (VkExt::vkGetRayTracingShaderGroupHandlesKHR(GetRenderDevice()->GetDevice(), m_pipeline, 0, nHandleCount, nDataSize,
+                                                 handleBuffer.data()));
     ShaderBindingTableBuffer* pSBTBuffer = GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT", sbtSize);
 
     // Copy handles to GPU

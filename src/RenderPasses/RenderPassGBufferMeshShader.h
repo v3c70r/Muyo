@@ -7,18 +7,12 @@ namespace Muyo
 class RenderPassGBufferMeshShader : public RenderPass
 {
 public:
-    explicit RenderPassGBufferMeshShader(const VkExtent2D& renderArea)
-        : m_renderArea(renderArea)
-    {
-    }
+    explicit RenderPassGBufferMeshShader(const VkExtent2D& renderArea) : m_renderArea(renderArea) {}
     ~RenderPassGBufferMeshShader() override;
     void PrepareRenderPass() override;
     void CreatePipeline() override;
     void RecordCommandBuffers();
-    VkCommandBuffer GetCommandBuffer() const override
-    {
-        return m_commandBuffer;
-    }
+    VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
 private:
     VkPipeline m_pipeline = VK_NULL_HANDLE;

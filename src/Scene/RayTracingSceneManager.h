@@ -2,11 +2,10 @@
 #include <vulkan/vulkan.h>
 
 #include <array>
+#include <glm/glm.hpp>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include <glm/glm.hpp>
 
 #include "Material.h"
 namespace Muyo

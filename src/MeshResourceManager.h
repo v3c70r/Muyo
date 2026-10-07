@@ -5,7 +5,7 @@
 
 namespace Muyo
 {
-    
+
 enum SimpleMeshes
 {
     SIMPLE_MESH_QUAD = 0,
@@ -43,25 +43,13 @@ public:
     void UploadMeshData();
     void PrepareSimpleMeshes();
 
-    const Mesh& GetMesh(size_t index) const
-    {
-        return m_vMeshes[index];
-    }
-    
-    const Mesh& GetQuad() const
-    {
-        return GetMesh(m_aSimpleMeshes[SIMPLE_MESH_QUAD]);
-    }
+    const Mesh& GetMesh(size_t index) const { return m_vMeshes[index]; }
 
-    const Mesh& GetCube() const
-    {
-        return GetMesh(m_aSimpleMeshes[SIMPLE_MESH_CUBE]);
-    }
+    const Mesh& GetQuad() const { return GetMesh(m_aSimpleMeshes[SIMPLE_MESH_QUAD]); }
 
-    const MeshVertexResources& GetMeshVertexResources()
-    {
-        return m_MeshVertexResources;
-    }
+    const Mesh& GetCube() const { return GetMesh(m_aSimpleMeshes[SIMPLE_MESH_CUBE]); }
+
+    const MeshVertexResources& GetMeshVertexResources() { return m_MeshVertexResources; }
 
 private:
     std::vector<Mesh> m_vMeshes;
@@ -69,12 +57,11 @@ private:
 
     const std::string m_sVertexBufferName = "MeshVertexBuffer";
     const std::string m_sIndexBufferName = "MeshIndexBuffer";
-    
+
     std::array<size_t, SIMPLE_MESH_COUNT> m_aSimpleMeshes;
-    
+
     bool m_bHasUploaded = false;
 };
-
 
 MeshResourceManager* GetMeshResourceManager();
 

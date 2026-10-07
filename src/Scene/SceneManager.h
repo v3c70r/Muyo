@@ -25,7 +25,6 @@ private:
 
 struct DrawData
 {
-
 };
 
 SceneManager* GetSceneManager();

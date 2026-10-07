@@ -32,12 +32,13 @@ class RenderResourceManager
     using ResourceMap = std::unordered_map<std::string, std::unique_ptr<IRenderResource>>;
 
 public:
-    void Initialize(){};
+    void Initialize() {};
 
     void Unintialize() { m_mResources.clear(); }
 
     template <typename T>
-    VertexBuffer<T>* GetVertexBuffer(const std::string& sName, const std::vector<T>& vVertexData, bool bStagedUpoload = true)
+    VertexBuffer<T>* GetVertexBuffer(const std::string& sName, const std::vector<T>& vVertexData,
+                                     bool bStagedUpoload = true)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
@@ -48,7 +49,8 @@ public:
     }
 
     template <class IndexType>
-    IndexBuffer* GetIndexBuffer(const std::string& sName, const std::vector<IndexType> vIndexData, bool bStagedUpoload = true)
+    IndexBuffer* GetIndexBuffer(const std::string& sName, const std::vector<IndexType> vIndexData,
+                                bool bStagedUpoload = true)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
@@ -58,40 +60,35 @@ public:
         return static_cast<IndexBuffer*>(m_mResources[sName].get());
     }
 
-    RenderTarget* GetRenderTarget(const std::string& sName, VkExtent2D extent, VkFormat format,
-                                  uint32_t numMips = 1, uint32_t numLayers = 1,
-                                  VkImageUsageFlags nAdditionalUsageFlags = 0)
+    RenderTarget* GetRenderTarget(const std::string& sName, VkExtent2D extent, VkFormat format, uint32_t numMips = 1,
+                                  uint32_t numLayers = 1, VkImageUsageFlags nAdditionalUsageFlags = 0)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
-            bool bIsColorAttachment = FormatSupportsOptimalTilingColorAttachment(format) && !FormatSupportsOptimalTilingDepthAttachment(format);
+            bool bIsColorAttachment = FormatSupportsOptimalTilingColorAttachment(format) &&
+                                      !FormatSupportsOptimalTilingDepthAttachment(format);
             VkImageUsageFlags nUsageFlags = nAdditionalUsageFlags;
             m_mResources[sName] = std::make_unique<RenderTarget>(
                 format,
                 nUsageFlags |
-                    (bIsColorAttachment
-                         ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                               VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
-                         : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT),
+                    (bIsColorAttachment ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
+                                        : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT),
                 extent.width, extent.height, numMips, numLayers);
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<RenderTarget*>(m_mResources[sName].get());
     }
 
-    RenderTarget* GetDepthTarget(const std::string sName, VkExtent2D extent,
-                                 VkFormat format = VK_FORMAT_D32_SFLOAT)
+    RenderTarget* GetDepthTarget(const std::string sName, VkExtent2D extent, VkFormat format = VK_FORMAT_D32_SFLOAT)
     {
         return GetRenderTarget(sName, extent, format);
     }
 
-    RenderTarget* GetColorTarget(
-        const std::string sName, VkExtent2D extent,
-        VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t numMips = 1,
-        uint32_t numLayers = 1, VkImageUsageFlags nAdditionalUsageFlags = 0)
+    RenderTarget* GetColorTarget(const std::string sName, VkExtent2D extent,
+                                 VkFormat format = VK_FORMAT_R16G16B16A16_SFLOAT, uint32_t numMips = 1,
+                                 uint32_t numLayers = 1, VkImageUsageFlags nAdditionalUsageFlags = 0)
     {
-        return GetRenderTarget(sName, extent, format, numMips, numLayers,
-                               nAdditionalUsageFlags);
+        return GetRenderTarget(sName, extent, format, numMips, numLayers, nAdditionalUsageFlags);
     }
 
     RenderTarget* GetColorTarget(const std::string sName)
@@ -147,14 +144,16 @@ public:
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
-            m_mResources[sName] = std::make_unique<DrawCommandBuffer<T>>(drawCommands.data(), (uint32_t)drawCommands.size());
+            m_mResources[sName] =
+                std::make_unique<DrawCommandBuffer<T>>(drawCommands.data(), (uint32_t)drawCommands.size());
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<DrawCommandBuffer<T>*>(m_mResources[sName].get());
     }
 
     template <class T>
-    StorageBuffer<T>* GetStorageBuffer(const std::string& sName, const std::vector<T>& structuredBuffers, bool bAllowReadback = true)
+    StorageBuffer<T>* GetStorageBuffer(const std::string& sName, const std::vector<T>& structuredBuffers,
+                                       bool bAllowReadback = true)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
@@ -165,91 +164,82 @@ public:
         return static_cast<StorageBuffer<T>*>(m_mResources[sName].get());
     }
 
-    AccelerationStructureBuffer* GetAccelerationStructureBuffer(
-        const std::string& sName, VkDeviceSize nSize)
+    AccelerationStructureBuffer* GetAccelerationStructureBuffer(const std::string& sName, VkDeviceSize nSize)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<AccelerationStructureBuffer>(nSize);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+
+        return static_cast<AccelerationStructureBuffer*>(m_mResources[sName].get());
+    }
+
+    AccelerationStructure* CreateTLAS(const std::string& sName, VkDeviceSize nSize)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
             m_mResources[sName] =
-                std::make_unique<AccelerationStructureBuffer>(nSize);
-            m_mResources[sName]->SetDebugName(sName);
-        }
-
-        return static_cast<AccelerationStructureBuffer*>(
-            m_mResources[sName].get());
-    }
-
-    AccelerationStructure* CreateTLAS(
-        const std::string& sName, VkDeviceSize nSize)
-    {
-        if (m_mResources.find(sName) == m_mResources.end())
-        {
-            m_mResources[sName] = std::make_unique<AccelerationStructure>(nSize, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR);
+                std::make_unique<AccelerationStructure>(nSize, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR);
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<AccelerationStructure*>(m_mResources[sName].get());
     }
 
-    AccelerationStructure* CreateBLAS(
-        const std::string& sName, VkDeviceSize nSize)
-    {
-        if (m_mResources.find(sName) == m_mResources.end())
-        {
-            m_mResources[sName] = std::make_unique<AccelerationStructure>(nSize, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
-            m_mResources[sName]->SetDebugName(sName);
-        }
-        return static_cast<AccelerationStructure*>(m_mResources[sName].get());
-    }
-    AccelerationStructureBuffer* GetAccelerationStructureBuffer(
-        const std::string& sName, const void* pData, VkDeviceSize nSize)
+    AccelerationStructure* CreateBLAS(const std::string& sName, VkDeviceSize nSize)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
             m_mResources[sName] =
-                std::make_unique<AccelerationStructureBuffer>(pData, nSize);
+                std::make_unique<AccelerationStructure>(nSize, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR);
+            m_mResources[sName]->SetDebugName(sName);
+        }
+        return static_cast<AccelerationStructure*>(m_mResources[sName].get());
+    }
+    AccelerationStructureBuffer* GetAccelerationStructureBuffer(const std::string& sName, const void* pData,
+                                                                VkDeviceSize nSize)
+    {
+        if (m_mResources.find(sName) == m_mResources.end())
+        {
+            m_mResources[sName] = std::make_unique<AccelerationStructureBuffer>(pData, nSize);
             m_mResources[sName]->SetDebugName(sName);
         }
 
-        return static_cast<AccelerationStructureBuffer*>(
-            m_mResources[sName].get());
+        return static_cast<AccelerationStructureBuffer*>(m_mResources[sName].get());
     }
 
     StorageImageResource* GetStorageImageResource(const std::string& sName, VkExtent2D extent, VkFormat format)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
-            m_mResources[sName] =
-                std::make_unique<StorageImageResource>(format, extent.width, extent.height);
+            m_mResources[sName] = std::make_unique<StorageImageResource>(format, extent.width, extent.height);
             m_mResources[sName]->SetDebugName(sName);
         }
 
         return static_cast<StorageImageResource*>(m_mResources[sName].get());
     }
 
-    SwapchainImageResource* GetSwapchainImageResource(const std::string& sName, VkImage swapchainImage, VkExtent2D extent, VkFormat format)
+    SwapchainImageResource* GetSwapchainImageResource(const std::string& sName, VkImage swapchainImage,
+                                                      VkExtent2D extent, VkFormat format)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
-            m_mResources[sName] =
-              std::make_unique<SwapchainImageResource>(swapchainImage, format, extent);
+            m_mResources[sName] = std::make_unique<SwapchainImageResource>(swapchainImage, format, extent);
             m_mResources[sName]->SetDebugName(sName);
         }
 
         return static_cast<SwapchainImageResource*>(m_mResources[sName].get());
     }
 
-    ShaderBindingTableBuffer* GetShaderBindingTableBuffer(
-        const std::string& sName, VkDeviceSize nSize)
+    ShaderBindingTableBuffer* GetShaderBindingTableBuffer(const std::string& sName, VkDeviceSize nSize)
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
-            m_mResources[sName] =
-                std::make_unique<ShaderBindingTableBuffer>(nSize);
+            m_mResources[sName] = std::make_unique<ShaderBindingTableBuffer>(nSize);
             m_mResources[sName]->SetDebugName(sName);
         }
 
-        return static_cast<ShaderBindingTableBuffer*>(
-            m_mResources[sName].get());
+        return static_cast<ShaderBindingTableBuffer*>(m_mResources[sName].get());
     }
 
     // Swap an existing resource with a new pointer
@@ -278,8 +268,8 @@ public:
         return nullptr;
     }
 
-    BufferResource* AllocateBuffer(const std::string& name, size_t sizeInByte, VkBufferUsageFlags usage, VmaMemoryUsage memoryProperties
-            )
+    BufferResource* AllocateBuffer(const std::string& name, size_t sizeInByte, VkBufferUsageFlags usage,
+                                   VmaMemoryUsage memoryProperties)
     {
         if (m_mResources.find(name) != m_mResources.end())
         {

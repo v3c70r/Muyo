@@ -55,8 +55,7 @@ public:
     // `name` is used as the capture file path template (captures are written to
     // "<name>_frame<N>.rdc") and as the capture title shown in the RenderDoc UI.
     // It is only applied by the outermost capture of a frame.
-    explicit RenderDocScopedCapture(const std::string& name = "")
-        : m_api(GetRenderDocAPI())
+    explicit RenderDocScopedCapture(const std::string& name = "") : m_api(GetRenderDocAPI())
     {
         if (!m_api) return;
 

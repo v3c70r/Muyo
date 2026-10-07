@@ -24,4 +24,3 @@ enum Cursor
     CURSOR_COUNT,
 };
 }  // namespace Input
-

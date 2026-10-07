@@ -19,51 +19,37 @@ class VertexBuffer;
 class PipelineStateBuilder
 {
 public:
+    PipelineStateBuilder& SetShaderModule(VkShaderModule shaderModule, VkShaderStageFlagBits shaderStageBit);
 
-    PipelineStateBuilder& SetShaderModule(VkShaderModule shaderModule,
-                                          VkShaderStageFlagBits shaderStageBit);
+    PipelineStateBuilder& setShaderModules(const std::vector<VkShaderModule>& shaderModules);
 
-    PipelineStateBuilder& setShaderModules(
-        const std::vector<VkShaderModule>& shaderModules);
-
-
-    PipelineStateBuilder& setVertextInfo(
-        const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
-        const std::vector<VkVertexInputAttributeDescription>&
-            attribDescriptions);
-    PipelineStateBuilder& setAssembly(
-        const VkPipelineInputAssemblyStateCreateInfo& assemblyInfo)
+    PipelineStateBuilder& setVertextInfo(const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
+                                         const std::vector<VkVertexInputAttributeDescription>& attribDescriptions);
+    PipelineStateBuilder& setAssembly(const VkPipelineInputAssemblyStateCreateInfo& assemblyInfo)
     {
         m_inputAssemblyInfo = assemblyInfo;
         return *this;
     }
-    PipelineStateBuilder& setViewport(const VkViewport& viewport,
-                                      const VkRect2D& scissor);
-    PipelineStateBuilder& setRasterizer(
-        const VkPipelineRasterizationStateCreateInfo& rasterizerInfo)
+    PipelineStateBuilder& setViewport(const VkViewport& viewport, const VkRect2D& scissor);
+    PipelineStateBuilder& setRasterizer(const VkPipelineRasterizationStateCreateInfo& rasterizerInfo)
     {
         m_rasterizerInfo = rasterizerInfo;
         return *this;
     }
-    PipelineStateBuilder& setMSAA(
-        const VkPipelineMultisampleStateCreateInfo& multisamplingInfo)
+    PipelineStateBuilder& setMSAA(const VkPipelineMultisampleStateCreateInfo& multisamplingInfo)
     {
         m_multisamplingInfo = multisamplingInfo;
         return *this;
     }
-    PipelineStateBuilder& setColorBlending(
-        const VkPipelineColorBlendStateCreateInfo& colorBlendState)
+    PipelineStateBuilder& setColorBlending(const VkPipelineColorBlendStateCreateInfo& colorBlendState)
     {
         m_colorBlendStateInfo = colorBlendState;
         return *this;
     }
-    PipelineStateBuilder& setDynamicStates(
-        const std::vector<VkDynamicState>& dynamicStates)
+    PipelineStateBuilder& setDynamicStates(const std::vector<VkDynamicState>& dynamicStates)
     {
-        m_dynamicStatesInfo.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        m_dynamicStatesInfo.dynamicStateCount =
-            static_cast<uint32_t>(dynamicStates.size());
+        m_dynamicStatesInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        m_dynamicStatesInfo.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         m_dynamicStatesInfo.pDynamicStates = dynamicStates.data();
         return *this;
     }
@@ -74,8 +60,7 @@ public:
         return *this;
     }
 
-    PipelineStateBuilder& setDepthStencil(
-        const VkPipelineDepthStencilStateCreateInfo& depthStencil)
+    PipelineStateBuilder& setDepthStencil(const VkPipelineDepthStencilStateCreateInfo& depthStencil)
     {
         m_depthStencilInfo = depthStencil;
         return *this;
@@ -111,7 +96,8 @@ private:
     VkPipelineColorBlendStateCreateInfo m_colorBlendStateInfo = {};
     VkPipelineLayout m_pipelineLayout;
     VkPipelineDepthStencilStateCreateInfo m_depthStencilInfo = {};
-    VkPipelineDynamicStateCreateInfo m_dynamicStatesInfo = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, nullptr, 0, 0, nullptr};
+    VkPipelineDynamicStateCreateInfo m_dynamicStatesInfo = {VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                                                            nullptr, 0, 0, nullptr};
     VkRenderPass mRenderPass = {};
     uint32_t mSubpassIndex = 0;
     VkPipelineRenderingCreateInfo mRenderingInfo = {};
@@ -153,7 +139,8 @@ public:
         m_info.layout = layout;
         return *this;
     }
-    ComputePipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage = VK_SHADER_STAGE_COMPUTE_BIT);
+    ComputePipelineBuilder& AddShaderModule(const VkShaderModule& shaderModule,
+                                            VkShaderStageFlagBits shaderStage = VK_SHADER_STAGE_COMPUTE_BIT);
 
 private:
     VkPipelineShaderStageCreateInfo m_shaderStageInfo = {};
@@ -181,14 +168,8 @@ public:
         return *this;
     }
 
-    std::vector<VkPipelineShaderStageCreateInfo> GetShaderStageInfos() const
-    {
-        return m_vShaderStageInfos;
-    }
-    std::vector<VkRayTracingShaderGroupCreateInfoKHR> GetShaderGroupInfos() const
-    {
-        return m_vRTShaderGroupInfos;
-    }
+    std::vector<VkPipelineShaderStageCreateInfo> GetShaderStageInfos() const { return m_vShaderStageInfos; }
+    std::vector<VkRayTracingShaderGroupCreateInfoKHR> GetShaderGroupInfos() const { return m_vRTShaderGroupInfos; }
 
 private:
     std::vector<VkPipelineShaderStageCreateInfo> m_vShaderStageInfos;
@@ -235,14 +216,12 @@ public:
     }
 };
 
-class RasterizationStateCIBuilder
-    : public InfoBuilder<VkPipelineRasterizationStateCreateInfo>
+class RasterizationStateCIBuilder : public InfoBuilder<VkPipelineRasterizationStateCreateInfo>
 {
 public:
     RasterizationStateCIBuilder()
     {
-        m_info.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        m_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         m_info.depthClampEnable = VK_FALSE;
         m_info.rasterizerDiscardEnable = VK_FALSE;
         m_info.polygonMode = VK_POLYGON_MODE_FILL;
@@ -278,8 +257,7 @@ public:
     // TODO: Add more builders if necessary
 };
 
-class MultisampleStateCIBuilder
-    : public InfoBuilder<VkPipelineMultisampleStateCreateInfo>
+class MultisampleStateCIBuilder : public InfoBuilder<VkPipelineMultisampleStateCreateInfo>
 {
 public:
     MultisampleStateCIBuilder()
@@ -295,8 +273,7 @@ public:
     // TODO: Create setters when necesssary
 };
 
-class BlendStateCIBuilder
-    : public InfoBuilder<VkPipelineColorBlendStateCreateInfo>
+class BlendStateCIBuilder : public InfoBuilder<VkPipelineColorBlendStateCreateInfo>
 {
 public:
     BlendStateCIBuilder()
@@ -334,9 +311,8 @@ private:
         if (bEnabled)
         {
             defaultBlendState.blendEnable = VK_TRUE;
-            defaultBlendState.colorWriteMask =
-                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            defaultBlendState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
             defaultBlendState.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
             defaultBlendState.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
             defaultBlendState.colorBlendOp = VK_BLEND_OP_ADD;
@@ -347,23 +323,20 @@ private:
         else
         {
             defaultBlendState.blendEnable = VK_FALSE;
-            defaultBlendState.colorWriteMask =
-                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            defaultBlendState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         }
         return defaultBlendState;
     }
     std::vector<VkPipelineColorBlendAttachmentState> blendAttachmentStates;
 };
 
-class InputAssemblyStateCIBuilder
-    : public InfoBuilder<VkPipelineInputAssemblyStateCreateInfo>
+class InputAssemblyStateCIBuilder : public InfoBuilder<VkPipelineInputAssemblyStateCreateInfo>
 {
 public:
     InputAssemblyStateCIBuilder()
     {
-        m_info.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        m_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         m_info.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         m_info.primitiveRestartEnable = false;
     }
@@ -379,14 +352,12 @@ public:
     }
 };
 
-class DepthStencilCIBuilder
-    : public InfoBuilder<VkPipelineDepthStencilStateCreateInfo>
+class DepthStencilCIBuilder : public InfoBuilder<VkPipelineDepthStencilStateCreateInfo>
 {
 public:
     DepthStencilCIBuilder()
     {
-        m_info.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        m_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         m_info.depthTestEnable = true;
         m_info.depthWriteEnable = true;
         m_info.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
@@ -415,10 +386,7 @@ public:
 class RenderPassBeginInfoBuilder : public InfoBuilder<VkRenderPassBeginInfo>
 {
 public:
-    RenderPassBeginInfoBuilder()
-    {
-        m_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    }
+    RenderPassBeginInfoBuilder() { m_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO; }
     RenderPassBeginInfoBuilder& setRenderPass(VkRenderPass renderPass)
     {
         m_info.renderPass = renderPass;
@@ -436,8 +404,7 @@ public:
         m_info.renderArea.extent = WH;
         return *this;
     }
-    RenderPassBeginInfoBuilder& setClearValues(
-        const std::vector<VkClearValue>& values)
+    RenderPassBeginInfoBuilder& setClearValues(const std::vector<VkClearValue>& values)
     {
         m_info.clearValueCount = static_cast<uint32_t>(values.size());
         m_info.pClearValues = values.data();

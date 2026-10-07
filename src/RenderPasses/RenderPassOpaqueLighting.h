@@ -6,28 +6,23 @@ namespace Muyo
 {
 class RenderPassOpaqueLighting : public RenderPass
 {
-    public:
-        RenderPassOpaqueLighting(const VkExtent2D renderArea, const ShadowPassManager& shadowPassManager) : m_renderArea(renderArea), m_shadowPassManager(shadowPassManager){};
-        ~RenderPassOpaqueLighting()
-        {
-            vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr);
-        }
+public:
+    RenderPassOpaqueLighting(const VkExtent2D renderArea, const ShadowPassManager& shadowPassManager)
+        : m_renderArea(renderArea), m_shadowPassManager(shadowPassManager){};
+    ~RenderPassOpaqueLighting() { vkDestroyPipeline(GetRenderDevice()->GetDevice(), m_pipeline, nullptr); }
 
-        void PrepareRenderPass() override;
-        void CreatePipeline() override;
+    void PrepareRenderPass() override;
+    void CreatePipeline() override;
 
-        void RecordCommandBuffers();
+    void RecordCommandBuffers();
 
-        VkCommandBuffer GetCommandBuffer() const override
-        {
-            return m_commandBuffer;
-        }
+    VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
-    private:
-        VkExtent2D m_renderArea = {0, 0};
-        VkPipeline m_pipeline = VK_NULL_HANDLE;
-        VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
+private:
+    VkExtent2D m_renderArea = {0, 0};
+    VkPipeline m_pipeline = VK_NULL_HANDLE;
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;
 
-        const ShadowPassManager& m_shadowPassManager;
+    const ShadowPassManager& m_shadowPassManager;
 };
-}
+}  // namespace Muyo

@@ -7,10 +7,7 @@ namespace Muyo
 class RenderPassSkybox : public RenderPass
 {
 public:
-    RenderPassSkybox(VkExtent2D imageSize)
-    {
-        m_renderPassParameters.SetRenderArea(imageSize);
-    }
+    RenderPassSkybox(VkExtent2D imageSize) { m_renderPassParameters.SetRenderArea(imageSize); }
     void PrepareRenderPass() override;
 
     RenderPassSkybox();

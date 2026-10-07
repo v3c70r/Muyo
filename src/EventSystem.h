@@ -37,26 +37,19 @@ public:
 };
 
 // timestamp, key, modifier and state
-typedef GlobalEvent<EventType::KEY, uint32_t, Input::Key, uint16_t, EventState>
-    GlobalKeyEvent;
+typedef GlobalEvent<EventType::KEY, uint32_t, Input::Key, uint16_t, EventState> GlobalKeyEvent;
 
-typedef GlobalEvent<EventType::CHAR, uint32_t, unsigned int>
-    GlobalCharEvent;
+typedef GlobalEvent<EventType::CHAR, uint32_t, unsigned int> GlobalCharEvent;
 
-typedef GlobalEvent<EventType::MOUSEBUTTON, uint32_t, Input::Button, EventState>
-    GlobalButtonEvent;
+typedef GlobalEvent<EventType::MOUSEBUTTON, uint32_t, Input::Button, EventState> GlobalButtonEvent;
 
-typedef GlobalEvent<EventType::MOUSEMOTION, uint32_t, float, float>
-    GlobalMotionEvent;
+typedef GlobalEvent<EventType::MOUSEMOTION, uint32_t, float, float> GlobalMotionEvent;
 
-typedef GlobalEvent<EventType::MOUSEWHEEL, uint32_t, float, float>
-    GlobalWheelEvent;
+typedef GlobalEvent<EventType::MOUSEWHEEL, uint32_t, float, float> GlobalWheelEvent;
 
-typedef GlobalEvent<EventType::WINDOWRESIZE, uint32_t, size_t, size_t>
-    GlobalResizeEvent;
+typedef GlobalEvent<EventType::WINDOWRESIZE, uint32_t, size_t, size_t> GlobalResizeEvent;
 
-typedef GlobalEvent<EventType::CURSORSET, uint32_t, Input::Cursor>
-    GlobalCursorSetEvent;
+typedef GlobalEvent<EventType::CURSORSET, uint32_t, Input::Cursor> GlobalCursorSetEvent;
 
 class EventSystem
 {
@@ -72,10 +65,10 @@ public:
     template <EventType ET, typename T>
     std::shared_ptr<T> globalEvent()
     {
-        std::shared_ptr<T> event = m_Events.find(ET) != m_Events.end() ? std::static_pointer_cast<T>(m_Events.at(ET)) : nullptr;
+        std::shared_ptr<T> event =
+            m_Events.find(ET) != m_Events.end() ? std::static_pointer_cast<T>(m_Events.at(ET)) : nullptr;
 
-        if (event == nullptr)
-            event = std::make_shared<T>();
+        if (event == nullptr) event = std::make_shared<T>();
         m_Events[ET] = event;
         return event;
     }

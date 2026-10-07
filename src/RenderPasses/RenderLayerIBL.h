@@ -17,10 +17,7 @@ public:
     void DestroyFramebuffer();
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
 
-    VkCommandBuffer GetCommandBuffer() const override
-    {
-        return m_commandBuffer;
-    }
+    VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
 
 private:  // Methods
     void setupRenderPass();
@@ -73,14 +70,11 @@ private:
         RENDERPASS_COUNT
     };
 
-    std::array<VkFramebuffer, RENDERPASS_COUNT> m_aFramebuffers = {
-        VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE};
+    std::array<VkFramebuffer, RENDERPASS_COUNT> m_aFramebuffers = {VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                                                                   VK_NULL_HANDLE};
 
-    const std::array<uint32_t, RENDERPASS_COUNT> m_aCubemapSizes = {
-        ENV_CUBE_DIM,
-        IRR_CUBE_DIM,
-        PREFILTERED_CUBE_DIM,
-        SPECULAR_BRDF_LUT_DIM};
+    const std::array<uint32_t, RENDERPASS_COUNT> m_aCubemapSizes = {ENV_CUBE_DIM, IRR_CUBE_DIM, PREFILTERED_CUBE_DIM,
+                                                                    SPECULAR_BRDF_LUT_DIM};
 
     const std::array<std::string, RENDERPASS_COUNT> m_aRenderPassNames = {
         "Load cubemap", "Compute irradiance cubemap", "Compute prefiltered cubmap", "Compute specular brdf lut"};

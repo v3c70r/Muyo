@@ -3,6 +3,7 @@
 #include <cassert>
 #include <iostream>
 #include <ostream>
+
 #include "VkRenderDevice.h"
 
 namespace Muyo
@@ -29,28 +30,17 @@ class Modifier
 
 public:
     Modifier(Code pCode) : code(pCode) {}
-    friend std::ostream& operator<<(std::ostream& os, const Modifier& mod)
-    {
-        return os << "\033[" << mod.code << "m";
-    }
+    friend std::ostream& operator<<(std::ostream& os, const Modifier& mod) { return os << "\033[" << mod.code << "m"; }
 };
 }  // namespace Color
 
 static const char* VALIDATE_EXTENSION = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-const char* GetValidationExtensionName()
-{
-    return VALIDATE_EXTENSION;
-}
+const char* GetValidationExtensionName() { return VALIDATE_EXTENSION; }
 
-const char* GetValidationLayerName()
-{
-    return "VK_LAYER_KHRONOS_validation";
-}
+const char* GetValidationLayerName() { return "VK_LAYER_KHRONOS_validation"; }
 
-static VkBool32 DebugCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT,
-    const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
+static VkBool32 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT,
+                              const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void*)
 {
     Color::Modifier red(Color::FG_RED);
     Color::Modifier normal(Color::BG_DEFAULT);
@@ -68,39 +58,32 @@ static VkBool32 DebugCallback(
             std::cerr << "CmdBuffer: " << pCallbackData->pCmdBufLabels[i].pLabelName << std::endl;
         }
 
-        std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << normal
-                  << std::endl;
+        std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << normal << std::endl;
         assert(0 && "Vulkan Error");
     }
     else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
     {
-        std::cerr << yellow << "[WARNING]:" << pCallbackData->pMessage << normal
-                  << std::endl;
+        std::cerr << yellow << "[WARNING]:" << pCallbackData->pMessage << normal << std::endl;
     }
 
     return VK_FALSE;
 }
 
 // Call add callback by query the extension
-VkResult CreateDebugUtilsMessenger(
-    VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-    const VkAllocationCallbacks* pAllocator,
-    VkDebugUtilsMessengerEXT* pCallback)
+VkResult CreateDebugUtilsMessenger(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
+                                   const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pCallback)
 {
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-        instance, "vkCreateDebugUtilsMessengerEXT");
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
     if (func != nullptr)
         return func(instance, pCreateInfo, pAllocator, pCallback);
     else
         return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
-void destroyDebugUtilsMessenger(VkInstance instance,
-                                VkDebugUtilsMessengerEXT callback,
+void destroyDebugUtilsMessenger(VkInstance instance, VkDebugUtilsMessengerEXT callback,
                                 const VkAllocationCallbacks* pAllocator)
 {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
-        instance, "vkDestroyDebugUtilsMessengerEXT");
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
     if (func != nullptr)
     {
         func(instance, callback, pAllocator);
@@ -112,15 +95,15 @@ void DebugUtilsMessenger::Initialize(const VkInstance& instance)
     VkDebugUtilsMessengerCreateInfoEXT createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
 
-    createInfo.messageType =
-        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.messageSeverity =
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
     createInfo.pfnUserCallback = DebugCallback;
 
-    assert(CreateDebugUtilsMessenger(
-               instance, &createInfo, nullptr,
-               &m_debugUtilsMessenger) == VK_SUCCESS);
+    assert(CreateDebugUtilsMessenger(instance, &createInfo, nullptr, &m_debugUtilsMessenger) == VK_SUCCESS);
 }
 
 void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
@@ -130,8 +113,7 @@ void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
 
 // Debug Utils markers
 // // Call add callback by query the extension
-VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
-                                 const std::string& sName)
+VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType, const std::string& sName)
 {
     // Set debug name for the pipeline
     VkDebugUtilsObjectNameInfoEXT info;
@@ -141,8 +123,8 @@ VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
     info.objectType = objectType;
     info.objectHandle = objectHandle;
 
-    auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(
-        GetRenderDevice()->GetInstance(), "vkSetDebugUtilsObjectNameEXT");
+    auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(GetRenderDevice()->GetInstance(),
+                                                                        "vkSetDebugUtilsObjectNameEXT");
     if (func != nullptr)
         return func(GetRenderDevice()->GetDevice(), &info);
     else
@@ -159,15 +141,15 @@ void beginMarker(VkQueue queue, std::string&& name, uint64_t)
     // Note: the function pointer is re-resolved on every call. Caching it in a static binds it to
     // the device that happened to be current the first time and goes stale if the device is
     // recreated (which tests do per case).
-    auto func = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
-        GetRenderDevice()->GetDevice(), "vkQueueBeginDebugUtilsLabelEXT");
+    auto func = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
+                                                                        "vkQueueBeginDebugUtilsLabelEXT");
     if (func != nullptr) func(queue, &labelInfo);
 }
 
 void endMarker(VkQueue queue)
 {
-    auto func = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
-        GetRenderDevice()->GetDevice(), "vkQueueEndDebugUtilsLabelEXT");
+    auto func = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
+                                                                      "vkQueueEndDebugUtilsLabelEXT");
     if (func != nullptr) func(queue);
 }
 
@@ -178,21 +160,18 @@ void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t)
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = name.data();
 
-    auto func = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(
-        GetRenderDevice()->GetDevice(), "vkCmdBeginDebugUtilsLabelEXT");
+    auto func = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
+                                                                      "vkCmdBeginDebugUtilsLabelEXT");
     if (func != nullptr) func(cmd, &labelInfo);
 }
 
 void endMarker(VkCommandBuffer cmd)
 {
-    auto func = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(
-        GetRenderDevice()->GetDevice(), "vkCmdEndDebugUtilsLabelEXT");
+    auto func = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
+                                                                    "vkCmdEndDebugUtilsLabelEXT");
     if (func != nullptr) func(cmd);
 }
 
-void VK_ASSERT(VkResult result)
-{
-    assert(result == VK_SUCCESS);
-}
+void VK_ASSERT(VkResult result) { assert(result == VK_SUCCESS); }
 
 }  // namespace Muyo

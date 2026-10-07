@@ -9,8 +9,8 @@
 #include <utility>
 #include <vector>
 
-#include "RenderGraph/ResourceUseResolver.h"
 #include "PipelineStateBuilder.h"
+#include "RenderGraph/ResourceUseResolver.h"
 #include "ShaderReflectionFetcher.h"
 #include "VkExtFuncsLoader.h"
 #include "vulkan/vulkan_core.h"
@@ -39,10 +39,7 @@ VkImageAspectFlags AspectForFormat(VkFormat format)
     return VK_IMAGE_ASPECT_COLOR_BIT;
 }
 
-uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment)
-{
-    return (nSize + nAlignment - 1) / nAlignment * nAlignment;
-}
+uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment) { return (nSize + nAlignment - 1) / nAlignment * nAlignment; }
 }  // namespace
 
 namespace Muyo::RenderGraph
@@ -100,7 +97,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
     result.async = rgn.async;
     result.queueType = rgn.queueType;
     result.isRayTracing = (rgn.queueType == QueueType::RAY_TRACING);
-    result.bindingPoint = (rgn.queueType == QueueType::COMPUTE)  ? VK_PIPELINE_BIND_POINT_COMPUTE
+    result.bindingPoint = (rgn.queueType == QueueType::COMPUTE)       ? VK_PIPELINE_BIND_POINT_COMPUTE
                           : (rgn.queueType == QueueType::RAY_TRACING) ? VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR
                                                                       : VK_PIPELINE_BIND_POINT_GRAPHICS;
 
@@ -200,12 +197,13 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         {
             if (resourceUse.usage == ResourceUsage::COLOR_ATTACHMENT)
             {
-                colorAttachmentFormats.push_back(resourceUse.format != VK_FORMAT_UNDEFINED ? resourceUse.format
-                                                                                          : VK_FORMAT_R16G16B16A16_SFLOAT);
+                colorAttachmentFormats.push_back(
+                    resourceUse.format != VK_FORMAT_UNDEFINED ? resourceUse.format : VK_FORMAT_R16G16B16A16_SFLOAT);
             }
             else if (resourceUse.usage == ResourceUsage::DEPTH_STENCIL_ATTACHMENT)
             {
-                depthAttachmentFormat = resourceUse.format != VK_FORMAT_UNDEFINED ? resourceUse.format : VK_FORMAT_D32_SFLOAT;
+                depthAttachmentFormat =
+                    resourceUse.format != VK_FORMAT_UNDEFINED ? resourceUse.format : VK_FORMAT_D32_SFLOAT;
             }
         }
 
@@ -235,7 +233,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
             pipelineInfo.stage = stageInfo;
             pipelineInfo.layout = result.pipelineLayout;
-            VK_ASSERT(vkCreateComputePipelines(m_vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &result.pipeline));
+            VK_ASSERT(
+                vkCreateComputePipelines(m_vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &result.pipeline));
         }
         else if (rgn.queueType == QueueType::RAY_TRACING)
         {
@@ -258,7 +257,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
 }
 
 void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
-                                                      const ShaderReflection& mergedReflection)
+                                                       const ShaderReflection& mergedReflection)
 {
     if (mergedReflection.descriptorBindings.empty()) return;
 
@@ -400,8 +399,8 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     VK_ASSERT(VkExt::vkGetRayTracingShaderGroupHandlesKHR(m_vkDevice, rgn.pipeline, 0, nHandleCount, handles.size(),
                                                           handles.data()));
 
-    ShaderBindingTableBuffer* pSBT = GetRenderResourceManager()->GetShaderBindingTableBuffer(
-        "SBT_" + logicalNode.name, sbtSize);
+    ShaderBindingTableBuffer* pSBT =
+        GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT_" + logicalNode.name, sbtSize);
     const VkDeviceAddress sbtAddress = GetRenderDevice()->GetBufferDeviceAddress(pSBT->buffer());
     rgenRegion.deviceAddress = sbtAddress;
     missRegion.deviceAddress = sbtAddress + rgenRegion.size;
@@ -420,7 +419,8 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
 
     if (m_renderGraphNodes.find(nodeName) != m_renderGraphNodes.end())
     {
-        throw std::runtime_error("Node with name '" + nodeCreateInfo.nodeName + "' already exists in the render graph.");
+        throw std::runtime_error("Node with name '" + nodeCreateInfo.nodeName +
+                                 "' already exists in the render graph.");
     }
 
     m_renderGraphNodes[nodeName] = {.name = nodeName};
@@ -648,7 +648,8 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
     vkCmdBeginRendering(cmdBuf, &renderingInfo);
 
     // Viewport / scissor from the render area.
-    VkViewport viewport = {0.0F, 0.0F, static_cast<float>(renderArea.width), static_cast<float>(renderArea.height), 0.0F, 1.0F};
+    VkViewport viewport = {0.0F, 0.0F, static_cast<float>(renderArea.width), static_cast<float>(renderArea.height),
+                           0.0F, 1.0F};
     VkRect2D scissor = {{0, 0}, renderArea};
     vkCmdSetViewport(cmdBuf, 0, 1, &viewport);
     vkCmdSetScissor(cmdBuf, 0, 1, &scissor);
@@ -664,8 +665,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
 
     // Conservative stage masks: use ALL_COMMANDS so any prior stage is flushed and any later stage is blocked.
     // HOST must be included explicitly so CPU-written (host-visible) buffers with HOST_WRITE srcAccess are valid.
-    const VkPipelineStageFlags2 srcStageMask =
-        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+    const VkPipelineStageFlags2 srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
     const VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
     for (const auto& use : resourceUses)
@@ -696,8 +696,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         // A barrier is also required whenever either side of the transition is a write: with the
         // same declared usage the access mask and layout are identical, yet a WAW/WAR hazard remains.
         const bool bHazard = state.lastIo != ResourceIOType::READ || use.io != ResourceIOType::READ;
-        const bool needsBarrier = bAcquire || fromCpu || !state.seen ||
-                                  (state.lastAccess != use.access) ||
+        const bool needsBarrier = bAcquire || fromCpu || !state.seen || (state.lastAccess != use.access) ||
                                   (state.lastLayout != use.imageLayout) || bHazard;
 
         if (use.kind == ResourceKind::IMAGE)

@@ -14,7 +14,7 @@ public:
         m_pPerObjDataGPU = GetRenderResourceManager()->GetStorageBuffer("PerObjData", m_vPerObjDataCPU);
         m_bUploaded = true;
     }
-    bool HasUploaded() const {return m_bUploaded;}
+    bool HasUploaded() const { return m_bUploaded; }
     const StorageBuffer<PerObjData>* GetPerObjResource()
     {
         assert(m_bUploaded);
@@ -23,9 +23,9 @@ public:
 
 private:
     std::vector<PerObjData> m_vPerObjDataCPU;
-    StorageBuffer<PerObjData> *m_pPerObjDataGPU = nullptr;
+    StorageBuffer<PerObjData>* m_pPerObjDataGPU = nullptr;
 
     bool m_bUploaded = false;
 };
-PerObjResourceManager *GetPerObjResourceManager();
+PerObjResourceManager* GetPerObjResourceManager();
 }  // namespace Muyo

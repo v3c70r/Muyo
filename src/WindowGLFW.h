@@ -17,10 +17,7 @@ static GLFWwindow *s_pWindow = nullptr;
 static GLFWcursor *s_pCursors[Input::Cursor::CURSOR_COUNT];
 
 // get time in milliseconds
-static inline uint32_t Time()
-{
-    return (glfwGetTimerValue() * 1000) / glfwGetTimerFrequency();
-}
+static inline uint32_t Time() { return (glfwGetTimerValue() * 1000) / glfwGetTimerFrequency(); }
 
 /// event handlers
 static Input::Key GetEditKey(int key)
@@ -76,8 +73,7 @@ static Input::Key GetFunctionKey(int key)
     }
 }
 
-static void KeyStrokeCallback(GLFWwindow *window, int key, int scancode,
-                              int action, int mods)
+static void KeyStrokeCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {
     auto pKeyEvent = EventSystem::sys()->globalEvent<EventType::KEY, GlobalKeyEvent>();
     EventState state = (action == GLFW_PRESS) ? EventState::PRESSED : EventState::RELEASED;
@@ -85,14 +81,10 @@ static void KeyStrokeCallback(GLFWwindow *window, int key, int scancode,
     Input::Key press = Input::Key::KEY_UNKNOWN;
 
     // get mod
-    if (mods & GLFW_MOD_ALT)
-        modifiers |= Input::MOD_ALT;
-    if (mods & GLFW_MOD_SHIFT)
-        modifiers |= Input::MOD_SHIFT;
-    if (mods & GLFW_MOD_CONTROL)
-        modifiers |= Input::MOD_CTRL;
-    if (mods & GLFW_MOD_SUPER)
-        modifiers |= Input::MOD_META;
+    if (mods & GLFW_MOD_ALT) modifiers |= Input::MOD_ALT;
+    if (mods & GLFW_MOD_SHIFT) modifiers |= Input::MOD_SHIFT;
+    if (mods & GLFW_MOD_CONTROL) modifiers |= Input::MOD_CTRL;
+    if (mods & GLFW_MOD_SUPER) modifiers |= Input::MOD_META;
 
     if ((press = GetEditKey(key)) != Input::KEY_UNKNOWN)
         pKeyEvent->Emit(Time(), press, modifiers, state);
@@ -106,8 +98,7 @@ static void CharCallback(GLFWwindow *window, unsigned int c)
     pCharEvent->Emit(Time(), c);
 }
 
-static void ScrollCallback(GLFWwindow *window, double xoffset,
-                           double yoffset)
+static void ScrollCallback(GLFWwindow *window, double xoffset, double yoffset)
 {
     auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
     pWheel->Emit(Time(), xoffset, yoffset);
@@ -139,14 +130,12 @@ static void MouseCallback(GLFWwindow *window, int button, int action, int mods)
         default:
             break;
     }
-    if (btn != Input::Button::BUTTON_COUNT)
-        pPress->Emit(Time(), btn, state);
+    if (btn != Input::Button::BUTTON_COUNT) pPress->Emit(Time(), btn, state);
 }
 
 static void CursorSetCallback(uint32_t timestamp, Input::Cursor cursor)
 {
-    if (cursor == Input::Cursor::CURSOR_NONE ||
-        glfwGetInputMode(s_pWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
+    if (cursor == Input::Cursor::CURSOR_NONE || glfwGetInputMode(s_pWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
     {
         glfwSetInputMode(s_pWindow, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
     }
@@ -166,28 +155,19 @@ static void InitCursors()
     // _UpdateMouseCursor() function will use the Arrow cursor instead.)
 
     GLFWerrorfun prev_error_callback = glfwSetErrorCallback(NULL);
-    s_pCursors[Input::Cursor::CURSOR_ARROW] =
-        glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-    s_pCursors[Input::Cursor::CURSOR_TEXT_INPUT] =
-        glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
-    s_pCursors[Input::Cursor::CURSOR_RESIZE_VERTICAL] =
-        glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
-    s_pCursors[Input::Cursor::CURSOR_RESIZE_HORIZENTAL] =
-        glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_ARROW] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_TEXT_INPUT] = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_VERTICAL] = glfwCreateStandardCursor(GLFW_VRESIZE_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_HORIZENTAL] = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
 #if GLFW_HAS_NEW_CURSORS
-    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_LEFT] =
-        glfwCreateStandardCursor(GLFW_RESIZE_NEWS_CURSOR);
-    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_RIGHT] =
-        glfwCreateStandardCursor(GLFW_RESIZE_NWSE_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_LEFT] = glfwCreateStandardCursor(GLFW_RESIZE_NEWS_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_RIGHT] = glfwCreateStandardCursor(GLFW_RESIZE_NWSE_CURSOR);
 #else
-    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_LEFT] =
-        glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
-    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_RIGHT] =
-        glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_LEFT] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_RESIZE_BOTTOM_RIGHT] = glfwCreateStandardCursor(GLFW_ARROW_CURSOR);
 
 #endif
-    s_pCursors[Input::Cursor::CURSOR_HAND] =
-        glfwCreateStandardCursor(GLFW_HAND_CURSOR);
+    s_pCursors[Input::Cursor::CURSOR_HAND] = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
 
     auto pCursor = EventSystem::sys()->globalEvent<EventType::CURSORSET, GlobalCursorSetEvent>();
     pCursor->Watch(CursorSetCallback);
@@ -236,10 +216,7 @@ static void Uninitialize()
     glfwTerminate();
 }
 
-static bool ShouldQuit()
-{
-    return glfwWindowShouldClose(_GLFW::s_pWindow);
-}
+static bool ShouldQuit() { return glfwWindowShouldClose(_GLFW::s_pWindow); }
 
 static void ProcessEvents()
 {
@@ -254,12 +231,9 @@ static std::pair<int, int> GetWindowSize()
     return std::make_pair(w, h);
 }
 
-static void GetFramebufferSize(int &w, int &h)
-{
-    glfwGetFramebufferSize(_GLFW::s_pWindow, &w, &h);
-}
+static void GetFramebufferSize(int &w, int &h) { glfwGetFramebufferSize(_GLFW::s_pWindow, &w, &h); }
 
-static size_t GetVulkanInstanceExtensions(std::vector<const char*> &vExtensions)
+static size_t GetVulkanInstanceExtensions(std::vector<const char *> &vExtensions)
 {
     uint32_t count = 0;
     const char **extensions;
@@ -280,4 +254,3 @@ static VkSurfaceKHR GetVulkanSurface(VkInstance &instance)
 }
 
 }  // namespace Window
-

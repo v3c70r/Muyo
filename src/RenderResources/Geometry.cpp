@@ -9,8 +9,5 @@ namespace Muyo
 {
 
 static GeometryManager s_geometryManager;
-GeometryManager *GetGeometryManager()
-{
-    return &s_geometryManager;
-}
+GeometryManager *GetGeometryManager() { return &s_geometryManager; }
 }  // namespace Muyo

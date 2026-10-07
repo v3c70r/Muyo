@@ -18,17 +18,14 @@ static DescriptorManager descriptorManager;
 VkDescriptorSetLayout DescriptorManager::AllocateDescriptorSetLayout(
     const std::vector<VkDescriptorSetLayoutBinding>& bindings)
 {
-    VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .bindingCount = static_cast<uint32_t>(bindings.size()),
-        .pBindings = bindings.data()
-    };
+    VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+                                                        .pNext = nullptr,
+                                                        .flags = 0,
+                                                        .bindingCount = static_cast<uint32_t>(bindings.size()),
+                                                        .pBindings = bindings.data()};
 
     VkDescriptorSetLayout layout;
-    VK_ASSERT(
-            vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &layoutCreateInfo, nullptr, &layout));
+    VK_ASSERT(vkCreateDescriptorSetLayout(GetRenderDevice()->GetDevice(), &layoutCreateInfo, nullptr, &layout));
     return layout;
 }
 
@@ -46,12 +43,10 @@ void DescriptorManager::FreeDescriptorSet(VkDescriptorSet descriptorSet)
 VkDescriptorSet DescriptorManager::AllocateDescriptorSet(VkDescriptorSetLayout layout)
 {
     // Create descriptor sets
-    VkDescriptorSetAllocateInfo allocInfo = {
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-        .descriptorPool = m_descriptorPool,
-        .descriptorSetCount = 1,
-        .pSetLayouts = &layout
-    };
+    VkDescriptorSetAllocateInfo allocInfo = {.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+                                             .descriptorPool = m_descriptorPool,
+                                             .descriptorSetCount = 1,
+                                             .pSetLayouts = &layout};
     VkDescriptorSet descSet = VK_NULL_HANDLE;
     VK_ASSERT(vkAllocateDescriptorSets(GetRenderDevice()->GetDevice(), &allocInfo, &descSet));
     return descSet;

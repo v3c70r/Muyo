@@ -66,7 +66,8 @@ public:
         {
             samplerInfo.maxLod = powf(2, static_cast<float>(i));
             VK_ASSERT(vkCreateSampler(GetRenderDevice()->GetDevice(), &samplerInfo, nullptr, &m_aSamplers[i]));
-            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aSamplers[i]), VK_OBJECT_TYPE_SAMPLER, "Frame Sampler");
+            setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aSamplers[i]), VK_OBJECT_TYPE_SAMPLER,
+                                    "Frame Sampler");
         }
     }
     void destroySamplers()

@@ -19,8 +19,7 @@ private:
 const char* GetValidationExtensionName();
 const char* GetValidationLayerName();
 
-VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
-                                 const std::string& sName);
+VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType, const std::string& sName);
 
 // Scoped markers
 void beginMarker(VkQueue queue, std::string&& name, uint64_t color);
@@ -39,10 +38,7 @@ public:
         m_markedVkObject = vkObj;
         beginMarker(vkObj, std::forward<std::string>(marker), uint64_t(0));
     }
-    ~ScopedMarker()
-    {
-        endMarker(m_markedVkObject);
-    }
+    ~ScopedMarker() { endMarker(m_markedVkObject); }
 
 private:
     T m_markedVkObject = VK_NULL_HANDLE;
@@ -56,7 +52,4 @@ void VK_ASSERT(VkResult result);
 #define TOKENPASTE(x, y) x##y
 #define TOKENPASTE2(x, y) TOKENPASTE(x, y)
 
-#define SCOPED_MARKER(OBJ, MESSAGE) \
-    auto TOKENPASTE2(scoped_marker_, __LINE__) = ScopedMarker(OBJ, MESSAGE)
-
-
+#define SCOPED_MARKER(OBJ, MESSAGE) auto TOKENPASTE2(scoped_marker_, __LINE__) = ScopedMarker(OBJ, MESSAGE)

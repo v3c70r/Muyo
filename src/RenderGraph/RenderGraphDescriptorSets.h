@@ -102,9 +102,8 @@ public:
     /// Destroy the semantic set layouts owned by this instance.
     ~RenderGraphDescriptorSets()
     {
-        for (const ResourceBindingSemantic semantic : {ResourceBindingSemantic::PER_VIEW,
-                                                       ResourceBindingSemantic::PER_OBJ,
-                                                       ResourceBindingSemantic::MATERIAL})
+        for (const ResourceBindingSemantic semantic :
+             {ResourceBindingSemantic::PER_VIEW, ResourceBindingSemantic::PER_OBJ, ResourceBindingSemantic::MATERIAL})
         {
             m_descManager.DestroyDescriptorSetLayout(m_descriptorSetLayouts[semantic]);
         }

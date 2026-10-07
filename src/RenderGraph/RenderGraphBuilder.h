@@ -39,8 +39,8 @@ struct RenderGraphNodeCreateInfo
     /// async compute queue and run concurrently with the graphics queue. Without it the node is
     /// recorded on the graphics queue, so no cross-queue synchronization is generated for it.
     bool async = false;
-    std::vector<ResourceUse> resourceUses;      ///< Resources the node reads/writes.
-    std::vector<std::string> shaderNames;       ///< Shader names for graphics (vert+frag) or compute.
+    std::vector<ResourceUse> resourceUses;  ///< Resources the node reads/writes.
+    std::vector<std::string> shaderNames;   ///< Shader names for graphics (vert+frag) or compute.
     /// Ray tracing only: ray generation / miss / closest-hit shader names, in that order.
     /// When queueType == RAY_TRACING these are compiled into a ray tracing pipeline (with a
     /// graph-managed shader binding table) and the node automatically issues vkCmdTraceRaysKHR
@@ -48,11 +48,11 @@ struct RenderGraphNodeCreateInfo
     /// explicit DescriptorBinding (reflection-derived set/binding), so a node can bind the TLAS,
     /// storage images and uniform buffers it declares.
     std::vector<std::string> rtShaderNames;
-    PSODesc psoDesc = {};                       ///< Graphics pipeline state (ignored for compute/RT).
-    uint32_t costHint = 1;                      ///< Reserved for the future scheduler.
+    PSODesc psoDesc = {};   ///< Graphics pipeline state (ignored for compute/RT).
+    uint32_t costHint = 1;  ///< Reserved for the future scheduler.
     /// Optional clear values for the node's attachments, in attachment declaration order.
     std::vector<VkClearValue> attachmentClearValues;
-    RenderGraphNodeCallback execute;            ///< Records the node's work.
+    RenderGraphNodeCallback execute;  ///< Records the node's work.
 };
 
 /// Declares and runs a render graph.
@@ -166,8 +166,8 @@ private:
         bool seen = false;
         VkAccessFlags2 lastAccess = 0;
         VkImageLayout lastLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        ResourceIOType lastIo = ResourceIOType::READ;  // previous access direction (WAW/WAR hazards)
-        bool writtenByCpu = false;  // last writer was a CPU node; needs host flush
+        ResourceIOType lastIo = ResourceIOType::READ;    // previous access direction (WAW/WAR hazards)
+        bool writtenByCpu = false;                       // last writer was a CPU node; needs host flush
         uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;  // queue family that currently owns the resource
         // Set before recording a queue segment when the resource is handed over from another queue
         // family; consumed by RecordBarriers to emit an acquire barrier instead of a normal one.

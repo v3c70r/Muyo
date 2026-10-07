@@ -40,8 +40,7 @@ void MaterialManager::CreateDefaultMaterial()
         Material &material = GetOrCreateMaterial(sDefaultName);
 
         PBRMaterial pbrMaterial;
-        material
-            .SetMaterialParameterFactors(pbrMaterial, sDefaultName)
+        material.SetMaterialParameterFactors(pbrMaterial, sDefaultName)
             .LoadTexture(Material::TEX_ALBEDO, "assets/Materials/white5x5.png", "defaultAlbedo")
             .LoadTexture(Material::TEX_METALNESS, "assets/Materials/white5x5.png", "defaultMetalness")
             .LoadTexture(Material::TEX_NORMAL, "assets/Materials/white5x5.png", "defaultNormal")
@@ -50,7 +49,6 @@ void MaterialManager::CreateDefaultMaterial()
             .LoadTexture(Material::TEX_EMISSIVE, "assets/Materials/white5x5.png", "defaultOcclusion");
         material.AllocateDescriptorSet();
     }
-    
 }
 
 void MaterialManager::UploadMaterialBuffer() const
@@ -58,7 +56,7 @@ void MaterialManager::UploadMaterialBuffer() const
     GetRenderResourceManager()->GetStorageBuffer(sMaterialBufferName, m_vMaterialBufferCPU);
 }
 
-const StorageBuffer<PBRMaterial>* MaterialManager::GetMaterialBuffer() const
+const StorageBuffer<PBRMaterial> *MaterialManager::GetMaterialBuffer() const
 {
     return GetRenderResourceManager()->GetResource<StorageBuffer<PBRMaterial>>(sMaterialBufferName);
 }
@@ -71,10 +69,7 @@ void MaterialManager::RefreshGPUResources()
     }
 }
 
-MaterialManager *GetMaterialManager()
-{
-    return &s_materialManager;
-}
+MaterialManager *GetMaterialManager() { return &s_materialManager; }
 
 Material &Material::LoadTexture(TextureType type, const std::string &path, const std::string &name)
 {
@@ -94,7 +89,7 @@ Material &Material::SetMaterialParameterFactors(const PBRMaterial &factors, cons
     pUniformBuffer->SetData(factors);
     m_materialParameters.m_pFactors = pUniformBuffer;
 
-    PBRMaterial& material = GetMaterialManager()->m_vMaterialBufferCPU[m_nMaterialIndex];
+    PBRMaterial &material = GetMaterialManager()->m_vMaterialBufferCPU[m_nMaterialIndex];
     material.vBaseColorFactors = factors.vBaseColorFactors;
     material.fRoughness = factors.fRoughness;
     material.fMetalness = factors.fMetalness;
@@ -112,9 +107,6 @@ void Material::AllocateDescriptorSet()
     }
 }
 
-VkDescriptorSet Material::GetDescriptorSet() const
-{
-    return m_descriptorSet;
-}
+VkDescriptorSet Material::GetDescriptorSet() const { return m_descriptorSet; }
 
 }  // namespace Muyo

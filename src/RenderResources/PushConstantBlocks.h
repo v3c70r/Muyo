@@ -18,8 +18,7 @@ struct SingleFloatPushConstant
 };
 
 template <class T>
-VkPushConstantRange GetPushConstantRange(
-    VkShaderStageFlagBits stageFlags = VK_SHADER_STAGE_ALL)
+VkPushConstantRange GetPushConstantRange(VkShaderStageFlagBits stageFlags = VK_SHADER_STAGE_ALL)
 {
     VkPushConstantRange pushConstantRange;
     pushConstantRange.stageFlags = stageFlags;
