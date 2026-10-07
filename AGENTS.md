@@ -290,7 +290,12 @@ been reproduced on the merged content.
   layout, never assume it" rather than "trust the specification order".
 - The development GPU exposes a **dedicated compute queue family** (graphics family 0, compute
   family 1), so the async-compute path and queue-family ownership transfers are exercised for real.
-  A machine without one will silently take the single-queue path.
+  This depends on the driver initialising: when it does not, Vulkan silently falls back to a software
+  device (llvmpipe) with a single family and **nothing about the transfer path is validated** - a
+  green run looks identical either way. `GraphicsTestEnv` prints a `[test device] ...` line each run
+  saying which case it was, so read that line before treating a green run as evidence about
+  transfers. A machine with one queue family takes the single-queue path, which is a legitimate
+  configuration rather than a failure, but it cannot validate handover machinery.
 - `thirdparty/*` submodules frequently show as dirty. Do not commit submodule pointer churn unless
   the pointer change is intentional.
 
