@@ -103,11 +103,13 @@ public:
         fImmediateGPUTask(immediateCmdBuf);
         vkEndCommandBuffer(immediateCmdBuf);
 
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &immediateCmdBuf;
-        vkQueueSubmit(GetImmediateQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        VkCommandBufferSubmitInfo commandBufferInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        commandBufferInfo.commandBuffer = immediateCmdBuf;
+        commandBufferInfo.deviceMask = 0;
+        VkSubmitInfo2 submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        submitInfo.commandBufferInfoCount = 1;
+        submitInfo.pCommandBufferInfos = &commandBufferInfo;
+        vkQueueSubmit2(GetImmediateQueue(), 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(GetImmediateQueue());  // wait for it to finish
 
         FreeImmediateCommandBuffer(immediateCmdBuf);
@@ -118,7 +120,7 @@ public:
 
     void AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& resourceBarrier);
 
-    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
+    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags2> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
     void SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers);
 
     VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;

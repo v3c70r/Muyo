@@ -673,8 +673,14 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
 void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
                                         uint32_t queueFamily)
 {
-    std::vector<VkImageMemoryBarrier> imageBarriers;
-    std::vector<VkBufferMemoryBarrier> bufferBarriers;
+    std::vector<VkImageMemoryBarrier2> imageBarriers;
+    std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+
+    // Conservative stage masks: use ALL_COMMANDS so any prior stage is flushed and any later stage is blocked.
+    // HOST must be included explicitly so CPU-written (host-visible) buffers with HOST_WRITE srcAccess are valid.
+    const VkPipelineStageFlags2 srcStageMask =
+        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
+    const VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
 
     for (const auto& use : resourceUses)
     {
@@ -686,21 +692,18 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         const uint32_t acquireSrcFamily =
             bAcquire ? static_cast<uint32_t>(state.pendingAcquireFamily) : VK_QUEUE_FAMILY_IGNORED;
 
-        VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        VkAccessFlags srcAccess = 0;
+        VkAccessFlags2 srcAccess = 0;
         VkImageLayout oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
         const bool fromCpu = state.writtenByCpu;
         if (fromCpu)
         {
             // CPU node wrote this resource (host-visible memory); flush before first GPU use.
-            srcStage = VK_PIPELINE_STAGE_HOST_BIT;
-            srcAccess = VK_ACCESS_HOST_WRITE_BIT;
+            srcAccess = VK_ACCESS_2_HOST_WRITE_BIT;
         }
         else if (state.seen)
         {
-            srcStage = static_cast<VkPipelineStageFlags>(state.lastStages);
-            srcAccess = static_cast<VkAccessFlags>(state.lastAccess);
+            srcAccess = state.lastAccess;
             oldLayout = state.lastLayout;
         }
 
@@ -708,7 +711,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         // same declared usage the access mask and layout are identical, yet a WAW/WAR hazard remains.
         const bool bHazard = state.lastIo != ResourceIOType::READ || use.io != ResourceIOType::READ;
         const bool needsBarrier = bAcquire || fromCpu || !state.seen ||
-                                  (state.lastAccess != static_cast<VkAccessFlags2>(use.access)) ||
+                                  (state.lastAccess != use.access) ||
                                   (state.lastLayout != use.imageLayout) || bHazard;
 
         if (use.kind == ResourceKind::IMAGE)
@@ -716,9 +719,11 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
             if (!image) continue;
 
-            VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            barrier.srcStageMask = srcStageMask;
+            barrier.dstStageMask = dstStageMask;
             barrier.srcAccessMask = bAcquire ? 0 : srcAccess;
-            barrier.dstAccessMask = static_cast<VkAccessFlags>(use.access);
+            barrier.dstAccessMask = use.access;
             barrier.oldLayout = state.seen ? oldLayout : VK_IMAGE_LAYOUT_UNDEFINED;
             barrier.newLayout = use.imageLayout;
             barrier.srcQueueFamilyIndex = bAcquire ? acquireSrcFamily : VK_QUEUE_FAMILY_IGNORED;
@@ -735,9 +740,11 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             const auto* buffer = dynamic_cast<const BufferResource*>(ResolveResource(use.handle));
             if (!buffer) continue;
 
-            VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = srcStageMask;
+            barrier.dstStageMask = dstStageMask;
             barrier.srcAccessMask = bAcquire ? 0 : srcAccess;
-            barrier.dstAccessMask = static_cast<VkAccessFlags>(use.access);
+            barrier.dstAccessMask = use.access;
             barrier.srcQueueFamilyIndex = bAcquire ? acquireSrcFamily : VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = bAcquire ? queueFamily : VK_QUEUE_FAMILY_IGNORED;
             barrier.buffer = buffer->buffer();
@@ -760,15 +767,13 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
 
     if (imageBarriers.empty() && bufferBarriers.empty()) return;
 
-    VkPipelineStageFlags srcStageMask = 0;
-    VkPipelineStageFlags dstStageMask = 0;
-    // Conservative stage masks: use ALL_COMMANDS so any prior stage is flushed and any later stage is blocked.
-    // HOST must be included explicitly so CPU-written (host-visible) buffers with HOST_WRITE srcAccess are valid.
-    srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_HOST_BIT;
-    dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    VkDependencyInfo dependencyInfo = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(bufferBarriers.size());
+    dependencyInfo.pBufferMemoryBarriers = bufferBarriers.empty() ? nullptr : bufferBarriers.data();
+    dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(imageBarriers.size());
+    dependencyInfo.pImageMemoryBarriers = imageBarriers.empty() ? nullptr : imageBarriers.data();
 
-    vkCmdPipelineBarrier(cmdBuf, srcStageMask, dstStageMask, 0, 0, nullptr, bufferBarriers.size(), bufferBarriers.data(),
-                         imageBarriers.size(), imageBarriers.data());
+    vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
 void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily,
@@ -786,8 +791,8 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     }
 
     // Release: hand ownership of the resource from the producing queue family to the consumer.
-    std::vector<VkImageMemoryBarrier> imageBarriers;
-    std::vector<VkBufferMemoryBarrier> bufferBarriers;
+    std::vector<VkImageMemoryBarrier2> imageBarriers;
+    std::vector<VkBufferMemoryBarrier2> bufferBarriers;
     for (const auto& handle : handles)
     {
         ResourceAccessState& state = m_resourceAccessStates[handle];
@@ -796,8 +801,10 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
 
         if (const auto* image = dynamic_cast<const ImageResource*>(pResource))
         {
-            VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-            barrier.srcAccessMask = static_cast<VkAccessFlags>(state.lastAccess);
+            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            barrier.srcAccessMask = state.lastAccess;
             barrier.dstAccessMask = 0;
             barrier.oldLayout = state.lastLayout;
             barrier.newLayout = state.lastLayout;
@@ -809,8 +816,10 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
         }
         else if (const auto* buffer = dynamic_cast<const BufferResource*>(pResource))
         {
-            VkBufferMemoryBarrier barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER};
-            barrier.srcAccessMask = static_cast<VkAccessFlags>(state.lastAccess);
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            barrier.srcAccessMask = state.lastAccess;
             barrier.dstAccessMask = 0;
             barrier.srcQueueFamilyIndex = srcQueueFamily;
             barrier.dstQueueFamilyIndex = dstQueueFamily;
@@ -823,9 +832,13 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
 
     if (imageBarriers.empty() && bufferBarriers.empty()) return;
 
-    vkCmdPipelineBarrier(cmdBuf, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
-                         nullptr, static_cast<uint32_t>(bufferBarriers.size()), bufferBarriers.data(),
-                         static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
+    VkDependencyInfo dependencyInfo = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(bufferBarriers.size());
+    dependencyInfo.pBufferMemoryBarriers = bufferBarriers.empty() ? nullptr : bufferBarriers.data();
+    dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(imageBarriers.size());
+    dependencyInfo.pImageMemoryBarriers = imageBarriers.empty() ? nullptr : imageBarriers.data();
+
+    vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
 QueueType RenderGraphBuilder::GetQueueKey(QueueType type, bool bAsync)
@@ -1099,14 +1112,14 @@ void RenderGraphBuilder::Execute()
     for (size_t s = 0; s < segments.size(); ++s)
     {
         std::vector<VkSemaphore> waitSemaphores;
-        std::vector<VkPipelineStageFlags> waitStages;
+        std::vector<VkPipelineStageFlags2> waitStages;
         std::vector<VkSemaphore> signalSemaphores;
         for (const auto& [key, semaphore] : transitionSemaphores)
         {
             if (key.second == s)
             {
                 waitSemaphores.push_back(semaphore);
-                waitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+                waitStages.push_back(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
             }
             if (key.first == s)
             {
@@ -1114,16 +1127,37 @@ void RenderGraphBuilder::Execute()
             }
         }
 
-        VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
-        submitInfo.pWaitSemaphores = waitSemaphores.empty() ? nullptr : waitSemaphores.data();
-        submitInfo.pWaitDstStageMask = waitStages.empty() ? nullptr : waitStages.data();
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &segmentCmdBuffers[s];
-        submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphores.size());
-        submitInfo.pSignalSemaphores = signalSemaphores.empty() ? nullptr : signalSemaphores.data();
+        std::vector<VkSemaphoreSubmitInfo> waitSemaphoreInfos(waitSemaphores.size());
+        for (size_t i = 0; i < waitSemaphores.size(); ++i)
+        {
+            waitSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+            waitSemaphoreInfos[i].semaphore = waitSemaphores[i];
+            waitSemaphoreInfos[i].value = 0;  // ignored for binary semaphores
+            waitSemaphoreInfos[i].stageMask = waitStages[i];
+            waitSemaphoreInfos[i].deviceIndex = 0;
+        }
+        std::vector<VkSemaphoreSubmitInfo> signalSemaphoreInfos(signalSemaphores.size());
+        for (size_t i = 0; i < signalSemaphores.size(); ++i)
+        {
+            signalSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+            signalSemaphoreInfos[i].semaphore = signalSemaphores[i];
+            signalSemaphoreInfos[i].value = 0;  // ignored for binary semaphores
+            signalSemaphoreInfos[i].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            signalSemaphoreInfos[i].deviceIndex = 0;
+        }
+        VkCommandBufferSubmitInfo commandBufferInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        commandBufferInfo.commandBuffer = segmentCmdBuffers[s];
+        commandBufferInfo.deviceMask = 0;
 
-        VK_ASSERT(vkQueueSubmit(GetQueueForType(segments[s].queueType), 1, &submitInfo, VK_NULL_HANDLE));
+        VkSubmitInfo2 submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        submitInfo.waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size());
+        submitInfo.pWaitSemaphoreInfos = waitSemaphoreInfos.empty() ? nullptr : waitSemaphoreInfos.data();
+        submitInfo.commandBufferInfoCount = 1;
+        submitInfo.pCommandBufferInfos = &commandBufferInfo;
+        submitInfo.signalSemaphoreInfoCount = static_cast<uint32_t>(signalSemaphoreInfos.size());
+        submitInfo.pSignalSemaphoreInfos = signalSemaphoreInfos.empty() ? nullptr : signalSemaphoreInfos.data();
+
+        VK_ASSERT(vkQueueSubmit2(GetQueueForType(segments[s].queueType), 1, &submitInfo, VK_NULL_HANDLE));
     }
 
     // Wait for all queues that participated in this frame.

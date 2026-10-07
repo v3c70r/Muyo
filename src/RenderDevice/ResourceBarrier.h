@@ -17,9 +17,9 @@ public:
     void AddToCommandBuffer(VkCommandBuffer cmdBuf) override;
 
 protected:
-    VkImageMemoryBarrier m_imageBarrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
-    VkPipelineStageFlags m_sourceStage = VK_PIPELINE_STAGE_NONE_KHR;
-    VkPipelineStageFlags m_destinationStage = VK_PIPELINE_STAGE_NONE_KHR;
+    VkImageMemoryBarrier2 m_imageBarrier = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+    VkPipelineStageFlags2 m_sourceStage = VK_PIPELINE_STAGE_2_NONE;
+    VkPipelineStageFlags2 m_destinationStage = VK_PIPELINE_STAGE_2_NONE;
 };
 
 }  // namespace Muyo

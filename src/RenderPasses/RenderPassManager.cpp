@@ -299,7 +299,7 @@ void RenderPassManager::SubmitCommandBuffers()
     // This function manages command buffer submissions and queue synchronizations
     std::vector<VkCommandBuffer> vCmdBufs;
     std::vector<VkSemaphore> vWaitForSemaphores;
-    std::vector<VkPipelineStageFlags> vWaitStages;
+    std::vector<VkPipelineStageFlags2> vWaitStages;
     std::vector<VkSemaphore> vSignalSemaphores;
 
     if (!m_bIsIrradianceGenerated)
@@ -338,7 +338,7 @@ void RenderPassManager::SubmitCommandBuffers()
     vCmdBufs.clear();
     // Submit compute tasks
     vWaitForSemaphores.push_back(m_depthReady);
-    vWaitStages.push_back(VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    vWaitStages.push_back(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetComputeQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages);
 
     vCmdBufs.clear();
@@ -366,7 +366,7 @@ void RenderPassManager::SubmitCommandBuffers()
 
     
     vWaitForSemaphores.push_back(m_imageAvailable);
-    vWaitStages.push_back(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    vWaitStages.push_back(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
     vSignalSemaphores.push_back(m_renderFinished);
     // UI and final passes write the swapchain image; they must run on the graphics queue.
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores, vSignalSemaphores, vWaitStages, m_aGPUExecutionFence[m_uImageIdx2Present]);
