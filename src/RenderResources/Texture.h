@@ -26,8 +26,7 @@ public:
 
     VkSampler getSamper() const { return m_textureSampler; }
 
-    void createImage(uint32_t width, uint32_t height, VkFormat format,
-                     VkImageTiling tiling, VkImageUsageFlags usage,
+    void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage,
                      VmaMemoryUsage memoryUsage)
     {
         // Create a vkimage
@@ -49,11 +48,8 @@ public:
     }
 
     // TODO: Move this barrier out of the function
-    static void sTransitionImageLayout(VkImage image,
-                                       VkImageLayout oldLayout,
-                                       VkImageLayout newLayout,
-                                       uint32_t nMipCount = 1,
-                                       uint32_t nLayerCount = 1)
+    static void sTransitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
+                                       uint32_t nMipCount = 1, uint32_t nLayerCount = 1)
     {
         VkPipelineStageFlags2 sourceStage;
         VkPipelineStageFlags2 destinationStage;
@@ -79,8 +75,7 @@ public:
         barrier.subresourceRange.layerCount = nLayerCount;
 
         // UNDEFINED -> DST
-        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-            newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
         {
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -104,15 +99,13 @@ public:
         {
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask =
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
             sourceStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
             destinationStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
         }
         // UNDEFINED -> COLOR_ATTACHMENT
-        else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-                 newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+        else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
         {
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
@@ -139,8 +132,7 @@ public:
     }
 
 private:
-    void mCopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
-                            uint32_t height)
+    void mCopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
     {
         VkBufferImageCopy region = {};
         region.bufferOffset = 0;
@@ -154,11 +146,8 @@ private:
         region.imageExtent = {width, height, 1};
 
         GetRenderDevice()->ExecuteImmediateCommand(
-            [&](VkCommandBuffer commandBuffer)
-            {
-                vkCmdCopyBufferToImage(commandBuffer, buffer, image,
-                                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                                       &region);
+            [&](VkCommandBuffer commandBuffer) {
+                vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
             });
     }
     void mInitImageView()
@@ -228,10 +217,7 @@ public:
             return m_vpTextures[m_mTextureIndices[name]].get();
         }
     }
-    uint32_t GetTextureIndex(const std::string& name) const
-    {
-        return m_mTextureIndices.at(name);
-    }
+    uint32_t GetTextureIndex(const std::string& name) const { return m_mTextureIndices.at(name); }
     const std::vector<std::unique_ptr<TextureResource>>& GetTextures() const { return m_vpTextures; }
     void Destroy()
     {

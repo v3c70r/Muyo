@@ -19,7 +19,9 @@ public:
 class ImageResourceBarrier : public IResourceBarrier
 {
 public:
-    ImageResourceBarrier(VkImage img, VkImageLayout targetLayout, VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED, uint32_t nMipCount = 1, uint32_t nLayerCount = 1);
+    ImageResourceBarrier(VkImage img, VkImageLayout targetLayout,
+                         VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_UNDEFINED, uint32_t nMipCount = 1,
+                         uint32_t nLayerCount = 1);
     void AddToCommandBuffer(VkCommandBuffer cmdBuf) override;
 
 protected:

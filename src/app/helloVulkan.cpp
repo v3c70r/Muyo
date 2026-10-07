@@ -1,7 +1,8 @@
+#include <vulkan/vulkan_core.h>
+
 #include <ostream>
 #include <stdexcept>
 #include <tuple>
-#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
@@ -46,10 +47,10 @@
 using namespace Muyo;
 
 bool g_bWaylandExt = false;
-const int WIDTH    = 1920;
-const int HEIGHT   = 1080;
+const int WIDTH = 1920;
+const int HEIGHT = 1080;
 
-static int s_framebufferWidth  = WIDTH;
+static int s_framebufferWidth = WIDTH;
 static int s_framebufferHeight = HEIGHT;
 
 ///
@@ -89,22 +90,21 @@ static void rotateArcballCallback(double xpos, double ypos)
 static void InitEventHandlers()
 {
     auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION, GlobalMotionEvent>();
-    pMove->Watch([](uint32_t timestamp, float sx, float sy)
-                 { rotateArcballCallback(sx, sy); });
+    pMove->Watch([](uint32_t timestamp, float sx, float sy) { rotateArcballCallback(sx, sy); });
 
     auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON, GlobalButtonEvent>();
-    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state)
-                { clickArcballCallback(btn, state); });
+    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state) { clickArcballCallback(btn, state); });
 
     auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
 
-    pWheel->Watch([](uint32_t timestamp, double xoffset, double yoffset)
-                  {
-
-    if (Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera()))
-    {
-        pArcball->AddZoom(yoffset * -0.1f);
-    } });
+    pWheel->Watch(
+        [](uint32_t timestamp, double xoffset, double yoffset)
+        {
+            if (Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera()))
+            {
+                pArcball->AddZoom(yoffset * -0.1f);
+            }
+        });
 
     auto pResize = EventSystem::sys()->globalEvent<EventType::WINDOWRESIZE, GlobalResizeEvent>();
 }
@@ -147,9 +147,9 @@ std::vector<const char *> GetRequiredDeviceExtensions()
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        // VK_EXT_descriptor_indexing is core in Vulkan 1.2. Enabling the extension while
-        // chaining VkPhysicalDeviceVulkan12Features requires descriptorIndexing = VK_TRUE
-        // (VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-02833), so rely on the core feature instead.
+    // VK_EXT_descriptor_indexing is core in Vulkan 1.2. Enabling the extension while
+    // chaining VkPhysicalDeviceVulkan12Features requires descriptorIndexing = VK_TRUE
+    // (VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-02833), so rely on the core feature instead.
 #endif
     };
     return vDeviceExtensions;
@@ -169,15 +169,14 @@ void cleanup()
     Window::Uninitialize();
 }
 
-void updateUniformBuffer(UniformBuffer<PerViewData> *ub){
+void updateUniformBuffer(UniformBuffer<PerViewData> *ub) {
     // s_arcball.UpdatePerViewDataUBO(ub);
 };
 
 int main(int argc, char **argv)
 {
     // Load mesh into memory
-    if (!Window::Initialize("hello Vulkan", WIDTH, HEIGHT))
-        return -1;
+    if (!Window::Initialize("hello Vulkan", WIDTH, HEIGHT)) return -1;
 
     // Create Instace
     std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
@@ -189,16 +188,16 @@ int main(int argc, char **argv)
 
     // Create device
     // Included in features12
-    //VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {};
-    //bufferDeviceAddressFeatrues.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR;
-    //bufferDeviceAddressFeatrues.bufferDeviceAddress = VK_TRUE;
+    // VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatrues = {};
+    // bufferDeviceAddressFeatrues.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR;
+    // bufferDeviceAddressFeatrues.bufferDeviceAddress = VK_TRUE;
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature   = {};
-    rayTracingFeature.sType                                           = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-    rayTracingFeature.rayTracingPipeline                              = VK_TRUE;
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeature = {};
+    rayTracingFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rayTracingFeature.rayTracingPipeline = VK_TRUE;
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accStructFeature = {};
-    accStructFeature.sType                                            = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-    accStructFeature.accelerationStructure                            = VK_TRUE;
+    accStructFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    accStructFeature.accelerationStructure = VK_TRUE;
 
     // Mesh shader feature
     VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeature = {};
@@ -210,16 +209,16 @@ int main(int argc, char **argv)
     meshShaderFeature.meshShaderQueries = VK_FALSE;
 
     std::vector<void *> features;
-    //features.push_back(&bufferDeviceAddressFeatrues);
+    // features.push_back(&bufferDeviceAddressFeatrues);
     if (GetRenderDevice()->IsRayTracingSupported())
     {
         features.push_back(&rayTracingFeature);
         features.push_back(&accStructFeature);
     }
 
-	features.push_back(&meshShaderFeature);
-    GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),    // Extensions
-                                    std::vector<const char *>(),      // Layers
+    features.push_back(&meshShaderFeature);
+    GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
+                                    std::vector<const char *>(),    // Layers
                                     &surface, features);
 
     GetMemoryAllocator()->Initalize(GetRenderDevice());
@@ -280,7 +279,8 @@ int main(int argc, char **argv)
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
-        UniformBuffer<PerViewData> *pUniformBuffer = GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
+        UniformBuffer<PerViewData> *pUniformBuffer =
+            GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
 
         // Load materials
 
@@ -301,16 +301,20 @@ int main(int argc, char **argv)
         //     rtInputs = ConstructRTInputsFromDrawLists(dl);
         //     rayTracingBuilder.BuildBLAS(
         //         rtInputs.BLASs,
-        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+        //         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
         //     rayTracingBuilder.BuildTLAS(
         //         rtInputs.vInstances,
-        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+        //         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
         //    // Allocate primitive description buffer
-        //    StorageBuffer<PrimitiveDescription>* primDescBuffer = GetRenderResourceManager()->GetStorageBuffer("primitive descs", rtInputs.vPrimitiveDescriptions);
+        //    StorageBuffer<PrimitiveDescription>* primDescBuffer =
+        //    GetRenderResourceManager()->GetStorageBuffer("primitive descs", rtInputs.vPrimitiveDescriptions);
 
         //    // Allocate output image
-        //    ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output", vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
+        //    ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output",
+        //    vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
 
         //    rayTracingBuilder.BuildRTPipeline();
         //    rayTracingBuilder.BuildShaderBindingTable();
@@ -345,17 +349,16 @@ int main(int argc, char **argv)
                 int width;
                 int height;
                 Window::GetFramebufferSize(width, height);
-                VkExtent2D currentVp    = GetRenderPassManager()->GetViewportSize();
-                //if (width != static_cast<int>(currentVp.width) || height != static_cast<int>(currentVp.height))
+                VkExtent2D currentVp = GetRenderPassManager()->GetViewportSize();
+                // if (width != static_cast<int>(currentVp.width) || height != static_cast<int>(currentVp.height))
                 //{
-                //    // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
-                //    GetRenderPassManager()->OnResize(width, height);
-                //    GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-                //}
+                //     // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
+                //     GetRenderPassManager()->OnResize(width, height);
+                //     GetRenderPassManager()->RecordStaticCmdBuffers(dl);
+                // }
             }
         }
-        std::cout << "Closing window, wait for device to finish..."
-                  << std::endl;
+        std::cout << "Closing window, wait for device to finish..." << std::endl;
         VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
         std::cout << "Device finished" << std::endl;
 

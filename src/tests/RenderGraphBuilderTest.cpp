@@ -7,20 +7,20 @@
 #include <utility>
 #include <variant>
 
+#include "Camera.h"
 #include "Debug/RenderDoc.h"
 #include "GraphicsTestEnv.h"
 #include "MeshVertex.h"
+#include "PerObjResourceManager.h"
+#include "RenderGraph/DrawCommands.h"
 #include "RenderGraph/RenderGraphBuilder.h"
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphResourceDesc.h"
-#include "Scene/Scene.h"
-#include "SharedStructures.h"
-#include "RenderGraph/DrawCommands.h"
 #include "RenderResources/Geometry.h"
-#include "PerObjResourceManager.h"
-#include "Camera.h"
 #include "RenderResources/RenderTargetResource.h"
 #include "Scene/RayTracingSceneManager.h"
+#include "Scene/Scene.h"
+#include "SharedStructures.h"
 #include "VkExtFuncsLoader.h"
 #include "catch2/catch_message.hpp"
 #include "vulkan/vulkan_core.h"
@@ -37,7 +37,8 @@ static_assert(sizeof(Muyo::DrawIndexedCommand) == sizeof(VkDrawIndexedIndirectCo
 static_assert(sizeof(Muyo::PerSubmeshData) == 16, "PerSubmeshData must be tightly packed to match std430");
 // PBRMaterial is read by GLSL (scalar layout) and Slang (std430) shaders; its members must be
 // 4-byte aligned so both agree with the C++ definition used to upload the material buffer.
-static_assert(sizeof(Muyo::PBRMaterial) == 96, "PBRMaterial layout changed; update shaders/shared/RenderGraph/Camera.h");
+static_assert(sizeof(Muyo::PBRMaterial) == 96,
+              "PBRMaterial layout changed; update shaders/shared/RenderGraph/Camera.h");
 static_assert(sizeof(Muyo::PerObjData) == 64 + 4 + 12 + 32 * 16 + 32,
               "PerObjData layout changed; update shaders/shared/RenderGraph/Camera.h to match");
 static_assert(sizeof(Muyo::PerViewData) == 256 + 16 + 16 + 16 + 16 + 96,
@@ -76,8 +77,8 @@ static uint32_t CountNonBlackPixels(RenderTarget* pTarget)
             VkBufferImageCopy region{};
             region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.imageExtent = {extent.width, extent.height, 1};
-            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                   readback.buffer(), 1, &region);
+            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer(),
+                                   1, &region);
         });
 
     void* pData = readback.Map();
@@ -102,9 +103,18 @@ static float HalfToFloat(uint16_t h)
     const uint32_t exponent = (h >> 10) & 0x1Fu;
     const uint32_t mantissa = h & 0x3FFu;
     uint32_t f;
-    if (exponent == 0) { f = sign << 31; }
-    else if (exponent == 31) { f = (sign << 31) | 0x7F800000u | (mantissa << 13); }
-    else { f = (sign << 31) | ((exponent - 15 + 127) << 23) | (mantissa << 13); }
+    if (exponent == 0)
+    {
+        f = sign << 31;
+    }
+    else if (exponent == 31)
+    {
+        f = (sign << 31) | 0x7F800000u | (mantissa << 13);
+    }
+    else
+    {
+        f = (sign << 31) | ((exponent - 15 + 127) << 23) | (mantissa << 13);
+    }
     float out;
     memcpy(&out, &f, 4);
     return out;
@@ -138,8 +148,8 @@ static uint32_t CountPixelsMatching(RenderTarget* pTarget, const glm::vec3& vMin
             VkBufferImageCopy region{};
             region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.imageExtent = {extent.width, extent.height, 1};
-            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                   readback.buffer(), 1, &region);
+            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer(),
+                                   1, &region);
         });
 
     const uint16_t* pPixels = static_cast<const uint16_t*>(readback.Map());
@@ -163,9 +173,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     // state is shared with the mazda scene test and would corrupt the mesh buffers).
     std::vector<Vertex> quadVertices = {
         {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}},
-        {{ 1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}},
-        {{ 1.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 0.0f}},
-        {{-1.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
+        {{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 0.0f}},
+        {{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
     };
     std::vector<uint32_t> quadIndices = {0, 1, 2, 2, 3, 0};
     auto* pQuadVB = GetRenderResourceManager()->GetVertexBuffer<Vertex>("TestQuadVertexBuffer", quadVertices);
@@ -178,8 +188,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     builder.AddResource("TriangleOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
-                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                   VK_IMAGE_USAGE_SAMPLED_BIT |
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     // Externally owned quad buffers (created above, not from the mesh manager).
     builder.ImportResource("TestQuadVertexBuffer", pQuadVB);
@@ -210,8 +219,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
                                        .blendEnable = false,
                                    }}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-        .execute =
-            [nQuadIndexCount](RenderGraphNodeContext& ctx)
+        .execute = [nQuadIndexCount](RenderGraphNodeContext& ctx)
         {
             // Render pass begin/end, pipeline, viewport/scissor and descriptor sets are handled by the graph.
             auto* pVertexBuffer = ctx.GetResource<VertexBuffer<Vertex>>("TestQuadVertexBuffer");
@@ -262,38 +270,33 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
     builder.AddResource("TriangleOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
-                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                   VK_IMAGE_USAGE_SAMPLED_BIT |
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("PreViewData",
-                        BufferResourceDesc{.count = 1,
-                                           .stride = sizeof(PerViewData),
-                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("PreViewData", BufferResourceDesc{.count = 1,
+                                                          .stride = sizeof(PerViewData),
+                                                          .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                          .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     // Scene metadata: one entry per submesh that *may* be drawn. This is the only input the
     // CPU produces for the GPU-driven path; culling and command building happen on the GPU.
-    builder.AddResource("DrawSources",
-                        BufferResourceDesc{.count = 1024,
-                                           .stride = sizeof(DrawSource),
-                                           .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("DrawSources", BufferResourceDesc{.count = 1024,
+                                                          .stride = sizeof(DrawSource),
+                                                          .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                          .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     // GPU-written, indirect-drawn command list (compacted by the compute pass).
-    builder.AddResource("GBuffer draw commands",
-                        BufferResourceDesc{.count = 1024,
-                                           .stride = sizeof(VkDrawIndexedIndirectCommand),
-                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddResource("GBuffer draw commands", BufferResourceDesc{.count = 1024,
+                                                                    .stride = sizeof(VkDrawIndexedIndirectCommand),
+                                                                    .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                                                    .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
     // GPU-written atomic counter consumed by vkCmdDrawIndexedIndirectCount (and read back for the test).
-    builder.AddResource("DrawCount",
-                        BufferResourceDesc{.count = 1,
-                                           .stride = sizeof(uint32_t),
-                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
-                                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddResource(
+        "DrawCount",
+        BufferResourceDesc{.count = 1,
+                           .stride = sizeof(uint32_t),
+                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                           .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
 
     // Imported resources (owned by the mesh / per-obj managers).
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
@@ -320,8 +323,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER},
             },
-        .execute =
-            [&nSourceCount, &drawList, view, proj](RenderGraphNodeContext& ctx)
+        .execute = [&nSourceCount, &drawList, view, proj](RenderGraphNodeContext& ctx)
         {
             PerViewData perView;
             perView.mProj = proj;
@@ -402,8 +404,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                             .descriptorBinding = DescriptorBinding{.set = 0, .binding = 4}},
             },
         .shaderNames = {"prepareDrawCmdBuffer.comp.slang"},
-        .execute =
-            [&nSourceCount](RenderGraphNodeContext& ctx)
+        .execute = [&nSourceCount](RenderGraphNodeContext& ctx)
         {
             const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
             const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
@@ -478,8 +479,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                                        .blendEnable = false,
                                    }}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-        .execute =
-            [&nSourceCount](RenderGraphNodeContext& ctx)
+        .execute = [&nSourceCount](RenderGraphNodeContext& ctx)
         {
             const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
             const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
@@ -533,8 +533,8 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
 TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum culling (async compute queue)",
                  "[RenderGraphBuilder][AsyncCompute]")
 {
-    const glm::mat4 proj = glm::perspective(glm::radians(80.0F),
-                                            static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+    const glm::mat4 proj =
+        glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
 
     // The Mazda model has its length along +Y and its height along +Z (the importer applies a
     // model-correction rotation), and sits around (0.94, -0.17, 0.54). Look down at it from
@@ -583,8 +583,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     // Scenario 3: same top-down view but with a reduced far plane, so the far half of the car is
     // clipped by the frustum. Some objects must survive and still draw, others must be culled.
     {
-        const glm::mat4 clippedProj = glm::perspective(glm::radians(80.0F),
-                                                       static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 3.6F);
+        const glm::mat4 clippedProj =
+            glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 3.6F);
         const glm::mat4 view = glm::lookAt(topDownEye, carCenter, up);
 
         RenderDocScopedCapture capture("test_gpu_frustum_culling_partial");
@@ -602,8 +602,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
 
 #ifdef FEATURE_RAY_TRACING
 // Copy an image back to the host and decode the R32G32B32A32_SFLOAT pixels.
-static std::vector<glm::vec4> ReadTargetFloats(RenderTarget* pTarget, VkImageLayout oldLayout,
-                                               VkAccessFlags2 srcAccess, VkPipelineStageFlags2 srcStage)
+static std::vector<glm::vec4> ReadTargetFloats(RenderTarget* pTarget, VkImageLayout oldLayout, VkAccessFlags2 srcAccess,
+                                               VkPipelineStageFlags2 srcStage)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
     const size_t pixelSize = 16;
@@ -630,8 +630,8 @@ static std::vector<glm::vec4> ReadTargetFloats(RenderTarget* pTarget, VkImageLay
             VkBufferImageCopy region{};
             region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.imageExtent = {extent.width, extent.height, 1};
-            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                   readback.buffer(), 1, &region);
+            vkCmdCopyImageToBuffer(cmdBuf, pTarget->getImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback.buffer(),
+                                   1, &region);
         });
 
     const float* pPixels = static_cast<const float*>(readback.Map());
@@ -664,79 +664,73 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     REQUIRE(pTLAS != nullptr);
 
     // Frame the quad with the existing camera class.
-    const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
-                                            static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-    const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, 10.0F), glm::vec3(0.0F, 0.0F, 5.0F),
-                                       glm::vec3(0.0F, 1.0F, 0.0F));
+    const glm::mat4 proj =
+        glm::perspective(glm::radians(60.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+    const glm::mat4 view =
+        glm::lookAt(glm::vec3(0.0F, 0.0F, 10.0F), glm::vec3(0.0F, 0.0F, 5.0F), glm::vec3(0.0F, 1.0F, 0.0F));
     Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
 
     RenderGraphBuilder builder(GetRenderDevice());
 
-    builder.AddResource("RTParityCamera",
-                        BufferResourceDesc{.count = 1,
-                                           .stride = sizeof(PerViewData),
-                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
-    builder.AddResource("RTParityRasterOutput",
-                        ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                                          .extent = {WIDTH, HEIGHT},
-                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("RTParityDepth",
-                        ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
-                                          .extent = {WIDTH, HEIGHT},
-                                          .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
+    builder.AddResource("RTParityCamera", BufferResourceDesc{.count = 1,
+                                                             .stride = sizeof(PerViewData),
+                                                             .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                             .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("RTParityRasterOutput", ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                                                  .extent = {WIDTH, HEIGHT},
+                                                                  .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("RTParityDepth", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                           .extent = {WIDTH, HEIGHT},
+                                                           .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
     builder.AddResource("RTParityRayOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
                                           .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("RTParityPerObjData",
-                        BufferResourceDesc{.count = 1,
-                                           .stride = sizeof(PerObjData),
-                                           .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("RTParityPerObjData", BufferResourceDesc{.count = 1,
+                                                                 .stride = sizeof(PerObjData),
+                                                                 .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                                 .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
     builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
     builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
     builder.ImportResource("RTParityTLAS", pTLAS);
 
-    RenderGraphNodeCreateInfo cameraPass = {
-        .nodeName = "RTParityCameraPrep",
-        .queueType = QueueType::CPU,
-        .resourceUses =
-            {
-                ResourceUse{.handle = ResourceHandle("RTParityCamera"),
-                            .io = ResourceIOType::WRITE,
-                            .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER},
-                ResourceUse{.handle = ResourceHandle("RTParityPerObjData"),
-                            .io = ResourceIOType::WRITE,
-                            .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER},
-            },
-        .execute =
-            [&camera, model](RenderGraphNodeContext& ctx)
-        {
-            PerViewData perView;
-            perView.mProj = camera.GetProjMat();
-            perView.mView = camera.GetViewMat();
-            perView.mProjInv = glm::inverse(perView.mProj);
-            perView.mViewInv = glm::inverse(perView.mView);
-            perView.vScreenExtent = {WIDTH, HEIGHT};
+    RenderGraphNodeCreateInfo cameraPass = {.nodeName = "RTParityCameraPrep",
+                                            .queueType = QueueType::CPU,
+                                            .resourceUses =
+                                                {
+                                                    ResourceUse{.handle = ResourceHandle("RTParityCamera"),
+                                                                .io = ResourceIOType::WRITE,
+                                                                .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                .kind = ResourceKind::BUFFER},
+                                                    ResourceUse{.handle = ResourceHandle("RTParityPerObjData"),
+                                                                .io = ResourceIOType::WRITE,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER},
+                                                },
+                                            .execute = [&camera, model](RenderGraphNodeContext& ctx)
+                                            {
+                                                PerViewData perView;
+                                                perView.mProj = camera.GetProjMat();
+                                                perView.mView = camera.GetViewMat();
+                                                perView.mProjInv = glm::inverse(perView.mProj);
+                                                perView.mViewInv = glm::inverse(perView.mView);
+                                                perView.vScreenExtent = {WIDTH, HEIGHT};
 
-            auto* pCamera = ctx.GetResource<BufferResource>("RTParityCamera");
-            REQUIRE(pCamera != nullptr);
-            pCamera->SetData(&perView, sizeof(perView));
+                                                auto* pCamera = ctx.GetResource<BufferResource>("RTParityCamera");
+                                                REQUIRE(pCamera != nullptr);
+                                                pCamera->SetData(&perView, sizeof(perView));
 
-            PerObjData objData{};
-            objData.mWorldMatrix = model;
-            objData.nSubmeshCount = 1;
-            objData.vSubmeshDatas[0].nMaterialIndex = 0;
-            auto* pPerObj = ctx.GetResource<BufferResource>("RTParityPerObjData");
-            REQUIRE(pPerObj != nullptr);
-            pPerObj->SetData(&objData, sizeof(objData));
-        }};
+                                                PerObjData objData{};
+                                                objData.mWorldMatrix = model;
+                                                objData.nSubmeshCount = 1;
+                                                objData.vSubmeshDatas[0].nMaterialIndex = 0;
+                                                auto* pPerObj = ctx.GetResource<BufferResource>("RTParityPerObjData");
+                                                REQUIRE(pPerObj != nullptr);
+                                                pPerObj->SetData(&objData, sizeof(objData));
+                                            }};
 
     RenderGraphNodeCreateInfo rasterPass = {
         .nodeName = "RTParityRasterPass",
@@ -775,8 +769,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                     .depthStencilState = {.depthTestEnable = true, .depthWriteEnable = true, .stencilEnable = false},
                     .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-        .execute =
-            [&quadMesh](RenderGraphNodeContext& ctx)
+        .execute = [&quadMesh](RenderGraphNodeContext& ctx)
         {
             const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
@@ -862,8 +855,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     REQUIRE(nRasterGeometry > 0);
     REQUIRE(nRayGeometry > 0);
     // Allow a single edge pixel of difference between raster sample coverage and ray hits.
-    const float fCoverage = static_cast<float>(nBothGeometry) /
-                            static_cast<float>(std::max(nRasterGeometry, nRayGeometry));
+    const float fCoverage =
+        static_cast<float>(nBothGeometry) / static_cast<float>(std::max(nRasterGeometry, nRayGeometry));
     const float fMatch = static_cast<float>(nMatching) / static_cast<float>(std::max(nBothGeometry, 1u));
     REQUIRE(fCoverage > 0.999F);
     REQUIRE(fMatch > 0.999F);
@@ -880,37 +873,32 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
 
     // Frame the car with the existing camera class.
     const glm::vec3 carCenter(0.94F, -0.17F, 0.54F);
-    const glm::mat4 proj = glm::perspective(glm::radians(80.0F),
-                                            static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-    const glm::mat4 view =
-        glm::lookAt(carCenter + glm::vec3(0.0F, 0.0F, 3.5F), carCenter, glm::vec3(0.0F, 1.0F, 0.0F));
+    const glm::mat4 proj =
+        glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+    const glm::mat4 view = glm::lookAt(carCenter + glm::vec3(0.0F, 0.0F, 3.5F), carCenter, glm::vec3(0.0F, 1.0F, 0.0F));
     Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
 
     RenderGraphBuilder builder(GetRenderDevice());
 
-    builder.AddResource("RTMazdaCamera",
-                        BufferResourceDesc{.count = 1,
-                                           .stride = sizeof(PerViewData),
-                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
-    builder.AddResource("RTMazdaRasterOutput",
-                        ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
-                                          .extent = {WIDTH, HEIGHT},
-                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("RTMazdaDepth",
-                        ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
-                                          .extent = {WIDTH, HEIGHT},
-                                          .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
+    builder.AddResource("RTMazdaCamera", BufferResourceDesc{.count = 1,
+                                                            .stride = sizeof(PerViewData),
+                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("RTMazdaRasterOutput", ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                                                 .extent = {WIDTH, HEIGHT},
+                                                                 .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                          VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("RTMazdaDepth", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                          .extent = {WIDTH, HEIGHT},
+                                                          .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
     builder.AddResource("RTMazdaRayOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
                                           .extent = {WIDTH, HEIGHT},
                                           .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("RTMazdaDrawCommands",
-                        BufferResourceDesc{.count = 1024,
-                                           .stride = sizeof(VkDrawIndexedIndirectCommand),
-                                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("RTMazdaDrawCommands", BufferResourceDesc{.count = 1024,
+                                                                  .stride = sizeof(VkDrawIndexedIndirectCommand),
+                                                                  .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                                                  .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
     builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
@@ -934,8 +922,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
                             .kind = ResourceKind::BUFFER},
             },
-        .execute =
-            [this, &camera, &nDrawCommandCount](RenderGraphNodeContext& ctx)
+        .execute = [this, &camera, &nDrawCommandCount](RenderGraphNodeContext& ctx)
         {
             PerViewData perView;
             perView.mProj = camera.GetProjMat();
@@ -1014,8 +1001,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
                     .depthStencilState = {.depthTestEnable = true, .depthWriteEnable = true, .stencilEnable = false},
                     .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-        .execute =
-            [&nDrawCommandCount](RenderGraphNodeContext& ctx)
+        .execute = [&nDrawCommandCount](RenderGraphNodeContext& ctx)
         {
             const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
             const auto* pCommands = ctx.GetResource<BufferResource>("RTMazdaDrawCommands");
@@ -1103,8 +1089,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
     REQUIRE(nRasterGeometry > 0);
     REQUIRE(nRayGeometry > 0);
     // Allow a few edge pixels of difference between raster sample coverage and ray hits.
-    const float fCoverage = static_cast<float>(nBothGeometry) /
-                            static_cast<float>(std::max(nRasterGeometry, nRayGeometry));
+    const float fCoverage =
+        static_cast<float>(nBothGeometry) / static_cast<float>(std::max(nRasterGeometry, nRayGeometry));
     const float fMatch = static_cast<float>(nMatching) / static_cast<float>(std::max(nBothGeometry, 1u));
     REQUIRE(fCoverage > 0.999F);
     REQUIRE(fMatch > 0.999F);
@@ -1119,10 +1105,10 @@ TEST_CASE("DependencyGraph: rejects invalid edges and stays usable", "[RenderGra
     graph.AddNode("c");
 
     REQUIRE(graph.AddEdge("a", "b"));
-    REQUIRE(graph.AddEdge("a", "b"));       // duplicate is idempotent
-    REQUIRE_FALSE(graph.AddEdge("b", "b")); // self edge is rejected
+    REQUIRE(graph.AddEdge("a", "b"));        // duplicate is idempotent
+    REQUIRE_FALSE(graph.AddEdge("b", "b"));  // self edge is rejected
     REQUIRE(graph.AddEdge("b", "c"));
-    REQUIRE_FALSE(graph.AddEdge("c", "a")); // cycle is rejected, without mutating the graph
+    REQUIRE_FALSE(graph.AddEdge("c", "a"));  // cycle is rejected, without mutating the graph
 
     REQUIRE_FALSE(graph.HasCycle());
     REQUIRE(graph.NodeCount() == 3);
@@ -1179,7 +1165,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: rejects undeclared resour
     REQUIRE_THROWS(builder.AddDependency("Gpu", "Cpu"));
 }
 
-
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind semantic sets independently",
                  "[RenderGraphBuilder]")
 {
@@ -1200,10 +1185,10 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
     }
     for (const char* name : {"TargetA", "TargetB"})
     {
-        builder.AddResource(name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                                    .extent = {WIDTH, HEIGHT},
-                                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                             VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+        builder.AddResource(
+            name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                    .extent = {WIDTH, HEIGHT},
+                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     }
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
@@ -1221,13 +1206,12 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
                                      .io = ResourceIOType::WRITE,
                                      .usage = ResourceUsage::UNIFORM_BUFFER,
                                      .kind = ResourceKind::BUFFER}},
-        .execute =
-            [](RenderGraphNodeContext& ctx)
+        .execute = [](RenderGraphNodeContext& ctx)
         {
             const auto makePerView = [](const glm::vec3& eye, const glm::vec3& center)
             {
-                const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
-                                                        static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+                const glm::mat4 proj = glm::perspective(
+                    glm::radians(60.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
                 const glm::mat4 view = glm::lookAt(eye, center, glm::vec3(0.0F, 1.0F, 0.0F));
                 PerViewData perView;
                 perView.mProj = proj;
@@ -1245,8 +1229,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
             ctx.GetResource<BufferResource>("CameraB")->SetData(&b, sizeof(b));
         }};
 
-    const auto makeRasterNode = [&quadMesh](const std::string& nodeName, const std::string& camera,
-                                            const std::string& target)
+    const auto makeRasterNode =
+        [&quadMesh](const std::string& nodeName, const std::string& camera, const std::string& target)
     {
         return RenderGraphNodeCreateInfo{
             .nodeName = nodeName,
@@ -1272,8 +1256,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
             .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
                         .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
             .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-            .execute =
-                [&quadMesh](RenderGraphNodeContext& ctx)
+            .execute = [&quadMesh](RenderGraphNodeContext& ctx)
             {
                 const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
                 VkDeviceSize offset = 0;
@@ -1305,7 +1288,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
     REQUIRE(CountNonBlackPixels(pTargetB) == 0);
 }
 
-
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment keeps earlier content",
                  "[RenderGraphBuilder]")
 {
@@ -1318,16 +1300,15 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
     const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
 
     RenderGraphBuilder builder(GetRenderDevice());
-    builder.AddResource("Overlay", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                                     .extent = {WIDTH, HEIGHT},
-                                                     .usage = VK_IMAGE_USAGE_STORAGE_BIT |
-                                                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                              VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("OverlayCamera",
-                        BufferResourceDesc{.count = 1,
-                                           .stride = sizeof(PerViewData),
-                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("Overlay",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("OverlayCamera", BufferResourceDesc{.count = 1,
+                                                            .stride = sizeof(PerViewData),
+                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
     builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
@@ -1340,12 +1321,12 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
                                      .io = ResourceIOType::WRITE,
                                      .usage = ResourceUsage::UNIFORM_BUFFER,
                                      .kind = ResourceKind::BUFFER}},
-        .execute =
-            [](RenderGraphNodeContext& ctx)
+        .execute = [](RenderGraphNodeContext& ctx)
         {
-            const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
-                                                    static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-            const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, -3.0F), glm::vec3(0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+            const glm::mat4 proj = glm::perspective(
+                glm::radians(60.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+            const glm::mat4 view =
+                glm::lookAt(glm::vec3(0.0F, 0.0F, -3.0F), glm::vec3(0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
             PerViewData perView;
             perView.mProj = proj;
             perView.mView = view;
@@ -1364,8 +1345,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
                                      .kind = ResourceKind::IMAGE,
                                      .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
         .shaderNames = {"testFillColor.comp.slang"},
-        .execute =
-            [](RenderGraphNodeContext& ctx)
+        .execute = [](RenderGraphNodeContext& ctx)
         { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
 
     RenderGraphNodeCreateInfo overlayPass = {
@@ -1398,8 +1378,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
                                    .attachments = {{{.blendEnable = true,
                                                      .srcColor = BlendFactor::SRC_ALPHA,
                                                      .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA}}}}},
-        .execute =
-            [&quadMesh](RenderGraphNodeContext& ctx)
+        .execute = [&quadMesh](RenderGraphNodeContext& ctx)
         {
             const glm::vec4 color(1.0F, 0.0F, 0.0F, 0.5F);  // 50%-alpha red
             vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(color),
@@ -1504,15 +1483,14 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
     const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
 
     RenderGraphBuilder builder(GetRenderDevice());
-    builder.AddResource("WawTarget", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                                       .extent = {WIDTH, HEIGHT},
-                                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
-    builder.AddResource("WawCamera",
-                        BufferResourceDesc{.count = 1,
-                                           .stride = sizeof(PerViewData),
-                                           .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource(
+        "WawTarget", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                       .extent = {WIDTH, HEIGHT},
+                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("WawCamera", BufferResourceDesc{.count = 1,
+                                                        .stride = sizeof(PerViewData),
+                                                        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                        .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
     builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
     builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
@@ -1524,12 +1502,12 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
                                      .io = ResourceIOType::WRITE,
                                      .usage = ResourceUsage::UNIFORM_BUFFER,
                                      .kind = ResourceKind::BUFFER}},
-        .execute =
-            [](RenderGraphNodeContext& ctx)
+        .execute = [](RenderGraphNodeContext& ctx)
         {
-            const glm::mat4 proj = glm::perspective(glm::radians(60.0F),
-                                                    static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-            const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 0.0F, -3.0F), glm::vec3(0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+            const glm::mat4 proj = glm::perspective(
+                glm::radians(60.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+            const glm::mat4 view =
+                glm::lookAt(glm::vec3(0.0F, 0.0F, -3.0F), glm::vec3(0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
             PerViewData perView;
             perView.mProj = proj;
             perView.mView = view;
@@ -1569,8 +1547,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
                                                          .srcColor = BlendFactor::SRC_ALPHA,
                                                          .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA}}}}},
             .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-            .execute =
-                [&quadMesh, color](RenderGraphNodeContext& ctx)
+            .execute = [&quadMesh, color](RenderGraphNodeContext& ctx)
             {
                 vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                    sizeof(color), &color);

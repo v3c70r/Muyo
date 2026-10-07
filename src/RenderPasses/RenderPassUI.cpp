@@ -7,9 +7,9 @@
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
 #include "RenderResourceManager.h"
+#include "RenderResourceNames.h"
 #include "SamplerManager.h"
 #include "VkRenderDevice.h"
-#include "RenderResourceNames.h"
 
 namespace Muyo
 {
@@ -32,18 +32,14 @@ void ImGuiResource::CreateResources()
     io.Fonts->SetTexID((ImTextureID)0);
 
     // use dummy geometry data because they will be updated later in UpdateBuffers().
-    std::vector<ImDrawVert> vDummyVert = {ImDrawVert{
-        {0.0, 0.0},
-        {0.0, 0.0},
-        0}};
+    std::vector<ImDrawVert> vDummyVert = {ImDrawVert{{0.0, 0.0}, {0.0, 0.0}, 0}};
     std::vector<ImDrawIdx> vDummpyIndex = {0};
 
     pVertexBuffers = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertex_buffer", vDummyVert, false);
     pIndexBuffers = GetRenderResourceManager()->GetIndexBuffer("UIIndex_buffer", vDummpyIndex, false);
 }
 
-RenderPassUI::RenderPassUI(const VkExtent2D& renderArea)
-  : m_renderArea(renderArea)
+RenderPassUI::RenderPassUI(const VkExtent2D& renderArea) : m_renderArea(renderArea)
 {
     ImGui::CreateContext();
     ImGui::Init();
@@ -53,11 +49,15 @@ void RenderPassUI::PrepareRenderPass()
 {
     m_renderPassParameters.SetRenderArea(m_renderArea);
 
-    RenderTarget* pTarget = GetRenderResourceManager()->GetRenderTarget(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME, m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
-    m_renderPassParameters.AddAttachment(pTarget, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false);
+    RenderTarget* pTarget = GetRenderResourceManager()->GetRenderTarget(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME,
+                                                                        m_renderArea, VK_FORMAT_R16G16B16A16_SFLOAT);
+    m_renderPassParameters.AddAttachment(pTarget, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, false);
 
     // Image is set on per draw
-    m_renderPassParameters.AddImageParameter(nullptr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL, GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
+    m_renderPassParameters.AddImageParameter(nullptr, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                             VK_SHADER_STAGE_FRAGMENT_BIT, VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+                                             GetSamplerManager()->getSampler(SAMPLER_1_MIPS));
 
     m_renderPassParameters.AddPushConstantParameter<UIPushConstBlock>(VK_SHADER_STAGE_VERTEX_BIT);
 
@@ -67,10 +67,7 @@ void RenderPassUI::PrepareRenderPass()
     CreateImGuiResources();
 }
 
-void RenderPassUI::CreateImGuiResources()
-{
-    m_uiResources.CreateResources();
-}
+void RenderPassUI::CreateImGuiResources() { m_uiResources.CreateResources(); }
 
 RenderPassUI::~RenderPassUI()
 {
@@ -80,7 +77,6 @@ RenderPassUI::~RenderPassUI()
 
 void RenderPassUI::CreatePipeline()
 {
-
     std::vector<VkPushConstantRange> pushConstants = {
         GetPushConstantRange<UIPushConstBlock>(VK_SHADER_STAGE_VERTEX_BIT)};
 
@@ -90,7 +86,7 @@ void RenderPassUI::CreatePipeline()
     VkRect2D scissorRect = {{0, 0}, m_renderArea};
 
     // Dynmaic state
-    std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_SCISSOR };
+    std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_SCISSOR};
 
     VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/ui.vert.slang.spv"));
     VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/ui.frag.spv"));
@@ -109,11 +105,11 @@ void RenderPassUI::CreatePipeline()
     VkPipelineLayout pipelineLayout = m_renderPassParameters.GetPipelineLayout();
 
     m_pipeline = builder.setShaderModules({vertShdr, fragShdr})
-                     .setVertextInfo({UIVertex::getBindingDescription()},
-                                     UIVertex::getAttributeDescriptions())
+                     .setVertextInfo({UIVertex::getBindingDescription()}, UIVertex::getAttributeDescriptions())
                      .setAssembly(iaBuilder.Build())
                      .setViewport(viewport, scissorRect)
-                     .setRasterizer(rsBuilder.SetCullMode(VK_CULL_MODE_NONE).SetFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE).Build())
+                     .setRasterizer(
+                         rsBuilder.SetCullMode(VK_CULL_MODE_NONE).SetFrontFace(VK_FRONT_FACE_COUNTER_CLOCKWISE).Build())
                      .setMSAA(msBuilder.Build())
                      .setColorBlending(blendBuilder.Build())
                      .setPipelineLayout(pipelineLayout)
@@ -126,14 +122,12 @@ void RenderPassUI::CreatePipeline()
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
     vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline),
-                            VK_OBJECT_TYPE_PIPELINE, "ImGui");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_pipeline), VK_OBJECT_TYPE_PIPELINE, "ImGui");
 }
 
 void RenderPassUI::NewFrame(VkExtent2D screenExtent)
 {
-    ImGui::GetIO().DisplaySize =
-        ImVec2(screenExtent.width, screenExtent.height);
+    ImGui::GetIO().DisplaySize = ImVec2(screenExtent.width, screenExtent.height);
     ImGui::NewFrame();
     // Render registered pages
     for (const auto& pDebugPage : m_vpDebugPages)
@@ -151,10 +145,8 @@ void RenderPassUI::UpdateBuffers()
     ImDrawData* imDrawData = ImGui::GetDrawData();
 
     // Note: Alignment is done inside buffer creation
-    VkDeviceSize vertexBufferSize =
-        imDrawData->TotalVtxCount * sizeof(ImDrawVert);
-    VkDeviceSize indexBufferSize =
-        imDrawData->TotalIdxCount * sizeof(ImDrawIdx);
+    VkDeviceSize vertexBufferSize = imDrawData->TotalVtxCount * sizeof(ImDrawVert);
+    VkDeviceSize indexBufferSize = imDrawData->TotalIdxCount * sizeof(ImDrawIdx);
     m_uiResources.nTotalIndexCount = imDrawData->TotalIdxCount;
 
     if (m_uiResources.nTotalIndexCount == 0)
@@ -184,7 +176,6 @@ void RenderPassUI::UpdateBuffers()
 
 void RenderPassUI::RecordCommandBuffer()
 {
-
     if (m_uiResources.nTotalIndexCount == 0)
     {
         return;
@@ -212,15 +203,13 @@ void RenderPassUI::RecordCommandBuffer()
             clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
 
             RenderPassBeginInfoBuilder builder;
-            VkRenderPassBeginInfo renderPassBeginInfo =
-              builder.setRenderPass(m_renderPassParameters.GetRenderPass())
-                .setRenderArea(m_renderArea)
-                .setFramebuffer(m_renderPassParameters.GetFramebuffer())
-                .setClearValues(clearValues)
-                .Build();
+            VkRenderPassBeginInfo renderPassBeginInfo = builder.setRenderPass(m_renderPassParameters.GetRenderPass())
+                                                            .setRenderArea(m_renderArea)
+                                                            .setFramebuffer(m_renderPassParameters.GetFramebuffer())
+                                                            .setClearValues(clearValues)
+                                                            .Build();
 
-            vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo,
-                                 VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdBeginRenderPass(curCmdBuf, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
             VkRect2D scissor = {{0, 0}, m_renderArea};
             vkCmdSetScissor(curCmdBuf, 0, 1, &scissor);
@@ -229,8 +218,7 @@ void RenderPassUI::RecordCommandBuffer()
             PushConstBlock pushConstBlock;
             pushConstBlock.scale = glm::vec2(2.0f / io.DisplaySize.x, 2.0f / io.DisplaySize.y);
             pushConstBlock.translate = glm::vec2(-1.0f);
-            vkCmdPushConstants(curCmdBuf, m_renderPassParameters.GetPipelineLayout(),
-                               VK_SHADER_STAGE_VERTEX_BIT, 0,
+            vkCmdPushConstants(curCmdBuf, m_renderPassParameters.GetPipelineLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
                                sizeof(PushConstBlock), &pushConstBlock);
 
             vkCmdBindPipeline(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
@@ -255,9 +243,10 @@ void RenderPassUI::RecordCommandBuffer()
                     {
                         const ImDrawCmd& drawCmd = pDrawList->CmdBuffer[j];
                         // Bind correct texture
-                        vkCmdBindDescriptorSets(curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                                m_renderPassParameters.GetPipelineLayout(), 0, 1,
-                                                &GetDescriptorManager()->GetImGuiTextureDescriptorSet((size_t)drawCmd.GetTexID()), 0, nullptr);
+                        vkCmdBindDescriptorSets(
+                            curCmdBuf, VK_PIPELINE_BIND_POINT_GRAPHICS, m_renderPassParameters.GetPipelineLayout(), 0,
+                            1, &GetDescriptorManager()->GetImGuiTextureDescriptorSet((size_t)drawCmd.GetTexID()), 0,
+                            nullptr);
                         // Setup scissor rect according to the draw cmd
                         VkRect2D scissorRect;
                         scissorRect.offset.x = std::max((int32_t)(drawCmd.ClipRect.x), 0);

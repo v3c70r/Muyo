@@ -31,7 +31,7 @@ public:
     explicit ResourceManagerDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~ResourceManagerDebugPage() override= default;
+    ~ResourceManagerDebugPage() override = default;
 };
 
 class SceneDebugPage : public IDebugUIPage
@@ -40,11 +40,12 @@ public:
     explicit SceneDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~SceneDebugPage() override= default;
+    ~SceneDebugPage() override = default;
 
 private:
     void DisplaySceneNodeInfo(const SceneNode& sceneNode) const;
-    void DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4& mProj) const;
+    void DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView,
+                              const glm::mat4& mProj) const;
     mutable const SceneNode* m_pSelectedNode = nullptr;
 };
 
@@ -54,7 +55,7 @@ public:
     explicit DemoDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~DemoDebugPage() override= default;
+    ~DemoDebugPage() override = default;
 };
 
 // Home of all vertical tabs on the left side
@@ -64,7 +65,7 @@ public:
     explicit VerticalTabsPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~VerticalTabsPage() override= default;
+    ~VerticalTabsPage() override = default;
 
 private:
     // A list of tabs
@@ -81,7 +82,10 @@ public:
     ~DockSpace() override {}
 
 private:
-    const ImGuiWindowFlags WINDOW_FLAG = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
+    const ImGuiWindowFlags WINDOW_FLAG = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+                                         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                         ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBackground;
 };
 
 class EnvironmentMapDebugPage : public IDebugUIPage
@@ -101,7 +105,7 @@ public:
     }
     void Render() const override;
     bool ShouldRender() const override { return true; }
-    ~EnvironmentMapDebugPage() override= default;
+    ~EnvironmentMapDebugPage() override = default;
 
 private:
     std::vector<std::filesystem::path> m_vHDRImagePathes;
@@ -114,10 +118,7 @@ class LightsDebugPage : public IDebugUIPage
 {
 public:
     explicit LightsDebugPage(const std::string& sName);
-    void UpdateLightNodes(const std::vector<const LightSceneNode*>& vpLightNodes)
-    {
-        m_vpLightNodes = vpLightNodes;
-    }
+    void UpdateLightNodes(const std::vector<const LightSceneNode*>& vpLightNodes) { m_vpLightNodes = vpLightNodes; }
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~LightsDebugPage() override = default;
@@ -129,8 +130,7 @@ private:
 class CameraDebugPage : public IDebugUIPage
 {
 public:
-    explicit CameraDebugPage(const std::string& sName)
-        : IDebugUIPage(sName) {}
+    explicit CameraDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void SetCamera(Camera* pCamera) { m_pCamera = pCamera; }
     void Render() const override;
     bool ShouldRender() const override { return true; }
@@ -146,11 +146,15 @@ class RenderPassDebugPage : public IDebugUIPage
 {
 public:
     explicit RenderPassDebugPage(const std::string& sName);
-    void SetRenderPassManager(const RenderPassManager* pRenderPassManager) { m_pRenderPassManager = pRenderPassManager; }
+    void SetRenderPassManager(const RenderPassManager* pRenderPassManager)
+    {
+        m_pRenderPassManager = pRenderPassManager;
+    }
     void SetRDG(const RenderDependencyGraph* pRDG) { m_pRDG = pRDG; }
     void Render() const override;
     bool ShouldRender() const override { return true; }
     ~RenderPassDebugPage() override;
+
 private:
     const RenderPassManager* m_pRenderPassManager = nullptr;
     const RenderDependencyGraph* m_pRDG = nullptr;

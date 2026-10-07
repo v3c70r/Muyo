@@ -28,21 +28,13 @@ public:
 
     virtual void Unintialize();
 
-    virtual void CreateDevice(
-        const std::vector<const char*>& extensions,
-        const std::vector<const char*>& layers,
-        const VkSurfaceKHR* pSurface,
-        const std::vector<void*>& vpFeatures);
+    virtual void CreateDevice(const std::vector<const char*>& extensions, const std::vector<const char*>& layers,
+                              const VkSurfaceKHR* pSurface, const std::vector<void*>& vpFeatures);
 
     void DestroyDevice();
 
-    void TransitImageLayout(
-        VkCommandBuffer commandBuffer,
-        VkImage image,
-        VkImageLayout oldLayout,
-        VkImageLayout newLayout,
-        uint32_t nMipCount = 1,
-        uint32_t nLayerCount = 1);
+    void TransitImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
+                            VkImageLayout newLayout, uint32_t nMipCount = 1, uint32_t nLayerCount = 1);
 
     void CreateCommandPools();
     void DestroyCommandPools();
@@ -63,15 +55,9 @@ public:
     VkInstance& GetInstance() { return m_instance; }
 
     void SetDevice(VkDevice device) { m_device = device; }
-    void SetPhysicalDevice(VkPhysicalDevice physicalDevice)
-    {
-        m_physicalDevice = physicalDevice;
-    }
+    void SetPhysicalDevice(VkPhysicalDevice physicalDevice) { m_physicalDevice = physicalDevice; }
 
-    void SetInstance(VkInstance instance)
-    {
-        m_instance = instance;
-    }
+    void SetInstance(VkInstance instance) { m_instance = instance; }
 
     // Command buffer allocations
     VkCommandBuffer AllocateComputeCommandBuffer();
@@ -120,27 +106,24 @@ public:
 
     void AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& resourceBarrier);
 
-    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags2> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
+    void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue,
+                              std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores,
+                              std::vector<VkPipelineStageFlags2> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
     void SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers);
 
     VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;
 
     // Get physical device properties, neet to manually fill the sType before passing into to this function template
-    template<typename VkPropertyType>
+    template <typename VkPropertyType>
     void GetPhysicalDeviceProperties(VkPropertyType& property)
     {
         assert(property.sType != 0);
-        VkPhysicalDeviceProperties2 property2 =
-            {
-                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                (void *)&property,
-            {}};
+        VkPhysicalDeviceProperties2 property2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, (void*)&property, {}};
         vkGetPhysicalDeviceProperties2(m_physicalDevice, &property2);
     }
 
-    VkPipelineLayout CreatePipelineLayout(
-        const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
-        const std::vector<VkPushConstantRange>& pushConstantRanges);
+    VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
+                                          const std::vector<VkPushConstantRange>& pushConstantRanges);
 
 private:  // Private structures
     enum CommandPools
@@ -240,10 +223,12 @@ protected:
 
 class VkDebugRenderDevice : public VkRenderDevice
 {
-    virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers) override;
+    virtual void Initialize(const std::vector<const char*>& vExtensions,
+                            const std::vector<const char*>& vLayers) override;
     virtual void Unintialize() override;
-    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers, 
-            const VkSurfaceKHR* pSurface = nullptr, const std::vector<void*>& vpFeatures = {}) override;
+    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers,
+                              const VkSurfaceKHR* pSurface = nullptr,
+                              const std::vector<void*>& vpFeatures = {}) override;
 
 private:
     DebugUtilsMessenger m_debugMessenger;

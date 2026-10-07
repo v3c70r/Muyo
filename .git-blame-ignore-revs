@@ -1,0 +1,12 @@
+# Commits that are pure formatting, for `git blame` to skip.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Or per invocation: `git blame --ignore-revs-file .git-blame-ignore-revs <file>`.
+#
+# One commit per line, full SHA, oldest first. Only formatting-only commits belong here; see the
+# merge model in AGENTS.md section 1.
+
+# One-time clang-format pass over src/ (#23): 107 files, no functional change.
+9a1c2128aa52771a2d71f2531c7dc5db553ce3f1

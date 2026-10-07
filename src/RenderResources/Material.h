@@ -46,22 +46,17 @@ public:
 
     // Recreate the GPU-side factor uniform buffer after the device has been recreated (tests
     // rebuild the device per case while materials are cached process-wide).
-    void RefreshGPUResources(const PBRMaterial& factors)
-    {
-        SetMaterialParameterFactors(factors, m_sFactorName);
-    }
+    void RefreshGPUResources(const PBRMaterial& factors) { SetMaterialParameterFactors(factors, m_sFactorName); }
 
     void FillPbrTextureIndices(std::array<uint32_t, TEX_COUNT>& aIndices) const
     {
         aIndices = m_materialParameters.m_aTextureIndices;
     }
 
-
     void FillPbrTextureIndices(uint32_t* aIndices) const
     {
         memcpy((uint32_t*)(m_materialParameters.m_aTextureIndices.data()), aIndices, sizeof(uint32_t) * TEX_COUNT);
     }
-
 
     VkDescriptorSet GetDescriptorSet() const;
     void AllocateDescriptorSet();
@@ -70,25 +65,23 @@ public:
     void SetTransparent() { m_bIsTransparent = true; }
     void SetOpaque() { m_bIsTransparent = false; }
 
-    const uint32_t GetMaterialIndex() const
-    {
-        return m_nMaterialIndex;
-    }
+    const uint32_t GetMaterialIndex() const { return m_nMaterialIndex; }
 
 private:
     MaterialParameters m_materialParameters;
-    const std::array<std::string, TEX_COUNT> m_aNames = {
-        "TEX_ALBEDO", "TEX_NORMAL", "TEX_METALNESS", "TEX_ROUGHNESS", "TEX_AO", "TEX_EMISSIVE"};
+    const std::array<std::string, TEX_COUNT> m_aNames = {"TEX_ALBEDO",    "TEX_NORMAL", "TEX_METALNESS",
+                                                         "TEX_ROUGHNESS", "TEX_AO",     "TEX_EMISSIVE"};
     VkDescriptorSet m_descriptorSet = VK_NULL_HANDLE;
     bool m_bIsTransparent = false;
     std::string m_sFactorName;
 
-    uint32_t m_nMaterialIndex = 0;      // Material index in material resource manager
+    uint32_t m_nMaterialIndex = 0;  // Material index in material resource manager
 };
 
 class MaterialManager
 {
     friend class Material;
+
 public:
     void DestroyMaterials() { m_vMaterials.clear(); }
     void CreateDefaultMaterial();
@@ -104,22 +97,18 @@ public:
     // Recreate all material factor buffers against the current device.
     void RefreshGPUResources();
 
-
 private:
-
     const std::string sDefaultName = "default";
     uint32_t nDefaultMaterialIndex = 0;
 
     const std::string sMaterialBufferName = "material_buffer";
 
-
     // Track material buffer
-    std::unordered_map<std::string, uint32_t> m_mMaterialIndexMap;   // Map material name to position in m_vMaterials
+    std::unordered_map<std::string, uint32_t> m_mMaterialIndexMap;  // Map material name to position in m_vMaterials
 
     std::vector<Material> m_vMaterials;
 
     std::vector<PBRMaterial> m_vMaterialBufferCPU;
-
 };
 
 MaterialManager* GetMaterialManager();

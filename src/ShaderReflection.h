@@ -37,7 +37,8 @@ struct ShaderReflection
         std::string builtInName;  // if isBuiltIn
         bool operator==(const IOVariable& other) const
         {
-            return location == other.location && name == other.name && type == other.type && arrayDims == other.arrayDims && isBuiltIn == other.isBuiltIn && builtInName == other.builtInName;
+            return location == other.location && name == other.name && type == other.type &&
+                   arrayDims == other.arrayDims && isBuiltIn == other.isBuiltIn && builtInName == other.builtInName;
         }
     };
     std::vector<IOVariable> inputVariables;
@@ -46,10 +47,7 @@ struct ShaderReflection
     struct WorkgroupSize
     {
         uint32_t x, y, z;
-        bool operator==(const WorkgroupSize& other) const
-        {
-            return x == other.x && y == other.y && z == other.z;
-        }
+        bool operator==(const WorkgroupSize& other) const { return x == other.x && y == other.y && z == other.z; }
     };
     struct EntryPoint
     {
@@ -85,11 +83,11 @@ struct ShaderReflection
         uint32_t attributeSize;
         bool operator==(const RayTracingInfo& other) const
         {
-            return stage == other.stage && entryPoint == other.entryPoint && payloadSize == other.payloadSize && attributeSize == other.attributeSize;
+            return stage == other.stage && entryPoint == other.entryPoint && payloadSize == other.payloadSize &&
+                   attributeSize == other.attributeSize;
         }
     };
     std::vector<RayTracingInfo> rayTracingInfos;
-
 
     struct InputAttachment
     {
@@ -99,7 +97,8 @@ struct ShaderReflection
         std::string name;
         bool operator==(const InputAttachment& other) const
         {
-            return set == other.set && binding == other.binding && inputAttachmentIndex == other.inputAttachmentIndex && name == other.name;
+            return set == other.set && binding == other.binding && inputAttachmentIndex == other.inputAttachmentIndex &&
+                   name == other.name;
         }
     };
     std::vector<InputAttachment> inputAttachments;
@@ -114,7 +113,8 @@ struct ShaderReflection
         bool volatile_;
         bool operator==(const ResourceDecoration& other) const
         {
-            return set == other.set && binding == other.binding && readonly == other.readonly && writeonly == other.writeonly && coherent == other.coherent && volatile_ == other.volatile_;
+            return set == other.set && binding == other.binding && readonly == other.readonly &&
+                   writeonly == other.writeonly && coherent == other.coherent && volatile_ == other.volatile_;
         }
     };
     std::vector<ResourceDecoration> resourceDecorations;

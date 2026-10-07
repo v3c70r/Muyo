@@ -16,20 +16,11 @@ public:
     typedef std::function<void(Args...)> HandlerFunc;
     typedef uint32_t HandlerId;
 
-    explicit EventHandler(const HandlerFunc& func)
-        : m_HandlerFunc(func)
-    {
-        m_Id = ++s_IdCounter;
-    }
+    explicit EventHandler(const HandlerFunc& func) : m_HandlerFunc(func) { m_Id = ++s_IdCounter; }
 
-    EventHandler(const EventHandler& handler) : m_Id(handler.m_Id), m_HandlerFunc(handler.m_HandlerFunc)
-    {
-    }
+    EventHandler(const EventHandler& handler) : m_Id(handler.m_Id), m_HandlerFunc(handler.m_HandlerFunc) {}
 
-    EventHandler(EventHandler&& handler)
-        : m_Id(handler.m_Id), m_HandlerFunc(handler.m_HandlerFunc)
-    {
-    }
+    EventHandler(EventHandler&& handler) : m_Id(handler.m_Id), m_HandlerFunc(handler.m_HandlerFunc) {}
 
     EventHandler& operator=(EventHandler& handler)
     {
@@ -53,10 +44,7 @@ public:
         }
     }
 
-    bool operator==(const EventHandler<Args...> handler)
-    {
-        return m_Id == handler.id();
-    }
+    bool operator==(const EventHandler<Args...> handler) { return m_Id == handler.id(); }
 
     HandlerId id() const { return m_Id; }
 
@@ -122,10 +110,7 @@ public:
         std::lock_guard<std::mutex> lock(m_handlersLock);
 
         auto it = std::find(m_Collections.begin(), m_Collections.end(),
-                            [id](const HandlerType& it)
-                            {
-                                return it->id() == id;
-                            });
+                            [id](const HandlerType& it) { return it->id() == id; });
         if (it != m_Collections.end())
         {
             m_Collections.erase(it);

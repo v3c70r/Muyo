@@ -11,7 +11,8 @@
 namespace Muyo
 {
 
-AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode& sceneNode, VkBuildAccelerationStructureFlagsKHR flags)
+AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode& sceneNode,
+                                                                 VkBuildAccelerationStructureFlagsKHR flags)
 {
     const GeometrySceneNode& geometryNode = dynamic_cast<const GeometrySceneNode&>(sceneNode);
 
@@ -37,7 +38,8 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
         // Index data
         triangles.vertexStride = sizeof(Vertex);
         triangles.indexType = VK_INDEX_TYPE_UINT32;
-        triangles.indexData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(indexBuffer) + nIndexOffset * sizeof(uint32_t);
+        triangles.indexData.deviceAddress =
+            GetRenderDevice()->GetBufferDeviceAddress(indexBuffer) + nIndexOffset * sizeof(uint32_t);
         // misc
         triangles.transformData = {};
         triangles.maxVertex = mesh.m_nVertexOffset + mesh.m_nVertexCount;
@@ -58,7 +60,8 @@ AccelerationStructure* RayTracingSceneManager::BuildBLASfromNode(const SceneNode
 
         const Material& material = submesh->GetMaterial();
         VkDeviceAddress pbrMaterialAdd = material.GetPBRMaterialDeviceAdd();
-        SubmeshDescription submeshDesc = {triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress, pbrMaterialAdd, {}};
+        SubmeshDescription submeshDesc = {
+            triangles.vertexData.deviceAddress, triangles.indexData.deviceAddress, pbrMaterialAdd, {}};
         material.FillPbrTextureIndices(submeshDesc.m_aPbrTextureIndices);
         m_vSubmeshDescs.emplace_back(submeshDesc);
     }
@@ -77,23 +80,22 @@ AccelerationStructure* RayTracingSceneManager::BuildBLAS(
     const std::vector<VkAccelerationStructureGeometryKHR>& vGeometries, const std::vector<uint32_t>& vPrimCounts,
     VkBuildAccelerationStructureFlagsKHR flags, const std::string& sName)
 {
-    VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {
-        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr, 0, 0, 0};
+    VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+                                                         nullptr, 0, 0, 0};
 
-    VkAccelerationStructureBuildGeometryInfoKHR geometryBuildInfo =
-        {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,  // sType
-            nullptr,                                                           // pNext
-            VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,                   // type
-            flags,                                                             // flags
-            VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,                    // mode
-            VK_NULL_HANDLE,                                                    // srcAccelerationStructure
-            VK_NULL_HANDLE,                                                    // dstAccelerationStructure
-            static_cast<uint32_t>(vGeometries.size()),                         // geometryCount
-            vGeometries.data(),                                                // pGeometries
-            nullptr,                                                           // ppGeometries
-            {}                                                                 // scratchData
-        };
+    VkAccelerationStructureBuildGeometryInfoKHR geometryBuildInfo = {
+        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,  // sType
+        nullptr,                                                           // pNext
+        VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,                   // type
+        flags,                                                             // flags
+        VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,                    // mode
+        VK_NULL_HANDLE,                                                    // srcAccelerationStructure
+        VK_NULL_HANDLE,                                                    // dstAccelerationStructure
+        static_cast<uint32_t>(vGeometries.size()),                         // geometryCount
+        vGeometries.data(),                                                // pGeometries
+        nullptr,                                                           // ppGeometries
+        {}                                                                 // scratchData
+    };
 
     VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
                                                    VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &geometryBuildInfo,
@@ -104,8 +106,7 @@ AccelerationStructure* RayTracingSceneManager::BuildBLAS(
     geometryBuildInfo.dstAccelerationStructure = pAccelerationStructure->GetAccelerationStructure();
 
     AccelerationStructureBuffer scratchBuffer(sizeInfo.buildScratchSize);
-    geometryBuildInfo.scratchData.deviceAddress =
-        GetRenderDevice()->GetBufferDeviceAddress(scratchBuffer.buffer());
+    geometryBuildInfo.scratchData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(scratchBuffer.buffer());
 
     // Build range info: one entry per geometry, in declaration order.
     std::vector<VkAccelerationStructureBuildRangeInfoKHR> vBuildRanges;
@@ -180,8 +181,7 @@ AccelerationStructure* RayTracingSceneManager::BuildSceneFromMeshes(const std::v
                                                  VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR, sBlasName);
 
         VkAccelerationStructureInstanceKHR instance = {};
-        memcpy(&instance.transform, glm::value_ptr(glm::transpose(instances[i].transform)),
-               sizeof(instance.transform));
+        memcpy(&instance.transform, glm::value_ptr(glm::transpose(instances[i].transform)), sizeof(instance.transform));
         instance.mask = 0xFF;
         instance.instanceShaderBindingTableRecordOffset = 0;
         instance.accelerationStructureReference = pBLAS->GetAccelerationStructureAddress();
@@ -191,12 +191,14 @@ AccelerationStructure* RayTracingSceneManager::BuildSceneFromMeshes(const std::v
     return BuildTLAS(vInstances);
 }
 
-AccelerationStructure* RayTracingSceneManager::BuildTLAS(const std::vector<VkAccelerationStructureInstanceKHR>& vInstances)
+AccelerationStructure* RayTracingSceneManager::BuildTLAS(
+    const std::vector<VkAccelerationStructureInstanceKHR>& vInstances)
 {
     // upload instances to GPU
     static const std::string TLAS_BUFFER_NAME = "AS instance buffer";
     uint32_t nBufferSize = sizeof(VkAccelerationStructureInstanceKHR) * vInstances.size();
-    AccelerationStructureBuffer* instanceBuffer = GetRenderResourceManager()->GetAccelerationStructureBuffer(TLAS_BUFFER_NAME, vInstances.data(), nBufferSize);
+    AccelerationStructureBuffer* instanceBuffer =
+        GetRenderResourceManager()->GetAccelerationStructureBuffer(TLAS_BUFFER_NAME, vInstances.data(), nBufferSize);
     VkDeviceAddress instanceAddress = GetRenderDevice()->GetBufferDeviceAddress(instanceBuffer->buffer());
 
     VkAccelerationStructureGeometryInstancesDataKHR instancesDataVk = {};
@@ -222,10 +224,12 @@ AccelerationStructure* RayTracingSceneManager::BuildTLAS(const std::vector<VkAcc
     VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
     sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
     VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
-                                                   VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &nCount, &sizeInfo);
+                                                   VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &nCount,
+                                                   &sizeInfo);
 
     static const std::string TLAS_NAME = "TLAS";
-    AccelerationStructure* pTLAS = GetRenderResourceManager()->CreateTLAS(TLAS_NAME, sizeInfo.accelerationStructureSize);
+    AccelerationStructure* pTLAS =
+        GetRenderResourceManager()->CreateTLAS(TLAS_NAME, sizeInfo.accelerationStructureSize);
 
     // Allocate scratch size to build the structure
     AccelerationStructureBuffer scratchBuffer(sizeInfo.buildScratchSize);
@@ -239,10 +243,12 @@ AccelerationStructure* RayTracingSceneManager::BuildTLAS(const std::vector<VkAcc
     const VkAccelerationStructureBuildRangeInfoKHR* pBuildOffsetInfo = &buildOffsetInfo;
 
     // Build the TLAS
-    GetRenderDevice()->ExecuteImmediateCommand([&](VkCommandBuffer cmdBuf)
-                                               {
-        SCOPED_MARKER(cmdBuf, "Buld TLAS");
-        VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo); });
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            SCOPED_MARKER(cmdBuf, "Buld TLAS");
+            VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo);
+        });
 
     return pTLAS;
 }
@@ -258,11 +264,16 @@ void RayTracingSceneManager::BuildScene(const std::vector<const SceneNode*>& vpG
     vInstances.reserve(vpGeometries.size());
     for (const SceneNode* pSceneNode : vpGeometries)
     {
-        AccelerationStructure* pAcc = BuildBLASfromNode(*pSceneNode, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
+        AccelerationStructure* pAcc =
+            BuildBLASfromNode(*pSceneNode, VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
+                                               VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 
         // Create intance refer to this acceleration structure
         VkAccelerationStructureInstanceKHR instance = {};
-        memcpy(&instance.transform, glm::value_ptr(glm::transpose(static_cast<const GeometrySceneNode*>(pSceneNode)->GetGeometry()->GetWorldMatrix())), sizeof(instance.transform));
+        memcpy(&instance.transform,
+               glm::value_ptr(
+                   glm::transpose(static_cast<const GeometrySceneNode*>(pSceneNode)->GetGeometry()->GetWorldMatrix())),
+               sizeof(instance.transform));
         instance.instanceCustomIndex = m_mSubmeshBeginIndices.at(pSceneNode);
         instance.mask = 0xFF;
         instance.instanceShaderBindingTableRecordOffset = 0;

@@ -13,7 +13,6 @@ namespace Muyo
 {
 // Centralized shader manager
 
-
 class ShaderKey
 {
 public:
@@ -33,10 +32,7 @@ public:
     {
         size_t operator()(const ShaderKey& key) const noexcept { return std::hash<uint64_t>{}(key.GetValue()); }
     };
-    constexpr bool IsValid() const
-    {
-        return m_value != 0;
-    }
+    constexpr bool IsValid() const { return m_value != 0; }
 
 private:
     Value m_value = 0;

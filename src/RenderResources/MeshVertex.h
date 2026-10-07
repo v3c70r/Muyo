@@ -21,8 +21,7 @@ struct Vertex
         return desc;
     }
 
-    static std::vector<VkVertexInputAttributeDescription>
-    getAttributeDescriptions()
+    static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions()
     {
         std::vector<VkVertexInputAttributeDescription> attribDesc;
         attribDesc.resize(3);

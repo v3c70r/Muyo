@@ -10,15 +10,11 @@ namespace Muyo
 class LightSceneNode : public SceneNode
 {
 public:
-    LightSceneNode(const uint32_t &nLightType, const glm::vec3 &vColor,
-                   const float &fPower)
+    LightSceneNode(const uint32_t &nLightType, const glm::vec3 &vColor, const float &fPower)
         : m_nLightType(nLightType), m_vColor(vColor), m_fPower(fPower)
     {
     }
-    void SetWorldMatrix(const glm::mat4 mWorldMatrix)
-    {
-        m_mWorldTransformation = mWorldMatrix;
-    }
+    void SetWorldMatrix(const glm::mat4 mWorldMatrix) { m_mWorldTransformation = mWorldMatrix; }
     glm::vec3 GetWorldPosition() const
     {
         glm::vec4 vPos = m_mWorldTransformation * glm::vec4(0.0, 0.0, 0.0, 1.0);
@@ -30,46 +26,19 @@ public:
         glm::vec3 vDir = (m_mWorldTransformation * glm::vec4(0.0, 0.0, -1.0, 0.0));
         return glm::normalize(vDir);
     }
-    uint32_t GetLightType() const
-    {
-        return m_nLightType;
-    }
-    glm::vec3 GetColor() const
-    {
-        return m_vColor;
-    }
-    float GetIntensity() const
-    {
-        return m_fPower;
-    }
+    uint32_t GetLightType() const { return m_nLightType; }
+    glm::vec3 GetColor() const { return m_vColor; }
+    float GetIntensity() const { return m_fPower; }
 
-    void SetRange(const float &fRange)
-    {
-        m_fRange = fRange;
-    }
+    void SetRange(const float &fRange) { m_fRange = fRange; }
 
-    float GetRange() const
-    {
-        return m_fRange;
-    }
-    float GetShadowMapRange() const
-    {
-        return m_fShadowMapRange;
-    }
-    void SetShadowMapRange(const float &fShadowMapRange)
-    {
-        m_fShadowMapRange = fShadowMapRange;
-    }
+    float GetRange() const { return m_fRange; }
+    float GetShadowMapRange() const { return m_fShadowMapRange; }
+    void SetShadowMapRange(const float &fShadowMapRange) { m_fShadowMapRange = fShadowMapRange; }
 
-    void SetShadowMapIndex(const uint32_t &nShadowMapIndex)
-    {
-        m_nShadowMapIndex = nShadowMapIndex;
-    }
+    void SetShadowMapIndex(const uint32_t &nShadowMapIndex) { m_nShadowMapIndex = nShadowMapIndex; }
 
-    int GetShadowMapIndex() const
-    {
-        return m_nShadowMapIndex;
-    }
+    int GetShadowMapIndex() const { return m_nShadowMapIndex; }
 
     virtual glm::mat4 GetLightViewProjectionMatrix() const = 0;
 
@@ -93,22 +62,18 @@ public:
     {
     }
 
-    glm::mat4 GetLightViewProjectionMatrix() const override
-    {
-        return glm::mat4(1.0);
-    }
+    glm::mat4 GetLightViewProjectionMatrix() const override { return glm::mat4(1.0); }
 
     LightData ConstructLightData() const override
     {
-        return {
-            LIGHT_TYPE_POINT,
-            GetWorldPosition(),
-            GetWorldDirection(),
-            GetRange(),
-            GetColor(),
-            GetIntensity(),
-            glm::vec4(m_fRadius, 0.0f, 0.0f, float(GetShadowMapIndex())),
-            GetLightViewProjectionMatrix()};
+        return {LIGHT_TYPE_POINT,
+                GetWorldPosition(),
+                GetWorldDirection(),
+                GetRange(),
+                GetColor(),
+                GetIntensity(),
+                glm::vec4(m_fRadius, 0.0f, 0.0f, float(GetShadowMapIndex())),
+                GetLightViewProjectionMatrix()};
     }
 
 private:
@@ -118,8 +83,12 @@ private:
 class SpotLightNode : public LightSceneNode
 {
 public:
-    SpotLightNode(const glm::vec3 &vColor, const float &fPower, float fInnerConeAngle = 0.0f, float fOuterConeAngle = 0.0f, float fRadius = 0.5f)
-        : LightSceneNode(LIGHT_TYPE_SPOT, vColor, fPower), m_fInnerConeAngle(fInnerConeAngle), m_fOuterConeAngle(fOuterConeAngle), m_fRadius(fRadius)
+    SpotLightNode(const glm::vec3 &vColor, const float &fPower, float fInnerConeAngle = 0.0f,
+                  float fOuterConeAngle = 0.0f, float fRadius = 0.5f)
+        : LightSceneNode(LIGHT_TYPE_SPOT, vColor, fPower)
+        , m_fInnerConeAngle(fInnerConeAngle)
+        , m_fOuterConeAngle(fOuterConeAngle)
+        , m_fRadius(fRadius)
     {
     }
 
@@ -129,22 +98,23 @@ public:
         const glm::vec3 vWorldPosition = GetWorldPosition();
         // Hack: Fix shadowmap range
         // const float fShadowViewportHalfSize = fShadowMapRange * glm::tan(m_fOuterConeAngle);
-        // auto mProjection = glm::ortho(-fShadowViewportHalfSize, fShadowViewportHalfSize, -fShadowViewportHalfSize, fShadowViewportHalfSize, -fShadowMapRange, fShadowMapRange);
+        // auto mProjection = glm::ortho(-fShadowViewportHalfSize, fShadowViewportHalfSize, -fShadowViewportHalfSize,
+        // fShadowViewportHalfSize, -fShadowMapRange, fShadowMapRange);
         auto mProjection = glm::perspective(m_fOuterConeAngle * 2.0f, 1.0f, m_fRadius, GetShadowMapRange());
-        return mProjection * glm::lookAt(vWorldPosition, vWorldPosition + GetWorldDirection(), glm::vec3(0.0, 1.0, 0.0));
+        return mProjection *
+               glm::lookAt(vWorldPosition, vWorldPosition + GetWorldDirection(), glm::vec3(0.0, 1.0, 0.0));
     }
 
     LightData ConstructLightData() const override
     {
-        return {
-            LIGHT_TYPE_SPOT,
-            GetWorldPosition(),
-            GetWorldDirection(),
-            GetRange(),
-            GetColor(),
-            GetIntensity(),
-            glm::vec4(m_fRadius, m_fInnerConeAngle, m_fOuterConeAngle, float(GetShadowMapIndex())),
-            GetLightViewProjectionMatrix()};
+        return {LIGHT_TYPE_SPOT,
+                GetWorldPosition(),
+                GetWorldDirection(),
+                GetRange(),
+                GetColor(),
+                GetIntensity(),
+                glm::vec4(m_fRadius, m_fInnerConeAngle, m_fOuterConeAngle, float(GetShadowMapIndex())),
+                GetLightViewProjectionMatrix()};
     }
 
 private:
@@ -169,15 +139,14 @@ public:
     }
     LightData ConstructLightData() const override
     {
-        return {
-            LIGHT_TYPE_DIRECTIONAL,
-            GetWorldPosition(),
-            GetWorldDirection(),
-            GetRange(),
-            GetColor(),
-            GetIntensity(),
-            glm::vec4(0.0f, 0.0f, 0.0f, float(GetShadowMapIndex())),
-            GetLightViewProjectionMatrix()};
+        return {LIGHT_TYPE_DIRECTIONAL,
+                GetWorldPosition(),
+                GetWorldDirection(),
+                GetRange(),
+                GetColor(),
+                GetIntensity(),
+                glm::vec4(0.0f, 0.0f, 0.0f, float(GetShadowMapIndex())),
+                GetLightViewProjectionMatrix()};
     }
 };
 
@@ -185,23 +154,20 @@ class RectLightSceneNode : public LightSceneNode
 {
 public:
     RectLightSceneNode(const glm::vec3 &vColor, const float &fPower, float fWidth, float fHeight)
-        : LightSceneNode(LIGHT_TYPE_RECT, vColor, fPower),
-          m_fWidth(fWidth),
-          m_fHeight(fHeight)
+        : LightSceneNode(LIGHT_TYPE_RECT, vColor, fPower), m_fWidth(fWidth), m_fHeight(fHeight)
     {
     }
 
     LightData ConstructLightData() const override
     {
-        return {
-            LIGHT_TYPE_RECT,
-            GetWorldPosition(),
-            GetWorldDirection(),
-            GetRange(),
-            GetColor(),
-            GetIntensity(),
-            glm::vec4(0.0f, 0.0f, 0.0f, float(GetShadowMapIndex())),
-            GetLightViewProjectionMatrix()};
+        return {LIGHT_TYPE_RECT,
+                GetWorldPosition(),
+                GetWorldDirection(),
+                GetRange(),
+                GetColor(),
+                GetIntensity(),
+                glm::vec4(0.0f, 0.0f, 0.0f, float(GetShadowMapIndex())),
+                GetLightViewProjectionMatrix()};
     }
 
 private:

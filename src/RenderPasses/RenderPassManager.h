@@ -52,7 +52,7 @@ public:
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
     void RecordDynamicCmdBuffers();
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
-    VkExtent2D GetViewportSize() const { return VkExtent2D({.width=m_uWidth, .height=m_uHeight}); }
+    VkExtent2D GetViewportSize() const { return VkExtent2D({.width = m_uWidth, .height = m_uHeight}); }
 
     void SubmitCommandBuffers();
 
@@ -85,7 +85,8 @@ private:
     const VkSurfaceFormatKHR SWAPCHAIN_FORMAT = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
     const VkPresentModeKHR PRESENT_MODE = VK_PRESENT_MODE_FIFO_KHR;
 
-    std::array<std::unique_ptr<IRenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    std::array<std::unique_ptr<IRenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr,
+                                                                                   nullptr, nullptr, nullptr};
     uint32_t m_uWidth = 0;
     uint32_t m_uHeight = 0;
     bool m_bIsIrradianceGenerated = false;

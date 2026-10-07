@@ -1,4 +1,5 @@
 #include "VkExtFuncsLoader.h"
+
 #include <vulkan/vulkan_core.h>
 
 namespace Muyo
@@ -23,8 +24,7 @@ void VkExt::LoadInstanceFunctions(VkInstance instance)
 {
     if (!bExtensionLoaded)
     {
-#define GET_VK_INSTANCE_FUNC_EXT(FUNC_NAME) \
-    FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(instance, #FUNC_NAME);
+#define GET_VK_INSTANCE_FUNC_EXT(FUNC_NAME) FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(instance, #FUNC_NAME);
 
         GET_VK_INSTANCE_FUNC_EXT(vkCreateAccelerationStructureKHR);
         GET_VK_INSTANCE_FUNC_EXT(vkDestroyAccelerationStructureKHR);

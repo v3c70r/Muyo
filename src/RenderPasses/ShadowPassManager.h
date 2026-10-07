@@ -19,6 +19,7 @@ public:
     std::vector<RSMResources> GetShadowMaps() const;
     const std::vector<std::unique_ptr<RenderPassRSM>>& GetShadowPasses() const { return m_vpShadowPasses; }
     ~ShadowPassManager() = default;
+
 private:
     std::vector<std::unique_ptr<RenderPassRSM>> m_vpShadowPasses;
 };

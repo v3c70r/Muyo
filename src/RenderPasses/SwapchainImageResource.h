@@ -7,18 +7,18 @@ namespace Muyo
 // This resource doesn't allocate any images because the images are allocated by the swapchain
 class SwapchainImageResource : public ImageResource
 {
-  public:
+public:
     SwapchainImageResource(VkImage image, VkFormat format, VkExtent2D extent)
     {
         m_image = image;
         // populate m_imageInfo
-        m_imageInfo.extent.width  = extent.width;
+        m_imageInfo.extent.width = extent.width;
         m_imageInfo.extent.height = extent.height;
-        m_imageInfo.format        = format;
+        m_imageInfo.format = format;
 
         m_imageViewInfo.image = image;
         m_imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        m_imageViewInfo.format   = format;
+        m_imageViewInfo.format = format;
 
         // Swizzles
         m_imageViewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -29,9 +29,9 @@ class SwapchainImageResource : public ImageResource
         // subresource
         m_imageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         m_imageViewInfo.subresourceRange.baseMipLevel = 0;
-        m_imageViewInfo.subresourceRange.levelCount   = 1;
+        m_imageViewInfo.subresourceRange.levelCount = 1;
         m_imageViewInfo.subresourceRange.baseArrayLayer = 0;
-        m_imageViewInfo.subresourceRange.layerCount     = 1;
+        m_imageViewInfo.subresourceRange.layerCount = 1;
 
         CreateImageViewInternal();
     }
@@ -41,4 +41,4 @@ class SwapchainImageResource : public ImageResource
         m_image = VK_NULL_HANDLE;
     }
 };
-}    // namespace Muyo
+}  // namespace Muyo

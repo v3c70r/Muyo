@@ -54,12 +54,12 @@ enum class ResourceUsage : uint8_t
     RESOLVE_ATTACHMENT,        ///< Multisample resolve target.
 
     // Buffers
-    UNIFORM_BUFFER,        ///< Uniform buffer.
-    STORAGE_BUFFER,        ///< Storage buffer.
-    VERTEX_BUFFER,         ///< Vertex buffer.
-    INDEX_BUFFER,          ///< Index buffer.
-    INDIRECT_BUFFER,       ///< Indirect draw/dispatch buffer.
-    DRAW_COMMAND_BUFFER,   ///< Draw/draw-count command buffer (written by compute, read by draws).
+    UNIFORM_BUFFER,       ///< Uniform buffer.
+    STORAGE_BUFFER,       ///< Storage buffer.
+    VERTEX_BUFFER,        ///< Vertex buffer.
+    INDEX_BUFFER,         ///< Index buffer.
+    INDIRECT_BUFFER,      ///< Indirect draw/dispatch buffer.
+    DRAW_COMMAND_BUFFER,  ///< Draw/draw-count command buffer (written by compute, read by draws).
 
     // RT / Mesh / Work Graph
     ACCEL_STRUCTURE,  ///< Top-level acceleration structure (TLAS).
@@ -100,10 +100,10 @@ struct DescriptorBinding
 /// A node's declaration that it uses a resource (the interface passed to RenderGraphBuilder).
 struct ResourceUse
 {
-    ResourceHandle handle;                                  ///< Name of the resource.
-    ResourceIOType io;                                      ///< Read / write / read-write.
-    ResourceUsage usage;                                    ///< Semantic role.
-    ResourceKind kind;                                      ///< Concrete resource kind.
+    ResourceHandle handle;                                                    ///< Name of the resource.
+    ResourceIOType io;                                                        ///< Read / write / read-write.
+    ResourceUsage usage;                                                      ///< Semantic role.
+    ResourceKind kind;                                                        ///< Concrete resource kind.
     ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;  ///< Built-in set for graphics nodes.
     /// Optional explicit descriptor location. Only used when bindingSemantic == NONE.
     std::optional<DescriptorBinding> descriptorBinding = std::nullopt;
@@ -114,24 +114,24 @@ struct ResourceUse
 /// Produced by `ResolveResourceUse()`; mostly consumed internally by `RenderGraphBuilder`.
 struct ResolvedResourceUse
 {
-    ResourceHandle handle;         ///< Name of the resource.
-    ResourceVersion version = 0;   ///< Write version this use refers to.
+    ResourceHandle handle;        ///< Name of the resource.
+    ResourceVersion version = 0;  ///< Write version this use refers to.
 
-    ResourceKind kind;             ///< Concrete resource kind.
+    ResourceKind kind;  ///< Concrete resource kind.
 
-    ResourceIOType io;             ///< Read / write / read-write.
-    ResourceUsage usage;           ///< Semantic role.
+    ResourceIOType io;    ///< Read / write / read-write.
+    ResourceUsage usage;  ///< Semantic role.
 
     VkPipelineStageFlags2 stages;  ///< Pipeline stages that access the resource.
     VkAccessFlags2 access;         ///< Access mask for the resource.
 
     // Optional, depends on kind
-    VkImageLayout imageLayout;     ///< Image layout (images only).
-    VkFormat format;               ///< Optional format (validation / pipeline creation).
-    VkExtent3D extent;             ///< Optional extent (validation / trace dispatch).
+    VkImageLayout imageLayout;  ///< Image layout (images only).
+    VkFormat format;            ///< Optional format (validation / pipeline creation).
+    VkExtent3D extent;          ///< Optional extent (validation / trace dispatch).
 
     ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;  ///< Built-in set.
-    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;         ///< Explicit set/binding.
+    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;        ///< Explicit set/binding.
 };
 
 }  // namespace Muyo::RenderGraph

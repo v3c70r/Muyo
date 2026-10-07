@@ -1,8 +1,8 @@
 #pragma once
-#include <variant>
-
-#include <vulkan/vulkan_core.h>
 #include <vk_mem_alloc.h>
+#include <vulkan/vulkan_core.h>
+
+#include <variant>
 
 #include "RenderGraphResourceHandle.h"
 #include "RenderResource.h"
@@ -21,22 +21,22 @@ enum class ResourceLifetime : uint8_t
 /// Describes the allocation of a buffer. Size = count * stride.
 struct BufferResourceDesc
 {
-    uint64_t count = 0;                                           ///< Number of elements.
-    uint64_t stride = 0;                                          ///< Size of one element in bytes.
-    VkBufferUsageFlags usage = 0;                                 ///< Vulkan buffer usage flags.
-    VmaMemoryUsage memoryProperties = VMA_MEMORY_USAGE_UNKNOWN;   ///< VMA memory usage.
-    ResourceLifetime lifetime = ResourceLifetime::Transient;      ///< Lifetime relative to the graph.
+    uint64_t count = 0;                                          ///< Number of elements.
+    uint64_t stride = 0;                                         ///< Size of one element in bytes.
+    VkBufferUsageFlags usage = 0;                                ///< Vulkan buffer usage flags.
+    VmaMemoryUsage memoryProperties = VMA_MEMORY_USAGE_UNKNOWN;  ///< VMA memory usage.
+    ResourceLifetime lifetime = ResourceLifetime::Transient;     ///< Lifetime relative to the graph.
 };
 
 /// Describes the allocation of an image (render target / storage image / texture).
 struct ImageResourceDesc
 {
-    VkFormat format = VK_FORMAT_UNDEFINED;                       ///< Pixel format.
-    VkExtent2D extent = {0, 0};                                  ///< Width x height.
-    uint32_t mips = 1;                                           ///< Mip level count.
-    uint32_t layers = 1;                                         ///< Array layer count (6 = cubemap).
-    VkImageUsageFlags usage = 0;                                 ///< Vulkan image usage flags.
-    ResourceLifetime lifetime = ResourceLifetime::Transient;     ///< Lifetime relative to the graph.
+    VkFormat format = VK_FORMAT_UNDEFINED;                    ///< Pixel format.
+    VkExtent2D extent = {0, 0};                               ///< Width x height.
+    uint32_t mips = 1;                                        ///< Mip level count.
+    uint32_t layers = 1;                                      ///< Array layer count (6 = cubemap).
+    VkImageUsageFlags usage = 0;                              ///< Vulkan image usage flags.
+    ResourceLifetime lifetime = ResourceLifetime::Transient;  ///< Lifetime relative to the graph.
 };
 
 /// The complete set of resource types the graph knows how to allocate.

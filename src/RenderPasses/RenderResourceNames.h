@@ -12,6 +12,4 @@ static const std::string PER_VIEW = "perView";
 static const std::string LIGHT_COUNT = "light count";
 static const std::string LIGHT_DATA = "light data";
 
-
-
-};
+};  // namespace Muyo

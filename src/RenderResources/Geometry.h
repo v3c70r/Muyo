@@ -3,11 +3,11 @@
 #include <memory>
 #include <unordered_map>
 
+#include "Material.h"
 #include "MeshVertex.h"
 #include "RenderResourceManager.h"
 #include "UniformBuffer.h"
 #include "VertexBuffer.h"
-#include "Material.h"
 namespace Muyo
 {
 struct Mesh;
@@ -16,10 +16,10 @@ class MeshletSubmesh
 {
 public:
 private:
-    std::vector<Vertex> m_vVertices;    // All the vertices for the submesh
-    std::vector<Index> m_vIndices;      // Index into the m_vVertices
-                                        //
-    std::vector<uint8_t> m_vTraingleIndices;    // Index into each meshlet
+    std::vector<Vertex> m_vVertices;          // All the vertices for the submesh
+    std::vector<Index> m_vIndices;            // Index into the m_vVertices
+                                              //
+    std::vector<uint8_t> m_vTraingleIndices;  // Index into each meshlet
 };
 class Material;
 class Submesh
@@ -27,34 +27,17 @@ class Submesh
 public:
     Submesh(size_t nMeshIndex) : m_nMeshIndex(nMeshIndex) {}
 
-    const Material& GetMaterial() const { 
-        return GetMaterialManager()->GetMaterial(GetMaterialIndex());
-    }
+    const Material& GetMaterial() const { return GetMaterialManager()->GetMaterial(GetMaterialIndex()); }
 
-    void SetMeshIndex(uint32_t index)
-    {
-        m_nMeshIndex = index;
-    }
+    void SetMeshIndex(uint32_t index) { m_nMeshIndex = index; }
 
-    bool HasMaterial() const
-    {
-        return m_nMaterialIndex != std::numeric_limits<uint32_t>::max();
-    }
+    bool HasMaterial() const { return m_nMaterialIndex != std::numeric_limits<uint32_t>::max(); }
 
-    size_t GetMeshIndex() const
-    {
-        return m_nMeshIndex;
-    }
+    size_t GetMeshIndex() const { return m_nMeshIndex; }
 
-    size_t GetMaterialIndex() const
-    {
-        return m_nMaterialIndex;
-    }
+    size_t GetMaterialIndex() const { return m_nMaterialIndex; }
 
-    void SetMaterialIndex(uint32_t index)
-    {
-        m_nMaterialIndex = index;
-    }
+    void SetMaterialIndex(uint32_t index) { m_nMaterialIndex = index; }
 
 private:
     uint32_t m_nMeshIndex = 0;  // Index in MeshResourceManager
@@ -75,18 +58,9 @@ public:
             m_vSubmeshes.push_back(std::move(prim));
         }
     }
-    Geometry(std::unique_ptr<Submesh> pSubmesh)
-    {
-        m_vSubmeshes.push_back(std::move(pSubmesh));
-    }
-    void appendSubmesh(std::unique_ptr<Submesh> pSubmesh)
-    {
-        m_vSubmeshes.push_back(std::move(pSubmesh));
-    }
-    SubmeshListConstRef getSubmeshes() const
-    {
-        return m_vSubmeshes;
-    }
+    Geometry(std::unique_ptr<Submesh> pSubmesh) { m_vSubmeshes.push_back(std::move(pSubmesh)); }
+    void appendSubmesh(std::unique_ptr<Submesh> pSubmesh) { m_vSubmeshes.push_back(std::move(pSubmesh)); }
+    SubmeshListConstRef getSubmeshes() const { return m_vSubmeshes; }
     void SetWorldMatrix(const glm::mat4& mObjectToWorld)
     {
         assert(m_mWorldMatrixBuffer != nullptr);
@@ -94,15 +68,9 @@ public:
         m_mWorldMatrix = mObjectToWorld;
     }
 
-    const glm::mat4& GetWorldMatrix() const
-    {
-        return m_mWorldMatrix;
-    }
+    const glm::mat4& GetWorldMatrix() const { return m_mWorldMatrix; }
 
-    const UniformBuffer<glm::mat4>* GetWorldMatrixBuffer() const
-    {
-        return m_mWorldMatrixBuffer;
-    }
+    const UniformBuffer<glm::mat4>* GetWorldMatrixBuffer() const { return m_mWorldMatrixBuffer; }
 
     void SetWorldMatrixUniformBuffer(UniformBuffer<glm::mat4>* pWorldMatBuffer)
     {

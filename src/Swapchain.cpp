@@ -16,11 +16,8 @@ Swapchain::~Swapchain()
         vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), m_surface, nullptr);
     }
 }
-void Swapchain::CreateSwapchain(
-    const VkSurfaceKHR& surface,
-    const VkSurfaceFormatKHR& surfaceFormat,
-    const VkPresentModeKHR& presentMode,
-    uint32_t numBuffers)
+void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceFormatKHR& surfaceFormat,
+                                const VkPresentModeKHR& presentMode, uint32_t numBuffers)
 {
     if (m_surface == VK_NULL_HANDLE)
     {
@@ -32,12 +29,11 @@ void Swapchain::CreateSwapchain(
 
     m_swapchainFormat = surfaceFormat;
 
-    assert(swapchainSupport.capabilities.minImageCount > 0 &&
-           "Swapchain is not supported");
-    assert((swapchainSupport.capabilities.maxImageCount == 0 || swapchainSupport.capabilities.maxImageCount >= numBuffers) &&
+    assert(swapchainSupport.capabilities.minImageCount > 0 && "Swapchain is not supported");
+    assert((swapchainSupport.capabilities.maxImageCount == 0 ||
+            swapchainSupport.capabilities.maxImageCount >= numBuffers) &&
            "Too much buffers for swapchain");
-    assert(numBuffers >= swapchainSupport.capabilities.minImageCount &&
-           "Not enough image for swapchain");
+    assert(numBuffers >= swapchainSupport.capabilities.minImageCount && "Not enough image for swapchain");
 
     VkSwapchainCreateInfoKHR createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -73,8 +69,9 @@ void Swapchain::CreateSwapchain(
     // Create swapchain image views
     for (size_t i = 0; i < swapchainImages.size(); i++)
     {
-        m_swapchainImageResources[i] = GetRenderResourceManager()->GetSwapchainImageResource(m_swapchainResourceNames[i], swapchainImages[i], createInfo.imageExtent, m_swapchainFormat.format);
-        m_swapchainImageViews[i]     = m_swapchainImageResources[i]->getView();
+        m_swapchainImageResources[i] = GetRenderResourceManager()->GetSwapchainImageResource(
+            m_swapchainResourceNames[i], swapchainImages[i], createInfo.imageExtent, m_swapchainFormat.format);
+        m_swapchainImageViews[i] = m_swapchainImageResources[i]->getView();
     }
 }
 
@@ -94,33 +91,30 @@ void Swapchain::DestroySwapchain()
 uint32_t Swapchain::GetNextImage(VkSemaphore& semaphore)
 {
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(
-        GetRenderDevice()->GetDevice(), m_swapchain, std::numeric_limits<uint64_t>::max(),
-        semaphore, VK_NULL_HANDLE, &imageIndex);
+    vkAcquireNextImageKHR(GetRenderDevice()->GetDevice(), m_swapchain, std::numeric_limits<uint64_t>::max(), semaphore,
+                          VK_NULL_HANDLE, &imageIndex);
     return imageIndex;
 }
 
 Swapchain::SwapchainSupportDetails Swapchain::QuerySwapchainSupport()
 {
     Swapchain::SwapchainSupportDetails details;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface,
-                                              &details.capabilities);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface, &details.capabilities);
 
     uint32_t formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(GetRenderDevice()->GetPhysicalDevice(),
-                                         m_surface, &formatCount, nullptr);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface, &formatCount, nullptr);
     assert(formatCount > 0);
     details.formats.resize(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface, &formatCount,
                                          details.formats.data());
 
     uint32_t presentCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface,
-                                              &presentCount, nullptr);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface, &presentCount,
+                                              nullptr);
     assert(presentCount > 0);
     details.presentModes.resize(presentCount);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        GetRenderDevice()->GetPhysicalDevice(), m_surface, &presentCount, details.presentModes.data());
+    vkGetPhysicalDeviceSurfacePresentModesKHR(GetRenderDevice()->GetPhysicalDevice(), m_surface, &presentCount,
+                                              details.presentModes.data());
 
     return details;
 }

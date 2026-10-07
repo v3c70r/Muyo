@@ -9,8 +9,8 @@
 namespace Muyo
 {
 
-RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage,
-                           uint32_t width, uint32_t height, uint32_t numMips, uint32_t numLayers)
+RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage, uint32_t width, uint32_t height, uint32_t numMips,
+                           uint32_t numLayers)
 {
     VkImageAspectFlags aspectMask = 0;
     VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -62,8 +62,7 @@ RenderTarget::RenderTarget(VkFormat format, VkImageUsageFlags usage,
     m_imageViewInfo.subresourceRange.layerCount = numLayers;
     CreateImageViewInternal();
 
-    TextureResource::sTransitionImageLayout(m_image, VK_IMAGE_LAYOUT_UNDEFINED,
-                                            imageLayout);
+    TextureResource::sTransitionImageLayout(m_image, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout);
 }
 
 }  // namespace Muyo

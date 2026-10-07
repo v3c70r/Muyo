@@ -29,22 +29,17 @@ public:
         vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
         GetMemoryAllocator()->FreeImage(m_image, m_allocation);
     }
-    virtual VkObjectType GetVkObjectType() const override
-    {
-        return VK_OBJECT_TYPE_IMAGE;
-    }
+    virtual VkObjectType GetVkObjectType() const override { return VK_OBJECT_TYPE_IMAGE; }
     virtual void SetDebugName(const std::string& sName) const override
     {
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_image),
-                                GetVkObjectType(), sName.c_str());
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_image), GetVkObjectType(), sName.c_str());
     }
     VkFormat GetImageFormat() const { return m_imageInfo.format; }
 
 protected:
     void CreateImageInternal(const VmaMemoryUsage& memoryUsage)
     {
-        GetMemoryAllocator()->AllocateImage(
-            &m_imageInfo, memoryUsage, m_image, m_allocation);
+        GetMemoryAllocator()->AllocateImage(&m_imageInfo, memoryUsage, m_image, m_allocation);
     }
 
     void CreateImageViewInternal()
@@ -53,37 +48,32 @@ protected:
         m_imageViewInfo.image = m_image;
         m_imageViewInfo.format = m_imageInfo.format;
 
-        VK_ASSERT(vkCreateImageView(GetRenderDevice()->GetDevice(), &m_imageViewInfo,
-                                 nullptr, &m_view) );
+        VK_ASSERT(vkCreateImageView(GetRenderDevice()->GetDevice(), &m_imageViewInfo, nullptr, &m_view));
     }
 
-    static void TransitionImageLayout(VkImage image,
-                                      VkImageLayout oldLayout,
-                                      VkImageLayout newLayout,
-                                      uint32_t nMipCount = 1,
-                                      uint32_t nLayerCount = 1);
+    static void TransitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
+                                      uint32_t nMipCount = 1, uint32_t nLayerCount = 1);
 
     VkImage m_image = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
     VkImageView m_view = VK_NULL_HANDLE;
-    VkImageCreateInfo m_imageInfo =
-        {
-            VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-            nullptr,
-            0,                          // flags
-            VK_IMAGE_TYPE_2D,           // imageType
-            VK_FORMAT_UNDEFINED,        // Format
-            {0, 0, 0},                  // Extent
-            1,                          // mipLevels;
-            1,                          // arrayLayers;
-            VK_SAMPLE_COUNT_1_BIT,      // samples;
-            VK_IMAGE_TILING_OPTIMAL,    // tiling;
-            0,                          // usage;
-            VK_SHARING_MODE_EXCLUSIVE,  // sharingMode;
-            0,                          // queueFamilyIndexCount;
-            nullptr,                    // pQueueFamilyIndices;
-            VK_IMAGE_LAYOUT_UNDEFINED   // initialLayout;
-        };
+    VkImageCreateInfo m_imageInfo = {
+        VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        nullptr,
+        0,                          // flags
+        VK_IMAGE_TYPE_2D,           // imageType
+        VK_FORMAT_UNDEFINED,        // Format
+        {0, 0, 0},                  // Extent
+        1,                          // mipLevels;
+        1,                          // arrayLayers;
+        VK_SAMPLE_COUNT_1_BIT,      // samples;
+        VK_IMAGE_TILING_OPTIMAL,    // tiling;
+        0,                          // usage;
+        VK_SHARING_MODE_EXCLUSIVE,  // sharingMode;
+        0,                          // queueFamilyIndexCount;
+        nullptr,                    // pQueueFamilyIndices;
+        VK_IMAGE_LAYOUT_UNDEFINED   // initialLayout;
+    };
 
     VkImageViewCreateInfo m_imageViewInfo = {
         VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,  // sType;
@@ -110,19 +100,12 @@ public:
         GetMemoryAllocator()->AllocateBuffer(sizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
     }
     virtual VkBuffer buffer() const { return m_buffer; }
-    virtual ~BufferResource()
-    {
-        GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
-    }
-    virtual VkObjectType GetVkObjectType() const override
-    {
-        return VK_OBJECT_TYPE_BUFFER;
-    }
+    virtual ~BufferResource() { GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation); }
+    virtual VkObjectType GetVkObjectType() const override { return VK_OBJECT_TYPE_BUFFER; }
 
     virtual void SetDebugName(const std::string& sName) const override
     {
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_buffer),
-                                GetVkObjectType(), sName.c_str());
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_buffer), GetVkObjectType(), sName.c_str());
     }
     void SetData(const void* pData, size_t size)
     {
@@ -133,9 +116,7 @@ public:
         }
         if (m_buffer == VK_NULL_HANDLE)
         {
-            GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE,
-                                                 MEMORY_USAGE, m_buffer,
-                                                 m_allocation);
+            GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
         }
         m_nSize = (uint32_t)size;
 
@@ -145,9 +126,8 @@ public:
             // Create staging buffer
             VkBuffer stagingBuffer = VK_NULL_HANDLE;
             VmaAllocation stagingAllocation = VK_NULL_HANDLE;
-            GetMemoryAllocator()->AllocateBuffer(
-                size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
-                stagingBuffer, stagingAllocation);
+            GetMemoryAllocator()->AllocateBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                 stagingBuffer, stagingAllocation);
 
             void* pMappedMemory = nullptr;
             GetMemoryAllocator()->MapBuffer(stagingAllocation, &pMappedMemory);
@@ -160,8 +140,7 @@ public:
                 {
                     VkBufferCopy copyRegion = {};
                     copyRegion.size = size;
-                    vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1,
-                                    &copyRegion);
+                    vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_buffer, 1, &copyRegion);
 #ifdef FEATURE_RAY_TRACING
                     // Make sure the copy of the instance buffer are copied before triggering the
                     // acceleration structure build
@@ -200,10 +179,7 @@ public:
         GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedPointer);
         return pMappedPointer;
     }
-    void Unmap()
-    {
-        GetMemoryAllocator()->UnmapBuffer(m_allocation);
-    }
+    void Unmap() { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
 
     uint32_t GetSize() const { return m_nSize; }
 
@@ -220,22 +196,23 @@ class AccelerationStructureBuffer : public BufferResource
 {
 public:
     AccelerationStructureBuffer(VkDeviceSize size)
-        : BufferResource(
-              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-              VMA_MEMORY_USAGE_GPU_ONLY)
+        : BufferResource(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
+                             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                         VMA_MEMORY_USAGE_GPU_ONLY)
     {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation,
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
                                              "AccelerationStrucutre", PoolType::BVH);
     }
 
     AccelerationStructureBuffer(const void* pData, uint32_t size)
-        : BufferResource(
-              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-              VMA_MEMORY_USAGE_GPU_ONLY)
+        : BufferResource(VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT |
+                             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
+                             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                             VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                         VMA_MEMORY_USAGE_GPU_ONLY)
     {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation,
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
                                              "AccelerationStrucutre", PoolType::BVH);
         SetData(pData, size);
     }
@@ -251,8 +228,7 @@ public:
         createInfo.type = type;
         createInfo.size = size;
         createInfo.buffer = m_accelerationStructureBuffer.buffer();
-        VkExt::vkCreateAccelerationStructureKHR(GetRenderDevice()->GetDevice(),
-                                                &createInfo, nullptr,
+        VkExt::vkCreateAccelerationStructureKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr,
                                                 &m_accelerationStructure);
     }
     virtual ~AccelerationStructure() override
@@ -260,10 +236,7 @@ public:
         VkExt::vkDestroyAccelerationStructureKHR(GetRenderDevice()->GetDevice(), m_accelerationStructure, nullptr);
     }
 
-    virtual VkObjectType GetVkObjectType() const override
-    {
-        return VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR;
-    }
+    virtual VkObjectType GetVkObjectType() const override { return VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR; }
 
     virtual void SetDebugName(const std::string& sName) const override
     {
@@ -271,17 +244,12 @@ public:
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_accelerationStructure), GetVkObjectType(), sName.c_str());
     }
 
-    const VkAccelerationStructureKHR& GetAccelerationStructure() const
-    {
-        return m_accelerationStructure;
-    }
+    const VkAccelerationStructureKHR& GetAccelerationStructure() const { return m_accelerationStructure; }
 
     VkDeviceAddress GetAccelerationStructureAddress() const
     {
         VkAccelerationStructureDeviceAddressInfoKHR addressInfo{
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
-            nullptr,
-            m_accelerationStructure};
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR, nullptr, m_accelerationStructure};
         return VkExt::vkGetAccelerationStructureDeviceAddressKHR(GetRenderDevice()->GetDevice(), &addressInfo);
     }
 
@@ -294,14 +262,11 @@ class ShaderBindingTableBuffer : public BufferResource
 {
 public:
     ShaderBindingTableBuffer(uint32_t size)
-        : BufferResource(
-              VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
-                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT,
-              VMA_MEMORY_USAGE_CPU_TO_GPU)
+        : BufferResource(VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT,
+                         VMA_MEMORY_USAGE_CPU_TO_GPU)
     {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation,
-                                             "SBT", PoolType::SBT);
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "SBT",
+                                             PoolType::SBT);
     }
 };
 
@@ -315,8 +280,7 @@ public:
 
     {
         uint32_t nSize = sizeof(T) * nNumStructs;
-        GetMemoryAllocator()->AllocateBuffer(nSize, BUFFER_USAGE, MEMORY_USAGE,
-                                             m_buffer, m_allocation,
+        GetMemoryAllocator()->AllocateBuffer(nSize, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
                                              "Storage Buffer");
         SetData(static_cast<const void*>(buffer), nSize);
         m_nNumStructs = nNumStructs;

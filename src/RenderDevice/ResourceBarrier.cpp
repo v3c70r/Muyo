@@ -7,7 +7,8 @@
 namespace Muyo
 {
 
-ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLayout, VkImageLayout sourceLayout, uint32_t nMipCount, uint32_t nLayerCount)
+ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLayout, VkImageLayout sourceLayout,
+                                           uint32_t nMipCount, uint32_t nLayerCount)
 {
     m_imageBarrier.oldLayout = sourceLayout;
     m_imageBarrier.newLayout = targetLayout;
@@ -18,8 +19,7 @@ ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLa
 
     // deduce access masks from layouts
     // UNDEFINED -> DST
-    if (sourceLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-        targetLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+    if (sourceLayout == VK_IMAGE_LAYOUT_UNDEFINED && targetLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
     {
         m_imageBarrier.srcAccessMask = 0;
         m_imageBarrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
@@ -43,15 +43,13 @@ ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLa
     {
         m_imageBarrier.srcAccessMask = 0;
         m_imageBarrier.dstAccessMask =
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
         m_sourceStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
         m_destinationStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
     }
     // UNDEFINED -> COLOR_ATTACHMENT
-    else if (sourceLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             targetLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    else if (sourceLayout == VK_IMAGE_LAYOUT_UNDEFINED && targetLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     {
         m_imageBarrier.srcAccessMask = 0;
         m_imageBarrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
@@ -60,8 +58,7 @@ ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLa
         m_destinationStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
     // UNDEFINED -> GENERAL
-    else if (sourceLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
-             targetLayout == VK_IMAGE_LAYOUT_GENERAL)
+    else if (sourceLayout == VK_IMAGE_LAYOUT_UNDEFINED && targetLayout == VK_IMAGE_LAYOUT_GENERAL)
     {
         m_imageBarrier.srcAccessMask = 0;
         // TODO(A2): the duplicated SHADER_READ bit is a typo carried over verbatim from the pre-sync2

@@ -20,8 +20,7 @@ void RenderLayerIBL::setupRenderPass()
     std::array<VkAttachmentDescription, RENDERPASS_COUNT> attachments;
 
     // 2 Create multiview info
-    std::array<uint32_t, 1> viewMasks = {
-        0b111111};
+    std::array<uint32_t, 1> viewMasks = {0b111111};
     VkRenderPassMultiviewCreateInfo multiViewCI = {};
     multiViewCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO;
     multiViewCI.subpassCount = static_cast<uint32_t>(viewMasks.size());
@@ -32,7 +31,7 @@ void RenderLayerIBL::setupRenderPass()
     for (uint32_t passIdx = 0; passIdx < RENDERPASS_COUNT; passIdx++)
     {
         // Create attachment
-        VkAttachmentDescription &attDesc = attachments[passIdx];
+        VkAttachmentDescription& attDesc = attachments[passIdx];
         attDesc = {};
         attDesc.format = TEX_FORMAT;
         if (passIdx == RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT)
@@ -65,8 +64,7 @@ void RenderLayerIBL::setupRenderPass()
         subpassDep.srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
         subpassDep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         subpassDep.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-        subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                   VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        subpassDep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
         // Create the renderpass
         VkRenderPassCreateInfo renderPassInfo = {};
@@ -82,11 +80,11 @@ void RenderLayerIBL::setupRenderPass()
             renderPassInfo.pNext = &multiViewCI;
         }
 
-        VK_ASSERT(vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr, &m_vRenderPasses[passIdx]));
+        VK_ASSERT(
+            vkCreateRenderPass(GetRenderDevice()->GetDevice(), &renderPassInfo, nullptr, &m_vRenderPasses[passIdx]));
 
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_vRenderPasses[passIdx]),
-            VK_OBJECT_TYPE_RENDER_PASS, m_aRenderPassNames[passIdx].c_str());
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_vRenderPasses[passIdx]), VK_OBJECT_TYPE_RENDER_PASS,
+                                m_aRenderPassNames[passIdx].c_str());
     }
 }
 
@@ -94,18 +92,18 @@ void RenderLayerIBL::setupFramebuffer()
 {
     std::array<VkImageView, RENDERPASS_COUNT> vImageViews = {
         GetRenderResourceManager()
-            ->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM},
-                             TEX_FORMAT, 1, 6)
+            ->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM}, TEX_FORMAT, 1, 6)
             ->getView(),
         GetRenderResourceManager()
-            ->GetColorTarget("irr_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM},
-                             TEX_FORMAT, 1, 6)
+            ->GetColorTarget("irr_cube_map", {IRR_CUBE_DIM, IRR_CUBE_DIM}, TEX_FORMAT, 1, 6)
             ->getView(),
         GetRenderResourceManager()
-            ->GetColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+            ->GetColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1,
+                             NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
             ->getView(),
         GetRenderResourceManager()
-            ->GetColorTarget("specular_brdf_lut", {SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM}, VK_FORMAT_R32G32_SFLOAT, 1, 1)
+            ->GetColorTarget("specular_brdf_lut", {SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM},
+                             VK_FORMAT_R32G32_SFLOAT, 1, 1)
             ->getView()};
 
     // Create framebuffers
@@ -120,10 +118,10 @@ void RenderLayerIBL::setupFramebuffer()
         frameBufferCreateInfo.height = m_aCubemapSizes[passIdx];
         frameBufferCreateInfo.layers = 1;
 
-        VK_ASSERT(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &frameBufferCreateInfo, nullptr, &m_aFramebuffers[passIdx]));
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_aFramebuffers[passIdx]),
-            VK_OBJECT_TYPE_FRAMEBUFFER, m_aRenderPassNames[passIdx].c_str());
+        VK_ASSERT(vkCreateFramebuffer(GetRenderDevice()->GetDevice(), &frameBufferCreateInfo, nullptr,
+                                      &m_aFramebuffers[passIdx]));
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_aFramebuffers[passIdx]), VK_OBJECT_TYPE_FRAMEBUFFER,
+                                m_aRenderPassNames[passIdx].c_str());
     }
 }
 
@@ -153,36 +151,28 @@ void RenderLayerIBL::CreatePipeline()
         blendStateBuilder.setAttachments(1);
         // DS
         DepthStencilCIBuilder depthStencilBuilder;
-        depthStencilBuilder.setDepthTestEnabled(false)
-            .setDepthWriteEnabled(false)
-            .setDepthCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+        depthStencilBuilder.setDepthTestEnabled(false).setDepthWriteEnabled(false).setDepthCompareOp(
+            VK_COMPARE_OP_LESS_OR_EQUAL);
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {
-            GetDescriptorManager()->GetDescriptorLayout(
-                DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-            GetDescriptorManager()->GetDescriptorLayout(
-                DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+            GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants;
 
-        m_envCubeMapPipelineLayout =
-            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
+        m_envCubeMapPipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         // Dynmaic state
-        std::vector<VkDynamicState> dynamicStateEnables = {
-            VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
-        VkShaderModule vertShdr = CreateShaderModule(
-            ReadSpv("shaders/equirectangularToCubeMap.vert.spv"));
-        VkShaderModule fragShdr = CreateShaderModule(
-            ReadSpv("shaders/equirectangularToCubeMap.frag.spv"));
+        VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/equirectangularToCubeMap.vert.spv"));
+        VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/equirectangularToCubeMap.frag.spv"));
         PipelineStateBuilder builder;
 
         m_envCubeMapPipeline =
             builder.setShaderModules({vertShdr, fragShdr})
-                .setVertextInfo({Vertex::getBindingDescription()},
-                                Vertex::getAttributeDescriptions())
+                .setVertextInfo({Vertex::getBindingDescription()}, Vertex::getAttributeDescriptions())
                 .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
                 .setRasterizer(rasterizerBuilder.Build())
@@ -194,22 +184,18 @@ void RenderLayerIBL::CreatePipeline()
                 .setRenderPass(m_vRenderPasses[RENDERPASS_LOAD_ENV_MAP])
                 .Build(GetRenderDevice()->GetDevice());
 
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
-                              nullptr);
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
-                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 
         // Set debug name for the pipeline
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_envCubeMapPipeline),
-            VK_OBJECT_TYPE_PIPELINE, "EquirectangularMapToCubeMap");
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_envCubeMapPipeline), VK_OBJECT_TYPE_PIPELINE,
+                                "EquirectangularMapToCubeMap");
     }
     // 2. Create the pipeline to generate irradiance map
     {
         // Viewport
         ViewportBuilder vpBuilder;
-        VkViewport viewport =
-            vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).Build();
+        VkViewport viewport = vpBuilder.setWH(IRR_CUBE_DIM, IRR_CUBE_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -228,36 +214,28 @@ void RenderLayerIBL::CreatePipeline()
         blendStateBuilder.setAttachments(1);
         // DS
         DepthStencilCIBuilder depthStencilBuilder;
-        depthStencilBuilder.setDepthTestEnabled(false)
-            .setDepthWriteEnabled(false)
-            .setDepthCompareOp(VK_COMPARE_OP_LESS_OR_EQUAL);
+        depthStencilBuilder.setDepthTestEnabled(false).setDepthWriteEnabled(false).setDepthCompareOp(
+            VK_COMPARE_OP_LESS_OR_EQUAL);
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {
-            GetDescriptorManager()->GetDescriptorLayout(
-                DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-            GetDescriptorManager()->GetDescriptorLayout(
-                DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+            GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants;
 
-        m_irrCubeMapPipelineLayout =
-            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
+        m_irrCubeMapPipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         // Dynmaic state
-        std::vector<VkDynamicState> dynamicStateEnables = {
-            VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
-        VkShaderModule vertShdr = CreateShaderModule(
-            ReadSpv("shaders/CubeMapToIrradianceMap.vert.spv"));
-        VkShaderModule fragShdr = CreateShaderModule(
-            ReadSpv("shaders/CubeMapToIrradianceMap.frag.spv"));
+        VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/CubeMapToIrradianceMap.vert.spv"));
+        VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/CubeMapToIrradianceMap.frag.spv"));
         PipelineStateBuilder builder;
 
         m_irrCubeMapPipeline =
             builder.setShaderModules({vertShdr, fragShdr})
-                .setVertextInfo({Vertex::getBindingDescription()},
-                                Vertex::getAttributeDescriptions())
+                .setVertextInfo({Vertex::getBindingDescription()}, Vertex::getAttributeDescriptions())
                 .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
                 .setRasterizer(rasterizerBuilder.Build())
@@ -269,23 +247,19 @@ void RenderLayerIBL::CreatePipeline()
                 .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_IRR_CUBEMAP])
                 .Build(GetRenderDevice()->GetDevice());
 
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
-                              nullptr);
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
-                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 
         // Set debug name for the pipeline
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_irrCubeMapPipeline),
-            VK_OBJECT_TYPE_PIPELINE, "CubeMapToIrradianceMap");
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_irrCubeMapPipeline), VK_OBJECT_TYPE_PIPELINE,
+                                "CubeMapToIrradianceMap");
     }
 
     // 3. Pipeline to generate pre-filtered HDR environment map
     {
         // Viewport
         ViewportBuilder vpBuilder;
-        VkViewport viewport =
-            vpBuilder.setWH(PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM).Build();
+        VkViewport viewport = vpBuilder.setWH(PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -304,36 +278,28 @@ void RenderLayerIBL::CreatePipeline()
         blendStateBuilder.setAttachments(1);
         // DS
         DepthStencilCIBuilder depthStencilBuilder;
-        depthStencilBuilder.setDepthTestEnabled(false)
-            .setDepthWriteEnabled(false);
+        depthStencilBuilder.setDepthTestEnabled(false).setDepthWriteEnabled(false);
 
         // Pipeline layout
         std::vector<VkDescriptorSetLayout> descLayouts = {
-            GetDescriptorManager()->GetDescriptorLayout(
-                DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
-            GetDescriptorManager()->GetDescriptorLayout(
-                DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
+            GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_PER_VIEW_DATA),
+            GetDescriptorManager()->GetDescriptorLayout(DescriptorLayoutType::DESCRIPTOR_LAYOUT_SINGLE_SAMPLER)};
 
         std::vector<VkPushConstantRange> pushConstants{
             GetPushConstantRange<SingleFloatPushConstant>(VK_SHADER_STAGE_FRAGMENT_BIT)};
 
-        m_prefilteredCubemapPipelineLayout =
-            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
+        m_prefilteredCubemapPipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
         // Dynmaic state
-        std::vector<VkDynamicState> dynamicStateEnables = {
-            VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        std::vector<VkDynamicState> dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
-        VkShaderModule vertShdr = CreateShaderModule(
-            ReadSpv("shaders/CubeMapToIrradianceMap.vert.spv"));
-        VkShaderModule fragShdr = CreateShaderModule(
-            ReadSpv("shaders/GeneratePrefilteredCubemap.frag.spv"));
+        VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/CubeMapToIrradianceMap.vert.spv"));
+        VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/GeneratePrefilteredCubemap.frag.spv"));
 
         PipelineStateBuilder builder;
         m_prefilteredCubemapPipeline =
             builder.setShaderModules({vertShdr, fragShdr})
-                .setVertextInfo({Vertex::getBindingDescription()},
-                                Vertex::getAttributeDescriptions())
+                .setVertextInfo({Vertex::getBindingDescription()}, Vertex::getAttributeDescriptions())
                 .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
                 .setRasterizer(rasterizerBuilder.Build())
@@ -345,23 +311,19 @@ void RenderLayerIBL::CreatePipeline()
                 .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_IRR_CUBEMAP])
                 .Build(GetRenderDevice()->GetDevice());
 
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
-                              nullptr);
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
-                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 
         // Set debug name for the pipeline
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_prefilteredCubemapPipeline),
-            VK_OBJECT_TYPE_PIPELINE, "prefiltered cube map");
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_prefilteredCubemapPipeline), VK_OBJECT_TYPE_PIPELINE,
+                                "prefiltered cube map");
     }
 
     // 4. Specular BRDF lookup
     {
         // Viewport
         ViewportBuilder vpBuilder;
-        VkViewport viewport =
-            vpBuilder.setWH(SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM).Build();
+        VkViewport viewport = vpBuilder.setWH(SPECULAR_BRDF_LUT_DIM, SPECULAR_BRDF_LUT_DIM).Build();
 
         // Scissor
         VkRect2D scissorRect;
@@ -386,19 +348,15 @@ void RenderLayerIBL::CreatePipeline()
 
         std::vector<VkPushConstantRange> pushConstants;
 
-        m_specularBrdfLutPipelineLayout =
-            GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
+        m_specularBrdfLutPipelineLayout = GetRenderDevice()->CreatePipelineLayout(descLayouts, pushConstants);
 
-        VkShaderModule vertShdr = CreateShaderModule(
-            ReadSpv("shaders/lighting.vert.spv"));
-        VkShaderModule fragShdr = CreateShaderModule(
-            ReadSpv("shaders/GenerateSpecularBrdfLut.frag.spv"));
+        VkShaderModule vertShdr = CreateShaderModule(ReadSpv("shaders/lighting.vert.spv"));
+        VkShaderModule fragShdr = CreateShaderModule(ReadSpv("shaders/GenerateSpecularBrdfLut.frag.spv"));
         PipelineStateBuilder builder;
 
         m_specularBrdfLutPipeline =
             builder.setShaderModules({vertShdr, fragShdr})
-                .setVertextInfo({Vertex::getBindingDescription()},
-                                Vertex::getAttributeDescriptions())
+                .setVertextInfo({Vertex::getBindingDescription()}, Vertex::getAttributeDescriptions())
                 .setAssembly(iaBuilder.Build())
                 .setViewport(viewport, scissorRect)
                 .setRasterizer(rasterizerBuilder.Build())
@@ -409,24 +367,19 @@ void RenderLayerIBL::CreatePipeline()
                 .setRenderPass(m_vRenderPasses[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT])
                 .Build(GetRenderDevice()->GetDevice());
 
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr,
-                              nullptr);
-        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr,
-                              nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), vertShdr, nullptr);
+        vkDestroyShaderModule(GetRenderDevice()->GetDevice(), fragShdr, nullptr);
 
         // Set debug name for the pipeline
-        setDebugUtilsObjectName(
-            reinterpret_cast<uint64_t>(m_prefilteredCubemapPipeline),
-            VK_OBJECT_TYPE_PIPELINE, "specular brdf lut");
+        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_prefilteredCubemapPipeline), VK_OBJECT_TYPE_PIPELINE,
+                                "specular brdf lut");
     }
 }
 
 void RenderLayerIBL::setupDescriptorSets()
 {
     // Per veiw data
-    m_perViewDataDescriptorSet =
-        GetDescriptorManager()->AllocatePerviewDataDescriptorSet(
-            m_uniformBuffer);
+    m_perViewDataDescriptorSet = GetDescriptorManager()->AllocatePerviewDataDescriptorSet(m_uniformBuffer);
 
     // Environment map sampler descriptor set
     VkImageView envMapView = GetRenderResourceManager()->GetTexture("EnvMap", "assets/hdr/black.hdr")->getView();
@@ -434,7 +387,9 @@ void RenderLayerIBL::setupDescriptorSets()
 
     // Environment cube map descriptor set
     m_irrMapDescriptorSet = GetDescriptorManager()->AllocateSingleSamplerDescriptorSet(
-        GetRenderResourceManager()->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM}, TEX_FORMAT, 1, 6)->getView());
+        GetRenderResourceManager()
+            ->GetColorTarget("env_cube_map", {ENV_CUBE_DIM, ENV_CUBE_DIM}, TEX_FORMAT, 1, 6)
+            ->getView());
 }
 
 void RenderLayerIBL::RecordCommandBuffer()
@@ -454,8 +409,7 @@ void RenderLayerIBL::RecordCommandBuffer()
     cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
     cmdBeginInfo.pInheritanceInfo = nullptr;
     m_commandBuffer = GetRenderDevice()->AllocateStaticPrimaryCommandbuffer();
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
-                            VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer), VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
 
     VkDeviceSize offsets[1] = {0};
 
@@ -468,20 +422,16 @@ void RenderLayerIBL::RecordCommandBuffer()
     {
         RenderPassBeginInfoBuilder beginInfoBuilder;
         aRenderpassBeginInfos[passIdx] =
-            beginInfoBuilder
-                .setRenderArea(VkExtent2D({m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx]}))
+            beginInfoBuilder.setRenderArea(VkExtent2D({m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx]}))
                 .setRenderPass(m_vRenderPasses[passIdx])
                 .setClearValues(clearValues)
                 .setFramebuffer(m_aFramebuffers[passIdx])
                 .Build();
 
         ViewportBuilder vpBuilder;
-        aViewports[passIdx] =
-            vpBuilder.setWH(m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx])
-                .Build();
+        aViewports[passIdx] = vpBuilder.setWH(m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx]).Build();
 
-        aScissors[passIdx] = {0, 0, m_aCubemapSizes[passIdx],
-                              m_aCubemapSizes[passIdx]};
+        aScissors[passIdx] = {0, 0, m_aCubemapSizes[passIdx], m_aCubemapSizes[passIdx]};
     }
 
     // Begin recording
@@ -491,26 +441,21 @@ void RenderLayerIBL::RecordCommandBuffer()
         {
             SCOPED_MARKER(m_commandBuffer, "First IBL pass");
 
-            vkCmdBeginRenderPass(m_commandBuffer,
-                                 &aRenderpassBeginInfos[RENDERPASS_LOAD_ENV_MAP],
+            vkCmdBeginRenderPass(m_commandBuffer, &aRenderpassBeginInfos[RENDERPASS_LOAD_ENV_MAP],
                                  VK_SUBPASS_CONTENTS_INLINE);
             vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_LOAD_ENV_MAP]);
             vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_LOAD_ENV_MAP]);
 
-            std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
-                                                   m_envMapDescriptorSet};
+            std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet, m_envMapDescriptorSet};
 
-            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              m_envCubeMapPipeline);
+            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_envCubeMapPipeline);
 
-            vkCmdBindDescriptorSets(
-                m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_envCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+            vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_envCubeMapPipelineLayout, 0, 2,
+                                    sets.data(), 0, NULL);
 
             vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, offsets);
 
-            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                                 VK_INDEX_TYPE_UINT32);
+            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
             vkCmdEndRenderPass(m_commandBuffer);
         }
@@ -518,35 +463,37 @@ void RenderLayerIBL::RecordCommandBuffer()
         {
             SCOPED_MARKER(m_commandBuffer, "Second IBL pass");
 
-            vkCmdBeginRenderPass(m_commandBuffer,
-                                 &aRenderpassBeginInfos[RENDERPASS_COMPUTE_IRR_CUBEMAP],
+            vkCmdBeginRenderPass(m_commandBuffer, &aRenderpassBeginInfos[RENDERPASS_COMPUTE_IRR_CUBEMAP],
                                  VK_SUBPASS_CONTENTS_INLINE);
-            vkCmdSetViewport(m_commandBuffer, 0, 1,
-                             &aViewports[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
-            vkCmdSetScissor(m_commandBuffer, 0, 1,
-                            &aScissors[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
+            vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
+            vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_IRR_CUBEMAP]);
 
-            std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
-                                                   m_irrMapDescriptorSet};
-            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              m_irrCubeMapPipeline);
+            std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet, m_irrMapDescriptorSet};
+            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_irrCubeMapPipeline);
 
-            vkCmdBindDescriptorSets(
-                m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_irrCubeMapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+            vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_irrCubeMapPipelineLayout, 0, 2,
+                                    sets.data(), 0, NULL);
 
-            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1,
-                                   &vertexBuffer, offsets);
-            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                                 VK_INDEX_TYPE_UINT32);
+            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, offsets);
+            vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, nIndexOffset, 0, 0);
 
             vkCmdEndRenderPass(m_commandBuffer);
         }
         // Compute prefiltered irradiance map
-        VkImage prefilteredImage = GetRenderResourceManager()->GetColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_DST_BIT)->getImage();
-        GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
-        VkImage prefilteredImageTmp = GetRenderResourceManager()->GetColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)->getImage();
+        VkImage prefilteredImage =
+            GetRenderResourceManager()
+                ->GetColorTarget("prefiltered_cubemap", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT,
+                                 NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES, VK_IMAGE_USAGE_TRANSFER_DST_BIT)
+                ->getImage();
+        GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_UNDEFINED,
+                                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP,
+                                              NUM_FACES);
+        VkImage prefilteredImageTmp =
+            GetRenderResourceManager()
+                ->GetColorTarget("prefiltered_cubemap_tmp", {PREFILTERED_CUBE_DIM, PREFILTERED_CUBE_DIM}, TEX_FORMAT, 1,
+                                 NUM_FACES, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+                ->getImage();
 
         {
             SCOPED_MARKER(m_commandBuffer, "Computed Prefiltered cubemap");
@@ -556,41 +503,32 @@ void RenderLayerIBL::RecordCommandBuffer()
                 unsigned int uMipWidth = PREFILTERED_CUBE_DIM * powf(0.5f, uMip);
                 unsigned int uMipHeight = PREFILTERED_CUBE_DIM * powf(0.5f, uMip);
 
-                vkCmdBeginRenderPass(m_commandBuffer,
-                                     &aRenderpassBeginInfos[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP],
+                vkCmdBeginRenderPass(m_commandBuffer, &aRenderpassBeginInfos[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP],
                                      VK_SUBPASS_CONTENTS_INLINE);
-                vkCmdSetViewport(m_commandBuffer, 0, 1,
-                                 &aViewports[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
-                vkCmdSetScissor(m_commandBuffer, 0, 1,
-                                &aScissors[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
+                vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
+                vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_PRE_FILTERED_CUBEMAP]);
 
-                std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet,
-                                                       m_irrMapDescriptorSet};
-                vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                  m_prefilteredCubemapPipeline);
+                std::array<VkDescriptorSet, 2> sets = {m_perViewDataDescriptorSet, m_irrMapDescriptorSet};
+                vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_prefilteredCubemapPipeline);
 
                 // Pass roughness as push constant
                 SingleFloatPushConstant pushConstantBlock;
                 pushConstantBlock.fValue = (float)uMip / (float)(NUM_PREFILTERED_CUBEMAP_MIP - 1);
-                vkCmdPushConstants(m_commandBuffer, m_prefilteredCubemapPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(SingleFloatPushConstant), &pushConstantBlock);
+                vkCmdPushConstants(m_commandBuffer, m_prefilteredCubemapPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                                   sizeof(SingleFloatPushConstant), &pushConstantBlock);
 
                 // Set dynamic viewport and scissor
-                VkViewport viewport = {
-                    0.0, 0.0, (float)uMipWidth, (float)uMipHeight,
-                    0.0, 1.0};
+                VkViewport viewport = {0.0, 0.0, (float)uMipWidth, (float)uMipHeight, 0.0, 1.0};
                 vkCmdSetViewport(m_commandBuffer, 0, 1, &viewport);
 
                 VkRect2D scissor = {0, 0, uMipWidth, uMipHeight};
                 vkCmdSetScissor(m_commandBuffer, 0, 1, &scissor);
 
-                vkCmdBindDescriptorSets(
-                    m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_prefilteredCubemapPipelineLayout, 0, 2, sets.data(), 0, NULL);
+                vkCmdBindDescriptorSets(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                        m_prefilteredCubemapPipelineLayout, 0, 2, sets.data(), 0, NULL);
 
-                vkCmdBindVertexBuffers(m_commandBuffer, 0, 1,
-                                       &vertexBuffer, offsets);
-                vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0,
-                                     VK_INDEX_TYPE_UINT32);
+                vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &vertexBuffer, offsets);
+                vkCmdBindIndexBuffer(m_commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                 vkCmdDrawIndexed(m_commandBuffer, nIndexCount, 1, 0, 0, 0);
 
                 vkCmdEndRenderPass(m_commandBuffer);
@@ -613,23 +551,18 @@ void RenderLayerIBL::RecordCommandBuffer()
                 copyRegion.extent.height = uMipHeight;
                 copyRegion.extent.depth = 1;
 
-                vkCmdCopyImage(
-                    m_commandBuffer,
-                    prefilteredImageTmp,
-                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                    prefilteredImage,
-                    VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                    1,
-                    &copyRegion);
+                vkCmdCopyImage(m_commandBuffer, prefilteredImageTmp, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                               prefilteredImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
             }
             // Prepare prefiltered map for shader usage
-            GetRenderDevice()->TransitImageLayout(m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
+            GetRenderDevice()->TransitImageLayout(
+                m_commandBuffer, prefilteredImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, NUM_PREFILTERED_CUBEMAP_MIP, NUM_FACES);
         }
         {
             SCOPED_MARKER(m_commandBuffer, "Computed specular brdf lut");
 
-            vkCmdBeginRenderPass(m_commandBuffer,
-                                 &aRenderpassBeginInfos[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT],
+            vkCmdBeginRenderPass(m_commandBuffer, &aRenderpassBeginInfos[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT],
                                  VK_SUBPASS_CONTENTS_INLINE);
             vkCmdSetViewport(m_commandBuffer, 0, 1, &aViewports[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
             vkCmdSetScissor(m_commandBuffer, 0, 1, &aScissors[RENDERPASS_COMPUTE_SPECULAR_BRDF_LUT]);
@@ -642,12 +575,9 @@ void RenderLayerIBL::RecordCommandBuffer()
             uint32_t nQuadIndexCount = quadMesh.m_nIndexCount;
             uint32_t nQuadIndexOffset = quadMesh.m_nIndexOffset;
 
-            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &quadVertexBuffer,
-                                   &offset);
-            vkCmdBindIndexBuffer(m_commandBuffer, quadIndexBuffer, 0,
-                                 VK_INDEX_TYPE_UINT32);
-            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              m_specularBrdfLutPipeline);
+            vkCmdBindVertexBuffers(m_commandBuffer, 0, 1, &quadVertexBuffer, &offset);
+            vkCmdBindIndexBuffer(m_commandBuffer, quadIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindPipeline(m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_specularBrdfLutPipeline);
             // vkCmdBindDescriptorSets(
             //     m_commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             //     mLightingPipelineLayout, 0, lightingDescSets.size(),
@@ -657,8 +587,7 @@ void RenderLayerIBL::RecordCommandBuffer()
         }
     }
     vkEndCommandBuffer(m_commandBuffer);
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer),
-                            VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
+    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_commandBuffer), VK_OBJECT_TYPE_COMMAND_BUFFER, "[CB] IBL");
 }
 
 RenderLayerIBL::RenderLayerIBL()
@@ -675,8 +604,7 @@ RenderLayerIBL::~RenderLayerIBL()
     DestroyFramebuffer();
     for (auto renderpass : m_vRenderPasses)
     {
-        vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderpass,
-                            nullptr);
+        vkDestroyRenderPass(GetRenderDevice()->GetDevice(), renderpass, nullptr);
     }
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_envCubeMapPipelineLayout, nullptr);
     vkDestroyPipelineLayout(GetRenderDevice()->GetDevice(), m_irrCubeMapPipelineLayout, nullptr);
@@ -693,12 +621,11 @@ void RenderLayerIBL::DestroyFramebuffer()
 {
     for (auto framebuffer : m_aFramebuffers)
     {
-        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), framebuffer,
-                             nullptr);
+        vkDestroyFramebuffer(GetRenderDevice()->GetDevice(), framebuffer, nullptr);
     }
 }
 
-void RenderLayerIBL::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
+void RenderLayerIBL::ReloadEnvironmentMap(const std::string& sNewEnvMapPath)
 {
     // Destroy and reload env map resource
     GetRenderResourceManager()->RemoveResource("EnvMap");

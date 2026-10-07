@@ -11,10 +11,7 @@ public:
     virtual ~RenderPassRayTracing() { DestroyPipeline(); }
     virtual void CreatePipeline() override;
     virtual void PrepareRenderPass() override;
-    virtual VkCommandBuffer GetCommandBuffer() const override
-    {
-        return m_commandBuffer;
-    }
+    virtual VkCommandBuffer GetCommandBuffer() const override { return m_commandBuffer; }
     void RecordCommandBuffer();
 
     VkPipelineLayout GetPipelineLayout() const { return m_pipelineLayout; }

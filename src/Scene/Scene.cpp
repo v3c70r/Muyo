@@ -6,16 +6,13 @@
 
 #include "Geometry.h"
 #include "LightSceneNode.h"
-#include "RenderResourceManager.h"
 #include "PerObjResourceManager.h"
+#include "RenderResourceManager.h"
 
 namespace Muyo
 {
 
-void SceneNode::AppendChild(SceneNode *node)
-{
-    m_vpChildren.emplace_back(node);
-}
+void SceneNode::AppendChild(SceneNode *node) { m_vpChildren.emplace_back(node); }
 
 std::string Scene::ConstructDebugString() const
 {
@@ -46,9 +43,8 @@ const DrawLists &Scene::GatherDrawLists()
             dl.clear();
         }
         uint32_t nShadowMapIndex = 0;
-        std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &, DrawLists &)>
-            FlattenTreeRecursive = [&](const std::unique_ptr<SceneNode> &pNode,
-                                       const glm::mat4 &mCurrentTrans, DrawLists &drawLists)
+        std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &, DrawLists &)> FlattenTreeRecursive =
+            [&](const std::unique_ptr<SceneNode> &pNode, const glm::mat4 &mCurrentTrans, DrawLists &drawLists)
         {
             glm::mat4 mWorldMatrix = mCurrentTrans * pNode->GetMatrix();
             assert(IsMat4Valid(mWorldMatrix));
@@ -67,14 +63,13 @@ const DrawLists &Scene::GatherDrawLists()
                 Geometry *pGeometry = pGeometryNode->GetGeometry();
                 pGeometry->SetWorldMatrix(mWorldMatrix);
 
-                for (auto& submesh : pGeometry->getSubmeshes())
+                for (auto &submesh : pGeometry->getSubmeshes())
                 {
                     // TODO: populate submesh data array
 
                     aSubmeshDatas[nSubmeshCount++].nMaterialIndex = submesh->GetMeshIndex();
-                    //submesh->GetMaterial();
+                    // submesh->GetMaterial();
                 }
-                
             }
             // Gather light sources
             else if (LightSceneNode *pLightSceneNode = dynamic_cast<LightSceneNode *>(pNode.get()))

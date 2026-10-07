@@ -11,10 +11,7 @@ namespace Muyo
 
 static SceneManager s_sceneManager;
 
-SceneManager* GetSceneManager()
-{
-    return &s_sceneManager;
-}
+SceneManager* GetSceneManager() { return &s_sceneManager; }
 
 void SceneManager::LoadSceneFromFile(const std::string& sPath)
 {

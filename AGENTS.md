@@ -26,6 +26,13 @@ silently diverge from it.
 - For a large PR, post a **summary/index comment** on the PR (scope, features, fixes, review
   history, verification, deferred work) so the context survives the squash and can be linked to
   later.
+- **Formatting-only commits are listed in [`.git-blame-ignore-revs`](.git-blame-ignore-revs)** so
+  `git blame` skips them (`git config blame.ignoreRevsFile .git-blame-ignore-revs`). A pass that
+  reformats the whole tree belongs in its own PR with no functional changes, and its commit must
+  land on `master` verbatim for the entry to resolve - squash-merging replaces the SHA, so re-point
+  the entry afterwards. `git blame` already passes whitespace-only changes through to the
+  original author, so the list only covers what it cannot, such as blank lines the formatter
+  inserted.
 
 ## 2. Project management
 

@@ -9,7 +9,7 @@ namespace Muyo
 {
 
 PipelineStateBuilder& PipelineStateBuilder::SetShaderModule(VkShaderModule shaderModule,
-                                      VkShaderStageFlagBits shaderStageBit)
+                                                            VkShaderStageFlagBits shaderStageBit)
 {
     VkPipelineShaderStageCreateInfo shaderStageInfo = {};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -22,22 +22,19 @@ PipelineStateBuilder& PipelineStateBuilder::SetShaderModule(VkShaderModule shade
     return *this;
 }
 
-PipelineStateBuilder& PipelineStateBuilder::setShaderModules(
-    const std::vector<VkShaderModule>& shaderModules)
+PipelineStateBuilder& PipelineStateBuilder::setShaderModules(const std::vector<VkShaderModule>& shaderModules)
 {
     assert(shaderModules.size() == 2);
     m_vShaderStageInfos.reserve(shaderModules.size());
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
-    vertShaderStageInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     vertShaderStageInfo.module = shaderModules[0];
     vertShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
-    fragShaderStageInfo.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     fragShaderStageInfo.module = shaderModules[1];
     fragShaderStageInfo.pName = "main";
@@ -64,11 +61,9 @@ PipelineStateBuilder& PipelineStateBuilder::setVertextInfo(
     return *this;
 }
 
-PipelineStateBuilder& PipelineStateBuilder::setViewport(
-    const VkViewport& viewport, const VkRect2D& scissor)
+PipelineStateBuilder& PipelineStateBuilder::setViewport(const VkViewport& viewport, const VkRect2D& scissor)
 {
-    m_viewPortState.sType =
-        VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    m_viewPortState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     m_viewPortState.viewportCount = 1;
     m_viewPortState.pViewports = &viewport;
     m_viewPortState.scissorCount = 1;
@@ -92,16 +87,15 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     // dynamic viewport and scissor
     if (m_viewPortState.sType != VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO)
     {
-        m_viewPortState = 
-            {
+        m_viewPortState = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
-            .pViewports = nullptr, // ignored
+            .pViewports = nullptr,  // ignored
             .scissorCount = 1,
-            .pScissors  = nullptr  // ignored
-};
+            .pScissors = nullptr  // ignored
+        };
     }
-    
+
     pipelineInfo.pViewportState = &m_viewPortState;
 
     pipelineInfo.pRasterizationState = &m_rasterizerInfo;
@@ -134,7 +128,8 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     return res;
 }
 // Helper function
-ComputePipelineBuilder& ComputePipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage)
+ComputePipelineBuilder& ComputePipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule,
+                                                                VkShaderStageFlagBits shaderStage)
 {
     // only a single stage for compute pipeline
     assert(shaderStage == VK_SHADER_STAGE_COMPUTE_BIT);
@@ -147,7 +142,8 @@ ComputePipelineBuilder& ComputePipelineBuilder::AddShaderModule(const VkShaderMo
 
     return *this;
 }
-RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule, VkShaderStageFlagBits shaderStage)
+RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkShaderModule& shaderModule,
+                                                                      VkShaderStageFlagBits shaderStage)
 {
     VkPipelineShaderStageCreateInfo shaderStageInfo = {};
     shaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -166,27 +162,25 @@ RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkSh
         VkRayTracingShaderGroupCreateInfoKHR info = {};
         if (shaderStage & (VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR))
         {
-            info = {
-                VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-                nullptr,
-                VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
-                stageIndex,            // generalShader
-                VK_SHADER_UNUSED_KHR,  // closestHitShader
-                VK_SHADER_UNUSED_KHR,  // anyHitShader
-                VK_SHADER_UNUSED_KHR,  // intersectionShader
-                nullptr};
+            info = {VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                    nullptr,
+                    VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+                    stageIndex,            // generalShader
+                    VK_SHADER_UNUSED_KHR,  // closestHitShader
+                    VK_SHADER_UNUSED_KHR,  // anyHitShader
+                    VK_SHADER_UNUSED_KHR,  // intersectionShader
+                    nullptr};
         }
         else if (shaderStage & VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR)
         {
-            info = {
-                VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
-                nullptr,
-                VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
-                VK_SHADER_UNUSED_KHR,  // generalShader
-                stageIndex,            // closestHitShader
-                VK_SHADER_UNUSED_KHR,  // anyHitShader
-                VK_SHADER_UNUSED_KHR,  // intersectionShader
-                nullptr};
+            info = {VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                    nullptr,
+                    VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
+                    VK_SHADER_UNUSED_KHR,  // generalShader
+                    stageIndex,            // closestHitShader
+                    VK_SHADER_UNUSED_KHR,  // anyHitShader
+                    VK_SHADER_UNUSED_KHR,  // intersectionShader
+                    nullptr};
         }
         else
         {

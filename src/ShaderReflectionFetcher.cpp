@@ -237,7 +237,7 @@ ShaderReflection MergeShaderReflections(const std::vector<ShaderReflection>& ref
     {
         for (const auto& desc : refl.descriptorBindings)
         {
-            BindingKey key{.set=desc.set, .binding=desc.binding};
+            BindingKey key{.set = desc.set, .binding = desc.binding};
             auto it = bindingMap.find(key);
             if (it == bindingMap.end())
             {
@@ -262,7 +262,8 @@ ShaderReflection MergeShaderReflections(const std::vector<ShaderReflection>& ref
         merged.descriptorBindings.push_back(desc);
     }
     // Sort for deterministic order
-    std::sort(merged.descriptorBindings.begin(), merged.descriptorBindings.end(), [](const auto& a, const auto& b) { return std::tie(a.set, a.binding) < std::tie(b.set, b.binding); });
+    std::sort(merged.descriptorBindings.begin(), merged.descriptorBindings.end(),
+              [](const auto& a, const auto& b) { return std::tie(a.set, a.binding) < std::tie(b.set, b.binding); });
 
     // Merge push constant ranges (combine overlapping ranges and stage flags)
     for (const auto& refl : reflections)

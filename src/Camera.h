@@ -44,7 +44,7 @@ struct PerViewData
 // Extract the 6 world-space frustum planes from a view-projection matrix
 // (Gribb-Hartmann). Matches glm::perspective's default OpenGL depth range [-1, 1].
 // Plane normals point inward: a point is inside when dot(normal, p) + distance >= 0.
-inline void ExtractFrustumPlanes(const glm::mat4& mViewProj, glm::vec4 outPlanes[6])
+inline void ExtractFrustumPlanes(const glm::mat4 &mViewProj, glm::vec4 outPlanes[6])
 {
     const glm::vec4 row0 = glm::row(mViewProj, 0);
     const glm::vec4 row1 = glm::row(mViewProj, 1);
@@ -108,42 +108,20 @@ public:
     virtual void Resize(const glm::vec2 &newSize)
     {
         m_perViewData.vScreenExtent = newSize;
-        glm::perspective(glm::radians(45.0f), newSize.x / newSize.y, 0.1f,
-                         10.0f);
+        glm::perspective(glm::radians(45.0f), newSize.x / newSize.y, 0.1f, 10.0f);
     }
     virtual void Update() = 0;
-    virtual void UpdatePerViewDataUBO(UniformBuffer<PerViewData> *ubo)
-    {
-        ubo->SetData(m_perViewData);
-    };
+    virtual void UpdatePerViewDataUBO(UniformBuffer<PerViewData> *ubo) { ubo->SetData(m_perViewData); };
 
-    void SetAperture(float fAperture)
-    {
-        m_perViewData.fAperture = fAperture;
-    }
+    void SetAperture(float fAperture) { m_perViewData.fAperture = fAperture; }
 
-    void SetFocalDistance(float fDistance)
-    {
-        m_perViewData.fFocalDistance = fDistance;
-    }
+    void SetFocalDistance(float fDistance) { m_perViewData.fFocalDistance = fDistance; }
 
-    void SetFrameId(uint32_t uFrameId)
-    {
-        m_perViewData.uFrameId = uFrameId;
-    }
-    void SetLeftSplitScreenRatio(float ratio)
-    {
-        m_perViewData.fLeftSplitScreenRatio = ratio;
-    }
-    float GetLeftSplitScreenRatio() const
-    {
-        return m_perViewData.fLeftSplitScreenRatio;
-    }
+    void SetFrameId(uint32_t uFrameId) { m_perViewData.uFrameId = uFrameId; }
+    void SetLeftSplitScreenRatio(float ratio) { m_perViewData.fLeftSplitScreenRatio = ratio; }
+    float GetLeftSplitScreenRatio() const { return m_perViewData.fLeftSplitScreenRatio; }
 
-    bool IsTransforationUpdated() const
-    {
-        return m_bIsTransformationUpdated;
-    }
+    bool IsTransforationUpdated() const { return m_bIsTransformationUpdated; }
 
 protected:
     PerViewData m_perViewData;
@@ -154,13 +132,13 @@ class Arcball : public Camera
 {
 public:
     Arcball(glm::mat4 proj, glm::mat4 view, float fNear, float fFar, float width, float height)
-        : Camera(proj, view, fNear, fFar, width, height),
-          mLastPos(glm::vec2(0.0)),
-          mCurPos(glm::vec2(0.0)),
-          mArcballRotate(glm::mat4(1.0)),
-          mIsDragging(false),
-          mIsFirstPos(false),
-          mZoom(0.0)
+        : Camera(proj, view, fNear, fFar, width, height)
+        , mLastPos(glm::vec2(0.0))
+        , mCurPos(glm::vec2(0.0))
+        , mArcballRotate(glm::mat4(1.0))
+        , mIsDragging(false)
+        , mIsFirstPos(false)
+        , mZoom(0.0)
 
     {
         Update();
@@ -176,10 +154,7 @@ public:
         mIsFirstPos = true;
     }
 
-    void AddZoom(float fZoom)
-    {
-        mZoom += fZoom;
-    }
+    void AddZoom(float fZoom) { mZoom += fZoom; }
 
     bool IsDragging() const
     {
@@ -228,14 +203,11 @@ public:
 
     glm::mat4 GetViewMat() const override
     {
-        glm::mat4 mViewMatrix =
-            glm::translate(m_perViewData.mView, glm::vec3(0.0, 0.0, mZoom));
+        glm::mat4 mViewMatrix = glm::translate(m_perViewData.mView, glm::vec3(0.0, 0.0, mZoom));
         return mViewMatrix * mArcballRotate;
     }
 
-    void Update() override
-    {
-    }
+    void Update() override {}
 
     virtual void UpdatePerViewDataUBO(UniformBuffer<PerViewData> *ubo) override
     {

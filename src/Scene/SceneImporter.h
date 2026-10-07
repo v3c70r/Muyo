@@ -38,8 +38,7 @@ public:
 
 private:
     void CopyGLTFNode(SceneNode& sceneNode, const tinygltf::Node& gltfNode);
-    void CopyGLTFNodeIterative(SceneNode&, const tinygltf::Node& gltfNode,
-                               const std::vector<tinygltf::Node>& vNodes);
+    void CopyGLTFNodeIterative(SceneNode&, const tinygltf::Node& gltfNode, const std::vector<tinygltf::Node>& vNodes);
     void ConstructGeometryNode(GeometrySceneNode& geomNode, const tinygltf::Mesh& mesh, const tinygltf::Model& model);
 
 private:

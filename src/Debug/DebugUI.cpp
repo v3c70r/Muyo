@@ -1,4 +1,5 @@
 #include "DebugUI.h"
+
 #include <unordered_map>
 
 #include "DescriptorManager.h"
@@ -38,8 +39,7 @@ void SceneDebugPage::Render() const
     ImGui::Begin(m_sName.c_str());
     {
         ImGuizmo::BeginFrame();
-        ImGuizmo::SetRect(0.0f, 0.0f,
-                          static_cast<float>(GetRenderPassManager()->GetViewportSize().width),
+        ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(GetRenderPassManager()->GetViewportSize().width),
                           static_cast<float>(GetRenderPassManager()->GetViewportSize().height));
 
         glm::mat4 mProj = GetRenderPassManager()->GetCamera()->GetProjMat();
@@ -50,11 +50,13 @@ void SceneDebugPage::Render() const
         for (const auto& scenePair : sceneMap)
         {
             const auto& pRoot = scenePair.second.GetRoot();
-            std::function<void(const SceneNode*, const glm::mat4&)>
-                DisplayNodesRecursive = [&](const SceneNode* pSceneNode, const glm::mat4& mCurrentTrans)
+            std::function<void(const SceneNode*, const glm::mat4&)> DisplayNodesRecursive =
+                [&](const SceneNode* pSceneNode, const glm::mat4& mCurrentTrans)
             {
                 glm::mat4 mWorld = mCurrentTrans * pSceneNode->GetMatrix();
-                static ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick | ImGuiTreeNodeFlags_SpanAvailWidth;
+                static ImGuiTreeNodeFlags base_flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                                                       ImGuiTreeNodeFlags_OpenOnDoubleClick |
+                                                       ImGuiTreeNodeFlags_SpanAvailWidth;
 
                 bool bIsTreeOpened = ImGui::TreeNodeEx(pSceneNode->GetName().c_str(), base_flags);
                 bool bIsTreeNodeSelected = ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen();
@@ -104,35 +106,29 @@ void SceneDebugPage::DisplaySceneNodeInfo(const SceneNode& sceneNode) const
     ImGui::InputFloat3("AABB Max", glm::value_ptr(AABBMax), "%.3f", ImGuiInputTextFlags_ReadOnly);
 }
 
-void SceneDebugPage::DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView, const glm::mat4& mProj) const
+void SceneDebugPage::DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView,
+                                          const glm::mat4& mProj) const
 {
     if (const GeometrySceneNode* pGeometryNode = dynamic_cast<const GeometrySceneNode*>(pSceneNode))
     {
         // construct bound
         auto AABB = pSceneNode->GetAABB();
-        float bounds[6] =
-            {
-                AABB.vMin.x,
-                AABB.vMin.y,
-                AABB.vMin.z,
-                AABB.vMax.x,
-                AABB.vMax.y,
-                AABB.vMax.z,
-            };
+        float bounds[6] = {
+            AABB.vMin.x, AABB.vMin.y, AABB.vMin.z, AABB.vMax.x, AABB.vMax.y, AABB.vMax.z,
+        };
 
-        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL, ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, bounds, NULL);
+        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL,
+                             ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, bounds, NULL);
     }
     else if (const LightSceneNode* pLightNode = dynamic_cast<const LightSceneNode*>(pSceneNode))
     {
         // ImGuizmo::DrawCubes(glm::value_ptr(mView), glm::value_ptr(mProj), glm::value_ptr(mWorld), 1);
-        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL, ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, NULL, NULL);
+        ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL,
+                             ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, NULL, NULL);
     }
 }
 
-void DemoDebugPage::Render() const
-{
-    ImGui::ShowDemoWindow();
-}
+void DemoDebugPage::Render() const { ImGui::ShowDemoWindow(); }
 
 void VerticalTabsPage::Render() const
 {
@@ -175,7 +171,6 @@ void EnvironmentMapDebugPage::Render() const
 
         ImGui::Combo("Current HDR", &m_nCurrentHDRIndex, &Funcs::ItemGetter, (void*)m_vHDRImagePatheStrings.data(),
                      static_cast<int>(m_vHDRImagePatheStrings.size()));
-
 
         if (nPrevSelection != m_nCurrentHDRIndex)
         {
@@ -232,8 +227,7 @@ void EnvironmentMapDebugPage::Render() const
     ImGui::End();
 }
 
-LightsDebugPage::LightsDebugPage(const std::string& sName)
-    : IDebugUIPage(sName)
+LightsDebugPage::LightsDebugPage(const std::string& sName) : IDebugUIPage(sName)
 {
     DrawLists dl = GetSceneManager()->GatherDrawLists();
     const std::vector<const SceneNode*> lightNodes = dl.m_aDrawLists[DrawLists::DL_LIGHT];
@@ -272,10 +266,12 @@ void CameraDebugPage::Render() const
     if (m_pCamera)
     {
         ImGui::GetWindowViewport();
-        ImGui::SetNextWindowPos(ImVec2(-10.0f, static_cast<float>(GetRenderPassManager()->GetViewportSize().height) - 30.0f));
+        ImGui::SetNextWindowPos(
+            ImVec2(-10.0f, static_cast<float>(GetRenderPassManager()->GetViewportSize().height) - 30.0f));
         ImGui::SetNextWindowSize(ImVec2(static_cast<float>(GetRenderPassManager()->GetViewportSize().width), 30.0f));
         float fRatio = m_pCamera->GetLeftSplitScreenRatio();
-        static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
+        static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
         ImGui::Begin("Camera", nullptr, flags);
         ImGui::PushItemWidth(static_cast<float>(GetRenderPassManager()->GetViewportSize().width));
         // Set ImGui slider to transparent
@@ -294,17 +290,12 @@ void CameraDebugPage::Render() const
     }
 }
 
-RenderPassDebugPage::RenderPassDebugPage(const std::string& sName) : IDebugUIPage(sName)
-{
-    ImNodes::CreateContext();
-}
-RenderPassDebugPage::~RenderPassDebugPage()
-{
-    ImNodes::DestroyContext();
-}
+RenderPassDebugPage::RenderPassDebugPage(const std::string& sName) : IDebugUIPage(sName) { ImNodes::CreateContext(); }
+RenderPassDebugPage::~RenderPassDebugPage() { ImNodes::DestroyContext(); }
 void RenderPassDebugPage::Render() const
 {
-    static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
+    static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                                    ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
     ImGui::Begin("RenderPasses", nullptr, flags);
     if (m_pRenderPassManager)
     {
@@ -341,24 +332,23 @@ void RenderPassDebugPage::Render() const
     }
     ImGui::End();
 
+    // ImGui::Begin("node editor");
+    // const int hardcoded_node_id = 1;
 
-    //ImGui::Begin("node editor");
-    //const int hardcoded_node_id = 1;
+    // ImNodes::BeginNodeEditor();
+    // ImNodes::BeginNode(hardcoded_node_id);
 
-    //ImNodes::BeginNodeEditor();
-    //ImNodes::BeginNode(hardcoded_node_id);
-
-    //const int output_attr_id = 2;
-    //ImNodes::BeginOutputAttribute(output_attr_id);
+    // const int output_attr_id = 2;
+    // ImNodes::BeginOutputAttribute(output_attr_id);
     //// in between Begin|EndAttribute calls, you can call ImGui
     //// UI functions
-    //ImGui::Text("output pin");
-    //ImNodes::EndOutputAttribute();
+    // ImGui::Text("output pin");
+    // ImNodes::EndOutputAttribute();
 
-    //ImNodes::EndNode();
-    //ImNodes::EndNodeEditor();
+    // ImNodes::EndNode();
+    // ImNodes::EndNodeEditor();
 
-    //ImGui::End();
+    // ImGui::End();
 }
 
 #undef GLM_ENABLE_EXPERIMENTAL

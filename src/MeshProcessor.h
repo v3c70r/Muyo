@@ -9,6 +9,7 @@ class MeshProcessor
 {
 public:
     static void ProcessSubmesh(Muyo::Submesh& submesh);
+
 private:
     static constexpr size_t MAX_VERTICES = 64;
     static constexpr size_t MAX_TRIANGLES = 124;

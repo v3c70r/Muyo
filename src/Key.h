@@ -45,8 +45,7 @@ enum ScanCode
 
 // Imgui requires us to map all keycode within 512 indices, so we just use 256
 // for mask, this unfortuately will map scancode onto latin unicodes
-constexpr unsigned
-KEYCODE_FROM_SCANCODE(enum ScanCode x) { return (x | 0x100); }
+constexpr unsigned KEYCODE_FROM_SCANCODE(enum ScanCode x) { return (x | 0x100); }
 
 enum Key
 {
@@ -191,19 +190,15 @@ inline enum Key keyFromScanCode(unsigned scan)
         enum ScanCode l, r;
     } region_t;
 
-    region_t regions[] =
-        {
-            {SCANCODE_CAPSLOCK, SCANCODE_CAPSLOCK},
-            {SCANCODE_PRINTSCREEN, SCANCODE_INSERT},
-            {SCANCODE_HOME, SCANCODE_UP},
-            {SCANCODE_LCTRL, SCANCODE_RGUI}};
+    region_t regions[] = {{SCANCODE_CAPSLOCK, SCANCODE_CAPSLOCK},
+                          {SCANCODE_PRINTSCREEN, SCANCODE_INSERT},
+                          {SCANCODE_HOME, SCANCODE_UP},
+                          {SCANCODE_LCTRL, SCANCODE_RGUI}};
     for (auto region : regions)
     {
-        if (scan >= region.l && scan <= region.r)
-            return (enum Key)KEYCODE_FROM_SCANCODE((enum ScanCode)scan);
+        if (scan >= region.l && scan <= region.r) return (enum Key)KEYCODE_FROM_SCANCODE((enum ScanCode)scan);
     }
     return KEY_UNKNOWN;
 }
 
 }  // namespace Input
-
