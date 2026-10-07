@@ -41,6 +41,12 @@ inline uint32_t GetQueueFamilyForQueueType(QueueType queueType, const RenderGrap
 ///
 /// Segment indices are ranges into `CompiledRenderGraph::GetNodes()`, so they are stable as long as
 /// the graph is not rebuilt.
+///
+/// Segments are split at CPU nodes, so two *adjacent* segments can share a queue: a
+/// `[GPU, CPU, GPU]` sequence on one queue yields two segments, and therefore two submissions where
+/// the pre-split code made one. That is correct (program order on one queue) and adjacent segments
+/// with the same `queueType` need no ownership transfer, so a scheduler is free to merge them into
+/// a single submission.
 struct RenderGraphQueueSegment
 {
     QueueType queueType = QueueType::GRAPHICS;  ///< Resolved queue this segment runs on.
