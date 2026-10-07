@@ -248,6 +248,87 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     REQUIRE(CountNonBlackPixels(pQuadTarget) > 0);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builder twice", "[RenderGraphBuilder]")
+{
+    // The executor creates the cross-queue handover semaphores per submission and destroys the
+    // previous submission's set at the top of Submit(). A single Execute() per builder never takes
+    // that branch - the semaphores are then only released by the destructor - so this pins both the
+    // branch and the contract behind it: Execute() drains the queues before returning, which is what
+    // makes destroying the previous set safe. If executions ever overlap without per-slot
+    // ownership, the second Submit() would destroy semaphores still in flight and the validation
+    // layer would report it.
+    std::vector<Vertex> quadVertices = {
+        {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 0.0f}},
+        {{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
+    };
+    std::vector<uint32_t> quadIndices = {0, 1, 2, 2, 3, 0};
+    auto* pQuadVB = GetRenderResourceManager()->GetVertexBuffer<Vertex>("TwiceQuadVertexBuffer", quadVertices);
+    auto* pQuadIB = GetRenderResourceManager()->GetIndexBuffer<uint32_t>("TwiceQuadIndexBuffer", quadIndices);
+    const uint32_t nQuadIndexCount = static_cast<uint32_t>(quadIndices.size());
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("TwiceOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.ImportResource("TwiceQuadVertexBuffer", pQuadVB);
+    builder.ImportResource("TwiceQuadIndexBuffer", pQuadIB);
+
+    RenderGraphNodeCreateInfo quadPass = {
+        .nodeName = "TwiceQuadNode",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("TwiceQuadVertexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("TwiceQuadIndexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("TwiceOutput"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"triangle.vert", "triangle_no_tex.frag.slang"},
+        .psoDesc = {.depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false, .stencilEnable = false},
+                    .blendState = {.attachmentCount = 1,
+                                   .attachments = {{{.blendEnable = false}}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute = [nQuadIndexCount](RenderGraphNodeContext& ctx)
+        {
+            auto* pVertexBuffer = ctx.GetResource<VertexBuffer<Vertex>>("TwiceQuadVertexBuffer");
+            auto* pIndexBuffer = ctx.GetResource<IndexBuffer>("TwiceQuadIndexBuffer");
+            REQUIRE(pVertexBuffer != nullptr);
+            REQUIRE(pIndexBuffer != nullptr);
+
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = pVertexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(ctx.commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
+        }};
+
+    builder.AddNode(quadPass);
+    builder.Build();
+
+    auto* pTarget = GetRenderResourceManager()->GetColorTarget("TwiceOutput");
+    REQUIRE(pTarget != nullptr);
+
+    builder.Execute();
+    REQUIRE(CountNonBlackPixels(pTarget) > 0);
+
+    // Second submission on the same builder: this is the run that destroys the first submission's
+    // handover semaphores and creates a fresh set.
+    builder.Execute();
+    REQUIRE(CountNonBlackPixels(pTarget) > 0);
+}
+
 // Result of a single GPU-driven frame: how many draw sources the CPU uploaded, how many
 // survived GPU frustum culling, and how many pixels were actually shaded.
 struct GPUCullingResult

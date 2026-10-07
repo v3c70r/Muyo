@@ -443,7 +443,7 @@ Executes a recorded render graph.
 | `RenderGraphExecutor(VkRenderDevice *renderDevice)` | renderDevice Device whose queues executions are submitted to. |
 | `~RenderGraphExecutor()` | Releases the synchronization objects held for the last submission. |
 | `void Submit(const RenderGraphExecutionPlan &plan, const std::vector< VkCommandBuffer > &segmentCommandBuffers)` | Submit one recorded execution. plan Plan the command buffers were recorded from. Its segments decide which queues are used and its transfers decide where cross-queue handover semaphores are needed. segmentCommandBuffers Recorded command buffers, one per segment, in plan order. |
-| `void WaitIdle()` | Block until every queue used by the last submission has drained. |
+| `void WaitIdle()` | Block until the graphics queue has drained, and the compute queue too when this device has a dedicated compute family. It is deliberately not narrowed to the last submission or to the queues that submission used - it drains whatever is pending on those queues. Narrowing it is part of the in-flight work (A1.3b). |
 | `VkQueue GetQueueForType(QueueType type) const` | type A resolved queue key (see GetQueueKey). The queue that key submits to. |
 
 

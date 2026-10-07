@@ -1,5 +1,6 @@
 #include "RenderGraphExecutor.h"
 
+#include <cassert>
 #include <cstddef>
 #include <map>
 #include <utility>
@@ -33,6 +34,11 @@ VkQueue RenderGraphExecutor::GetQueueForType(QueueType type) const
 void RenderGraphExecutor::Submit(const RenderGraphExecutionPlan& plan,
                                  const std::vector<VkCommandBuffer>& segmentCommandBuffers)
 {
+    // The two are built together by the caller, but the signature cannot say so: a mismatch would
+    // index segmentCommandBuffers out of bounds below. (Debug-only, since this is an API contract
+    // rather than a runtime condition - see issue #30 for the NDEBUG policy.)
+    assert(plan.GetSegmentCount() == segmentCommandBuffers.size());
+
     DestroyHandoverSemaphores();
 
     const std::vector<RenderGraphQueueSegment>& segments = plan.segments;

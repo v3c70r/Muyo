@@ -34,7 +34,10 @@ public:
     /// @param segmentCommandBuffers Recorded command buffers, one per segment, in plan order.
     void Submit(const RenderGraphExecutionPlan& plan, const std::vector<VkCommandBuffer>& segmentCommandBuffers);
 
-    /// Block until every queue used by the last submission has drained.
+    /// Block until the graphics queue has drained, and the compute queue too when this device has a
+    /// dedicated compute family. It is deliberately not narrowed to the last submission or to the
+    /// queues that submission used - it drains whatever is pending on those queues. Narrowing it
+    /// is part of the in-flight work (A1.3b).
     void WaitIdle();
 
     /// @param type A resolved queue key (see `GetQueueKey`).
