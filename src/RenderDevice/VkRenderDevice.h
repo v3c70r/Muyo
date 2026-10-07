@@ -12,6 +12,21 @@ namespace Muyo
 {
 class IResourceBarrier;
 class RenderResourceManager;
+
+/// @param vSupportedExtensions Extensions enumerated from the instance.
+/// @param sName Extension name to look for.
+/// @return True when an entry's name equals `sName`.
+///
+/// Free rather than a member of the private `HWInfo` so it can be exercised against a synthetic
+/// list. The inverted `strcmp` this replaced was invisible precisely because nothing could test the
+/// negative case, so the asserts guarding startup could never fire.
+bool HasInstanceExtension(const std::vector<VkExtensionProperties>& vSupportedExtensions, const char* sName);
+
+/// @param vSupportedLayers Layers enumerated from the instance.
+/// @param sName Layer name to look for.
+/// @return True when an entry's name equals `sName`.
+bool HasLayer(const std::vector<VkLayerProperties>& vSupportedLayers, const char* sName);
+
 class VkRenderDevice
 {
 public:
@@ -167,27 +182,10 @@ private:  // Private structures
 
         bool IsInstanceExtensionSupported(const char* sInstanceExtensionName)
         {
-            for (const auto& extensionProperty : m_vSupportedInstanceExtensions)
-            {
-                if (strcmp(extensionProperty.extensionName, sInstanceExtensionName))
-                {
-                    return true;
-                }
-            }
-            return false;
+            return HasInstanceExtension(m_vSupportedInstanceExtensions, sInstanceExtensionName);
         }
 
-        bool IsLayerSupported(const char* sLayerName)
-        {
-            for (const auto& layerProperty : m_vSupportedLayers)
-            {
-                if (strcmp(layerProperty.layerName, sLayerName))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
+        bool IsLayerSupported(const char* sLayerName) { return HasLayer(m_vSupportedLayers, sLayerName); }
     };
 
 private:  // helper functions to create render device
