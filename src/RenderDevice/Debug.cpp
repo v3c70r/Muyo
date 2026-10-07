@@ -41,10 +41,27 @@ const char* VkResultName(VkResult result)
             return "VK_ERROR_FORMAT_NOT_SUPPORTED";
         case VK_ERROR_FRAGMENTED_POOL:
             return "VK_ERROR_FRAGMENTED_POOL";
+        case VK_ERROR_OUT_OF_POOL_MEMORY:
+            return "VK_ERROR_OUT_OF_POOL_MEMORY";
+        case VK_ERROR_INVALID_EXTERNAL_HANDLE:
+            return "VK_ERROR_INVALID_EXTERNAL_HANDLE";
+        case VK_ERROR_FRAGMENTATION:
+            return "VK_ERROR_FRAGMENTATION";
+        case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS:
+            return "VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS";
+        // This header only carries the extension spelling of the 1.3 core name.
+        case VK_ERROR_PIPELINE_COMPILE_REQUIRED_EXT:
+            return "VK_ERROR_PIPELINE_COMPILE_REQUIRED";
         case VK_ERROR_SURFACE_LOST_KHR:
             return "VK_ERROR_SURFACE_LOST_KHR";
         case VK_ERROR_OUT_OF_DATE_KHR:
             return "VK_ERROR_OUT_OF_DATE_KHR";
+        case VK_ERROR_NOT_PERMITTED_KHR:
+            return "VK_ERROR_NOT_PERMITTED_KHR";
+        case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR:
+            return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
+        case VK_ERROR_VALIDATION_FAILED_EXT:
+            return "VK_ERROR_VALIDATION_FAILED_EXT";
         case VK_ERROR_UNKNOWN:
             return "VK_ERROR_UNKNOWN";
         default:
