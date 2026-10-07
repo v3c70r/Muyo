@@ -35,6 +35,16 @@ COVERAGE_CHECKER = os.path.join(DOCS_DIR, "check_api_coverage.py")
 MD_GENERATOR = os.path.join(DOCS_DIR, "gen_api_md.py")
 
 
+def doxygen_version(doxygen: str) -> str:
+    """Return the version string reported by the doxygen binary, or "unknown"."""
+    try:
+        result = subprocess.run([doxygen, "--version"], capture_output=True, text=True, check=False)
+    except OSError:
+        return "unknown"
+    first_line = (result.stdout or "").strip().splitlines()
+    return first_line[0] if first_line else "unknown"
+
+
 def find_doxygen() -> str | None:
     candidate = os.environ.get("DOXYGEN")
     if candidate and os.path.isfile(candidate):
@@ -112,6 +122,9 @@ def main() -> int:
             return 1
         if not filecmp.cmp(GENERATED_MD, target_md, shallow=False):
             print("render_graph_docs: docs/RenderGraph-api.md is out of date; regenerate it.")
+            print(f"  regenerated with doxygen {doxygen_version(doxygen)} (see docs/README.md for the")
+            print("  expected version). If the only difference is a qualifier such as `constexpr`,")
+            print("  check the version before treating it as real drift.")
             return 1
         print("RenderGraph docs: coverage OK and RenderGraph-api.md is up to date.")
 

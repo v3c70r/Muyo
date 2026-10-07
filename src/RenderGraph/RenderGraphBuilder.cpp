@@ -57,10 +57,7 @@ RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
 
 RenderGraphBuilder::~RenderGraphBuilder()
 {
-    for (auto& rgn : m_compiledGraphNodes)
-    {
-        DestroyCompiledRenderGraphNode(rgn);
-    }
+    m_compiledGraph.Destroy(m_vkDevice, GetDescriptorManager()->GetDescriptorPool());
     m_vkDevice = VK_NULL_HANDLE;
 }
 
@@ -91,12 +88,16 @@ const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle&
     return GetRenderResourceManager()->template GetResource<IRenderResource>(handle);
 }
 
-RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(
-    const RenderGraphBuilder::RenderGraphNode& rgn)
+CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderGraphBuilder::RenderGraphNode& rgn)
 {
     // Compile pipeline and pipeline layout from node
-    CompiledRenderGraphNode result{
-        .logicalRenderGraphNode = &rgn, .pipeline = VK_NULL_HANDLE, .pipelineLayout = VK_NULL_HANDLE};
+    CompiledRenderGraphNode result;
+    // Copy the node's metadata: the compiled node carries everything needed at record time, so it
+    // does not point back at the authoring structures.
+    result.name = rgn.name;
+    result.resourceUses = rgn.resourceUses;
+    result.attachmentClearValues = rgn.attachmentClearValues;
+    result.async = rgn.async;
     result.queueType = rgn.queueType;
     result.isRayTracing = (rgn.queueType == QueueType::RAY_TRACING);
     result.bindingPoint = (rgn.queueType == QueueType::COMPUTE)  ? VK_PIPELINE_BIND_POINT_COMPUTE
@@ -413,24 +414,6 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     pSBT->Unmap();
 }
 
-void RenderGraphBuilder::DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn)
-{
-    if (rgn.ownsDescriptorSets && !rgn.descriptorSets.empty())
-    {
-        vkFreeDescriptorSets(m_vkDevice, GetDescriptorManager()->GetDescriptorPool(),
-                             static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data());
-    }
-    if (rgn.ownsDescriptorSetLayouts)
-    {
-        for (VkDescriptorSetLayout layout : rgn.descriptorSetLayouts)
-        {
-            if (layout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(m_vkDevice, layout, nullptr);
-        }
-    }
-    if (rgn.pipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(m_vkDevice, rgn.pipelineLayout, nullptr);
-    if (rgn.pipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_vkDevice, rgn.pipeline, nullptr);
-}
-
 void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
 {
     const std::string& nodeName = nodeCreateInfo.nodeName;
@@ -534,12 +517,8 @@ void RenderGraphBuilder::Build()
         throw std::runtime_error("Render graph contains a cycle!");
     }
 
-    for (auto& compiledNode : m_compiledGraphNodes)
-    {
-        DestroyCompiledRenderGraphNode(compiledNode);
-    }
-    m_compiledGraphNodes.clear();
-    m_compiledGraphNodes.reserve(m_renderGraphNodes.size());
+    m_compiledGraph.Destroy(m_vkDevice, GetDescriptorManager()->GetDescriptorPool());
+    m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())
     {
@@ -564,7 +543,6 @@ void RenderGraphBuilder::Build()
             if (resourceCurrentVersions.find(handle) == resourceCurrentVersions.end())
             {
                 resourceCurrentVersions[handle] = 0;
-                m_resourceLastUsedVersion[handle] = 0;
             }
             else
             {
@@ -577,8 +555,16 @@ void RenderGraphBuilder::Build()
         }
 
         // Compile RenderGraphNode
-        m_compiledGraphNodes.push_back(CompileRenderGraphNode(node));
+        m_compiledGraph.AddNode(CompileRenderGraphNode(node));
     }
+
+    // Derive the scheduling plan (queue segments + cross-queue transfers) once, so Execute() reads
+    // it rather than recomputing it every frame.
+    //
+    // The plan freezes the device's queue family indices, so it must be rebuilt if the device
+    // changes. Today Build() always reruns after a device change (a builder is recreated), but a
+    // caller that reused a compiled graph across devices would have to rebuild it.
+    m_compiledGraph.RebuildExecutionPlan(GetQueueFamilies());
 }
 
 bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn,
@@ -594,7 +580,7 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
     VkExtent2D renderArea{0, 0};
 
     uint32_t clearIndex = 0;
-    for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+    for (const auto& use : rgn.resourceUses)
     {
         if (use.usage != ResourceUsage::COLOR_ATTACHMENT && use.usage != ResourceUsage::DEPTH_STENCIL_ATTACHMENT)
         {
@@ -622,9 +608,9 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
             {
                 clearValue.depthStencil = {1.0f, 0};
             }
-            else if (clearIndex < rgn.logicalRenderGraphNode->attachmentClearValues.size())
+            else if (clearIndex < rgn.attachmentClearValues.size())
             {
-                clearValue = rgn.logicalRenderGraphNode->attachmentClearValues[clearIndex++];
+                clearValue = rgn.attachmentClearValues[clearIndex++];
             }
             attachment.clearValue = clearValue;
             alreadyWritten.insert(use.handle);
@@ -840,13 +826,6 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-QueueType RenderGraphBuilder::GetQueueKey(QueueType type, bool bAsync)
-{
-    // Only an explicitly-marked compute node may run on the dedicated async compute queue;
-    // everything else (including non-async compute) follows the graphics queue.
-    return (type == QueueType::COMPUTE && bAsync) ? QueueType::COMPUTE : QueueType::GRAPHICS;
-}
-
 VkQueue RenderGraphBuilder::GetQueueForType(QueueType type) const
 {
     if (type == QueueType::COMPUTE) return GetRenderDevice()->GetComputeQueue();
@@ -855,8 +834,13 @@ VkQueue RenderGraphBuilder::GetQueueForType(QueueType type) const
 
 uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
 {
-    if (type == QueueType::COMPUTE) return GetRenderDevice()->GetComputeQueueFamily();
-    return GetRenderDevice()->GetGraphicsQueueFamily();
+    return GetQueueFamilyForQueueType(type, GetQueueFamilies());
+}
+
+RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
+{
+    return RenderGraphQueueFamilies{GetRenderDevice()->GetGraphicsQueueFamily(),
+                                    GetRenderDevice()->GetComputeQueueFamily()};
 }
 
 VkCommandBuffer RenderGraphBuilder::AllocateCommandBufferForType(QueueType type) const
@@ -892,92 +876,33 @@ void RenderGraphBuilder::Execute()
     std::vector<VkRenderingAttachmentInfo> colorAttachments;
     std::vector<VkClearValue> clearValues;
 
-    // ── Split the graph into contiguous per-queue segments; CPU nodes run inline on the host. ──
-    struct Segment
-    {
-        QueueType queueType = QueueType::GRAPHICS;
-        size_t begin = 0;  // first compiled node index (inclusive)
-        size_t end = 0;    // one past the last compiled node index
-    };
-    std::vector<Segment> segments;
-    size_t segmentBegin = 0;
-    QueueType segmentQueue = QueueType::COUNT;
-    bool bInSegment = false;
+    const std::vector<CompiledRenderGraphNode>& nodes = m_compiledGraph.GetNodes();
+    const RenderGraphExecutionPlan& plan = m_compiledGraph.GetExecutionPlan();
 
-    for (size_t i = 0; i < m_compiledGraphNodes.size(); ++i)
+    // ── CPU nodes run host-side, before any GPU segment is recorded. ──────────────────────────
+    for (const std::size_t i : plan.cpuNodes)
     {
-        const auto& rgn = m_compiledGraphNodes[i];
+        const CompiledRenderGraphNode& rgn = nodes[i];
         context.queueType = rgn.queueType;
-
-        if (rgn.queueType == QueueType::CPU)
+        context.commandBuffer = VK_NULL_HANDLE;
+        context.pipeline = VK_NULL_HANDLE;
+        rgn.execute(context);
+        for (const auto& use : rgn.resourceUses)
         {
-            // Pure CPU node: run host-side work, mark its written resources for a lazy host flush.
-            context.commandBuffer = VK_NULL_HANDLE;
-            context.pipeline = VK_NULL_HANDLE;
-            rgn.execute(context);
-            for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+            if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
             {
-                if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
-                {
-                    ResourceAccessState& state = m_resourceAccessStates[use.handle];
-                    state.writtenByCpu = true;
-                    state.seen = false;
-                }
-            }
-            continue;
-        }
-
-        const QueueType key = GetQueueKey(rgn.queueType, rgn.logicalRenderGraphNode->async);
-        if (!bInSegment || key != segmentQueue)
-        {
-            if (bInSegment) segments.push_back({segmentQueue, segmentBegin, i});
-            segmentBegin = i;
-            segmentQueue = key;
-            bInSegment = true;
-        }
-    }
-    if (bInSegment) segments.push_back({segmentQueue, segmentBegin, m_compiledGraphNodes.size()});
-
-    if (segments.empty()) return;
-
-    // ── Detect resources handed from one queue family to another. ──────────────────────────────
-    struct Transfer
-    {
-        size_t producer = 0;
-        size_t consumer = 0;
-        ResourceHandle handle;
-        uint32_t producerFamily = VK_QUEUE_FAMILY_IGNORED;
-        uint32_t consumerFamily = VK_QUEUE_FAMILY_IGNORED;
-    };
-    std::vector<Transfer> transfers;
-    {
-        std::unordered_map<ResourceHandle, size_t> lastSegmentForResource;
-        for (size_t s = 0; s < segments.size(); ++s)
-        {
-            std::unordered_set<ResourceHandle> resourcesInSegment;
-            for (size_t i = segments[s].begin; i < segments[s].end; ++i)
-            {
-                for (const auto& use : m_compiledGraphNodes[i].logicalRenderGraphNode->resourceUses)
-                {
-                    resourcesInSegment.insert(use.handle);
-                }
-            }
-            for (const auto& handle : resourcesInSegment)
-            {
-                auto it = lastSegmentForResource.find(handle);
-                if (it != lastSegmentForResource.end() && it->second != s)
-                {
-                    const uint32_t producerFamily = GetQueueFamilyForType(segments[it->second].queueType);
-                    const uint32_t consumerFamily = GetQueueFamilyForType(segments[s].queueType);
-                    if (producerFamily != consumerFamily)
-                    {
-                        transfers.push_back({it->second, s, handle, producerFamily, consumerFamily});
-                    }
-                }
-                lastSegmentForResource[handle] = s;
+                ResourceAccessState& state = m_resourceAccessStates[use.handle];
+                state.writtenByCpu = true;
+                state.seen = false;
             }
         }
     }
+
+    if (plan.IsEmpty()) return;
+
+    // Queue segments and cross-queue transfers were derived from the compiled graph at Build().
+    const std::vector<RenderGraphQueueSegment>& segments = plan.segments;
+    const std::vector<RenderGraphQueueTransfer>& transfers = plan.transfers;
 
     // ── Record each segment into its own command buffer. ───────────────────────────────────────
     std::vector<VkCommandBuffer> segmentCmdBuffers(segments.size(), VK_NULL_HANDLE);
@@ -1003,7 +928,10 @@ void RenderGraphBuilder::Execute()
 
         for (size_t i = segments[s].begin; i < segments[s].end; ++i)
         {
-            const auto& rgn = m_compiledGraphNodes[i];
+            const auto& rgn = nodes[i];
+            // Segments contain GPU nodes only (see RebuildExecutionPlan); guard anyway so a CPU node
+            // can never be recorded as GPU work.
+            if (rgn.queueType == QueueType::CPU) continue;
             context.queueType = rgn.queueType;
             context.commandBuffer = cmdBuf;
             context.pipeline = rgn.pipeline;
@@ -1011,7 +939,7 @@ void RenderGraphBuilder::Execute()
             context.bindingPoint = rgn.bindingPoint;
 
             // 1. Barrier batch: transition all resources used by this node.
-            RecordBarriers(cmdBuf, rgn.logicalRenderGraphNode->resourceUses, queueFamily);
+            RecordBarriers(cmdBuf, rgn.resourceUses, queueFamily);
 
             // 2. Auto render pass wrap for graphics nodes.
             bool rendering = false;
@@ -1037,7 +965,7 @@ void RenderGraphBuilder::Execute()
                     else
                     {
                         // Semantic graphics node: write its resources into its own sets, then bind.
-                        for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+                        for (const auto& use : rgn.resourceUses)
                         {
                             if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
                             const IRenderResource* pResource = ResolveResource(use.handle);
@@ -1045,7 +973,7 @@ void RenderGraphBuilder::Execute()
                             const size_t nSetIndex = static_cast<size_t>(use.bindingSemantic);
                             if (nSetIndex >= rgn.descriptorSets.size())
                             {
-                                throw std::runtime_error("Node '" + rgn.logicalRenderGraphNode->name +
+                                throw std::runtime_error("Node '" + rgn.name +
                                                          "' declares a bindingSemantic for descriptor set " +
                                                          std::to_string(nSetIndex) + " which its shaders do not use.");
                             }

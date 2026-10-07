@@ -1428,6 +1428,68 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
     REQUIRE(CountPixelsMatching(pTarget, {0.0F, 0.25F, 0.0F}) > 0);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: CPU node between GPU nodes runs exactly once",
+                 "[RenderGraphBuilder]")
+{
+    // A CPU node with no ordering edges sorts between two GPU nodes (Kahn breaks ready-node ties by
+    // name), so it lands inside a queue segment's index range unless the plan closes the segment at
+    // it. A segment that spans a CPU node makes the recording loop treat it as GPU work: its
+    // callback runs a second time (this counter) and RecordBarriers emits a barrier whose
+    // destination access mask is VK_ACCESS_2_HOST_WRITE_BIT, which no GPU stage mask supports
+    // (VUID-VkBufferMemoryBarrier2-dstAccessMask-03917).
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Target",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("CpuData", BufferResourceDesc{.count = 1,
+                                                      .stride = 16,
+                                                      .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    int nCpuRuns = 0;
+
+    const auto storageUse = [](const char* handle)
+    {
+        return ResourceUse{.handle = ResourceHandle(handle),
+                           .io = ResourceIOType::READ_WRITE,
+                           .usage = ResourceUsage::STORAGE_IMAGE,
+                           .kind = ResourceKind::IMAGE,
+                           .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}};
+    };
+
+    RenderGraphNodeCreateInfo firstGpu = {.nodeName = "AGpu",
+                                          .queueType = QueueType::COMPUTE,
+                                          .resourceUses = {storageUse("Target")},
+                                          .shaderNames = {"testFillColor.comp.slang"},
+                                          .execute = [](RenderGraphNodeContext& ctx)
+                                          { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+
+    RenderGraphNodeCreateInfo cpuPass = {.nodeName = "BCpu",
+                                         .queueType = QueueType::CPU,
+                                         .resourceUses = {ResourceUse{.handle = ResourceHandle("CpuData"),
+                                                                      .io = ResourceIOType::WRITE,
+                                                                      .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                      .kind = ResourceKind::BUFFER}},
+                                         .execute = [&nCpuRuns](RenderGraphNodeContext&) { ++nCpuRuns; }};
+
+    RenderGraphNodeCreateInfo secondGpu = {.nodeName = "CGpu",
+                                           .queueType = QueueType::COMPUTE,
+                                           .resourceUses = {storageUse("Target")},
+                                           .shaderNames = {"testFillColor.comp.slang"},
+                                           .execute = [](RenderGraphNodeContext& ctx)
+                                           { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+
+    builder.AddNode(firstGpu);
+    builder.AddNode(cpuPass);
+    builder.AddNode(secondGpu);
+    // Force the name order AGpu < BCpu < CGpu so the CPU node really is a middle node.
+    builder.AddDependency(firstGpu.nodeName, secondGpu.nodeName);
+    builder.Build();
+    builder.Execute();
+
+    REQUIRE(nCpuRuns == 1);
+}
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same attachment both land",
                  "[RenderGraphBuilder]")

@@ -6,6 +6,46 @@ Auto-generated from the Doxygen comments in `src/RenderGraph/*.h`. See [RenderGr
 
 Coverage is enforced: `docs/check_api_coverage.py` fails the build when a public entity is undocumented.
 
+## `CompiledRenderGraph.h`
+
+### `class Muyo::RenderGraph::CompiledRenderGraph`
+
+The compiled, reusable result of RenderGraphBuilder::Build().
+
+| Member | Description |
+| --- | --- |
+| `const std::vector< CompiledRenderGraphNode > & GetNodes() const` | The compiled nodes, in execution (topological) order. |
+| `std::size_t GetNodeCount() const` | Number of compiled nodes. |
+| `void AddNode(CompiledRenderGraphNode node)` | Append a compiled node. Used by RenderGraphBuilder::Build() when compiling. node Compiled node to append. |
+| `void ReserveNodes(std::size_t count)` | Reserve room for count nodes, to avoid reallocation while compiling. count Number of nodes expected. |
+| `void RebuildExecutionPlan(const RenderGraphQueueFamilies &families)` | Recompute the scheduling plan from the current nodes. Called by RenderGraphBuilder::Build() after the nodes are compiled. families Queue family indices used to decide which resources cross a queue family. |
+| `const RenderGraphExecutionPlan & GetExecutionPlan() const` | The scheduling plan for the current nodes. Read-only during execution. |
+| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy every node's GPU objects and clear the node list. Safe to call repeatedly. device Device the objects were created on. descriptorPool Pool the per-node descriptor sets were allocated from. |
+
+### `struct Muyo::RenderGraph::CompiledRenderGraphNode`
+
+GPU objects and execution metadata for one node, produced by RenderGraphBuilder::Build().
+
+| Member | Description |
+| --- | --- |
+| `std::string name` | Node name, used in diagnostics. |
+| `std::vector< ResolvedResourceUse > resourceUses` | Resolved resource accesses, used to emit barriers between nodes. |
+| `std::vector< VkClearValue > attachmentClearValues` | Clear values for the node's attachments, in attachment declaration order. |
+| `bool async` | True when the node opted into the dedicated async compute queue. |
+| `VkPipeline pipeline` | Compiled pipeline, or VK_NULL_HANDLE for CPU nodes. |
+| `VkPipelineLayout pipelineLayout` | Pipeline layout the pipeline was created with. |
+| `std::vector< VkDescriptorSetLayout > descriptorSetLayouts` | Descriptor set layouts used by this node's pipeline layout. |
+| `std::vector< VkDescriptorSet > descriptorSets` | Descriptor sets bound for this node. |
+| `bool ownsDescriptorSets` | True when the node owns (and must free) its descriptor sets. |
+| `bool ownsDescriptorSetLayouts` | True when the node owns its descriptor set layouts. |
+| `bool isRayTracing` | True when this node dispatches a ray tracing pipeline. |
+| `std::array< VkStridedDeviceAddressRegionKHR, 3 > sbtRegions` | Shader binding table regions, for ray tracing nodes. |
+| `VkExtent2D traceExtent` | Extent the ray tracing trace call is issued over. |
+| `QueueType queueType` | Queue the node was compiled for. |
+| `VkPipelineBindPoint bindingPoint` | Bind point of the compiled pipeline. |
+| `RenderGraphNodeCallback execute` | Records the node's work. |
+
+
 ## `DependencyGraph.h`
 
 ### `class Muyo::DependencyGraph`
@@ -263,25 +303,6 @@ Declares and runs a render graph.
 | `void Execute()` | Run every node once in execution order, inserting barriers between nodes and synchronising cross-queue handovers. |
 | `std::vector< std::string > GetExecutionOrder() const` | The node names in dependency (topological) order. |
 
-### `std::function< void(RenderGraphNodeContext &)> RenderGraphNodeCallback`
-
-Callback a node provides to record its GPU or host work.
-
-### `struct Muyo::RenderGraph::RenderGraphNodeContext`
-
-Context handed to a node's execute callback.
-
-| Member | Description |
-| --- | --- |
-| `QueueType queueType` | Queue this node is running on. |
-| `RenderResourceManager & resourceManager` | Global resource manager (graph-owned resources). |
-| `MeshResourceManager & meshManager` | Mesh manager (shared vertex/index buffers). |
-| `VkCommandBuffer commandBuffer` | Command buffer to record into. |
-| `VkPipeline pipeline` | Bound pipeline. |
-| `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
-| `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
-| `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). T Concrete resource type (e.g. BufferResource, RenderTarget). handle Resource name used in the node's resourceUses. The resource, or nullptr if it is not of type T. |
-
 ### `struct Muyo::RenderGraph::RenderGraphNodeCreateInfo`
 
 User-facing declaration of a single render graph node (pass).
@@ -354,6 +375,83 @@ Owns the three built-in semantic descriptor set layouts used by graphics nodes.
 ### `const std::vector< std::vector< VkDescriptorSetLayoutBinding > > bindingsPerSet`
 
 Static descriptor bindings of the three built-in semantic sets.
+
+
+## `RenderGraphExecutionPlan.h`
+
+### `uint32_t Muyo::RenderGraph::GetQueueFamilyForQueueType(QueueType queueType, const RenderGraphQueueFamilies &families)`
+
+queueType A resolved queue key (as returned by GetQueueKey). families Queue family indices for this device. The Vulkan queue family the key runs on. Compute uses the compute family; graphics, ray tracing and CPU work follow the graphics family.
+
+### `QueueType Muyo::RenderGraph::GetQueueKey(QueueType type, bool bAsync)`
+
+Resolve which queue a node's work runs on.
+
+### `struct Muyo::RenderGraph::RenderGraphExecutionPlan`
+
+The scheduling plan derived from a compiled graph.
+
+| Member | Description |
+| --- | --- |
+| `std::vector< std::size_t > cpuNodes` | Compiled node indices that run host-side (QueueType::CPU). They all run before any GPU segment is recorded, and belong to no segment. |
+| `std::vector< RenderGraphQueueSegment > segments` | Contiguous per-queue runs of compiled nodes, in execution order. |
+| `std::vector< RenderGraphQueueTransfer > transfers` | Resources crossing a queue-family boundary between two segments. |
+| `bool IsEmpty() const` | True when the graph has no GPU work to run. |
+| `std::size_t GetSegmentCount() const` | Number of queue segments. |
+| `std::size_t GetTransferCount() const` | Number of cross-queue transfers. |
+
+### `struct Muyo::RenderGraph::RenderGraphQueueFamilies`
+
+Queue family indices a plan resolves queue keys against.
+
+| Member | Description |
+| --- | --- |
+| `uint32_t graphics` | Family that runs graphics and ray tracing work. |
+| `uint32_t compute` | Family that runs compute work. |
+
+### `struct Muyo::RenderGraph::RenderGraphQueueSegment`
+
+A contiguous run of compiled nodes that executes on one queue.
+
+| Member | Description |
+| --- | --- |
+| `QueueType queueType` | Resolved queue this segment runs on. |
+| `std::size_t begin` | First compiled node index (inclusive). |
+| `std::size_t end` | One past the last compiled node index. |
+
+### `struct Muyo::RenderGraph::RenderGraphQueueTransfer`
+
+A resource handed from one queue segment to another across a queue-family boundary.
+
+| Member | Description |
+| --- | --- |
+| `std::size_t producer` | Segment that last used the resource. |
+| `std::size_t consumer` | Segment that next uses it. |
+| `ResourceHandle handle` | Resource being handed over. |
+| `uint32_t producerFamily` | Queue family handing it over. |
+| `uint32_t consumerFamily` | Queue family taking ownership. |
+
+
+## `RenderGraphNodeContext.h`
+
+### `std::function< void(RenderGraphNodeContext &)> RenderGraphNodeCallback`
+
+Callback a node provides to record its GPU or host work.
+
+### `struct Muyo::RenderGraph::RenderGraphNodeContext`
+
+Context handed to a node's execute callback.
+
+| Member | Description |
+| --- | --- |
+| `QueueType queueType` | Queue this node is running on. |
+| `RenderResourceManager & resourceManager` | Global resource manager (graph-owned resources). |
+| `MeshResourceManager & meshManager` | Mesh manager (shared vertex/index buffers). |
+| `VkCommandBuffer commandBuffer` | Command buffer to record into. |
+| `VkPipeline pipeline` | Bound pipeline. |
+| `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
+| `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
+| `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). T Concrete resource type (e.g. BufferResource, RenderTarget). handle Resource name used in the node's resourceUses. The resource, or nullptr if it is not of type T. |
 
 
 ## `RenderGraphNodeResource.h`
