@@ -11,11 +11,13 @@
 #include <unordered_set>
 #include <vector>
 
+#include "CompiledRenderGraph.h"
 #include "DependencyGraph.h"
 #include "MeshResourceManager.h"
 #include "PSODesc.h"
 #include "PerObjResourceManager.h"
 #include "RenderGraphDescriptorSets.h"
+#include "RenderGraphNodeContext.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderGraphResourceDesc.h"
 #include "ShaderAsset.h"
@@ -27,36 +29,6 @@ using ResourceDescRegistry = std::unordered_map<ResourceHandle, ResourceDesc>;
 
 /// Maximum number of shader stages a node may declare (vertex + fragment, or raygen/miss/hit...).
 static constexpr int MAX_SHADER_STAGES = 8;
-
-/// Context handed to a node's execute callback.
-///
-/// The graph has already recorded the barriers, opened the render pass (graphics nodes) and bound
-/// the pipeline and descriptor sets, so most callbacks only issue draw/dispatch/trace commands.
-struct RenderGraphNodeContext
-{
-    QueueType queueType = QueueType::GRAPHICS;  ///< Queue this node is running on.
-    RenderResourceManager& resourceManager;    ///< Global resource manager (graph-owned resources).
-    MeshResourceManager& meshManager;          ///< Mesh manager (shared vertex/index buffers).
-
-    // GPU-side fields (valid only for GPU nodes)
-    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;                        ///< Command buffer to record into.
-    VkPipeline pipeline = VK_NULL_HANDLE;                                  ///< Bound pipeline.
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;                      ///< Bound pipeline layout.
-    VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;    ///< Bind point for the pipeline.
-
-    /// Resolve a graph-declared resource to its concrete pointer (allocated at Build()).
-    /// @tparam T Concrete resource type (e.g. `BufferResource`, `RenderTarget`).
-    /// @param handle Resource name used in the node's `resourceUses`.
-    /// @return The resource, or `nullptr` if it is not of type `T`.
-    template <class T>
-    T* GetResource(const ResourceHandle& handle) const
-    {
-        return resourceManager.template GetResource<T>(handle);
-    }
-};
-
-/// Callback a node provides to record its GPU or host work.
-using RenderGraphNodeCallback = std::function<void(RenderGraphNodeContext&)>;
 
 /// User-facing declaration of a single render graph node (pass).
 struct RenderGraphNodeCreateInfo
@@ -152,37 +124,7 @@ private:
         RenderGraphNodeCallback execute;
     };
 
-    struct CompiledRenderGraphNode
-    {
-        const RenderGraphNode* logicalRenderGraphNode = nullptr;
-
-        // Execution related structures
-        VkPipeline pipeline = VK_NULL_HANDLE;
-        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-
-        std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
-        // Descriptor sets actually bound for this node. For semantic nodes these alias the
-        // shared PER_VIEW/PER_OBJ/MATERIAL sets; for reflection-bound (compute/RT) nodes these are
-        // freshly allocated sets owned by this compiled node.
-        std::vector<VkDescriptorSet> descriptorSets;
-        // True when the node owns (and must free) its descriptor sets. Reflection-bound nodes and
-        // semantic graphics nodes each get their own sets.
-        bool ownsDescriptorSets = false;
-        // True when the node owns its descriptor set *layouts* (reflection-bound nodes create their
-        // own; semantic graphics nodes share the three built-in layouts).
-        bool ownsDescriptorSetLayouts = false;
-        // True when this node is a ray tracing dispatch (pipeline is a RT pipeline).
-        bool isRayTracing = false;
-        // Shader binding table regions for ray tracing nodes.
-        std::array<VkStridedDeviceAddressRegionKHR, 3> sbtRegions{};
-        VkExtent2D traceExtent = {0, 0};
-        QueueType queueType = QueueType::GRAPHICS;
-        VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        RenderGraphNodeCallback execute;
-    };
-
     CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
-    void DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn);
 
     // Build descriptor set layouts + allocate sets from a compute/RT node's merged shader reflection.
     // Resources declared with an explicit DescriptorBinding are written into the matching set/binding.
@@ -235,10 +177,9 @@ private:
     std::unordered_map<ResourceHandle, ResourceAccessState> m_resourceAccessStates;
 
     std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
-    std::vector<CompiledRenderGraphNode> m_compiledGraphNodes;
+    CompiledRenderGraph m_compiledGraph;
 
     DependencyGraph<std::string> m_dependencyGraph;
-    std::unordered_map<ResourceHandle, uint32_t> m_resourceLastUsedVersion;  // Track last used version of resources
     ShaderAssetManager m_shaderAssetManager;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     RenderGraphDescriptorSets m_descriptorSetManager;

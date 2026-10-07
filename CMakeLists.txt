@@ -189,7 +189,10 @@ file(GLOB muyo_SRC
 
 add_library(muyo STATIC ${muyo_SRC})
 
-add_library(muyo_rg "src/RenderGraph/RenderGraphBuilder.cpp")
+add_library(muyo_rg
+    "src/RenderGraph/RenderGraphBuilder.cpp"
+    "src/RenderGraph/CompiledRenderGraph.cpp"
+)
 
 #fetch VMA from Github
 include(FetchContent)
@@ -300,6 +303,7 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(tests 
     src/ShaderReflectionFetcher.cpp
     src/RenderGraph/RenderGraphBuilder.cpp
+    src/RenderGraph/CompiledRenderGraph.cpp
     src/tests/RenderGraphBuilderTest.cpp
     src/tests/ShaderReflectionTests.cpp
 )

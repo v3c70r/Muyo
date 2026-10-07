@@ -57,10 +57,7 @@ RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
 
 RenderGraphBuilder::~RenderGraphBuilder()
 {
-    for (auto& rgn : m_compiledGraphNodes)
-    {
-        DestroyCompiledRenderGraphNode(rgn);
-    }
+    m_compiledGraph.Destroy(m_vkDevice, GetDescriptorManager()->GetDescriptorPool());
     m_vkDevice = VK_NULL_HANDLE;
 }
 
@@ -91,12 +88,16 @@ const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle&
     return GetRenderResourceManager()->template GetResource<IRenderResource>(handle);
 }
 
-RenderGraphBuilder::CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(
-    const RenderGraphBuilder::RenderGraphNode& rgn)
+CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderGraphBuilder::RenderGraphNode& rgn)
 {
     // Compile pipeline and pipeline layout from node
-    CompiledRenderGraphNode result{
-        .logicalRenderGraphNode = &rgn, .pipeline = VK_NULL_HANDLE, .pipelineLayout = VK_NULL_HANDLE};
+    CompiledRenderGraphNode result;
+    // Copy the node's metadata: the compiled node carries everything needed at record time, so it
+    // does not point back at the authoring structures.
+    result.name = rgn.name;
+    result.resourceUses = rgn.resourceUses;
+    result.attachmentClearValues = rgn.attachmentClearValues;
+    result.async = rgn.async;
     result.queueType = rgn.queueType;
     result.isRayTracing = (rgn.queueType == QueueType::RAY_TRACING);
     result.bindingPoint = (rgn.queueType == QueueType::COMPUTE)  ? VK_PIPELINE_BIND_POINT_COMPUTE
@@ -413,24 +414,6 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     pSBT->Unmap();
 }
 
-void RenderGraphBuilder::DestroyCompiledRenderGraphNode(CompiledRenderGraphNode& rgn)
-{
-    if (rgn.ownsDescriptorSets && !rgn.descriptorSets.empty())
-    {
-        vkFreeDescriptorSets(m_vkDevice, GetDescriptorManager()->GetDescriptorPool(),
-                             static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data());
-    }
-    if (rgn.ownsDescriptorSetLayouts)
-    {
-        for (VkDescriptorSetLayout layout : rgn.descriptorSetLayouts)
-        {
-            if (layout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(m_vkDevice, layout, nullptr);
-        }
-    }
-    if (rgn.pipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(m_vkDevice, rgn.pipelineLayout, nullptr);
-    if (rgn.pipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_vkDevice, rgn.pipeline, nullptr);
-}
-
 void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
 {
     const std::string& nodeName = nodeCreateInfo.nodeName;
@@ -534,12 +517,8 @@ void RenderGraphBuilder::Build()
         throw std::runtime_error("Render graph contains a cycle!");
     }
 
-    for (auto& compiledNode : m_compiledGraphNodes)
-    {
-        DestroyCompiledRenderGraphNode(compiledNode);
-    }
-    m_compiledGraphNodes.clear();
-    m_compiledGraphNodes.reserve(m_renderGraphNodes.size());
+    m_compiledGraph.Destroy(m_vkDevice, GetDescriptorManager()->GetDescriptorPool());
+    m_compiledGraph.GetNodes().reserve(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())
     {
@@ -564,7 +543,6 @@ void RenderGraphBuilder::Build()
             if (resourceCurrentVersions.find(handle) == resourceCurrentVersions.end())
             {
                 resourceCurrentVersions[handle] = 0;
-                m_resourceLastUsedVersion[handle] = 0;
             }
             else
             {
@@ -577,7 +555,7 @@ void RenderGraphBuilder::Build()
         }
 
         // Compile RenderGraphNode
-        m_compiledGraphNodes.push_back(CompileRenderGraphNode(node));
+        m_compiledGraph.GetNodes().push_back(CompileRenderGraphNode(node));
     }
 }
 
@@ -594,7 +572,7 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
     VkExtent2D renderArea{0, 0};
 
     uint32_t clearIndex = 0;
-    for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+    for (const auto& use : rgn.resourceUses)
     {
         if (use.usage != ResourceUsage::COLOR_ATTACHMENT && use.usage != ResourceUsage::DEPTH_STENCIL_ATTACHMENT)
         {
@@ -622,9 +600,9 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
             {
                 clearValue.depthStencil = {1.0f, 0};
             }
-            else if (clearIndex < rgn.logicalRenderGraphNode->attachmentClearValues.size())
+            else if (clearIndex < rgn.attachmentClearValues.size())
             {
-                clearValue = rgn.logicalRenderGraphNode->attachmentClearValues[clearIndex++];
+                clearValue = rgn.attachmentClearValues[clearIndex++];
             }
             attachment.clearValue = clearValue;
             alreadyWritten.insert(use.handle);
@@ -904,9 +882,9 @@ void RenderGraphBuilder::Execute()
     QueueType segmentQueue = QueueType::COUNT;
     bool bInSegment = false;
 
-    for (size_t i = 0; i < m_compiledGraphNodes.size(); ++i)
+    for (size_t i = 0; i < m_compiledGraph.GetNodes().size(); ++i)
     {
-        const auto& rgn = m_compiledGraphNodes[i];
+        const auto& rgn = m_compiledGraph.GetNodes()[i];
         context.queueType = rgn.queueType;
 
         if (rgn.queueType == QueueType::CPU)
@@ -915,7 +893,7 @@ void RenderGraphBuilder::Execute()
             context.commandBuffer = VK_NULL_HANDLE;
             context.pipeline = VK_NULL_HANDLE;
             rgn.execute(context);
-            for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+            for (const auto& use : rgn.resourceUses)
             {
                 if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
                 {
@@ -927,7 +905,7 @@ void RenderGraphBuilder::Execute()
             continue;
         }
 
-        const QueueType key = GetQueueKey(rgn.queueType, rgn.logicalRenderGraphNode->async);
+        const QueueType key = GetQueueKey(rgn.queueType, rgn.async);
         if (!bInSegment || key != segmentQueue)
         {
             if (bInSegment) segments.push_back({segmentQueue, segmentBegin, i});
@@ -936,7 +914,7 @@ void RenderGraphBuilder::Execute()
             bInSegment = true;
         }
     }
-    if (bInSegment) segments.push_back({segmentQueue, segmentBegin, m_compiledGraphNodes.size()});
+    if (bInSegment) segments.push_back({segmentQueue, segmentBegin, m_compiledGraph.GetNodes().size()});
 
     if (segments.empty()) return;
 
@@ -957,7 +935,7 @@ void RenderGraphBuilder::Execute()
             std::unordered_set<ResourceHandle> resourcesInSegment;
             for (size_t i = segments[s].begin; i < segments[s].end; ++i)
             {
-                for (const auto& use : m_compiledGraphNodes[i].logicalRenderGraphNode->resourceUses)
+                for (const auto& use : m_compiledGraph.GetNodes()[i].resourceUses)
                 {
                     resourcesInSegment.insert(use.handle);
                 }
@@ -1003,7 +981,7 @@ void RenderGraphBuilder::Execute()
 
         for (size_t i = segments[s].begin; i < segments[s].end; ++i)
         {
-            const auto& rgn = m_compiledGraphNodes[i];
+            const auto& rgn = m_compiledGraph.GetNodes()[i];
             context.queueType = rgn.queueType;
             context.commandBuffer = cmdBuf;
             context.pipeline = rgn.pipeline;
@@ -1011,7 +989,7 @@ void RenderGraphBuilder::Execute()
             context.bindingPoint = rgn.bindingPoint;
 
             // 1. Barrier batch: transition all resources used by this node.
-            RecordBarriers(cmdBuf, rgn.logicalRenderGraphNode->resourceUses, queueFamily);
+            RecordBarriers(cmdBuf, rgn.resourceUses, queueFamily);
 
             // 2. Auto render pass wrap for graphics nodes.
             bool rendering = false;
@@ -1037,7 +1015,7 @@ void RenderGraphBuilder::Execute()
                     else
                     {
                         // Semantic graphics node: write its resources into its own sets, then bind.
-                        for (const auto& use : rgn.logicalRenderGraphNode->resourceUses)
+                        for (const auto& use : rgn.resourceUses)
                         {
                             if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
                             const IRenderResource* pResource = ResolveResource(use.handle);
@@ -1045,7 +1023,7 @@ void RenderGraphBuilder::Execute()
                             const size_t nSetIndex = static_cast<size_t>(use.bindingSemantic);
                             if (nSetIndex >= rgn.descriptorSets.size())
                             {
-                                throw std::runtime_error("Node '" + rgn.logicalRenderGraphNode->name +
+                                throw std::runtime_error("Node '" + rgn.name +
                                                          "' declares a bindingSemantic for descriptor set " +
                                                          std::to_string(nSetIndex) + " which its shaders do not use.");
                             }
