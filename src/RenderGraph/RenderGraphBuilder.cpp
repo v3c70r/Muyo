@@ -1,7 +1,6 @@
 #include "RenderGraphBuilder.h"
 
 #include <algorithm>
-#include <map>
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
@@ -49,6 +48,7 @@ RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
     : m_shaderAssetManager(renderDevice->GetDevice())
     , m_vkDevice(renderDevice->GetDevice())
     , m_descriptorSetManager(*GetDescriptorManager())
+    , m_executor(renderDevice)
 {
 }
 
@@ -825,12 +825,6 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-VkQueue RenderGraphBuilder::GetQueueForType(QueueType type) const
-{
-    if (type == QueueType::COMPUTE) return GetRenderDevice()->GetComputeQueue();
-    return GetRenderDevice()->GetGraphicsQueue();
-}
-
 uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
 {
     return GetQueueFamilyForQueueType(type, GetQueueFamilies());
@@ -1021,82 +1015,10 @@ void RenderGraphBuilder::Execute()
         VK_ASSERT(vkEndCommandBuffer(cmdBuf));
     }
 
-    // ── Submit each queue, synchronizing cross-queue handovers with semaphores. ────────────────
-    std::map<std::pair<size_t, size_t>, VkSemaphore> transitionSemaphores;
-    for (const auto& transfer : transfers)
-    {
-        const auto key = std::make_pair(transfer.producer, transfer.consumer);
-        if (transitionSemaphores.find(key) == transitionSemaphores.end())
-        {
-            VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-            VkSemaphore semaphore = VK_NULL_HANDLE;
-            VK_ASSERT(vkCreateSemaphore(m_vkDevice, &semaphoreInfo, nullptr, &semaphore));
-            transitionSemaphores[key] = semaphore;
-        }
-    }
+    // ── Submit through the executor, which owns the handover semaphores and the waiting. ───────
+    m_executor.Submit(plan, segmentCmdBuffers);
+    m_executor.WaitIdle();
 
-    for (size_t s = 0; s < segments.size(); ++s)
-    {
-        std::vector<VkSemaphore> waitSemaphores;
-        std::vector<VkPipelineStageFlags2> waitStages;
-        std::vector<VkSemaphore> signalSemaphores;
-        for (const auto& [key, semaphore] : transitionSemaphores)
-        {
-            if (key.second == s)
-            {
-                waitSemaphores.push_back(semaphore);
-                waitStages.push_back(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
-            }
-            if (key.first == s)
-            {
-                signalSemaphores.push_back(semaphore);
-            }
-        }
-
-        std::vector<VkSemaphoreSubmitInfo> waitSemaphoreInfos(waitSemaphores.size());
-        for (size_t i = 0; i < waitSemaphores.size(); ++i)
-        {
-            waitSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            waitSemaphoreInfos[i].semaphore = waitSemaphores[i];
-            waitSemaphoreInfos[i].value = 0;  // ignored for binary semaphores
-            waitSemaphoreInfos[i].stageMask = waitStages[i];
-            waitSemaphoreInfos[i].deviceIndex = 0;
-        }
-        std::vector<VkSemaphoreSubmitInfo> signalSemaphoreInfos(signalSemaphores.size());
-        for (size_t i = 0; i < signalSemaphores.size(); ++i)
-        {
-            signalSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
-            signalSemaphoreInfos[i].semaphore = signalSemaphores[i];
-            signalSemaphoreInfos[i].value = 0;  // ignored for binary semaphores
-            signalSemaphoreInfos[i].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            signalSemaphoreInfos[i].deviceIndex = 0;
-        }
-        VkCommandBufferSubmitInfo commandBufferInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-        commandBufferInfo.commandBuffer = segmentCmdBuffers[s];
-        commandBufferInfo.deviceMask = 0;
-
-        VkSubmitInfo2 submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-        submitInfo.waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size());
-        submitInfo.pWaitSemaphoreInfos = waitSemaphoreInfos.empty() ? nullptr : waitSemaphoreInfos.data();
-        submitInfo.commandBufferInfoCount = 1;
-        submitInfo.pCommandBufferInfos = &commandBufferInfo;
-        submitInfo.signalSemaphoreInfoCount = static_cast<uint32_t>(signalSemaphoreInfos.size());
-        submitInfo.pSignalSemaphoreInfos = signalSemaphoreInfos.empty() ? nullptr : signalSemaphoreInfos.data();
-
-        VK_ASSERT(vkQueueSubmit2(GetQueueForType(segments[s].queueType), 1, &submitInfo, VK_NULL_HANDLE));
-    }
-
-    // Wait for all queues that participated in this frame.
-    vkQueueWaitIdle(GetRenderDevice()->GetGraphicsQueue());
-    if (GetRenderDevice()->IsComputeQueueDedicated())
-    {
-        vkQueueWaitIdle(GetRenderDevice()->GetComputeQueue());
-    }
-
-    for (const auto& [key, semaphore] : transitionSemaphores)
-    {
-        vkDestroySemaphore(m_vkDevice, semaphore, nullptr);
-    }
     for (size_t s = 0; s < segments.size(); ++s)
     {
         FreeCommandBufferForType(segments[s].queueType, segmentCmdBuffers[s]);

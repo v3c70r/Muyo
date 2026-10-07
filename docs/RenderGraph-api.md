@@ -432,6 +432,21 @@ A resource handed from one queue segment to another across a queue-family bounda
 | `uint32_t consumerFamily` | Queue family taking ownership. |
 
 
+## `RenderGraphExecutor.h`
+
+### `class Muyo::RenderGraph::RenderGraphExecutor`
+
+Executes a recorded render graph.
+
+| Member | Description |
+| --- | --- |
+| `RenderGraphExecutor(VkRenderDevice *renderDevice)` | renderDevice Device whose queues executions are submitted to. |
+| `~RenderGraphExecutor()` | Releases the synchronization objects held for the last submission. |
+| `void Submit(const RenderGraphExecutionPlan &plan, const std::vector< VkCommandBuffer > &segmentCommandBuffers)` | Submit one recorded execution. plan Plan the command buffers were recorded from. Its segments decide which queues are used and its transfers decide where cross-queue handover semaphores are needed. segmentCommandBuffers Recorded command buffers, one per segment, in plan order. |
+| `void WaitIdle()` | Block until every queue used by the last submission has drained. |
+| `VkQueue GetQueueForType(QueueType type) const` | type A resolved queue key (see GetQueueKey). The queue that key submits to. |
+
+
 ## `RenderGraphNodeContext.h`
 
 ### `std::function< void(RenderGraphNodeContext &)> RenderGraphNodeCallback`

@@ -17,6 +17,8 @@
 #include "PSODesc.h"
 #include "PerObjResourceManager.h"
 #include "RenderGraphDescriptorSets.h"
+#include "RenderGraphExecutionPlan.h"
+#include "RenderGraphExecutor.h"
 #include "RenderGraphNodeContext.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderGraphResourceDesc.h"
@@ -147,8 +149,8 @@ private:
     const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
 
     // Queue routing. `GetQueueKey` (which node runs where) lives with the execution plan in
-    // RenderGraphExecutionPlan.h; these resolve a queue key against this device.
-    VkQueue GetQueueForType(QueueType type) const;
+    // RenderGraphExecutionPlan.h; these resolve a queue key against this device. Submission itself
+    // - queues, handover semaphores, waiting - belongs to RenderGraphExecutor.
     uint32_t GetQueueFamilyForType(QueueType type) const;
     RenderGraphQueueFamilies GetQueueFamilies() const;
     VkCommandBuffer AllocateCommandBufferForType(QueueType type) const;
@@ -183,6 +185,8 @@ private:
     ShaderAssetManager m_shaderAssetManager;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     RenderGraphDescriptorSets m_descriptorSetManager;
+    // Owns submission, cross-queue synchronization and waiting. The graph only records.
+    RenderGraphExecutor m_executor;
 
     ResourceDescRegistry m_resourceDescRegistry;
     std::unordered_map<ResourceHandle, const IRenderResource*> m_importedResources;
