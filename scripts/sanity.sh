@@ -11,6 +11,7 @@
 #   scripts/sanity.sh              fast: docs coverage + formatting of changed lines
 #   scripts/sanity.sh docs         documentation coverage + generated markdown
 #   scripts/sanity.sh format       clang-format on the lines this branch changed
+#   scripts/sanity.sh tidy         clang-tidy on the changed files (report only)
 #   scripts/sanity.sh static       Clang static analyzer over a dedicated build (slow)
 #   scripts/sanity.sh sanitize     build + run the tests under ASan/UBSan
 #   scripts/sanity.sh warnings     -Wextra / -fanalyzer fallout (slow, noisy)
@@ -72,6 +73,37 @@ cmd_format() {
     else
         ok "format OK"
     fi
+}
+
+cmd_tidy() {
+    bold "tidy: changed files (report only, .clang-tidy is not baselined yet)"
+    local tool
+    tool="$(command -v clang-tidy-21 || command -v clang-tidy || true)"
+    if [ -z "$tool" ]; then
+        bad "clang-tidy not found; install clang-tidy (issue #24)"
+        return
+    fi
+
+    local files
+    files="$(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD -- "${SRC_GLOBS[@]}" | grep -E '\.(cpp|h)$' || true)"
+    if [ -z "$files" ]; then
+        ok "no changed C++ files"
+        return
+    fi
+
+    local log=/tmp/muyo-tidy.log
+    : >"$log"
+    while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        echo "### $f" >>"$log"
+        "$tool" -p build "$f" >>"$log" 2>&1
+    done <<<"$files"
+
+    echo "diagnostics by check (user code):"
+    grep -oE '\[[a-z0-9]+(-[a-z0-9]+)*(,[a-z0-9-]+)*\]$' "$log" | sed 's/[][]//g' | tr ',' '\n' \
+        | grep -v warnings-as-errors | sort | uniq -c | sort -rn | head -20
+    printf '\ntotal: %s   full log: %s\n' "$(grep -cE '^/home.*(warning|error):' "$log" || true)" "$log"
+    echo "report-only for now: do not fail the build on these until #24 baselines them"
 }
 
 cmd_static() {
@@ -141,6 +173,7 @@ for t in "${targets[@]}"; do
     case "$t" in
         docs) cmd_docs ;;
         format) cmd_format ;;
+        tidy) cmd_tidy ;;
         static) cmd_static ;;
         sanitize) cmd_sanitize ;;
         warnings) cmd_warnings ;;
