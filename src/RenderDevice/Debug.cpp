@@ -36,25 +36,6 @@ public:
 };
 }  // namespace Color
 
-static std::vector<const char*> s_validationLayers{
-    //"VK_LAYER_LUNARG_standard_validation",
-    "VK_LAYER_KHRONOS_validation",
-    "VK_LAYER_KHRONOS_synchronization2",
-    //"VK_LAYER_GOOGLE_unique_objects",
-    //"VK_LAYER_LUNARG_api_dump",
-    //"VK_LAYER_LUNARG_core_validation",
-    //"VK_LAYER_LUNARG_image",
-    //"VK_LAYER_LUNARG_object_tracker",
-    //"VK_LAYER_LUNARG_parameter_validation",
-    //"VK_LAYER_LUNARG_swapchain",
-    //"VK_LAYER_GOOGLE_threading"
-};
-
-const std::vector<const char*>& GetValidationLayerNames()
-{
-    return s_validationLayers;
-}
-
 static const char* VALIDATE_EXTENSION = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 const char* GetValidationExtensionName()
 {

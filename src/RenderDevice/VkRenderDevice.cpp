@@ -182,6 +182,11 @@ void VkRenderDevice::CreateDevice(
     const VkSurfaceKHR* pSurface,  // surface for compatibility check
     const std::vector<void*>& vpFeatures)
 {
+    // Device layers were removed in Vulkan 1.0: anything here fails device creation on a loader
+    // that enforces VUID-VkDeviceCreateInfo-enabledLayerCount-12384 (Vulkan SDK 1.4.363 onwards).
+    // Validation belongs to the instance layer list; VkDebugRenderDevice::Initialize applies it.
+    assert(layers.empty());
+
     // Find supported queue
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &queueFamilyCount, nullptr);
@@ -717,12 +722,15 @@ void VkDebugRenderDevice::Unintialize()
     VkRenderDevice::Unintialize();
 }
 
-void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames, const std::vector<const char*>& vLayerNames, const VkSurfaceKHR* pSurface, const std::vector<void*>& vpFeatures)
+void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames,
+                                       const std::vector<const char*>& /*vLayerNames*/, const VkSurfaceKHR* pSurface,
+                                       const std::vector<void*>& vpFeatures)
 {
-    std::vector<const char*> vDebugLayerNames = vLayerNames;
-    vDebugLayerNames.push_back(GetValidationLayerName());
-    VkRenderDevice::CreateDevice(
-        vExtensionNames, vDebugLayerNames, pSurface, vpFeatures);
+    // Validation is an *instance* layer and is already applied by VkDebugRenderDevice::Initialize.
+    // Device layers were removed in Vulkan 1.0, so passing the validation layer here fails device
+    // creation on any loader that enforces VUID-VkDeviceCreateInfo-enabledLayerCount-12384 (Vulkan
+    // SDK 1.4.363 onwards) - which aborts before a single test runs.
+    VkRenderDevice::CreateDevice(vExtensionNames, {}, pSurface, vpFeatures);
 }
 
 }  // namespace Muyo
