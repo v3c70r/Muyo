@@ -22,6 +22,11 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
 - **Descriptor sets are per node today.** That is correct but costs one bindless array per
   material-binding node. The intended content-addressed redesign is written up in
   [DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md).
+- **Device floor.** The engine requires Vulkan 1.3 and enables `synchronization2` and
+  `timelineSemaphore` at device creation; both are verified against `vkGetPhysicalDeviceFeatures2`
+  and device creation fails with a named error if either is missing. Timeline semaphores are the
+  primitive the frame-sync work will build on — nothing creates one yet, so for now this is only a
+  raised hardware floor.
 
 ## Core concepts
 

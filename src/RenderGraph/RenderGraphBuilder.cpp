@@ -757,7 +757,6 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         }
 
         state.seen = true;
-        state.lastStages = use.stages;
         state.lastAccess = use.access;
         state.lastLayout = use.imageLayout;
         state.lastIo = use.io;

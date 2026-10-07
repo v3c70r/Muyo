@@ -64,6 +64,10 @@ ImageResourceBarrier::ImageResourceBarrier(VkImage image, VkImageLayout targetLa
              targetLayout == VK_IMAGE_LAYOUT_GENERAL)
     {
         m_imageBarrier.srcAccessMask = 0;
+        // TODO(A2): the duplicated SHADER_READ bit is a typo carried over verbatim from the pre-sync2
+        // code; it almost certainly meant SHADER_READ | SHADER_WRITE. Left untouched here so this
+        // migration stays behaviour-preserving. This helper also has no GENERAL -> SHADER_READ_ONLY
+        // case, so an RT-output image later sampled is under-synchronised on the legacy path.
         m_imageBarrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT;
 
         m_sourceStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;

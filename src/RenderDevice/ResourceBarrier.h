@@ -10,6 +10,12 @@ public:
     virtual void AddToCommandBuffer(VkCommandBuffer cmdBuf) = 0;
 };
 
+///\brief A single image layout/ownership transition recorded into a command buffer.
+///
+/// The Vulkan barrier structs in this header are filled field-by-field, never positionally: the
+/// sync2 layouts interleave the stage and access masks differently from the pre-1.0 structs, so a
+/// positional initializer copied from the legacy form silently swaps them. See
+/// docs/CodingConventions.md.
 class ImageResourceBarrier : public IResourceBarrier
 {
 public:

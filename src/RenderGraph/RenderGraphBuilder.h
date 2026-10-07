@@ -222,7 +222,6 @@ private:
     struct ResourceAccessState
     {
         bool seen = false;
-        VkPipelineStageFlags2 lastStages = 0;
         VkAccessFlags2 lastAccess = 0;
         VkImageLayout lastLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         ResourceIOType lastIo = ResourceIOType::READ;  // previous access direction (WAW/WAR hazards)
