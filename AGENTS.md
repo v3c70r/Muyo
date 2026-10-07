@@ -104,10 +104,12 @@ cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON \
                            && cmake --build build-rt --target tests -j"$(nproc)" && ./build-rt/tests
 ```
 
-- **Tests are GPU-dependent and there is no CI signal.** The workflows in `.github/workflows/` are
-  stale (they have never fired on this repository) — do not rely on them. Run the tests locally on
-  a GPU. Validation is enabled in debug builds and the debug callback asserts on `ERROR` severity,
-  so a validation error fails a test.
+- **There is no CI, by choice.** Testing happens on the development machine; the workflows in
+  `.github/workflows/` are stale and have never fired — do not rely on them, and do not add
+  anything that assumes a hosted runner. Revisit when a dedicated runner exists ([#22]); the
+  build-only + docs job described there is the first thing to add.
+- **Tests are GPU-dependent.** Run them locally on a GPU. Validation is enabled in debug builds and
+  the debug callback asserts on `ERROR` severity, so a validation error fails a test.
 - **A regression test must have teeth.** Before claiming a test covers a bug, confirm it *fails*
   without the fix — revert the fix, or check out the revision that had the bug. For example, the
   "read-write attachment keeps earlier content" test was confirmed to fail on `46307ba`.
@@ -115,7 +117,39 @@ cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON \
   `109 assertions / 12 cases` (RT). Counts drift as tests are added; the point is that they are
   reported, and that a changed count is explained rather than silently absorbed.
 
-## 5. Review process
+Run `scripts/sanity.sh` before opening a pull request; it covers the documentation check and the
+format check described below in one command.
+
+## 5. Static analysis and sanity checks
+
+`scripts/sanity.sh` is the local entry point. Nothing it reports is required to pass **yet** — the
+tooling is adopted in passes, so the current state is visible rather than discovered late.
+
+| Tool | Available | State |
+| --- | --- | --- |
+| `clang-format` 18 + `clang-format-diff` | yes | `.clang-format` exists (Google-based, Allman, 120 cols, 4-space) but the tree does not conform: 107 of 115 files under `src/` drift. |
+| `clang-tidy` | **no** | `.clang-tidy` is a borrowed google-cloud-cpp config (`WarningsAsErrors: "*"`, C++14-era rationale) that has never been run here. See [#24](https://github.com/v3c70r/Muyo/issues/24). |
+| Clang static analyzer (`scan-build`) | yes | Not yet baselined: `scripts/sanity.sh static`. |
+| GCC `-fanalyzer` | yes (gcc 13.3) | Not yet baselined: `scripts/sanity.sh warnings`. |
+| Sanitizers (ASan + UBSan) | yes | `-DCMAKE_BUILD_TYPE=Sanitize`; suppressions in `san.supp`. |
+| Vulkan validation layers | always | Enabled in debug builds; the callback asserts on `ERROR`, so a validation error fails a test. |
+
+Rules:
+
+- **Format what you touch, not the world.** `scripts/sanity.sh format` checks only the lines a
+  branch changed (via `clang-format-diff`), so a file that predates the branch never blocks work.
+  The one-time whole-tree pass is [#23](https://github.com/v3c70r/Muyo/issues/23) and must be a
+  standalone PR with no functional changes (use `.git-blame-ignore-revs` so it does not bury
+  history).
+- **Run the sanitizers before merge for anything touching memory, lifetimes, threading or resource
+  ownership** — `scripts/sanity.sh sanitize`. It is the cheapest real-bug detector available today.
+- **Never enable a new check globally on the first run.** Add it, measure the fallout, file the
+  cleanup as an issue, and only then enforce — scoped to changed lines. [#24](https://github.com/v3c70r/Muyo/issues/24)
+  (clang-tidy) and [#25](https://github.com/v3c70r/Muyo/issues/25) (`-Wextra`) are written up that way.
+- A new warning in code you touched is a review finding, not noise. "No new warnings" is part of
+  the definition of done.
+
+## 6. Review process
 
 The review session has **no access to the developer's context**. Write every PR to be reviewed
 cold.
@@ -149,16 +183,18 @@ authority, and not by repeating the claim.
 Merge only when the review is approve-worthy, the fixups are pushed, and the verification table has
 been reproduced on the merged content.
 
-## 6. Definition of done
+## 7. Definition of done
 
 - [ ] Both configurations compile with no new warnings.
 - [ ] Tests pass in both configurations, and the counts are reported.
-- [ ] `python3 scripts/render_graph_docs.py --check` passes when `src/RenderGraph/` or its docs changed.
+- [ ] `scripts/sanity.sh` passes (docs check + formatting of changed lines).
+- [ ] `scripts/sanity.sh sanitize` is run for changes touching memory, lifetimes, threading or
+      resource ownership.
 - [ ] New behaviour has a test with teeth, or the PR explains why a test is impractical.
 - [ ] Deferred work is filed as issues and referenced from the code and the PR.
 - [ ] `AGENTS.md` is updated if the process itself changed.
 
-## 7. Environment notes
+## 8. Environment notes
 
 - **Struct layout is not what you assume.** On the Vulkan headers used here, the sync2 barriers do
   not follow the order a positional initializer implies. Verified with `offsetof`:
@@ -176,11 +212,13 @@ been reproduced on the merged content.
 - `thirdparty/*` submodules frequently show as dirty. Do not commit submodule pointer churn unless
   the pointer change is intentional.
 
-## 8. Key documents
+## 9. Key documents
 
 | Document | Contents |
 | --- | --- |
 | `AGENTS.md` | This file — process, verification, review. |
+| [`scripts/sanity.sh`](scripts/sanity.sh) | Local sanity runner: docs, format, static analysis, sanitizers. |
+| [`.clang-format`](.clang-format) / [`.clang-tidy`](.clang-tidy) | Formatting and static-analysis configuration (see section 5). |
 | [`docs/CodingConventions.md`](docs/CodingConventions.md) | Repository-wide code rules. |
 | [`docs/RenderGraph.md`](docs/RenderGraph.md) | RenderGraph concept, quick start, status/limitations. |
 | [`docs/RenderGraph-api.md`](docs/RenderGraph-api.md) | Generated API reference (do not hand-edit). |
