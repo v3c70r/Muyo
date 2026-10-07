@@ -12,6 +12,7 @@
 #include "GraphicsTestEnv.h"
 #include "MeshVertex.h"
 #include "PerObjResourceManager.h"
+#include "RenderGraph/CompiledRenderGraph.h"
 #include "RenderGraph/DrawCommands.h"
 #include "RenderGraph/RenderGraphBuilder.h"
 #include "RenderGraph/RenderGraphExecutor.h"
@@ -405,6 +406,45 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destr
             GetRenderDevice()->FreeReusablePrimaryCommandbuffer(cmdBuf);
         }
     }
+}
+
+TEST_CASE("RenderGraphExecutionPlan: a handover is recorded only across differing queue families",
+          "[RenderGraph]")
+{
+    // RebuildExecutionPlan compares the two segments' families and skips the transfer when they
+    // match. That matched-family branch is the *only* one a single-family device ever takes -
+    // llvmpipe, or an iGPU with no dedicated compute family - so it needs coverage that does not
+    // depend on the machine the tests happen to run on. Driving the plan directly keeps it covered
+    // now that the development device does have two families.
+    CompiledRenderGraph graph;
+
+    CompiledRenderGraphNode producer;
+    producer.name = "Producer";
+    producer.queueType = QueueType::COMPUTE;
+    producer.async = true;  // without this the node is scheduled on the graphics queue
+    producer.resourceUses = {ResolvedResourceUse{.handle = ResourceHandle("Shared")}};
+    graph.AddNode(std::move(producer));
+
+    CompiledRenderGraphNode consumer;
+    consumer.name = "Consumer";
+    consumer.queueType = QueueType::GRAPHICS;
+    consumer.resourceUses = {ResolvedResourceUse{.handle = ResourceHandle("Shared")}};
+    graph.AddNode(std::move(consumer));
+
+    // The two queue keys give two segments either way; only the families decide the handover.
+    const RenderGraphQueueFamilies oneQueueFamily{/*graphics*/ 0, /*compute*/ 0};
+    const RenderGraphQueueFamilies twoQueueFamilies{/*graphics*/ 0, /*compute*/ 1};
+
+    graph.RebuildExecutionPlan(oneQueueFamily);
+    CHECK(graph.GetExecutionPlan().GetSegmentCount() == 2);
+    CHECK(graph.GetExecutionPlan().GetTransferCount() == 0);
+
+    graph.RebuildExecutionPlan(twoQueueFamilies);
+    CHECK(graph.GetExecutionPlan().GetSegmentCount() == 2);
+    CHECK(graph.GetExecutionPlan().GetTransferCount() == 1);
+    // Producer is the async compute segment, so it reports the *compute* family.
+    CHECK(graph.GetExecutionPlan().transfers[0].producerFamily == 1);
+    CHECK(graph.GetExecutionPlan().transfers[0].consumerFamily == 0);
 }
 
 // Result of a single GPU-driven frame: how many draw sources the CPU uploaded, how many

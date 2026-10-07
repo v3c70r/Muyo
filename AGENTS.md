@@ -123,6 +123,15 @@ cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON \
 - **Report the counts** in the PR, e.g. `89 assertions / 10 cases` (default) and
   `109 assertions / 12 cases` (RT). Counts drift as tests are added; the point is that they are
   reported, and that a changed count is explained rather than silently absorbed.
+- **Record what the tests ran on.** A verification table names the *device*, not the vendor:
+  `llvmpipe`, `RADV REMBRANDT`, `RTX 3090`. The same commit has run green on a software rasteriser
+  and on a real driver, and naming the vendor described neither correctly. `GraphicsTestEnv` logs the
+  selected device and whether a dedicated compute family is present, so a run states its own scope
+  instead of leaving it to be assumed.
+- **Coverage must not depend on the machine.** A contract that only holds under one topology gets a
+  device-independent test — a hand-built plan, a direct call — alongside any integration test. Where
+  an integration test's *subject* is the topology, it must say so rather than pass quietly: a green
+  run on a device without that topology is not evidence about the path.
 
 Run `scripts/sanity.sh` before opening a pull request; it covers the documentation check and the
 format check described below in one command.

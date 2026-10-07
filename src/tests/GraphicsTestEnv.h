@@ -9,6 +9,9 @@
 #include "VkExtFuncsLoader.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
+
+#include <iostream>
+
 namespace Muyo
 {
 // RAII graphics environment
@@ -24,6 +27,27 @@ public:
 #endif
         GetRenderDevice()->CreateDevice(GetTestDeviceExtensions(), std::vector<const char *>(), nullptr,
                                         GetTestDeviceFeatures());
+
+        // Say which device this run is on, once. A "tests passed" line does not distinguish a
+        // driver from a software rasteriser, and this suite has silently run on both for the same
+        // commit; verification tables record the device name for that reason (AGENTS.md section 4).
+        // The topology note matters too: a device with a single queue family exercises none of the
+        // cross-queue code, so a green run there is not evidence about it.
+        static bool bLoggedDevice = false;
+        if (!bLoggedDevice)
+        {
+            bLoggedDevice = true;
+            VkPhysicalDeviceProperties deviceProperties{};
+            vkGetPhysicalDeviceProperties(GetRenderDevice()->GetPhysicalDevice(), &deviceProperties);
+            std::cerr << "[test device] " << deviceProperties.deviceName << " (Vulkan "
+                      << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "."
+                      << VK_VERSION_MINOR(deviceProperties.apiVersion) << "."
+                      << VK_VERSION_PATCH(deviceProperties.apiVersion) << ") - "
+                      << (GetRenderDevice()->IsComputeQueueDedicated()
+                              ? "dedicated compute family present, cross-queue path exercised"
+                              : "single queue family, cross-queue path NOT exercised")
+                      << std::endl;
+        }
         GetRenderDevice()->CreateCommandPools();
         GetMemoryAllocator()->Initalize(GetRenderDevice());
         GetRenderResourceManager()->Initialize();
