@@ -154,20 +154,86 @@ Rules:
 The review session has **no access to the developer's context**. Write every PR to be reviewed
 cold.
 
-A ready PR states: what changed and why; what is explicitly **not** changed; known limitations and
-debt; verification (build configs, test counts, docs check, GPU/driver used); files touched; and
-the follow-up issues filed.
+### What a ready PR states
+
+What changed and why; what is explicitly **not** changed; known limitations and debt; verification
+(build configs, test counts, docs check, GPU and driver used); files touched; the follow-up issues
+filed. [`.github/pull_request_template.md`](.github/pull_request_template.md) mirrors this list, so
+it does not have to be remembered.
+
+### Findings: kind, confidence, acceptance criterion
 
 Findings are numbered so they can be referenced later:
 
-| Prefix | Meaning |
+| Prefix | Kind |
 | --- | --- |
 | `C<n>` | Correctness — wrong results, races, leaks, UB. |
 | `A<n>` | Architecture or documentation — structure, missing docs, deferred design. |
-| `N<n>` | New issue raised while reviewing a fix (often found in round two). |
+| `N<n>` | New issue raised while reviewing a fix (usually round two). |
 | `P<n>` | Polish — naming, comments, small cleanups. |
 
-Triage **every** finding, and say which you did:
+The prefix says *what kind* of finding it is. Every finding also states **how sure** the reviewer is
+and **how it is closed**:
+
+| Confidence | Meaning |
+| --- | --- |
+| `confirmed` | Deterministic from reading the code; no run needed to know it is real. |
+| `needs runtime validation` | Derived by reasoning or arithmetic; a run must settle it. |
+| `design preference` | Argue or drop. Never blocks a merge. |
+
+The **acceptance criterion** is the test, command or observable that closes it — "two writers, one
+target; prove the new test fails on the old revision". A finding without one is an opinion.
+
+The confidence label tells the fixer what *kind* of work settles it. Arithmetic findings (like the
+descriptor-pool exhaustion in the PR #9 review) are `needs runtime validation` even when they look
+certain, and a fix may legitimately resolve them structurally rather than by measurement — but say
+so.
+
+### Multi-round reviews
+
+A second round starts from the first round's finding list and produces an **item-by-item verdict**
+(`fixed` / `partial` / `open` / `new`). Two checks earn their keep:
+
+- **Over-correction.** Verify the fix did not cost a property the code already had. A WAW hazard fix
+  that also barriers read-after-read pairs trades a correctness bug for a performance cliff.
+- **New-issue hunt.** Read the fix diff as if it were a fresh PR. Several findings in this
+  repository were *introduced by the fix commit*, not present before it.
+
+### Mechanical claims get mechanical verification
+
+Any claim of the form "all X are Y" — "all synchronization migrated", "every enabled feature is
+verified" — is closed with a copy-pasteable command, not by re-reading:
+
+```bash
+grep -rn "vkCmdPipelineBarrier(" src/          # expect: no matches
+python3 scripts/render_graph_docs.py --check   # expect: coverage OK
+```
+
+Check symmetric claims in **both** directions: nothing enabled-but-unchecked, nothing
+checked-but-unenabled. The `offsetof` dump in section 8 follows the same principle — *the command is
+the evidence*.
+
+### Reviewer conduct
+
+"Evidence over assertion" binds reviewers too.
+
+- **Check the artifact, never the memory.** A reviewer's claim about a struct layout, driver
+  behaviour or spec clause is settled against the headers and toolchain in this repository, not
+  recalled. There is a worked example: a reviewer asserted a `VkMemoryBarrier2` field order from
+  memory, measurements contradicted it, and the measurements were right.
+- **Post the correction in the thread.** PR comments are the durable record. A wrong reviewer claim
+  left standing outranks a right one merely by being first, and future readers will cite the error.
+
+### Reviews without the hardware
+
+Static review — no GPU — is a legitimate mode, but its conclusions are conditional. Close every such
+review with a **Questions / Unknowns** list: what static inspection cannot determine, and *which
+tool settles it* — validation layers, GPU-assisted validation, RenderDoc, a second vendor, a
+different queue-family topology. The fixer works that list item by item and reports back per item.
+
+### Triage and merge
+
+Triage **every** finding and say which you did:
 
 - **Fix it in-branch** when it is in scope and cheap.
 - **Otherwise file an issue** on the board and reply with the link. Deferring is fine; ignoring is
@@ -176,9 +242,9 @@ Triage **every** finding, and say which you did:
   synchronization semantics that a refactor PR promised not to change. Leave a `TODO(<phase>)`
   marker and reference the issue.
 
-Reviewers verify claims rather than trusting them, so pre-empt it with evidence. When reviewer and
-developer disagree, resolve it with a reproducible result on the actual toolchain — not with
-authority, and not by repeating the claim.
+**Who reproduces the verification:** the developer reproduces before merge; a reviewer with the
+hardware re-runs when available. A static-only reviewer is never the sole confirmation of a runtime
+claim — test counts, validation cleanliness, dedicated-compute-queue behaviour.
 
 Merge only when the review is approve-worthy, the fixups are pushed, and the verification table has
 been reproduced on the merged content.
@@ -217,7 +283,8 @@ been reproduced on the merged content.
 | Document | Contents |
 | --- | --- |
 | `AGENTS.md` | This file — process, verification, review. |
-| [`scripts/sanity.sh`](scripts/sanity.sh) | Local sanity runner: docs, format, static analysis, sanitizers. |
+| [`scripts/sanity.sh`](scripts/sanity.sh) | Local sanity runner: docs, format, clang-tidy, static analysis, sanitizers. |
+| [`.github/pull_request_template.md`](.github/pull_request_template.md) | Mirrors section 6 — what a ready PR states. |
 | [`.clang-format`](.clang-format) / [`.clang-tidy`](.clang-tidy) | Formatting and static-analysis configuration (see section 5). |
 | [`docs/CodingConventions.md`](docs/CodingConventions.md) | Repository-wide code rules. |
 | [`docs/RenderGraph.md`](docs/RenderGraph.md) | RenderGraph concept, quick start, status/limitations. |

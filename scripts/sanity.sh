@@ -83,6 +83,12 @@ cmd_tidy() {
         bad "clang-tidy not found; install clang-tidy (issue #24)"
         return
     fi
+    if [ ! -f build/compile_commands.json ]; then
+        bad "build/compile_commands.json not found - clang-tidy needs a compilation database"
+        echo "  configure first:  cmake -S . -B build"
+        fail=1
+        return
+    fi
 
     local files
     files="$(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD -- "${SRC_GLOBS[@]}" | grep -E '\.(cpp|h)$' || true)"
@@ -100,9 +106,11 @@ cmd_tidy() {
     done <<<"$files"
 
     echo "diagnostics by check (user code):"
-    grep -oE '\[[a-z0-9]+(-[a-z0-9]+)*(,[a-z0-9-]+)*\]$' "$log" | sed 's/[][]//g' | tr ',' '\n' \
+    local pattern='\[[a-z0-9]+(-[a-z0-9]+)*(,[a-z0-9-]+)*\]$'
+    grep -oE "$pattern" "$log" | sed 's/[][]//g' | tr ',' '\n' \
         | grep -v warnings-as-errors | sort | uniq -c | sort -rn | head -20
-    printf '\ntotal: %s   full log: %s\n' "$(grep -cE '^/home.*(warning|error):' "$log" || true)" "$log"
+    # Count the check-tagged lines themselves: portable, and independent of the source path.
+    printf '\ntotal: %s   full log: %s\n' "$(grep -cE "$pattern" "$log" || true)" "$log"
     echo "report-only for now: do not fail the build on these until #24 baselines them"
 }
 
