@@ -78,6 +78,12 @@ gh project item-edit --project-id <project-id> --id <item-id> \
   positional initializer a silent field shuffle.
 - **Separate refactors from semantics.** State in the PR which one it is. A refactor PR may leave a
   bug marked but unfixed, as long as it says so and files the issue.
+- **Asserts are for programmer error; an error path must survive `NDEBUG`.** `assert` compiles out in
+  release builds, so it may not guard a Vulkan result, an allocation or a lookup the next line
+  depends on - the build would proceed with a null handle and fail somewhere unrelated. Use
+  `VK_ASSERT` for Vulkan results: it always runs, reports the failing `VkResult` and the call site,
+  and aborts. Use a runtime check for any other invariant a release build must still enforce. Keep
+  `assert` for conditions only reachable by editing the code in front of you.
 - **Evidence over assertion.** If a change depends on a non-obvious platform fact (struct layout,
   driver behaviour, extension support), verify it on the actual toolchain and put the evidence in
   the PR — an `offsetof` dump, a validation message, a test that fails on the old revision. The
