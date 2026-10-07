@@ -2,6 +2,8 @@
 
 #include <cassert>
 #include <set>
+#include <stdexcept>
+#include <string>
 
 #include "Debug.h"
 #include "RenderResourceManager.h"
@@ -72,11 +74,11 @@ void VkRenderDevice::TransitImageLayout(
     uint32_t nMipCount,
     uint32_t nLayerCount)
 {
-    VkPipelineStageFlags sourceStage;
-    VkPipelineStageFlags destinationStage;
+    VkPipelineStageFlags2 sourceStage;
+    VkPipelineStageFlags2 destinationStage;
 
-    VkImageMemoryBarrier barrier = {};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    VkImageMemoryBarrier2 barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrier.oldLayout = oldLayout;
     barrier.newLayout = newLayout;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -100,20 +102,20 @@ void VkRenderDevice::TransitImageLayout(
         newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
 
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        sourceStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
     }
     // DST -> SHADER READ ONLY
     else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
              newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
 
-        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        sourceStage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
     }
     // UNDEFINED -> DEPTH_ATTACHMENT
     else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
@@ -121,42 +123,45 @@ void VkRenderDevice::TransitImageLayout(
     {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask =
-            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        sourceStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT;
     }
     // UNDEFINED -> COLOR_ATTACHMENT
     else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
              newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
     {
         barrier.srcAccessMask = 0;
-        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
 
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        sourceStage = VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
     }
     else
     {
         throw std::invalid_argument("unsupported layout transition!");
     }
 
+    barrier.srcStageMask = sourceStage;
+    barrier.dstStageMask = destinationStage;
+
+    VkDependencyInfo dependencyInfo = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependencyInfo.imageMemoryBarrierCount = 1;
+    dependencyInfo.pImageMemoryBarriers = &barrier;
+
     if (commandBuffer == VK_NULL_HANDLE)
     {
         ExecuteImmediateCommand(
-            [&](VkCommandBuffer commandBuffer)
+            [&](VkCommandBuffer cmdBuf)
             {
-                vkCmdPipelineBarrier(commandBuffer, sourceStage,
-                                     /*srcStage*/ destinationStage, /*dstStage*/
-                                     0, 0, nullptr, 0, nullptr, 1, &barrier);
+                vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
             });
     }
     else
     {
-        vkCmdPipelineBarrier(commandBuffer, sourceStage,
-                             /*srcStage*/ destinationStage, /*dstStage*/
-                             0, 0, nullptr, 0, nullptr, 1, &barrier);
+        vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
     }
 }
 
@@ -201,8 +206,12 @@ void VkRenderDevice::CreateDevice(
     VkPhysicalDeviceVulkan13Features features13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     features13.maintenance4 = VK_TRUE;
     features13.dynamicRendering = VK_TRUE;
+    // sync2 (core in 1.3) is the only synchronization API the engine uses.
+    features13.synchronization2 = VK_TRUE;
     VkPhysicalDeviceVulkan12Features features12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     features12.bufferDeviceAddress = VK_TRUE;
+    // Timeline semaphores back the render graph's internal cross-queue synchronization.
+    features12.timelineSemaphore = VK_TRUE;
     features12.separateDepthStencilLayouts = VK_TRUE;
     features12.runtimeDescriptorArray = VK_TRUE;
     features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
@@ -240,8 +249,41 @@ void VkRenderDevice::CreateDevice(
         // This will qury support for the chain
     }
 
-    // TODO(qgu): Handle feature support query here
-    // vkGetPhysicalDeviceFeatures2(m_physicalDevice, &features2);
+    // Verify every core feature we are about to enable is actually supported. Query into a
+    // dedicated chain: vkGetPhysicalDeviceFeatures2 overwrites the structs it is given with the
+    // supported values, so querying the desired chain would silently enable whatever came back.
+    VkPhysicalDeviceVulkan13Features supported13 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    VkPhysicalDeviceVulkan12Features supported12 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceVulkan11Features supported11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+    VkPhysicalDeviceFeatures2 supported2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    supported2.pNext = &supported11;
+    supported11.pNext = &supported12;
+    supported12.pNext = &supported13;
+    vkGetPhysicalDeviceFeatures2(m_physicalDevice, &supported2);
+
+    const auto require = [](VkBool32 bSupported, const char* sName)
+    {
+        if (!bSupported)
+        {
+            throw std::runtime_error(std::string("Required device feature is not supported: ") + sName);
+        }
+    };
+    require(supported2.features.multiDrawIndirect, "multiDrawIndirect");
+    require(supported2.features.shaderInt64, "shaderInt64");
+    require(supported2.features.shaderStorageImageReadWithoutFormat, "shaderStorageImageReadWithoutFormat");
+    require(supported2.features.shaderStorageImageWriteWithoutFormat, "shaderStorageImageWriteWithoutFormat");
+    require(supported11.multiview, "multiview");
+    require(supported11.shaderDrawParameters, "shaderDrawParameters");
+    require(supported12.bufferDeviceAddress, "bufferDeviceAddress");
+    require(supported12.separateDepthStencilLayouts, "separateDepthStencilLayouts");
+    require(supported12.runtimeDescriptorArray, "runtimeDescriptorArray");
+    require(supported12.shaderSampledImageArrayNonUniformIndexing, "shaderSampledImageArrayNonUniformIndexing");
+    require(supported12.drawIndirectCount, "drawIndirectCount");
+    require(supported12.scalarBlockLayout, "scalarBlockLayout");
+    require(supported12.timelineSemaphore, "timelineSemaphore");
+    require(supported13.maintenance4, "maintenance4");
+    require(supported13.dynamicRendering, "dynamicRendering");
+    require(supported13.synchronization2, "synchronization2");
 
     // Handle queue family indices and add them to the device creation info
 
@@ -561,31 +603,65 @@ void VkRenderDevice::FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer,
     vkFreeCommandBuffers(m_device, m_aCommandPools[pool], 1, &commandBuffer);
 }
 
-void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags> flags, VkFence signalFence)
+void VkRenderDevice::SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue, std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores, std::vector<VkPipelineStageFlags2> flags, VkFence signalFence)
 {
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.waitSemaphoreCount = (uint32_t)waitSemaphores.size();
-    submitInfo.pWaitSemaphores = waitSemaphores.data();
-    submitInfo.pWaitDstStageMask = flags.data();
+    // sync2: the wait stage is attached to each semaphore instead of to the submit.
+    std::vector<VkSemaphoreSubmitInfo> waitSemaphoreInfos(waitSemaphores.size());
+    for (size_t i = 0; i < waitSemaphores.size(); ++i)
+    {
+        waitSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        waitSemaphoreInfos[i].semaphore = waitSemaphores[i];
+        waitSemaphoreInfos[i].value = 0;  // ignored for binary semaphores
+        waitSemaphoreInfos[i].stageMask =
+            i < flags.size() ? flags[i] : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        waitSemaphoreInfos[i].deviceIndex = 0;
+    }
 
-    submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
-    submitInfo.pCommandBuffers = vCmdBuffers.data();
+    std::vector<VkSemaphoreSubmitInfo> signalSemaphoreInfos(signalSemaphores.size());
+    for (size_t i = 0; i < signalSemaphores.size(); ++i)
+    {
+        signalSemaphoreInfos[i].sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+        signalSemaphoreInfos[i].semaphore = signalSemaphores[i];
+        signalSemaphoreInfos[i].value = 0;  // ignored for binary semaphores
+        // A binary signal needs a non-NONE stage; the value carries no meaning for binaries.
+        signalSemaphoreInfos[i].stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        signalSemaphoreInfos[i].deviceIndex = 0;
+    }
 
-    submitInfo.signalSemaphoreCount = (uint32_t)signalSemaphores.size();
-    submitInfo.pSignalSemaphores = signalSemaphores.data();
+    std::vector<VkCommandBufferSubmitInfo> commandBufferInfos(vCmdBuffers.size());
+    for (size_t i = 0; i < vCmdBuffers.size(); ++i)
+    {
+        commandBufferInfos[i].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        commandBufferInfos[i].commandBuffer = vCmdBuffers[i];
+        commandBufferInfos[i].deviceMask = 0;
+    }
 
-    VK_ASSERT(vkQueueSubmit(queue, 1, &submitInfo, signalFence));
+    VkSubmitInfo2 submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+    submitInfo.waitSemaphoreInfoCount = static_cast<uint32_t>(waitSemaphoreInfos.size());
+    submitInfo.pWaitSemaphoreInfos = waitSemaphoreInfos.empty() ? nullptr : waitSemaphoreInfos.data();
+    submitInfo.commandBufferInfoCount = static_cast<uint32_t>(commandBufferInfos.size());
+    submitInfo.pCommandBufferInfos = commandBufferInfos.empty() ? nullptr : commandBufferInfos.data();
+    submitInfo.signalSemaphoreInfoCount = static_cast<uint32_t>(signalSemaphoreInfos.size());
+    submitInfo.pSignalSemaphoreInfos = signalSemaphoreInfos.empty() ? nullptr : signalSemaphoreInfos.data();
+
+    VK_ASSERT(vkQueueSubmit2(queue, 1, &submitInfo, signalFence));
 }
 
 void VkRenderDevice::SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers)
 {
-    VkSubmitInfo submitInfo = {};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.commandBufferCount = static_cast<uint32_t>(vCmdBuffers.size());
-    submitInfo.pCommandBuffers = vCmdBuffers.data();
+    std::vector<VkCommandBufferSubmitInfo> commandBufferInfos(vCmdBuffers.size());
+    for (size_t i = 0; i < vCmdBuffers.size(); ++i)
+    {
+        commandBufferInfos[i].sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+        commandBufferInfos[i].commandBuffer = vCmdBuffers[i];
+        commandBufferInfos[i].deviceMask = 0;
+    }
 
-    VK_ASSERT(vkQueueSubmit(GetGraphicsQueue(), 1, &submitInfo, nullptr));
+    VkSubmitInfo2 submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+    submitInfo.commandBufferInfoCount = static_cast<uint32_t>(commandBufferInfos.size());
+    submitInfo.pCommandBufferInfos = commandBufferInfos.empty() ? nullptr : commandBufferInfos.data();
+
+    VK_ASSERT(vkQueueSubmit2(GetGraphicsQueue(), 1, &submitInfo, nullptr));
     VK_ASSERT(vkQueueWaitIdle(GetGraphicsQueue()));
 }
 

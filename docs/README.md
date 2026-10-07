@@ -66,3 +66,8 @@ export DOXYGEN="$PWD/.tools/doxygen/usr/bin/doxygen"
 ```
 
 Graphviz (`dot`) is optional: class/include diagrams are enabled only when it is on `PATH`.
+
+## Related
+
+- [`CodingConventions.md`](CodingConventions.md) — repository-wide rules, notably *never initialize
+  Vulkan structs positionally* (the sync2 barrier layouts make that a silent field shuffle).

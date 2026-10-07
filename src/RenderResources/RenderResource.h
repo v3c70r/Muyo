@@ -165,14 +165,18 @@ public:
 #ifdef FEATURE_RAY_TRACING
                     // Make sure the copy of the instance buffer are copied before triggering the
                     // acceleration structure build
-                    VkMemoryBarrier barrier{
-                        VK_STRUCTURE_TYPE_MEMORY_BARRIER,
-                        nullptr, VK_ACCESS_TRANSFER_WRITE_BIT,
-                        VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR};
-                    vkCmdPipelineBarrier(commandBuffer,
-                                         VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                         VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+                    // Note: assign by name - the sync2 barrier structs are not laid out the way a
+                    // positional initializer would assume.
+                    VkMemoryBarrier2 barrier{};
+                    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+                    barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+                    barrier.dstStageMask = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+                    barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+                    VkDependencyInfo dependencyInfo = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+                    dependencyInfo.memoryBarrierCount = 1;
+                    dependencyInfo.pMemoryBarriers = &barrier;
+                    vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
 #endif
                 });
 
