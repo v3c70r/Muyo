@@ -48,7 +48,9 @@ cmd_docs() {
 cmd_format() {
     bold "format: lines changed vs $BASE"
     local diff
-    diff="$(git diff -U0 --no-color "$BASE"...HEAD -- "${SRC_GLOBS[@]}")"
+    # Compare the working tree against the base, not BASE...HEAD: the latter only sees committed
+    # lines, so a check run before committing inspects none of the work being prepared.
+    diff="$(git diff -U0 --no-color "$BASE" -- "${SRC_GLOBS[@]}")"
     if [ -z "$diff" ]; then
         ok "no changed C++ files"
         return
@@ -68,7 +70,7 @@ cmd_format() {
     if [ -n "$out" ]; then
         bad "changed lines are not clang-format clean:"
         printf '%s\n' "$out" | head -60
-        printf '\nTo apply:\n  git diff -U0 --no-color %s...HEAD -- src | %s -p1 | git apply -p0\n' "$BASE" "$tool"
+        printf '\nTo apply:\n  git diff -U0 --no-color %s -- src | %s -p1 | git apply -p0\n' "$BASE" "$tool"
         fail=1
     else
         ok "format OK"
@@ -91,7 +93,7 @@ cmd_tidy() {
     fi
 
     local files
-    files="$(git diff --name-only --diff-filter=ACMR "$BASE"...HEAD -- "${SRC_GLOBS[@]}" | grep -E '\.(cpp|h)$' || true)"
+    files="$(git diff --name-only --diff-filter=ACMR "$BASE" -- "${SRC_GLOBS[@]}" | grep -E '\.(cpp|h)$' || true)"
     if [ -z "$files" ]; then
         ok "no changed C++ files"
         return

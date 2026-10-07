@@ -192,6 +192,7 @@ add_library(muyo STATIC ${muyo_SRC})
 add_library(muyo_rg
     "src/RenderGraph/RenderGraphBuilder.cpp"
     "src/RenderGraph/CompiledRenderGraph.cpp"
+    "src/RenderGraph/RenderGraphExecutor.cpp"
 )
 
 #fetch VMA from Github
@@ -304,6 +305,7 @@ add_executable(tests
     src/ShaderReflectionFetcher.cpp
     src/RenderGraph/RenderGraphBuilder.cpp
     src/RenderGraph/CompiledRenderGraph.cpp
+    src/RenderGraph/RenderGraphExecutor.cpp
     src/tests/RenderGraphBuilderTest.cpp
     src/tests/ShaderReflectionTests.cpp
 )

@@ -12,8 +12,10 @@
 #include "GraphicsTestEnv.h"
 #include "MeshVertex.h"
 #include "PerObjResourceManager.h"
+#include "RenderGraph/CompiledRenderGraph.h"
 #include "RenderGraph/DrawCommands.h"
 #include "RenderGraph/RenderGraphBuilder.h"
+#include "RenderGraph/RenderGraphExecutor.h"
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphResourceDesc.h"
 #include "RenderResources/Geometry.h"
@@ -246,6 +248,202 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     auto* pQuadTarget = GetRenderResourceManager()->GetColorTarget("TriangleOutput");
     REQUIRE(pQuadTarget != nullptr);
     REQUIRE(CountNonBlackPixels(pQuadTarget) > 0);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builder twice", "[RenderGraphBuilder]")
+{
+    // The executor creates the cross-queue handover semaphores per submission and destroys the
+    // previous submission's set at the top of Submit(). A single Execute() per builder never takes
+    // that branch - the semaphores are then only released by the destructor - so this pins both the
+    // branch and the contract behind it: Execute() drains the queues before returning, which is what
+    // makes destroying the previous set safe. If executions ever overlap without per-slot
+    // ownership, the second Submit() would destroy semaphores still in flight and the validation
+    // layer would report it.
+    //
+    // Reaching that with a *non-empty* set needs two segments on different queue families, so the
+    // graph below pairs an async compute node with a graphics node that share one resource. On a
+    // device without a dedicated compute family both segments resolve to the same family, no
+    // transfer is recorded, and the second Submit() destroys an empty set - the WARN says so out
+    // loud instead of letting the test pass while covering nothing. The executor-level test below
+    // covers the non-empty case on every device.
+    if (!GetRenderDevice()->IsComputeQueueDedicated())
+    {
+        WARN(
+            "no dedicated compute queue family on this device: both segments resolve to one family, "
+            "so this test destroys an empty handover set");
+    }
+    std::vector<Vertex> quadVertices = {
+        {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 0.0f}},
+        {{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
+    };
+    std::vector<uint32_t> quadIndices = {0, 1, 2, 2, 3, 0};
+    auto* pQuadVB = GetRenderResourceManager()->GetVertexBuffer<Vertex>("TwiceQuadVertexBuffer", quadVertices);
+    auto* pQuadIB = GetRenderResourceManager()->GetIndexBuffer<uint32_t>("TwiceQuadIndexBuffer", quadIndices);
+    const uint32_t nQuadIndexCount = static_cast<uint32_t>(quadIndices.size());
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("TwiceOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.ImportResource("TwiceQuadVertexBuffer", pQuadVB);
+    builder.ImportResource("TwiceQuadIndexBuffer", pQuadIB);
+
+    RenderGraphNodeCreateInfo quadPass = {
+        .nodeName = "TwiceQuadNode",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("TwiceQuadVertexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("TwiceQuadIndexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("TwiceOutput"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"triangle.vert", "triangle_no_tex.frag.slang"},
+        .psoDesc = {.depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false, .stencilEnable = false},
+                    .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute = [nQuadIndexCount](RenderGraphNodeContext& ctx)
+        {
+            auto* pVertexBuffer = ctx.GetResource<VertexBuffer<Vertex>>("TwiceQuadVertexBuffer");
+            auto* pIndexBuffer = ctx.GetResource<IndexBuffer>("TwiceQuadIndexBuffer");
+            REQUIRE(pVertexBuffer != nullptr);
+            REQUIRE(pIndexBuffer != nullptr);
+
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = pVertexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(ctx.commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
+        }};
+
+    // Async compute node filling the same image: with a dedicated compute family this gives the plan
+    // a compute segment handing a resource to the graphics segment, i.e. one transfer and one
+    // handover semaphore.
+    RenderGraphNodeCreateInfo fillPass = {
+        .nodeName = "TwiceFill",
+        .queueType = QueueType::COMPUTE,
+        .async = true,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("TwiceOutput"),
+                                     .io = ResourceIOType::READ_WRITE,
+                                     .usage = ResourceUsage::STORAGE_IMAGE,
+                                     .kind = ResourceKind::IMAGE,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"testFillColor.comp.slang"},
+        .execute = [](RenderGraphNodeContext& ctx)
+        { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+
+    builder.AddNode(fillPass);
+    builder.AddNode(quadPass);
+    // Order the segments so the compute pass is the producer and the graphics pass the consumer.
+    builder.AddDependency(fillPass.nodeName, quadPass.nodeName);
+    builder.Build();
+
+    auto* pTarget = GetRenderResourceManager()->GetColorTarget("TwiceOutput");
+    REQUIRE(pTarget != nullptr);
+
+    builder.Execute();
+    REQUIRE(CountNonBlackPixels(pTarget) > 0);
+
+    // Second submission on the same builder. On a device with a dedicated compute family this is
+    // the run that destroys the first submission's non-empty handover set and creates a fresh one.
+    builder.Execute();
+    REQUIRE(CountNonBlackPixels(pTarget) > 0);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destroys the previous handover set",
+                 "[RenderGraphBuilder]")
+{
+    // Covers the path no graph-level test can reach on a single-family device:
+    // RenderGraphBuilder::RebuildExecutionPlan records a transfer only when two segments resolve to
+    // *different queue families*, so the double-execute test above destroys an empty set here (and
+    // says so through its WARN). RenderGraphExecutor::Submit keys purely on (producer, consumer)
+    // segment indices and knows nothing about families, so a hand-built plan with one transfer
+    // exercises create -> signal/wait -> destroy on any device.
+    RenderGraphExecutionPlan plan;
+    plan.segments = {{QueueType::GRAPHICS, 0, 1}, {QueueType::GRAPHICS, 1, 2}};
+    plan.transfers = {{0, 1, ResourceHandle("SyntheticHandover"), 0, 1}};
+    REQUIRE(plan.GetSegmentCount() == 2);
+    REQUIRE(plan.GetTransferCount() == 1);
+
+    RenderGraphExecutor executor(GetRenderDevice());
+
+    // Two submissions, each with its own command buffers: the graph records one-time-submit buffers
+    // and allocates fresh ones per execution, so re-submitting the same handles would trip the
+    // one-time-submit rule rather than test anything about the executor.
+    for (int run = 0; run < 2; ++run)
+    {
+        std::vector<VkCommandBuffer> cmdBufs;
+        for (size_t i = 0; i < plan.GetSegmentCount(); ++i)
+        {
+            VkCommandBuffer cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
+            VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
+            VK_ASSERT(vkEndCommandBuffer(cmdBuf));
+            cmdBufs.push_back(cmdBuf);
+        }
+
+        // The second run is the one that destroys the semaphore the first created and makes a new
+        // one. It can only do that because the first run drained above - the drain is what makes
+        // the lifetime legal, and it is the contract this test pins.
+        executor.Submit(plan, cmdBufs);
+        executor.WaitIdle();
+
+        for (VkCommandBuffer& cmdBuf : cmdBufs)
+        {
+            GetRenderDevice()->FreeReusablePrimaryCommandbuffer(cmdBuf);
+        }
+    }
+}
+
+TEST_CASE("RenderGraphExecutionPlan: a handover is recorded only across differing queue families", "[RenderGraph]")
+{
+    // RebuildExecutionPlan compares the two segments' families and skips the transfer when they
+    // match. That matched-family branch is the *only* one a single-family device ever takes -
+    // llvmpipe, or an iGPU with no dedicated compute family - so it needs coverage that does not
+    // depend on the machine the tests happen to run on. Driving the plan directly keeps it covered
+    // now that the development device does have two families.
+    CompiledRenderGraph graph;
+
+    CompiledRenderGraphNode producer;
+    producer.name = "Producer";
+    producer.queueType = QueueType::COMPUTE;
+    producer.async = true;  // without this the node is scheduled on the graphics queue
+    producer.resourceUses = {ResolvedResourceUse{.handle = ResourceHandle("Shared")}};
+    graph.AddNode(std::move(producer));
+
+    CompiledRenderGraphNode consumer;
+    consumer.name = "Consumer";
+    consumer.queueType = QueueType::GRAPHICS;
+    consumer.resourceUses = {ResolvedResourceUse{.handle = ResourceHandle("Shared")}};
+    graph.AddNode(std::move(consumer));
+
+    // The two queue keys give two segments either way; only the families decide the handover.
+    const RenderGraphQueueFamilies oneQueueFamily{/*graphics*/ 0, /*compute*/ 0};
+    const RenderGraphQueueFamilies twoQueueFamilies{/*graphics*/ 0, /*compute*/ 1};
+
+    graph.RebuildExecutionPlan(oneQueueFamily);
+    CHECK(graph.GetExecutionPlan().GetSegmentCount() == 2);
+    CHECK(graph.GetExecutionPlan().GetTransferCount() == 0);
+
+    graph.RebuildExecutionPlan(twoQueueFamilies);
+    CHECK(graph.GetExecutionPlan().GetSegmentCount() == 2);
+    CHECK(graph.GetExecutionPlan().GetTransferCount() == 1);
+    // Producer is the async compute segment, so it reports the *compute* family.
+    CHECK(graph.GetExecutionPlan().transfers[0].producerFamily == 1);
+    CHECK(graph.GetExecutionPlan().transfers[0].consumerFamily == 0);
 }
 
 // Result of a single GPU-driven frame: how many draw sources the CPU uploaded, how many

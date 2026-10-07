@@ -123,6 +123,15 @@ cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON \
 - **Report the counts** in the PR, e.g. `89 assertions / 10 cases` (default) and
   `109 assertions / 12 cases` (RT). Counts drift as tests are added; the point is that they are
   reported, and that a changed count is explained rather than silently absorbed.
+- **Record what the tests ran on.** A verification table names the *device*, not the vendor:
+  `llvmpipe`, `RADV REMBRANDT`, `RTX 3090`. The same commit has run green on a software rasteriser
+  and on a real driver, and naming the vendor described neither correctly. `GraphicsTestEnv` logs the
+  selected device and whether a dedicated compute family is present, so a run states its own scope
+  instead of leaving it to be assumed.
+- **Coverage must not depend on the machine.** A contract that only holds under one topology gets a
+  device-independent test — a hand-built plan, a direct call — alongside any integration test. Where
+  an integration test's *subject* is the topology, it must say so rather than pass quietly: a green
+  run on a device without that topology is not evidence about the path.
 
 Run `scripts/sanity.sh` before opening a pull request; it covers the documentation check and the
 format check described below in one command.
@@ -281,7 +290,12 @@ been reproduced on the merged content.
   layout, never assume it" rather than "trust the specification order".
 - The development GPU exposes a **dedicated compute queue family** (graphics family 0, compute
   family 1), so the async-compute path and queue-family ownership transfers are exercised for real.
-  A machine without one will silently take the single-queue path.
+  This depends on the driver initialising: when it does not, Vulkan silently falls back to a software
+  device (llvmpipe) with a single family and **nothing about the transfer path is validated** - a
+  green run looks identical either way. `GraphicsTestEnv` prints a `[test device] ...` line each run
+  saying which case it was, so read that line before treating a green run as evidence about
+  transfers. A machine with one queue family takes the single-queue path, which is a legitimate
+  configuration rather than a failure, but it cannot validate handover machinery.
 - `thirdparty/*` submodules frequently show as dirty. Do not commit submodule pointer churn unless
   the pointer change is intentional.
 
