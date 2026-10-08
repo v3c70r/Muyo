@@ -198,8 +198,9 @@ public:
         {
             // Runtime check, not an assert: under NDEBUG an unsupported type would silently leave the
             // descriptor unwritten and surface later as a draw-time VUID far from the cause (#30).
-            throw std::runtime_error("BindResourceToDescriptorSet: unsupported resource type; a descriptor "
-                                     "can only be bound to a BufferResource or an ImageResource.");
+            throw std::runtime_error(
+                "BindResourceToDescriptorSet: unsupported resource type; a descriptor "
+                "can only be bound to a BufferResource or an ImageResource.");
         }
 
         vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1, &writeDescSet, 0, nullptr);
