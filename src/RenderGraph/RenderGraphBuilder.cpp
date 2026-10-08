@@ -441,20 +441,32 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     for (const auto& shaderName : nodeCreateInfo.shaderNames)
     {
         auto key = m_shaderAssetManager.LoadShader(shaderName);
-        if (key)
+        if (!key)
         {
-            rgn.shaders[shaderIdx++] = key.value();
+            // Skipping the stage here produced a pipeline compiled without it, which failed much later
+            // at draw time with a descriptor or push-constant mismatch far from the cause. A shader the
+            // node asked for and the build did not produce is a hard error.
+            throw std::runtime_error("Node '" + nodeName + "' declares shader '" + shaderName +
+                                     "', which could not be loaded.");
         }
+        rgn.shaders[shaderIdx++] = key.value();
     }
 
     // Load ray tracing shaders (raygen / miss / closest hit).
-    for (size_t i = 0; i < nodeCreateInfo.rtShaderNames.size() && i < rgn.rtShaders.size(); ++i)
+    if (nodeCreateInfo.rtShaderNames.size() > rgn.rtShaders.size())
+    {
+        throw std::runtime_error("Node '" + nodeName + "' declares more ray tracing shaders than the " +
+                                 std::to_string(rgn.rtShaders.size()) + " supported (raygen / miss / closest hit).");
+    }
+    for (size_t i = 0; i < nodeCreateInfo.rtShaderNames.size(); ++i)
     {
         auto key = m_shaderAssetManager.LoadShader(nodeCreateInfo.rtShaderNames[i]);
-        if (key)
+        if (!key)
         {
-            rgn.rtShaders[i] = key.value();
+            throw std::runtime_error("Ray tracing node '" + nodeName + "' declares shader '" +
+                                     nodeCreateInfo.rtShaderNames[i] + "', which could not be loaded.");
         }
+        rgn.rtShaders[i] = key.value();
     }
 
     // Resolve resource uses
@@ -836,26 +848,16 @@ RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
                                     GetRenderDevice()->GetComputeQueueFamily()};
 }
 
-VkCommandBuffer RenderGraphBuilder::AllocateCommandBufferForType(QueueType type) const
-{
-    if (type == QueueType::COMPUTE) return GetRenderDevice()->AllocateComputeCommandBuffer();
-    return GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
-}
-
-void RenderGraphBuilder::FreeCommandBufferForType(QueueType type, VkCommandBuffer cmdBuf) const
-{
-    if (cmdBuf == VK_NULL_HANDLE) return;
-    if (type == QueueType::COMPUTE)
-    {
-        GetRenderDevice()->FreeComputeCommandBuffer(cmdBuf);
-    }
-    else
-    {
-        GetRenderDevice()->FreeReusablePrimaryCommandbuffer(cmdBuf);
-    }
-}
-
+/// The blocking form: records, submits, and waits for the GPU before returning. Kept as the
+/// default so every existing caller keeps the contract it had. The overload below does not wait,
+/// but the builder still runs one execution in flight, so calls serialise rather than overlap.
 void RenderGraphBuilder::Execute()
+{
+    Execute(RenderGraphExecuteInfo{});
+    m_executor.WaitIdle();
+}
+
+void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 {
     m_resourceAccessStates.clear();
 
@@ -898,12 +900,15 @@ void RenderGraphBuilder::Execute()
     const std::vector<RenderGraphQueueTransfer>& transfers = plan.transfers;
 
     // ── Record each segment into its own command buffer. ───────────────────────────────────────
-    std::vector<VkCommandBuffer> segmentCmdBuffers(segments.size(), VK_NULL_HANDLE);
+    // The executor owns the command buffers: it can only recycle one once that slot's fence has
+    // signalled, which is what makes recording into a slot safe while earlier executions are still
+    // in flight. Acquiring blocks while every slot is busy, bounding how far the CPU runs ahead.
+    RenderGraphExecutor::ExecutionSlot slot = m_executor.AcquireSlot(plan);
+    const std::vector<VkCommandBuffer>& segmentCmdBuffers = slot.segmentCommandBuffers;
     for (size_t s = 0; s < segments.size(); ++s)
     {
         const uint32_t queueFamily = GetQueueFamilyForType(segments[s].queueType);
-        VkCommandBuffer cmdBuf = AllocateCommandBufferForType(segments[s].queueType);
-        segmentCmdBuffers[s] = cmdBuf;
+        VkCommandBuffer cmdBuf = segmentCmdBuffers[s];
 
         VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -1016,13 +1021,7 @@ void RenderGraphBuilder::Execute()
     }
 
     // ── Submit through the executor, which owns the handover semaphores and the waiting. ───────
-    m_executor.Submit(plan, segmentCmdBuffers);
-    m_executor.WaitIdle();
-
-    for (size_t s = 0; s < segments.size(); ++s)
-    {
-        FreeCommandBufferForType(segments[s].queueType, segmentCmdBuffers[s]);
-    }
+    m_executor.Submit(plan, slot, info);
 }
 
 std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const { return m_dependencyGraph.TopologicalSort(); }
