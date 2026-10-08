@@ -389,11 +389,11 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains exec
     const uint32_t nQuadIndexCount = static_cast<uint32_t>(quadIndices.size());
 
     RenderGraphBuilder builder(GetRenderDevice());
-    builder.AddResource("ChainOutput", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                                         .extent = {WIDTH, HEIGHT},
-                                                         .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                                                  VK_IMAGE_USAGE_STORAGE_BIT |
-                                                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.AddResource("ChainOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     builder.ImportResource("ChainQuadVertexBuffer", pQuadVB);
     builder.ImportResource("ChainQuadIndexBuffer", pQuadIB);
 
@@ -522,10 +522,16 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains exec
     // has one in-flight slot, so acquiring one here blocks until execution 1's fence signalled.
     builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = semaphoreChain, .signalSemaphore = semaphoreFinished});
 
-    // If the join did not signal the caller's semaphore, this submission never completes and the fence
-    // wait times out rather than the pixels quietly looking fine.
+    // If the join did not signal the caller's semaphore this submission never completes, so the wait
+    // is bounded rather than UINT64_MAX: unbounded, the failure mode is an infinite hang that only a
+    // wall-clock timeout outside the process can catch. Bounding it turns a broken join into a
+    // VK_TIMEOUT at this line, naming the contract that broke. (With layers active the validator
+    // usually gets there first and rejects the unsignallable wait at submit time,
+    // VUID-vkQueueSubmit2-semaphore-03873.)
     submitEmpty(semaphoreFinished, VK_NULL_HANDLE, fenceFinished);
-    VK_ASSERT(vkWaitForFences(device, 1, &fenceFinished, VK_TRUE, UINT64_MAX));
+    // VK_ASSERT reports the VkResult, so a broken join surfaces here as VK_TIMEOUT rather than as a
+    // bare bool comparison.
+    VK_ASSERT(vkWaitForFences(device, 1, &fenceFinished, VK_TRUE, 5'000'000'000));
 
     REQUIRE(CountNonBlackPixels(pTarget) > 0);
 
