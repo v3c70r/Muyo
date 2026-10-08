@@ -30,6 +30,7 @@ one place to edit:
 | Which issues are on the critical path | Project field | `Critical path` |
 | What is blocked by what | Project field | `Depends on` |
 | Where an issue has got to | Project field | `Status` |
+| The debt verdict for an issue | Project field | `Debt` (`Fix early` / `Subsumed by a feature` / `After P3`) |
 | Why the phases are ordered this way | **This document** | below |
 | The debt policy — including why some debt is deliberately *not* fixed | **This document** | below |
 | The risks, and what mitigates them | **This document** | below |
@@ -139,7 +140,8 @@ plausible reason to wait. The mitigation is in P2's gate itself: it is capabilit
 ## Technical debt policy
 
 The rule this roadmap is asked to enforce: **fix debt as early as possible, unless a planned feature
-already replaces it.** The second half matters as much as the first — the migration deletes a large
+already replaces it.** The verdict per issue lives in the project's `Debt` field; what follows is the
+reasoning behind the three verdicts, which no field holds. The second half matters as much as the first — the migration deletes a large
 amount of code, and work spent polishing what is about to be removed is worse than leaving it.
 
 ### Fix early — not subsumed by anything below
@@ -174,9 +176,18 @@ amount of code, and work spent polishing what is about to be removed is worse th
 
 ## Critical path
 
-`A1.4 → A1.5` and `#18 → #15/#16` converge on the port, and the port gates the deletion. The issues
-themselves are in the project's **Critical path** view, which filters on the `Critical path` field — not
-here, for the reason above.
+There are two chains, because there are two things to reach: the library shipping, and the first
+consumer adopting it. The project's `Critical path` field marks the union and the **Critical path** view
+filters on it — the issues are not listed here, for the reason above.
+
+- **Library** — frame sync (`#11`) → the graph boundary (`#53`) → the device boundary (`#58`) → the
+  boundary test (`#54`). Nothing on this chain can slip without moving the goal.
+- **First consumer** — transfer and clear usages (`#18`) → descriptors (`#15`) and transients (`#16`) →
+  the client-side frame helper (`#57`) → the port (`#20`) → the deletion (`#51`).
+
+The union is deliberately broad: it is every issue whose slippage moves an end date, not a shortlist. If
+it stops being useful, narrow the field to *what blocks the current phase* rather than widening the
+definition of "critical".
 
 ## Risks
 
