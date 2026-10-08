@@ -18,6 +18,12 @@ silently diverge from it.
 - Branch off an up-to-date `master`, one workstream per branch:
   - RenderGraph work: `rg-<topic>` — e.g. `rg-frame-sync`, `rg-descriptor-sets`.
   - Everything else: `<area>-<topic>` — e.g. `sync2-baseline`, `agent-workflow`.
+- **Check the branch before you edit anything:** `git branch --show-current`. With `AGENTS.md`
+  now committable straight to trunk, a checkout can legitimately be on `master` while code work
+  is in progress, so "I am on master" no longer means "I am not about to commit code to master".
+  Two sessions have already edited the wrong branch here; both were caught only by reading the
+  diff, and one produced an edit against a file version that did not have the fix it was extending.
+  `git status --short` before `git add` is the cheap habit.
 - Never commit directly to `master` — **one exception: `AGENTS.md` itself**. A process lesson that
   is not recorded is a lesson the next session does not have, so working-agreement updates are
   committed straight to trunk (small, self-describing commits) instead of waiting for a PR cycle.
@@ -92,6 +98,21 @@ gh project item-edit --project-id <project-id> --id <item-id> \
   the PR — an `offsetof` dump, a validation message, a test that fails on the old revision. The
   review session will challenge unverified claims, and "the docs say so" is not evidence about
   *these* headers.
+- **`VK_ASSERT` is unconditional; plain `assert` is for invariants only.** `VK_ASSERT` reports the
+  `VkResult`, file, line and function and aborts — it is the error path, so `NDEBUG` must not remove
+  it. A plain `assert` expresses something true by construction *in this code* (an index bounded by a
+  preceding loop, a size two callers ago), and disappearing under `NDEBUG` is fine. Anything that can
+  be falsified by *input* — a file, a driver, a global, a `vkCreateX` result — needs a runtime check
+  that survives `NDEBUG`: a throw or a warning, never an `assert`. Two lessons already paid for:
+  a device-layer `assert` compiled out and let an invalid `VkDeviceCreateInfo` through, and an
+  `assert(false)` on an unsupported resource type left a descriptor unwritten, surfacing at draw time
+  as an unrelated VUID.
+- **Build and run `Release` when you touch initialisation, descriptor or resource code.** `NDEBUG`
+  also removes `assert`-gated *side effects* that no longer exist, and `-O3` exposes lifetime bugs a
+  Debug build cannot see: the descriptor updates bound to null buffers, and three Release tests that
+  "rendered nothing", were one `VkDescriptorBufferInfo` declared inside the branch whose address was
+  used after the branch closed. Both configurations are cheap; the rule in section 4 already requires
+  both, so this is the *reason*, not a new obligation.
 - **Documentation is coverage-enforced.** Every public entity under `src/RenderGraph/` needs a
   Doxygen description or the docs build fails.
 
