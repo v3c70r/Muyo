@@ -154,6 +154,12 @@ Operational notes, each of which has cost someone a red herring:
   and no validation layer. On a machine without Wayland dev packages configure with
   `-DGLFW_BUILD_WAYLAND=OFF`; the X11 path needs `libxrandr-dev`, `libxinerama-dev`,
   `libxcursor-dev`, `libxi-dev`.
+- **An unknown `CMAKE_BUILD_TYPE` configures successfully with no per-config flags.** `Release`
+  misspelled (`rel`, `RELEASE` is fine but `Rel` is not, and so on) yields a build with **no `-O3`
+  and no `-DNDEBUG`** that looks ordinary in every other way - asserts stay live and the optimiser
+  is off, which silently invalidates both halves of a Release verification. Pass the full
+  `Debug`/`Release` strings (beware tag-slicing like `${tag##*-}` when looping over build dirs) and
+  confirm `NDEBUG` in `compile_commands.json` before trusting a Release-only claim.
 - **Selecting cases:** Catch2 specs are exact-match unless they contain a wildcard - a plain
   `"GPU frustum culling"` matches nothing (the case is `RenderGraphBuilder: GPU frustum culling
   (async compute queue)`); use `"*GPU frustum culling*"`. Multiple specs take comma-separated
