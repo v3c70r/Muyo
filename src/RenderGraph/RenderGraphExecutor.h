@@ -38,10 +38,20 @@ struct RenderGraphExecuteInfo
     /// Value to wait for when `waitSemaphore` is a timeline semaphore. This is what lets a caller chain
     /// one execution onto another's completion: pass the same timeline the earlier execution signalled
     /// and the value it signalled. Ignored for a binary semaphore.
+    ///
+    /// With a timeline, 0 is legal but waits for nothing - a counter starts at 0, so the wait is already
+    /// satisfied. Pass the value you actually mean.
     uint64_t waitValue = 0;
     /// Signalled once *all* of this execution's queues have completed - e.g. for vkQueuePresentKHR.
     VkSemaphore signalSemaphore = VK_NULL_HANDLE;
-    /// Value to signal when `signalSemaphore` is a timeline semaphore. Ignored for a binary semaphore.
+    /// Value to signal when `signalSemaphore` is a timeline semaphore. Must be greater than the
+    /// semaphore's current value, so the default 0 is never valid for one. Ignored for a binary
+    /// semaphore.
+    ///
+    /// A signal of 0 on a counter at 0 is rejected (VUID-VkSubmitInfo2-semaphore-03882), so a caller
+    /// chaining onto a timeline it owns has to pass the value it intends - which is also the value the
+    /// next execution waits for. If the only question is "has this finished?", `signalFence` needs no
+    /// value at all.
     uint64_t signalValue = 0;
     /// Signalled once *all* of this execution's queues have completed. Unlike `signalSemaphore` this is
     /// waitable from the host, and unlike a query it needs no submission of the caller's own.
