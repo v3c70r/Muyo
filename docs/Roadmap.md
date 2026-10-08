@@ -30,7 +30,7 @@ one place to edit:
 | Which issues are on the critical path | Project field | `Critical path` |
 | What is blocked by what | Project field | `Depends on` |
 | Where an issue has got to | Project field | `Status` |
-| The debt verdict for an issue | Project field | `Debt` (`Fix early` / `Subsumed by a feature` / `After P3`) |
+| The debt verdict for an issue | Project field | `Debt` (`Fix early` / `Subsumes debt` / `After P3`) |
 | Why the phases are ordered this way | **This document** | below |
 | The debt policy — including why some debt is deliberately *not* fixed | **This document** | below |
 | The risks, and what mitigates them | **This document** | below |
