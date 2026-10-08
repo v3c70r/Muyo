@@ -45,14 +45,23 @@ bool HasLayer(const std::vector<VkLayerProperties>& vSupportedLayers, const char
 void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
                                 const std::vector<const char*>& vLayerNames)
 {
+    // Runtime checks, not asserts (#35): a requested layer or extension that is not available is an
+    // input error, and under NDEBUG the assert vanished, so a release build went on to create the
+    // instance without the request and failed later with nothing naming what caused it.
     HWInfo info;
     for (const auto& slayerName : vLayerNames)
     {
-        assert(info.IsLayerSupported(slayerName));
+        if (!info.IsLayerSupported(slayerName))
+        {
+            FatalError(std::string("requested Vulkan layer is not available: ") + slayerName);
+        }
     }
     for (const auto& sInstanceExtensionName : vExtensionNames)
     {
-        assert(info.IsInstanceExtensionSupported(sInstanceExtensionName));
+        if (!info.IsInstanceExtensionSupported(sInstanceExtensionName))
+        {
+            FatalError(std::string("requested Vulkan instance extension is not available: ") + sInstanceExtensionName);
+        }
     }
 
     // Create instance
@@ -172,7 +181,12 @@ void VkRenderDevice::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
-    assert(deviceCount != 0);
+    // Not an assert: with no device, devices[0] below is out of bounds, so a release build crashed in
+    // the next call rather than reporting that this machine has no usable GPU.
+    if (deviceCount == 0)
+    {
+        FatalError("no Vulkan physical device was found - check the loader and the installed ICDs");
+    }
     // assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
@@ -351,7 +365,10 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     }
 
     // We should at least have one graphics queue
-    assert(m_queueFamilyIndices.nGraphicsQueueFamily >= 0);
+    if (m_queueFamilyIndices.nGraphicsQueueFamily < 0)
+    {
+        FatalError("no graphics queue family was found on this device; Muyo cannot run without one");
+    }
 
     if (m_queueFamilyIndices.nGraphicsQueueFamily >= 0)
     {
@@ -390,7 +407,10 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     }
 
     // Make sure we have at least one queue
-    assert(sQueueCreateInfos.size() > 0);
+    if (sQueueCreateInfos.empty())
+    {
+        FatalError("no queue was selected for device creation; Muyo cannot run without one");
+    }
 
     std::vector<VkDeviceQueueCreateInfo> vQueueCreateInfos(sQueueCreateInfos.begin(), sQueueCreateInfos.end());
 
@@ -413,7 +433,10 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     VK_ASSERT(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device));
 
     {
-        assert(m_queueFamilyIndices.nGraphicsQueueFamily != -1);
+        if (m_queueFamilyIndices.nGraphicsQueueFamily < 0)
+        {
+            FatalError("graphics queue family index is unset at queue retrieval");
+        }
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.nGraphicsQueueFamily, 0, &m_graphicsQueue);
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics Queue");
 

@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <cstring>
 #include <vector>
 
@@ -21,6 +22,23 @@ VkLayerProperties MakeLayer(const char* sName)
     return properties;
 }
 }  // namespace
+
+TEST_CASE("VkRenderDevice: an unavailable layer or instance extension fails at Initialize", "[RenderDevice]")
+{
+    // #35 and #30. These guards were plain asserts, so a release build skipped them, carried on to
+    // vkCreateInstance with the request still in the list, and failed there with nothing naming what
+    // caused it. The message naming the offending string is the whole point of the check: "Vulkan
+    // initialization failed" is a worse diagnostic than "you asked for VK_LAYER_does_not_exist".
+    //
+    // Device-independent: the names below exist on no machine, and the guards consult the same
+    // instance-level lists on every one, so this does not depend on the GPU or the loader present.
+    Muyo::VkRenderDevice device;
+    CHECK_THROWS_WITH(device.Initialize({}, {"VK_LAYER_does_not_exist"}),
+                      Catch::Matchers::ContainsSubstring("VK_LAYER_does_not_exist"));
+    // Throwing before touching Vulkan is what makes it safe to retry on the same object.
+    CHECK_THROWS_WITH(device.Initialize({"VK_EXT_instance_does_not_exist"}, {}),
+                      Catch::Matchers::ContainsSubstring("VK_EXT_instance_does_not_exist"));
+}
 
 TEST_CASE("VkRenderDevice: capability lookups match names exactly", "[RenderDevice]")
 {

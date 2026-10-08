@@ -17,7 +17,10 @@ Material &MaterialManager::GetOrCreateMaterial(const std::string sMaterialName)
     else
     {
         uint32_t index = m_vMaterials.size();
-        assert(m_vMaterials.size() == m_vMaterials.size());
+        // Was a tautology (size() == size()), so it asserted nothing. This is the invariant it was
+        // reaching for: nothing may have changed the vector between capturing the index and the
+        // insertion below. Debug-sanity by construction, so an assert is the right tool here.
+        assert(m_vMaterials.size() == index);
 
         m_mMaterialIndexMap[sMaterialName] = index;
 
