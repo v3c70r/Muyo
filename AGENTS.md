@@ -18,7 +18,10 @@ silently diverge from it.
 - Branch off an up-to-date `master`, one workstream per branch:
   - RenderGraph work: `rg-<topic>` — e.g. `rg-frame-sync`, `rg-descriptor-sets`.
   - Everything else: `<area>-<topic>` — e.g. `sync2-baseline`, `agent-workflow`.
-- Never commit directly to `master`.
+- Never commit directly to `master` — **one exception: `AGENTS.md` itself**. A process lesson that
+  is not recorded is a lesson the next session does not have, so working-agreement updates are
+  committed straight to trunk (small, self-describing commits) instead of waiting for a PR cycle.
+  Everything else keeps the branch-and-squash flow.
 - **Merge with squash**: `gh pr merge <n> --squash`. Trunk history is then one commit per
   workstream, and the PR body becomes the commit body — so write it to be read as `git log`.
 - Keep one concern per pull request. A mechanical refactor and a behaviour change are two PRs even
@@ -117,6 +120,25 @@ cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON \
                            && cmake --build build-rt --target tests -j"$(nproc)" && ./build-rt/tests
 ```
 
+Operational notes, each of which has cost someone a red herring:
+
+- **`tests` does not depend on the `Shaders` target.** Build both — `cmake --build build --target
+  tests Shaders` — or the tests fail at runtime on missing `.spv` files (they are loaded from
+  `shaders/` relative to the *working directory*, not the source tree).
+- **`assets/` is also CWD-relative.** Run from the build directory and link the assets in once:
+  `ln -s "$PWD/assets" build/assets`. A missing assets dir fails as `SetData(nullptr)` deep in the
+  Mazda fixtures, which looks like a code bug and is not.
+- **The Vulkan SDK must be on the environment** (`source <sdk>/setup-env.sh` sets `VULKAN_SDK`,
+  `PATH`, `VK_LAYER_PATH`, `LD_LIBRARY_PATH`): without it there is no `slangc`/`glslangValidator`
+  and no validation layer. On a machine without Wayland dev packages configure with
+  `-DGLFW_BUILD_WAYLAND=OFF`; the X11 path needs `libxrandr-dev`, `libxinerama-dev`,
+  `libxcursor-dev`, `libxi-dev`.
+- **Selecting cases:** `./tests "GPU frustum culling"`; multiple cases take comma-separated
+  wildcard specs in one argument: `./tests "DIAG*,*read-write*"`.
+- **The debug callback asserts on `ERROR`**, so a validation error aborts the *whole run* at that
+  point, not just the case. To see the remaining failures, judge from the stderr VUIDs and re-run
+  selected cases by name.
+
 - **There is no CI, by choice.** Testing happens on the development machine; the workflows in
   `.github/workflows/` are stale and have never fired — do not rely on them, and do not add
   anything that assumes a hosted runner. Revisit when a dedicated runner exists ([#22]); the
@@ -149,7 +171,7 @@ tooling is adopted in passes, so the current state is visible rather than discov
 
 | Tool | Available | State |
 | --- | --- | --- |
-| `clang-format` 18 + `clang-format-diff` | yes | `.clang-format` exists (Google-based, Allman, 120 cols, 4-space) but the tree does not conform: 107 of 115 files under `src/` drift. |
+| `clang-format` 18 + `clang-format-diff` | yes | The one-time pass ([#23](https://github.com/v3c70r/Muyo/pull/29)) landed: all files under `src/` conform (verified with 18.1.3). Keep new and edited lines clean via `scripts/sanity.sh format`. |
 | `clang-tidy` | **no** | `.clang-tidy` is a borrowed google-cloud-cpp config (`WarningsAsErrors: "*"`, C++14-era rationale) that has never been run here. See [#24](https://github.com/v3c70r/Muyo/issues/24). |
 | Clang static analyzer (`scan-build`) | yes | Not yet baselined: `scripts/sanity.sh static`. |
 | GCC `-fanalyzer` | yes (gcc 13.3) | Not yet baselined: `scripts/sanity.sh warnings`. |
@@ -252,6 +274,66 @@ Static review — no GPU — is a legitimate mode, but its conclusions are condi
 review with a **Questions / Unknowns** list: what static inspection cannot determine, and *which
 tool settles it* — validation layers, GPU-assisted validation, RenderDoc, a second vendor, a
 different queue-family topology. The fixer works that list item by item and reports back per item.
+
+### The reviewer's hardware runbook
+
+The counterpart to the section above: how a reviewer with a GPU verifies a PR end to end. This is
+the sequence used on the render-graph PRs; a fresh session can repeat it without rediscovery.
+
+**Workspace.** One worktree per PR under `/tmp`, built and run there; the developer's checkout is
+never touched, and nothing is ever pushed from a review worktree. Every local patch —
+instrumentation, mutations, workarounds — is reverted before finishing (`git status --porcelain`
+reports clean) and disclosed in the review comment.
+
+**The standard matrix**, in a Debug build of both configurations:
+
+```bash
+source /path/to/vulkansdk/setup-env.sh                    # SDK: slangc, layers, loader
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DGLFW_BUILD_WAYLAND=OFF
+cmake --build build --target tests Shaders -j"$(nproc)"
+ln -sfn "$PWD/assets" build/assets
+( cd build && ./tests >run.out 2>run.err )
+grep -E "All tests passed|test cases:" run.out            # reproduce the claimed counts
+grep -coE "#(VUID-[A-Za-z0-9-]+)" run.err                 # validation errors: expect 0
+grep -c "\[WARNING\]" run.err                            # >0 proves the layer is delivering
+grep "\[test device\]" run.err                           # what this run actually proved
+```
+
+A zero warning count is suspicious, not clean — it can mean validation is not delivering messages
+at all (the `assert()`-gated messenger bug did exactly that, silently, in Release). Read the
+`[test device]` line before treating green as evidence about the cross-queue path.
+
+**Tooling without root.** Ubuntu packages extract locally:
+`apt-get download <pkg> && dpkg-deb -x <pkg>.deb <dir>`, run with
+`LD_LIBRARY_PATH=<dir>/usr/lib/x86_64-linux-gnu`. Needed for: `clang-format-18` (the version
+matters — include-block handling differs across versions and the format verdict can flip), and
+`doxygen` plus `libfmt9` (the reference is generated with 1.9.8; see `docs/README.md`).
+
+**Teeth, attribution, flakes.**
+
+- *Teeth:* revert the fix — or mutate the guard it added — in the local worktree, rebuild, and
+  watch the test fail with the expected symptom. Revert the mutation afterwards.
+- *Attribution:* when a defect is found, build the PR's base commit the same way and run the same
+  case. Pre-existing versus introduced is a fact, not an impression, and it changes the triage
+  from "fix in-branch" to "file an issue".
+- *Flakes:* a failure seen once gets repeated runs to bound the rate before it is reported:
+  "observed once in N runs, VUID …" — with the unreproducible failure still recorded, because it
+  is data (the push-constant flake in the #37 review pointed at the silent shader-load skip).
+
+**Instrumentation.** Temporary `fprintf` tracing in the code under review — plan segments,
+destroyed-semaphore counts, executed node names — settles "which path did this take" in one run.
+Instrument, run, revert, and quote the trace in the review: the trace is the evidence, and it
+doubles as coverage proof ("this test exercises X" is checked by counting X in the trace).
+
+**Assert-related claims need a Release build.** Anything justified by `NDEBUG` — "fails loudly in
+every configuration", "the guard fires" — is verified in a build where `-DNDEBUG` is actually on
+the command line, confirmed via `compile_commands.json`.
+
+**Pure-refactor equivalence.** For a "no behaviour change" claim over many files, compare
+whitespace-stripped, comment-stripped, macro-continuation-folded content with `#include` lines
+removed. For include reordering, additionally check that the include *multiset* is unchanged and
+that no include crossed a `#define`/`#if`/code boundary — the one way `SortIncludes` can change
+what is defined when. The format-pass review verified 107/107 files this way.
 
 ### Triage and merge
 
