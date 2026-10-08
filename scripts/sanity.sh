@@ -19,6 +19,8 @@
 #
 # Environment:
 #   BASE=<ref>   comparison ref for the format check (default: origin/master)
+#
+# The last line is always 'sanity: OK' or 'sanity: FAILED' and the exit status matches it.
 
 set -uo pipefail
 
@@ -193,5 +195,17 @@ for t in "${targets[@]}"; do
             ;;
     esac
 done
+
+# One greppable verdict, because the individual checks are not: a failing format check prints
+# "changed lines are not clang-format clean:", which contains neither OK nor FAILED, so reading the run
+# by grepping the output turns a failure into apparent silence. Two sessions here recorded "format
+# clean" from exactly that - `./scripts/sanity.sh | grep -E "OK|FAILED"` matched a docs line, and the
+# pipe discarded the exit status, which was 1. The verdict is the exit status; this line repeats it
+# where it can be seen.
+if [ "$fail" -eq 0 ]; then
+    printf '\033[32msanity: OK\033[0m\n'
+else
+    printf '\033[31msanity: FAILED\033[0m\n'
+fi
 
 exit "$fail"
