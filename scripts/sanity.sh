@@ -20,12 +20,20 @@
 # Environment:
 #   BASE=<ref>   comparison ref for the format check (default: origin/master)
 #
-# The last line is always 'sanity: OK' or 'sanity: FAILED' and the exit status matches it.
+# The last line is always 'sanity: OK' or 'sanity: FAILED' and the exit status matches it - including
+# when the script cannot resolve the repository root and has nothing else to report.
 
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT" || exit 1
+if [ -z "$ROOT" ] || ! cd "$ROOT"; then
+    # The degenerate case (not in a git repository, or the root cannot be entered) used to exit before
+    # any verdict existed, so the "last line is always the verdict" contract had an exception. Printing
+    # it costs one line and removes the exception, which matters because the verdict is what a reader or
+    # an agent greps - and a run with no verdict looks like a run that did not happen.
+    printf '\033[31msanity: FAILED (cannot enter the repository root)\033[0m\n'
+    exit 1
+fi
 BASE="${BASE:-origin/master}"
 JOBS="$(nproc 2>/dev/null || echo 4)"
 
