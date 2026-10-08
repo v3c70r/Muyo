@@ -22,6 +22,26 @@ static VkRenderDevice renderDevice;
 
 VkRenderDevice* GetRenderDevice() { return &renderDevice; }
 
+bool HasInstanceExtension(const std::vector<VkExtensionProperties>& vSupportedExtensions, const char* sName)
+{
+    for (const auto& extensionProperty : vSupportedExtensions)
+    {
+        // strcmp returns 0 for a match; testing its result directly is true when the names *differ*,
+        // which made this return true for any name once the list was non-empty.
+        if (strcmp(extensionProperty.extensionName, sName) == 0) return true;
+    }
+    return false;
+}
+
+bool HasLayer(const std::vector<VkLayerProperties>& vSupportedLayers, const char* sName)
+{
+    for (const auto& layerProperty : vSupportedLayers)
+    {
+        if (strcmp(layerProperty.layerName, sName) == 0) return true;
+    }
+    return false;
+}
+
 void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
                                 const std::vector<const char*>& vLayerNames)
 {
