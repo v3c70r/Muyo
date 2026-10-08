@@ -133,8 +133,10 @@ Operational notes, each of which has cost someone a red herring:
   and no validation layer. On a machine without Wayland dev packages configure with
   `-DGLFW_BUILD_WAYLAND=OFF`; the X11 path needs `libxrandr-dev`, `libxinerama-dev`,
   `libxcursor-dev`, `libxi-dev`.
-- **Selecting cases:** `./tests "GPU frustum culling"`; multiple cases take comma-separated
-  wildcard specs in one argument: `./tests "DIAG*,*read-write*"`.
+- **Selecting cases:** Catch2 specs are exact-match unless they contain a wildcard - a plain
+  `"GPU frustum culling"` matches nothing (the case is `RenderGraphBuilder: GPU frustum culling
+  (async compute queue)`); use `"*GPU frustum culling*"`. Multiple specs take comma-separated
+  wildcards in one argument: `./tests "DIAG*,*read-write*"`.
 - **The debug callback asserts on `ERROR`**, so a validation error aborts the *whole run* at that
   point, not just the case. To see the remaining failures, judge from the stderr VUIDs and re-run
   selected cases by name.
