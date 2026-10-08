@@ -19,11 +19,21 @@
 #
 # Environment:
 #   BASE=<ref>   comparison ref for the format check (default: origin/master)
+#
+# The last line is always 'sanity: OK' or 'sanity: FAILED' and the exit status matches it - including
+# when the script cannot resolve the repository root and has nothing else to report.
 
 set -uo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT" || exit 1
+if [ -z "$ROOT" ] || ! cd "$ROOT"; then
+    # The degenerate case (not in a git repository, or the root cannot be entered) used to exit before
+    # any verdict existed, so the "last line is always the verdict" contract had an exception. Printing
+    # it costs one line and removes the exception, which matters because the verdict is what a reader or
+    # an agent greps - and a run with no verdict looks like a run that did not happen.
+    printf '\033[31msanity: FAILED (cannot enter the repository root)\033[0m\n'
+    exit 1
+fi
 BASE="${BASE:-origin/master}"
 JOBS="$(nproc 2>/dev/null || echo 4)"
 
@@ -193,5 +203,17 @@ for t in "${targets[@]}"; do
             ;;
     esac
 done
+
+# One greppable verdict, because the individual checks are not: a failing format check prints
+# "changed lines are not clang-format clean:", which contains neither OK nor FAILED, so reading the run
+# by grepping the output turns a failure into apparent silence. Two sessions here recorded "format
+# clean" from exactly that - `./scripts/sanity.sh | grep -E "OK|FAILED"` matched a docs line, and the
+# pipe discarded the exit status, which was 1. The verdict is the exit status; this line repeats it
+# where it can be seen.
+if [ "$fail" -eq 0 ]; then
+    printf '\033[32msanity: OK\033[0m\n'
+else
+    printf '\033[31msanity: FAILED\033[0m\n'
+fi
 
 exit "$fail"
