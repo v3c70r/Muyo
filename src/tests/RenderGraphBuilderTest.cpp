@@ -377,35 +377,69 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destr
     REQUIRE(plan.GetSegmentCount() == 2);
     REQUIRE(plan.GetTransferCount() == 1);
 
-    RenderGraphExecutor executor(GetRenderDevice());
+    // inFlightCount 1 keeps this about semaphore lifetime rather than overlap: AcquireSlot blocks
+    // until the previous submission completed.
+    RenderGraphExecutor executor(GetRenderDevice(), 1);
 
-    // Two submissions, each with its own command buffers: the graph records one-time-submit buffers
-    // and allocates fresh ones per execution, so re-submitting the same handles would trip the
-    // one-time-submit rule rather than test anything about the executor.
     for (int run = 0; run < 2; ++run)
     {
-        std::vector<VkCommandBuffer> cmdBufs;
-        for (size_t i = 0; i < plan.GetSegmentCount(); ++i)
+        // The executor owns the command buffers, so recording starts from a slot rather than from an
+        // allocation here.
+        RenderGraphExecutor::ExecutionSlot slot = executor.AcquireSlot(plan);
+        for (VkCommandBuffer cmdBuf : slot.segmentCommandBuffers)
         {
-            VkCommandBuffer cmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
             VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
             beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
             VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
             VK_ASSERT(vkEndCommandBuffer(cmdBuf));
-            cmdBufs.push_back(cmdBuf);
         }
 
         // The second run is the one that destroys the semaphore the first created and makes a new
-        // one. It can only do that because the first run drained above - the drain is what makes
-        // the lifetime legal, and it is the contract this test pins.
-        executor.Submit(plan, cmdBufs);
+        // one. It can only do that because the first run's fence signalled - that is the contract
+        // this test pins, and it is what A1.3b replaces with per-slot ownership.
+        executor.Submit(plan, slot, RenderGraphExecuteInfo{});
         executor.WaitIdle();
-
-        for (VkCommandBuffer& cmdBuf : cmdBufs)
-        {
-            GetRenderDevice()->FreeReusablePrimaryCommandbuffer(cmdBuf);
-        }
     }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: in-flight slots are distinct", "[RenderGraphBuilder]")
+{
+    // inFlightCount 2 lets a second execution be recorded and submitted before the first has
+    // completed. Each slot owns its command buffers, handover semaphores and fence, so nothing is
+    // shared between them - the property the blocking Execute() hides by draining.
+    //
+    // One segment and no transfers, so this also exercises the path where the single submission
+    // signals the slot fence directly and no completion join is needed.
+    RenderGraphExecutionPlan plan;
+    plan.segments = {{QueueType::GRAPHICS, 0, 1}};
+    REQUIRE(plan.GetTransferCount() == 0);
+
+    RenderGraphExecutor executor(GetRenderDevice(), 2);
+
+    const auto record = [](const RenderGraphExecutor::ExecutionSlot& slot)
+    {
+        for (VkCommandBuffer cmdBuf : slot.segmentCommandBuffers)
+        {
+            VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
+            VK_ASSERT(vkEndCommandBuffer(cmdBuf));
+        }
+    };
+
+    const RenderGraphExecutor::ExecutionSlot first = executor.AcquireSlot(plan);
+    record(first);
+    executor.Submit(plan, first, RenderGraphExecuteInfo{});
+
+    // With two slots this hands back a different slot without waiting for the first to finish. With
+    // one slot it would return the same index, and that is what the check catches rather than
+    // hanging - a single empty segment completes quickly enough for AcquireSlot to return.
+    const RenderGraphExecutor::ExecutionSlot second = executor.AcquireSlot(plan);
+    CHECK(first.index != second.index);
+    record(second);
+    executor.Submit(plan, second, RenderGraphExecuteInfo{});
+
+    executor.WaitIdle();
 }
 
 TEST_CASE("RenderGraphExecutionPlan: a handover is recorded only across differing queue families", "[RenderGraph]")

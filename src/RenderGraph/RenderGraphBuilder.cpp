@@ -836,26 +836,16 @@ RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
                                     GetRenderDevice()->GetComputeQueueFamily()};
 }
 
-VkCommandBuffer RenderGraphBuilder::AllocateCommandBufferForType(QueueType type) const
-{
-    if (type == QueueType::COMPUTE) return GetRenderDevice()->AllocateComputeCommandBuffer();
-    return GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
-}
-
-void RenderGraphBuilder::FreeCommandBufferForType(QueueType type, VkCommandBuffer cmdBuf) const
-{
-    if (cmdBuf == VK_NULL_HANDLE) return;
-    if (type == QueueType::COMPUTE)
-    {
-        GetRenderDevice()->FreeComputeCommandBuffer(cmdBuf);
-    }
-    else
-    {
-        GetRenderDevice()->FreeReusablePrimaryCommandbuffer(cmdBuf);
-    }
-}
-
+/// The blocking form: records, submits, and waits for the GPU before returning. Kept as the
+/// default so every existing caller keeps the contract it had. The overload below does not wait,
+/// which is what lets a caller keep several executions in flight (issue #11, A1.3b).
 void RenderGraphBuilder::Execute()
+{
+    Execute(RenderGraphExecuteInfo{});
+    m_executor.WaitIdle();
+}
+
+void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 {
     m_resourceAccessStates.clear();
 
@@ -898,12 +888,15 @@ void RenderGraphBuilder::Execute()
     const std::vector<RenderGraphQueueTransfer>& transfers = plan.transfers;
 
     // ── Record each segment into its own command buffer. ───────────────────────────────────────
-    std::vector<VkCommandBuffer> segmentCmdBuffers(segments.size(), VK_NULL_HANDLE);
+    // The executor owns the command buffers: it can only recycle one once that slot's fence has
+    // signalled, which is what makes recording into a slot safe while earlier executions are still
+    // in flight. Acquiring blocks while every slot is busy, bounding how far the CPU runs ahead.
+    RenderGraphExecutor::ExecutionSlot slot = m_executor.AcquireSlot(plan);
+    const std::vector<VkCommandBuffer>& segmentCmdBuffers = slot.segmentCommandBuffers;
     for (size_t s = 0; s < segments.size(); ++s)
     {
         const uint32_t queueFamily = GetQueueFamilyForType(segments[s].queueType);
-        VkCommandBuffer cmdBuf = AllocateCommandBufferForType(segments[s].queueType);
-        segmentCmdBuffers[s] = cmdBuf;
+        VkCommandBuffer cmdBuf = segmentCmdBuffers[s];
 
         VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -1016,13 +1009,7 @@ void RenderGraphBuilder::Execute()
     }
 
     // ── Submit through the executor, which owns the handover semaphores and the waiting. ───────
-    m_executor.Submit(plan, segmentCmdBuffers);
-    m_executor.WaitIdle();
-
-    for (size_t s = 0; s < segments.size(); ++s)
-    {
-        FreeCommandBufferForType(segments[s].queueType, segmentCmdBuffers[s]);
-    }
+    m_executor.Submit(plan, slot, info);
 }
 
 std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const { return m_dependencyGraph.TopologicalSort(); }

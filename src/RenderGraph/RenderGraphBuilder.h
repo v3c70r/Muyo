@@ -106,6 +106,9 @@ public:
     /// Run every node once in execution order, inserting barriers between nodes and synchronising
     /// cross-queue handovers.
     void Execute();
+    /// Record and submit without waiting for the GPU, so a caller can keep executions in flight.
+    /// @param info External semaphores to wait on before, and signal after, this execution.
+    void Execute(const RenderGraphExecuteInfo& info);
 
     /// @return The node names in dependency (topological) order.
     std::vector<std::string> GetExecutionOrder() const;
@@ -153,8 +156,6 @@ private:
     // - queues, handover semaphores, waiting - belongs to RenderGraphExecutor.
     uint32_t GetQueueFamilyForType(QueueType type) const;
     RenderGraphQueueFamilies GetQueueFamilies() const;
-    VkCommandBuffer AllocateCommandBufferForType(QueueType type) const;
-    void FreeCommandBufferForType(QueueType type, VkCommandBuffer cmdBuf) const;
 
     // Auto wraps a graphics node's work in vkCmdBeginRendering/vkCmdEndRendering.
     bool BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn, RenderGraphNodeContext& ctx,

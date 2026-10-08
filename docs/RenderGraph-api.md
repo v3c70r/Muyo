@@ -301,6 +301,7 @@ Declares and runs a render graph.
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
 | `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. |
 | `void Execute()` | Run every node once in execution order, inserting barriers between nodes and synchronising cross-queue handovers. |
+| `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU, so a caller can keep executions in flight. info External semaphores to wait on before, and signal after, this execution. |
 | `std::vector< std::string > GetExecutionOrder() const` | The node names in dependency (topological) order. |
 
 ### `struct Muyo::RenderGraph::RenderGraphNodeCreateInfo`
@@ -434,17 +435,36 @@ A resource handed from one queue segment to another across a queue-family bounda
 
 ## `RenderGraphExecutor.h`
 
+### `struct Muyo::RenderGraph::RenderGraphExecuteInfo`
+
+External synchronization for one execution.
+
+| Member | Description |
+| --- | --- |
+| `VkSemaphore waitSemaphore` | Waited on before this execution's first work - e.g. the swapchain image-acquired semaphore. |
+| `VkSemaphore signalSemaphore` | Signalled once all of this execution's queues have completed - e.g. for vkQueuePresentKHR. |
+
 ### `class Muyo::RenderGraph::RenderGraphExecutor`
 
 Executes a recorded render graph.
 
 | Member | Description |
 | --- | --- |
-| `RenderGraphExecutor(VkRenderDevice *renderDevice)` | renderDevice Device whose queues executions are submitted to. |
-| `~RenderGraphExecutor()` | Releases the synchronization objects held for the last submission. |
-| `void Submit(const RenderGraphExecutionPlan &plan, const std::vector< VkCommandBuffer > &segmentCommandBuffers)` | Submit one recorded execution. plan Plan the command buffers were recorded from. Its segments decide which queues are used and its transfers decide where cross-queue handover semaphores are needed. segmentCommandBuffers Recorded command buffers, one per segment, in plan order. |
-| `void WaitIdle()` | Block until the graphics queue has drained, and the compute queue too when this device has a dedicated compute family. It is deliberately not narrowed to the last submission or to the queues that submission used - it drains whatever is pending on those queues. Narrowing it is part of the in-flight work (A1.3b). |
+| `RenderGraphExecutor(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | renderDevice Device whose queues executions are submitted to. inFlightCount How many executions may be in flight at once. 1 serialises them: the next AcquireSlot() blocks until the previous submission completes. A windowed caller passes its frame count; a headless caller can pass 1 and wait explicitly. |
+| `~RenderGraphExecutor()` | Waits for outstanding work, then releases every slot's objects. |
+| `ExecutionSlot AcquireSlot(const RenderGraphExecutionPlan &plan)` | Acquire a slot to record into, blocking while every slot is still in flight. |
+| `void Submit(const RenderGraphExecutionPlan &plan, const ExecutionSlot &slot, const RenderGraphExecuteInfo &info)` | Submit a slot acquired from AcquireSlot(). plan Plan the slot was recorded from. slot Slot returned by AcquireSlot(). info External synchronization; both semaphores are optional. |
+| `void WaitIdle()` | Block until every submitted execution has completed. Safe to call at any time. |
 | `VkQueue GetQueueForType(QueueType type) const` | type A resolved queue key (see GetQueueKey). The queue that key submits to. |
+
+### `struct Muyo::RenderGraph::RenderGraphExecutor::ExecutionSlot`
+
+The command buffers of one in-flight execution, ready to record into.
+
+| Member | Description |
+| --- | --- |
+| `uint32_t index` | Identifies the slot for Submit(). |
+| `std::vector< VkCommandBuffer > segmentCommandBuffers` | One per plan segment, in plan order. |
 
 
 ## `RenderGraphNodeContext.h`
