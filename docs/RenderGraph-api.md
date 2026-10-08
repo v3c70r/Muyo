@@ -301,7 +301,7 @@ Declares and runs a render graph.
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
 | `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. |
 | `void Execute()` | Run every node once in execution order, inserting barriers between nodes and synchronising cross-queue handovers. |
-| `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU, so a caller can keep executions in flight. info External semaphores to wait on before, and signal after, this execution. |
+| `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU. Note this does not enable overlap: the builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the first completes. Overlap is an executor-API concern, see issue #11. info External semaphores to wait on before, and signal after, this execution. |
 | `std::vector< std::string > GetExecutionOrder() const` | The node names in dependency (topological) order. |
 
 ### `struct Muyo::RenderGraph::RenderGraphNodeCreateInfo`
@@ -452,6 +452,8 @@ Executes a recorded render graph.
 | --- | --- |
 | `RenderGraphExecutor(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | renderDevice Device whose queues executions are submitted to. inFlightCount How many executions may be in flight at once. 1 serialises them: the next AcquireSlot() blocks until the previous submission completes. A windowed caller passes its frame count; a headless caller can pass 1 and wait explicitly. |
 | `~RenderGraphExecutor()` | Waits for outstanding work, then releases every slot's objects. |
+| `RenderGraphExecutor(const RenderGraphExecutor &)=delete` | Owns raw Vulkan handles and frees them on destruction, so copying would double-destroy. |
+| `RenderGraphExecutor & operator=(const RenderGraphExecutor &)=delete` | Deleted for the same reason as the copy constructor. |
 | `ExecutionSlot AcquireSlot(const RenderGraphExecutionPlan &plan)` | Acquire a slot to record into, blocking while every slot is still in flight. |
 | `void Submit(const RenderGraphExecutionPlan &plan, const ExecutionSlot &slot, const RenderGraphExecuteInfo &info)` | Submit a slot acquired from AcquireSlot(). plan Plan the slot was recorded from. slot Slot returned by AcquireSlot(). info External synchronization; both semaphores are optional. |
 | `void WaitIdle()` | Block until every submitted execution has completed. Safe to call at any time. |

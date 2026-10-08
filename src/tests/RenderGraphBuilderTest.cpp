@@ -402,6 +402,24 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destr
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: an empty plan does not wedge a slot", "[RenderGraphBuilder]")
+{
+    // With no segments, resetting the slot fence would leave it unsignalled and the next AcquireSlot
+    // on that slot would block on it forever. Reachable only through the executor: the builder returns
+    // early on an empty plan, so this is a direct-API contract rather than a graph one.
+    RenderGraphExecutor executor(GetRenderDevice());
+    RenderGraphExecutionPlan empty;
+    REQUIRE(empty.GetSegmentCount() == 0);
+
+    const RenderGraphExecutor::ExecutionSlot first = executor.AcquireSlot(empty);
+    executor.Submit(empty, first, RenderGraphExecuteInfo{});
+    executor.WaitIdle();
+
+    // The point: this returns instead of blocking on a fence that was never submitted.
+    const RenderGraphExecutor::ExecutionSlot again = executor.AcquireSlot(empty);
+    CHECK(again.index == first.index);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: in-flight slots are distinct", "[RenderGraphBuilder]")
 {
     // inFlightCount 2 lets a second execution be recorded and submitted before the first has

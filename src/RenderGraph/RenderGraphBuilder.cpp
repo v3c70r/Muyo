@@ -441,20 +441,27 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     for (const auto& shaderName : nodeCreateInfo.shaderNames)
     {
         auto key = m_shaderAssetManager.LoadShader(shaderName);
-        if (key)
+        if (!key)
         {
-            rgn.shaders[shaderIdx++] = key.value();
+            // Skipping the stage here produced a pipeline compiled without it, which failed much later
+            // at draw time with a descriptor or push-constant mismatch far from the cause. A shader the
+            // node asked for and the build did not produce is a hard error.
+            throw std::runtime_error("Node '" + nodeName + "' declares shader '" + shaderName +
+                                     "', which could not be loaded.");
         }
+        rgn.shaders[shaderIdx++] = key.value();
     }
 
     // Load ray tracing shaders (raygen / miss / closest hit).
     for (size_t i = 0; i < nodeCreateInfo.rtShaderNames.size() && i < rgn.rtShaders.size(); ++i)
     {
         auto key = m_shaderAssetManager.LoadShader(nodeCreateInfo.rtShaderNames[i]);
-        if (key)
+        if (!key)
         {
-            rgn.rtShaders[i] = key.value();
+            throw std::runtime_error("Ray tracing node '" + nodeName + "' declares shader '" +
+                                     nodeCreateInfo.rtShaderNames[i] + "', which could not be loaded.");
         }
+        rgn.rtShaders[i] = key.value();
     }
 
     // Resolve resource uses
@@ -838,7 +845,7 @@ RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
 
 /// The blocking form: records, submits, and waits for the GPU before returning. Kept as the
 /// default so every existing caller keeps the contract it had. The overload below does not wait,
-/// which is what lets a caller keep several executions in flight (issue #11, A1.3b).
+/// but the builder still runs one execution in flight, so calls serialise rather than overlap.
 void RenderGraphBuilder::Execute()
 {
     Execute(RenderGraphExecuteInfo{});

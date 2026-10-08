@@ -14,9 +14,14 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.
-- **Execution synchronises at frame end.** `Execute()` submits and waits (`vkQueueWaitIdle`) before
-  returning, so the `async` flag expresses intent and generates the correct cross-queue
-  synchronisation, but does not yet overlap work across frames.
+- **The builder serialises executions.** `Execute()` records into an in-flight slot, submits, and
+  waits on that slot's fence before returning. The `async` flag expresses intent and generates the
+  correct cross-queue synchronisation, but work does not yet overlap across frames.
+  `Execute(RenderGraphExecuteInfo)` submits without waiting, and the executor supports several
+  in-flight slots - but the builder runs one (`inFlightCount == 1`), so a second call blocks until the
+  first completes. Raising that count needs more than a slot number: descriptor sets are written at
+  record time and transient resources are single-instance, so two in-flight executions would alias
+  both.
 - **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
   only feed data into the graph; a GPU-to-CPU dependency is rejected.
 - **Descriptor sets are per node today.** That is correct but costs one bindless array per

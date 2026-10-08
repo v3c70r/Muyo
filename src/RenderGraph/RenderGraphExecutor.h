@@ -19,7 +19,14 @@ namespace Muyo::RenderGraph
 /// Deliberately has no `signalFence`: a Vulkan submit signals at most one fence, so a caller-supplied
 /// fence and the executor's per-slot fence could not both come from the completion submit without an
 /// extra submission. A1.4 replaces the slot fence with a timeline value, which serves both, so the
-/// caller-facing fence arrives there rather than here.
+/// caller-facing fence arrives there rather than here. The interim shape is `{wait, signal}` - #11.
+///
+/// `signalSemaphore` is the **only** completion signal a caller of the non-blocking path gets, and it
+/// is not host-waitable (binary semaphores have no `vkWaitSemaphores`). To know the work finished,
+/// either pass a semaphore into a later submission and give that a fence, or call `WaitIdle()`.
+///
+/// Overlapping executions of the same graph share that graph's resources and are unordered relative
+/// to each other unless chained through these semaphores.
 struct RenderGraphExecuteInfo
 {
     /// Waited on before this execution's first work - e.g. the swapchain image-acquired semaphore.
@@ -47,6 +54,11 @@ public:
     explicit RenderGraphExecutor(VkRenderDevice* renderDevice, uint32_t inFlightCount = 1);
     /// Waits for outstanding work, then releases every slot's objects.
     ~RenderGraphExecutor();
+
+    /// Owns raw Vulkan handles and frees them on destruction, so copying would double-destroy.
+    RenderGraphExecutor(const RenderGraphExecutor&) = delete;
+    /// Deleted for the same reason as the copy constructor.
+    RenderGraphExecutor& operator=(const RenderGraphExecutor&) = delete;
 
     /// The command buffers of one in-flight execution, ready to record into.
     struct ExecutionSlot

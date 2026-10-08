@@ -1,6 +1,8 @@
 #include "RenderGraphExecutor.h"
 
 #include <cassert>
+#include <cstdlib>
+#include <iostream>
 #include <map>
 #include <utility>
 
@@ -77,7 +79,6 @@ void RenderGraphExecutor::ReleaseSlotObjects(InFlightSlot& slot)
 RenderGraphExecutor::ExecutionSlot RenderGraphExecutor::AcquireSlot(const RenderGraphExecutionPlan& plan)
 {
     assert(!m_slots.empty());
-    assert(plan.GetSegmentCount() > 0);
 
     const uint32_t index = m_nextSlot;
     m_nextSlot = (m_nextSlot + 1) % static_cast<uint32_t>(m_slots.size());
@@ -113,7 +114,25 @@ void RenderGraphExecutor::Submit(const RenderGraphExecutionPlan& plan, const Exe
     InFlightSlot& slot = m_slots[executionSlot.index];
     const std::vector<RenderGraphQueueSegment>& segments = plan.segments;
     const std::vector<RenderGraphQueueTransfer>& transfers = plan.transfers;
-    assert(plan.GetSegmentCount() == slot.commandBuffers.size());
+
+    // Submit what the caller recorded into, not the slot's own list: they are the same handles
+    // when AcquireSlot's result is passed straight back, and using the caller's copy means a
+    // stale slot cannot silently submit the current buffers instead. Checked rather than asserted
+    // because a mismatch would index out of bounds (see #30 for the NDEBUG policy).
+    if (executionSlot.segmentCommandBuffers.size() != segments.size())
+    {
+        std::cerr << "[FATAL]: RenderGraphExecutor::Submit got " << executionSlot.segmentCommandBuffers.size()
+                  << " command buffers for " << segments.size() << " plan segments" << std::endl;
+        std::abort();
+    }
+
+    // Nothing to submit: an empty plan would otherwise reset a fence that is never signalled, and
+    // the next AcquireSlot on this slot would block on it forever.
+    if (segments.empty())
+    {
+        std::cerr << "[WARNING]: RenderGraphExecutor::Submit called with an empty plan; nothing submitted" << std::endl;
+        return;
+    }
 
     // ── One semaphore per (producer, consumer) pair this execution needs. ─────────────────────────
     std::map<std::pair<size_t, size_t>, VkSemaphore> handoverFor;
@@ -195,7 +214,7 @@ void RenderGraphExecutor::Submit(const RenderGraphExecutionPlan& plan, const Exe
             signalSemaphoreInfos[i].deviceIndex = 0;
         }
         VkCommandBufferSubmitInfo commandBufferInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-        commandBufferInfo.commandBuffer = slot.commandBuffers[s];
+        commandBufferInfo.commandBuffer = executionSlot.segmentCommandBuffers[s];
         commandBufferInfo.deviceMask = 0;
 
         VkSubmitInfo2 submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
