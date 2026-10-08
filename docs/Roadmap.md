@@ -59,6 +59,13 @@ the risk this roadmap exists to close — see Risks.
 
 ## The library goal, and what it constrains now
 
+**Target shape, and where the line goes per concern:
+[RenderGraph-Library-Design.md](RenderGraph-Library-Design.md).** It holds the stack
+(`device → graph → pipeline → host`), which layer owns what, the decisions already made — C++ headers now
+with a C ABI wrapped later if a non-C++ client appears; the device as a shared library rather than an
+inverted dependency; error reporting left open on purpose — and the one piece of app policy that has to
+come out of the device layer (validation setup).
+
 Two pieces of work are imminent and would bake in assumptions that are expensive to remove. This section
 is the reason to read the roadmap before starting them.
 
@@ -88,6 +95,7 @@ waits on, and how it then presents is its own business.
 | **Compute-only is a first-class profile** | No surface, no present, possibly no colour attachments. Nothing on the execution path may require a graphics family or a swapchain. |
 | **Long-lived resources are first-class** | Weights and a KV cache live for the process, not a frame. The transient/persistent split (`#15`, `#16`) has to serve that, not only per-frame render targets. |
 | **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
+| **Diagnostics an agent can act on** | The library's consumers include coding agents, which read a log with no debugger and no follow-up question. That means failing at `Build()` on declaration errors, naming the graph node and resource rather than the handle, attributing GPU errors through debug labels, and documenting preconditions and failure modes. Cheap while the graph is small; a rewrite once errors are shaped like `VkBuffer 0x…`. |
 
 ### Distance to a shippable library
 
