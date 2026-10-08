@@ -98,6 +98,18 @@ waits on, and how it then presents is its own business.
 | **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
 | **Diagnostics an agent can act on** | The library's consumers include coding agents, which read a log with no debugger and no follow-up question. That means failing at `Build()` on declaration errors, naming the graph node and resource rather than the handle, attributing GPU errors through debug labels, and documenting preconditions and failure modes. Cheap while the graph is small; a rewrite once errors are shaped like `VkBuffer 0x…`. |
 
+### What must land before the big P1 capabilities
+
+`#53` is not one thing, and the order matters. The service injection — the 15 call sites that reach for
+`GetRenderDevice()`, `GetRenderResourceManager()` and `GetDescriptorManager()` — **comes before `#15`
+and `#16`**, because those two rewrite the descriptor and transient paths. Writing them against the
+singletons would replicate the coupling at scale and then have to be redone, which is the expensive
+retrofit the constraints table warns about. The rest of `#53` (public/private header split, standalone
+build, packaging) does not gate anything and can follow or run in parallel.
+
+The reason to say it rather than leave it implied: "L overlaps P1 and constrains it" is a direction, not
+an order, and the difference is one doubled workstream.
+
 ### Distance to a shippable library
 
 Measured, not estimated:
@@ -137,6 +149,12 @@ still references `RenderPassManager` from outside `src/RenderPasses/` has to go 
 **Where this can go wrong** is P1 growing without P2 starting, because each missing capability is a
 plausible reason to wait. The mitigation is in P2's gate itself: it is capability, not completeness.
 
+**P1's cost criterion is not a gate yet, and says so.** It originally read "cost in the same range as the
+legacy path", which cannot fail: no scene, resolution, metric, sample count, device or tolerance was
+named. Correctness is the part that can be evaluated now, so it is the gate; the cost half is owned by
+`#59`, which has to establish the method and a tolerance before P1 can close. Recording it with its
+trigger, the same way the C-ABI decision is, rather than leaving a criterion that only looks like one.
+
 ## Technical debt policy
 
 The rule this roadmap is asked to enforce: **fix debt as early as possible, unless a planned feature
@@ -151,7 +169,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | 24 markers, and exactly one names an issue. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible, which is the failure this whole document is trying to avoid. |
+| **TODO hygiene** | 25 occurrences of the string `TODO` under `src/`, and exactly one names what will handle it. Twenty-four are `//` markers (my first count said 24 because the pattern required a `//`); the twenty-fifth is `assert("TODO: update node date")` in `Scene.cpp`, which asserts **nothing** — a string literal is always non-null — so it is worse than a marker, because it reads like a check. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible, which is the failure this whole document exists to avoid. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
@@ -164,6 +182,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. |
 | `Texture.h:50` "move this barrier out of the function" | **#16 A3 / #18 A6** | Barrier placement is exactly what A6 and A3 own. |
 | `ResourceBarrier.cpp:64` `TODO(A2)` | **#12** | Already names its issue — the one marker that does. |
+| The three `PipelineStateBuilder.h` markers (finish other builders, add more builders, create setters) | **#17 A5** | Pipeline and shader caching is where that builder set is either finished or shown to be unnecessary. This is why `#17` carries `Debt: Subsumes debt` — a field verdict needs an explanation here, the same way a table verdict needed a field. |
 | `RenderPassParameters` `assert(false)` on an unhandled descriptor type | **P3 deletion** | Decide in #46 as "leave it, deleted by P3" unless it is reachable before then. |
 
 ### Not on the parity path — schedule after P3
@@ -183,7 +202,9 @@ filters on it — the issues are not listed here, for the reason above.
 - **Library** — frame sync (`#11`) → the graph boundary (`#53`) → the device boundary (`#58`) → the
   boundary test (`#54`). Nothing on this chain can slip without moving the goal.
 - **First consumer** — transfer and clear usages (`#18`) → descriptors (`#15`) and transients (`#16`) →
-  the client-side frame helper (`#57`) → the port (`#20`) → the deletion (`#51`).
+  the client-side frame helper (`#57`) → the port (`#20`) → the deletion (`#51`). `#59` sits across this
+  chain rather than in it: P1 cannot close without its number, so its slippage moves the date even though
+  nothing waits on it.
 
 The union is deliberately broad: it is every issue whose slippage moves an end date, not a shortlist. If
 it stops being useful, narrow the field to *what blocks the current phase* rather than widening the
@@ -199,25 +220,39 @@ definition of "critical".
 2. **Two renderers means every fix lands twice.** Mitigated by the do-not-fix table above: the way to
    keep the cost bounded is to stop polishing the code being deleted, and to put new behaviour in the
    graph only.
-3. **RT parity pulls P2 later.** If ray tracing must be at parity, #14 and #19 join the critical path;
-   if it need not, the graph can adopt the raster path first and let RT follow.
+3. **RT parity pulls P2 later.** If ray tracing must be at parity, `#14` and `#19` join the critical
+   path; if it need not, the raster path can adopt first and RT follow. **The trigger is a consumer that
+   needs RT at parity** — `helloVulkan` renders it today, so the honest answer is "probably yes, not
+   yet decided". Recorded with its trigger so `#14`/`#19` can be scheduled rather than re-argued each
+   time someone asks.
 4. **The library is shaped by its first consumer, and never extracted.** The renderer's needs would become
    the API by default, and every later client would inherit them. The mitigation is the split above —
    A1.5 is the first concrete step, and the constraints table is the checklist — rather than a promise to
    extract later. A second consumer that is *not* a renderer is the only real test of the boundary, so a
    small compute-only example is worth more than any amount of interface design.
-5. **No CI (#22), so the migration is verified on one machine.** The migration touches the frame loop
-   and swapchain, which is where a single-vendor, single-topology check is weakest — and where the
-   test suite is thinnest. Anything touching present or images-in-flight needs the reviewer's hardware
-   as well as the developer's.
+5. **No CI (#22), so verification is manual — which is not the same as single-vendor.** The project has
+   two machines on different vendors (RADV REMBRANDT and an RTX 3090, both with a dedicated compute
+   family), and the runbook in AGENTS.md section 6 already treats a hardware re-run as part of review.
+   **The two-machine matrix is the standard for anything touching present or images-in-flight** — P0's
+   client half and all of P2 — because that is where a single-vendor, single-topology check is weakest and
+   where the test suite is thinnest. For everything else one machine is enough.
 
 ## How the GitHub half is set up
 
-Four **milestones** (`P0 Frame synchronization` … `P3 Deprecation`), each carrying its gate in its
-description. Two custom fields: **`Critical path`** (single-select) and **`Depends on`** (text, sparse).
-Six saved views: `Roadmap (by phase)`, `Critical path`, `P0 - Frame synchronization` (board),
-`Debt - fix early`, `P1 - Graph parity`, `Adoption (P2 + P3)`. The project README states the goal and
-points here for the reasoning.
+**Six milestones**, each carrying its gate in its description: the four phases
+(`P0 Frame synchronization` … `P3 Deprecation`), the library track (`L Library extraction`), and
+`Backlog (after P3)` for what this document deliberately defers. The two extra ones exist because the plan
+has two halves — P0–P3 is the *first consumer*, L is the *library itself* — and because "after P3" is a
+verdict rather than an absence of one.
+
+**Three custom fields:** `Critical path` (single-select), `Debt` (`Fix early` / `Subsumes debt` /
+`After P3`), and `Depends on` (text, sparse).
+
+**Eight saved views:** `Roadmap (by phase)`, `Critical path`, one per phase (`P0 - Frame synchronization`
+as a board, `P1 - Graph parity`, `Adoption (P2 + P3)`), one for the library track
+(`L Library extraction`), and two for the debt verdicts (`Debt - fix early`, `After P3`).
+
+The project README states the goal and points here for the reasoning.
 
 Three API limits worth knowing before editing any of this by script:
 
@@ -226,8 +261,10 @@ Three API limits worth knowing before editing any of this by script:
   view, name it, set its layout and filter, and still not finish it. **Group `Roadmap (by phase)` by
   `Milestone`** by hand.
 - **Filters are not validated, and a field name must be the exact slug.** `updateProjectV2View` accepts
-  `nosuchfield:xyz` without complaint, so acceptance is not evidence. `critical-path:Yes` matches the six
-  intended items; `"Critical path":Yes` matches **nothing**. A typo therefore shows an empty view and
+  `nosuchfield:xyz` without complaint, so acceptance is not evidence. `critical-path:Yes` matches the
+  intended items and `"Critical path":Yes` matches **nothing**. Which is also a warning about this
+  paragraph: it carried a hard-coded count, and the count went stale the moment the library chain joined
+  the critical path. Run the command; a number in a document is not evidence either. A typo therefore shows an empty view and
   reports no error, so check a filter's count first:
 
   ```bash
