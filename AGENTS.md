@@ -352,7 +352,15 @@ cmake --build build --target tests Shaders -j"$(nproc)"
 ln -sfn "$PWD/assets" build/assets
 ( cd build && ./tests >run.out 2>run.err )
 grep -E "All tests passed|test cases:" run.out            # reproduce the claimed counts
-grep -coE "#(VUID-[A-Za-z0-9-]+)" run.err                 # validation errors: expect 0
+grep -oE "#(VUID-[A-Za-z0-9-]+)" run.err \
+    | grep -v "VUID-vkWaitForFences-pFences-parameter" | wc -l
+                                                          # validation errors: expect 0. The
+                                                          # exclusion is standing, not noise: the
+                                                          # DebugCallback fork test (added with the
+                                                          # #52 roadmap merge) has a child that
+                                                          # deliberately trips that one VUID and
+                                                          # inherits the parent's stderr, so a clean
+                                                          # run reports 2 before the exclusion.
 grep -c "\[WARNING\]" run.err                            # >0 proves the layer is delivering
 grep "\[test device\]" run.err                           # what this run actually proved
 ```
