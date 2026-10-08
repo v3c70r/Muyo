@@ -146,6 +146,11 @@ Operational notes, each of which has cost someone a red herring:
 - **`tests` does not depend on the `Shaders` target.** Build both — `cmake --build build --target
   tests Shaders` — or the tests fail at runtime on missing `.spv` files (they are loaded from
   `shaders/` relative to the *working directory*, not the source tree).
+- **`--clean-first` deletes the generated `.spv` files too**, so this trap also fires in an *existing*
+  build directory, not just a fresh one: `cmake --build build --target tests --clean-first` (used to
+  count warnings from a known state) empties `build/shaders/`, and the next run fails ten shader-loading
+  cases that look exactly like a regression in whatever was just merged. It was reported as one. Rebuild
+  `Shaders` after any `--clean-first`, or count warnings without it.
 - **`assets/` is also CWD-relative.** Run from the build directory and link the assets in once:
   `ln -s "$PWD/assets" build/assets`. A missing assets dir fails as `SetData(nullptr)` deep in the
   Mazda fixtures, which looks like a code bug and is not.
