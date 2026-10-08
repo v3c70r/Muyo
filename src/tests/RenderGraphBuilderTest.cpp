@@ -254,25 +254,28 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builder twice", "[RenderGraphBuilder]")
 {
-    // The executor creates the cross-queue handover semaphores per submission and destroys the
-    // previous submission's set at the top of Submit(). A single Execute() per builder never takes
-    // that branch - the semaphores are then only released by the destructor - so this pins both the
-    // branch and the contract behind it: Execute() drains the queues before returning, which is what
-    // makes destroying the previous set safe. If executions ever overlap without per-slot
-    // ownership, the second Submit() would destroy semaphores still in flight and the validation
-    // layer would report it.
+    // This test dates from the binary-semaphore design, where the executor created a set of handover
+    // semaphores per submission and destroyed the previous set at the top of Submit() - safe only
+    // because Execute() drained the queues first, so the test pinned that draining. A1.4 removed the
+    // objects: a slot owns no semaphores, handovers are timeline values, and reclamation is a value
+    // comparison against a counter. The stale version kept passing after that change while asserting
+    // nothing it claimed, which is why the comment is rewritten rather than left alone.
     //
-    // Reaching that with a *non-empty* set needs two segments on different queue families, so the
-    // graph below pairs an async compute node with a graphics node that share one resource. On a
-    // device without a dedicated compute family both segments resolve to the same family, no
-    // transfer is recorded, and the second Submit() destroys an empty set - the WARN says so out
-    // loud instead of letting the test pass while covering nothing. The executor-level test below
-    // covers the non-empty case on every device.
+    // What it is worth testing now is the contract that survived: two executions of one builder both
+    // produce the right output, so the second reuses the slot without disturbing the first. The
+    // validation layer is the authority on the aliasing half of that, since a reused timeline value or
+    // a recycled command buffer still in flight would be reported there and not by pixels.
+    //
+    // The cross-queue half needs two segments on *different* families, so the graph below pairs an
+    // async compute node with a graphics node sharing one resource. On a device without a dedicated
+    // compute family both segments resolve to one family and no transfer is recorded - the WARN says
+    // so rather than letting a green run imply the handover was exercised. The executor-level test
+    // below covers that path on any device, because it keys on segment indices and not on families.
     if (!GetRenderDevice()->IsComputeQueueDedicated())
     {
         WARN(
             "no dedicated compute queue family on this device: both segments resolve to one family, "
-            "so this test destroys an empty handover set");
+            "so this test records no cross-queue transfer");
     }
     std::vector<Vertex> quadVertices = {
         {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}},
@@ -358,8 +361,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builde
     builder.Execute();
     REQUIRE(CountNonBlackPixels(pTarget) > 0);
 
-    // Second submission on the same builder. On a device with a dedicated compute family this is
-    // the run that destroys the first submission's non-empty handover set and creates a fresh one.
+    // Second execution on the same builder: it reuses the slot without disturbing the first, which is
+    // what the timeline conversion made cheap - no per-submission objects to destroy, and reclamation
+    // is the counter reaching the values the first execution recorded.
     builder.Execute();
     REQUIRE(CountNonBlackPixels(pTarget) > 0);
 }
@@ -548,43 +552,151 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains exec
     vkDestroySemaphore(device, semaphoreFinished, nullptr);
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destroys the previous handover set",
+namespace
+{
+/// Begin and end every command buffer of a slot, so it can be submitted with no work in it.
+/// @param slot Slot to record into.
+void RecordEmptyCommandBuffers(const RenderGraphExecutor::ExecutionSlot& slot)
+{
+    for (VkCommandBuffer cmdBuf : slot.segmentCommandBuffers)
+    {
+        VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
+        VK_ASSERT(vkEndCommandBuffer(cmdBuf));
+    }
+}
+}  // namespace
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a multi-segment handover completes through timeline values",
                  "[RenderGraphBuilder]")
 {
     // Covers the path no graph-level test can reach on a single-family device:
     // RenderGraphBuilder::RebuildExecutionPlan records a transfer only when two segments resolve to
-    // *different queue families*, so the double-execute test above destroys an empty set here (and
-    // says so through its WARN). RenderGraphExecutor::Submit keys purely on (producer, consumer)
-    // segment indices and knows nothing about families, so a hand-built plan with one transfer
-    // exercises create -> signal/wait -> destroy on any device.
+    // *different queue families*, so the double-execute test above records none. Submit() keys on
+    // (producer, consumer) segment indices and knows nothing about families, so a hand-built plan with
+    // one transfer exercises signal -> wait across segments on any device.
+    //
+    // Under the binary design this test also pinned the create/destroy lifetime of the handover
+    // semaphores, because those were per submission - and it kept passing after A1.4 removed them,
+    // asserting none of what it named. What is worth pinning now is that the cross-segment dependency
+    // still completes with the slot reused across executions, which is the reclamation path: one slot
+    // means the second AcquireSlot waits for the first execution's values.
     RenderGraphExecutionPlan plan;
     plan.segments = {{QueueType::GRAPHICS, 0, 1}, {QueueType::GRAPHICS, 1, 2}};
     plan.transfers = {{0, 1, ResourceHandle("SyntheticHandover"), 0, 1}};
     REQUIRE(plan.GetSegmentCount() == 2);
     REQUIRE(plan.GetTransferCount() == 1);
 
-    // inFlightCount 1 keeps this about semaphore lifetime rather than overlap: AcquireSlot blocks
-    // until the previous submission completed.
     RenderGraphExecutor executor(GetRenderDevice(), 1);
 
-    for (int run = 0; run < 2; ++run)
+    // Three executions, not two: each hands out fresh values on the queue timeline, so a reuse that
+    // waited on a stale value - or an implementation that reset the counter - shows up as a hang or a
+    // validation error by the third.
+    for (int run = 0; run < 3; ++run)
     {
-        // The executor owns the command buffers, so recording starts from a slot rather than from an
-        // allocation here.
-        RenderGraphExecutor::ExecutionSlot slot = executor.AcquireSlot(plan);
-        for (VkCommandBuffer cmdBuf : slot.segmentCommandBuffers)
-        {
-            VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
-            VK_ASSERT(vkEndCommandBuffer(cmdBuf));
-        }
-
-        // The second run is the one that destroys the semaphore the first created and makes a new
-        // one. It can only do that because the first run's fence signalled - that is the contract
-        // this test pins, and it is what A1.3b replaces with per-slot ownership.
+        const RenderGraphExecutor::ExecutionSlot slot = executor.AcquireSlot(plan);
+        RecordEmptyCommandBuffers(slot);
         executor.Submit(plan, slot, RenderGraphExecuteInfo{});
         executor.WaitIdle();
+    }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a timeline wait holds execution until its value is signalled",
+                 "[RenderGraphBuilder]")
+{
+    // The gap #38 documented rather than closed: it could pin the *signal* direction and not the wait
+    // direction, because a binary semaphore is not host-waitable, so "this execution started before it
+    // was allowed to" was unobservable in either direction. A timeline is host-waitable, and this uses
+    // that to pin the wait - which is also the mechanism a long-running client chains executions with,
+    // since its work outlives the call that issued it.
+    //
+    // Shape: submit with a wait on a value the host has not signalled. The outward fence must stay
+    // unsignalled. Signal the value and it must signal. A dropped wait fails the first check.
+    RenderGraphExecutionPlan plan;
+    plan.segments = {{QueueType::GRAPHICS, 0, 1}};
+    RenderGraphExecutor executor(GetRenderDevice(), 1);
+
+    VkDevice device = GetRenderDevice()->GetDevice();
+    // The semaphore is caller-owned: the executor's own timelines stay private, so chaining across
+    // executions is expressed with a timeline the caller owns and the values it chooses.
+    VkSemaphoreTypeCreateInfo typeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+    typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    typeInfo.initialValue = 0;
+    VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    semaphoreInfo.pNext = &typeInfo;
+    VkSemaphore gate = VK_NULL_HANDLE;
+    VK_ASSERT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &gate));
+
+    VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VkFence done = VK_NULL_HANDLE;
+    VK_ASSERT(vkCreateFence(device, &fenceInfo, nullptr, &done));
+
+    const RenderGraphExecutor::ExecutionSlot slot = executor.AcquireSlot(plan);
+    RecordEmptyCommandBuffers(slot);
+    executor.Submit(plan, slot, RenderGraphExecuteInfo{.waitSemaphore = gate, .waitValue = 1, .signalFence = done});
+
+    // The gate has not been passed, so the submission cannot complete *however fast the GPU is*.
+    //
+    // The wait budget matters: a zero timeout is satisfied by ordinary submit latency, so it returns
+    // VK_TIMEOUT whether or not the wait was honoured, and the test passed with the wait removed. 100 ms
+    // is several orders of magnitude more than an empty submission takes, so with the wait dropped the
+    // fence signals well within it and this check fails - which is the mutation that has to fail.
+    CHECK(vkWaitForFences(device, 1, &done, VK_TRUE, 100'000'000) == VK_TIMEOUT);
+
+    VkSemaphoreSignalInfo signalInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO};
+    signalInfo.semaphore = gate;
+    signalInfo.value = 1;
+    VK_ASSERT(vkSignalSemaphore(device, &signalInfo));
+
+    // Bounded, so a wait that never completes reports a timeout at this line instead of stopping the
+    // suite responding. CHECK rather than VK_ASSERT: a failure here is a test result, not an
+    // unrecoverable runtime error, and aborting would take the rest of the suite with it.
+    const VkResult gateResult = vkWaitForFences(device, 1, &done, VK_TRUE, 5'000'000'000);
+    CHECK(gateResult == VK_SUCCESS);
+    if (gateResult == VK_SUCCESS)
+    {
+        vkDestroyFence(device, done, nullptr);
+        vkDestroySemaphore(device, gate, nullptr);
+    }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: signalFence completes single- and multi-segment plans",
+                 "[RenderGraphBuilder]")
+{
+    // A1.4 exposes the caller-facing fence, which A1.3b could not offer: a submit signals at most one
+    // fence, and the slot's own fence occupied it. Reclamation is a counter comparison now, so the
+    // fence is free for the caller - and a caller with only this question no longer has to submit
+    // something of its own just to observe completion.
+    //
+    // The two cases take different paths through Submit(): one segment carries the outward fence
+    // itself, several need the empty join submission to fold the touched queues into one signal. The
+    // multi-segment case is the join path that had never executed anywhere before #38.
+    RenderGraphExecutionPlan single;
+    single.segments = {{QueueType::GRAPHICS, 0, 1}};
+
+    RenderGraphExecutionPlan multi;
+    multi.segments = {{QueueType::GRAPHICS, 0, 1}, {QueueType::GRAPHICS, 1, 2}};
+    multi.transfers = {{0, 1, ResourceHandle("SyntheticHandover"), 0, 1}};
+
+    RenderGraphExecutor executor(GetRenderDevice(), 1);
+    VkDevice device = GetRenderDevice()->GetDevice();
+
+    for (const RenderGraphExecutionPlan& plan : {single, multi})
+    {
+        VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VkFence done = VK_NULL_HANDLE;
+        VK_ASSERT(vkCreateFence(device, &fenceInfo, nullptr, &done));
+
+        const RenderGraphExecutor::ExecutionSlot slot = executor.AcquireSlot(plan);
+        RecordEmptyCommandBuffers(slot);
+        executor.Submit(plan, slot, RenderGraphExecuteInfo{.signalFence = done});
+
+        // Bounded: an unsignalled fence would otherwise hang the run, and the failure this test is
+        // meant to catch - the executor taking the fence and not signalling it - is exactly that.
+        const VkResult fenceResult = vkWaitForFences(device, 1, &done, VK_TRUE, 5'000'000'000);
+        CHECK(fenceResult == VK_SUCCESS);
+        if (fenceResult == VK_SUCCESS) vkDestroyFence(device, done, nullptr);
     }
 }
 
