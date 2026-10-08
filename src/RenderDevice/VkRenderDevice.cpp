@@ -364,23 +364,22 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
         }
     }
 
-    // We should at least have one graphics queue
+    // We should at least have one graphics queue. FatalError rather than a check, so the block below
+    // is unconditional: the two used to be separate `if`s and the second could no longer be false once
+    // the first started failing the process, which read as if the graphics queue could be skipped.
     if (m_queueFamilyIndices.nGraphicsQueueFamily < 0)
     {
         FatalError("no graphics queue family was found on this device; Muyo cannot run without one");
     }
 
-    if (m_queueFamilyIndices.nGraphicsQueueFamily >= 0)
-    {
-        sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
-            VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           // sType;
-            nullptr,                                              // pNext;
-            0,                                                    // flags;
-            (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,  // queueFamilyIndex;
-            1,                                                    // queueCount;
-            &fQueuePriority                                       // pQueuePriorities;
-        }));
-    }
+    sQueueCreateInfos.insert(VkDeviceQueueCreateInfo({
+        VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,           // sType;
+        nullptr,                                              // pNext;
+        0,                                                    // flags;
+        (uint32_t)m_queueFamilyIndices.nGraphicsQueueFamily,  // queueFamilyIndex;
+        1,                                                    // queueCount;
+        &fQueuePriority                                       // pQueuePriorities;
+    }));
 
     if (m_queueFamilyIndices.nPresentQueneFamily >= 0)
     {
