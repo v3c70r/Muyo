@@ -152,7 +152,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
 | **TODO hygiene** | 24 markers, and exactly one names an issue. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible, which is the failure this whole document is trying to avoid. |
-| **#30**, **#35** | In flight (PR #45): the startup and error-path checks that `NDEBUG` removed. |
+| **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
 
