@@ -120,7 +120,10 @@ static VkBool32 DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeve
         }
 
         std::cerr << red << "[ERROR]:" << pCallbackData->pMessage << normal << std::endl;
-        assert(0 && "Vulkan Error");
+        // Must not be an assert: NDEBUG removes it, and a validation error is the thing the test suite
+        // is required to fail on (AGENTS.md section 4). FatalAbort rather than FatalError because this
+        // runs inside a callback the driver invokes - throwing here would cross a C ABI boundary.
+        FatalAbort(std::string("validation error: ") + pCallbackData->pMessage);
     }
     else if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
     {
@@ -164,7 +167,10 @@ void DebugUtilsMessenger::Initialize(const VkInstance& instance)
         VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
     createInfo.pfnUserCallback = DebugCallback;
 
-    assert(CreateDebugUtilsMessenger(instance, &createInfo, nullptr, &m_debugUtilsMessenger) == VK_SUCCESS);
+    // VK_ASSERT, not assert: this is a Vulkan call result, so under NDEBUG the debug messenger - the
+    // thing that reports validation errors - could fail to be created silently, and every later
+    // validation message would be lost with nothing saying why.
+    VK_ASSERT(CreateDebugUtilsMessenger(instance, &createInfo, nullptr, &m_debugUtilsMessenger));
 }
 
 void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
@@ -237,6 +243,24 @@ void VKAssertFailed(VkResult result, const std::source_location& location)
 {
     std::cerr << "[FATAL]: Vulkan call failed with " << VkResultName(result) << " (" << static_cast<int>(result)
               << ")\n"
+              << "  at " << location.file_name() << ":" << location.line() << " in " << location.function_name()
+              << std::endl;
+    std::abort();
+}
+
+void FatalError(std::string message, const std::source_location& location)
+{
+    std::cerr << "[FATAL]: " << message << "\n"
+              << "  at " << location.file_name() << ":" << location.line() << " in " << location.function_name()
+              << std::endl;
+    // The location goes into the exception as well: the stream above is the immediate diagnostic, but
+    // a caller that catches and logs this - or a test that asserts on it - needs the same context.
+    throw std::runtime_error(message + " (at " + location.file_name() + ":" + std::to_string(location.line()) + ")");
+}
+
+void FatalAbort(std::string message, const std::source_location& location)
+{
+    std::cerr << "[FATAL]: " << message << "\n"
               << "  at " << location.file_name() << ":" << location.line() << " in " << location.function_name()
               << std::endl;
     std::abort();

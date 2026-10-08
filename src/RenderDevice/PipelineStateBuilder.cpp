@@ -5,6 +5,8 @@
 #include <array>
 #include <cassert>
 
+#include "Debug.h"
+
 namespace Muyo
 {
 
@@ -210,7 +212,14 @@ VkShaderModule CreateShaderModule(const std::vector<char>& code)
 std::vector<char> ReadSpv(const std::string& fileName)
 {
     std::ifstream file(fileName, std::ios::ate | std::ios::binary);
-    assert(file.is_open());
+    // Not an assert: under NDEBUG a missing file fell through to tellg() == -1, so fileSize became
+    // SIZE_MAX and the failure surfaced as std::bad_alloc from the vector below - loud, but naming
+    // nothing. The asset manager has its own ReadSpv (ShaderAsset.h) that throws "Failed to open
+    // file"; this is the legacy copy the non-graph passes still use.
+    if (!file.is_open())
+    {
+        FatalError("could not open SPIR-V file: " + fileName);
+    }
     size_t fileSize = (size_t)file.tellg();
     std::vector<char> buffer(fileSize);
 
