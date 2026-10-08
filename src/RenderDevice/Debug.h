@@ -1,6 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
+#include <source_location>
 #include <string>
 #include <vector>
 
@@ -44,8 +45,27 @@ private:
     T m_markedVkObject = VK_NULL_HANDLE;
 };
 
-// Assertion for vulkan function calls
-void VK_ASSERT(VkResult result);
+/// Reports a failed Vulkan call and terminates the process.
+/// @param result The failed result.
+/// @param location Call site, captured by default at each call.
+[[noreturn]] void VKAssertFailed(VkResult result, const std::source_location& location);
+
+/// Assert that a Vulkan call succeeded, in **every** build configuration.
+///
+/// Deliberately not `assert`: `NDEBUG` removes asserts, so a release build would ignore the failure
+/// and continue with whatever the call left behind - a null handle, an unallocated buffer - and the
+/// symptom would surface somewhere unrelated, with no diagnostic. Reports the failing result and the
+/// call site (obtained by default from `std::source_location::current()`), then aborts.
+///
+/// Aborting rather than throwing keeps the ~70 call sites free of exception-safety requirements;
+/// every failure it guards (device or memory creation) is unrecoverable anyway. A function rather
+/// than a macro so qualified calls such as `Muyo::VK_ASSERT(...)` keep working.
+/// @param result Result of the Vulkan call.
+/// @param location Call site, supplied by the default argument.
+inline void VK_ASSERT(VkResult result, const std::source_location& location = std::source_location::current())
+{
+    if (result != VK_SUCCESS) VKAssertFailed(result, location);
+}
 }  // namespace Muyo
 
 // Create a macro to generate local variables
