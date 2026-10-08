@@ -226,6 +226,14 @@ Rules:
   history).
 - **Run the sanitizers before merge for anything touching memory, lifetimes, threading or resource
   ownership** — `scripts/sanity.sh sanitize`. It is the cheapest real-bug detector available today.
+- **Read `scripts/sanity.sh`'s exit status, not a grep of its output.** The script ends with a single
+  `sanity: OK` / `sanity: FAILED` line, but the rule is the exit status: each check prints its own red
+  message, they share no token, and a grep for `OK` will happily match a passing check while the
+  failing one scrolls past. Two sessions recorded "format clean" from `./scripts/sanity.sh 2>&1 |
+  grep -E "OK|FAILED"` over a run that exited 1 — worse than not checking, because a claim got made
+  and the reviewer then spent a round disproving it (on the same clang-format the developer had).
+  Distrust a filtered verdict generally: piping a check into `grep` throws away the exit status unless
+  `PIPESTATUS` is read, so the pipe can only ever confirm, never deny.
 - **Never enable a new check globally on the first run.** Add it, measure the fallout, file the
   cleanup as an issue, and only then enforce — scoped to changed lines. [#24](https://github.com/v3c70r/Muyo/issues/24)
   (clang-tidy) and [#25](https://github.com/v3c70r/Muyo/issues/25) (`-Wextra`) are written up that way.
