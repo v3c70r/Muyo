@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
+#include <fstream>
 #include <cmath>
 #include <cstring>
 #include <optional>
@@ -400,6 +402,29 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destr
         executor.Submit(plan, slot, RenderGraphExecuteInfo{});
         executor.WaitIdle();
     }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an unreadable shader fails loudly", "[RenderGraphBuilder]")
+{
+    // LoadShader returns nullopt on exactly two paths: a zero-byte or torn .spv read, or a failed
+    // vkCreateShaderModule. A missing *file* was already loud (ReadSpv throws "Failed to open file"),
+    // so the silent skip this guards was reachable only through the first - which is what racing a
+    // concurrent Shaders rebuild in the same build directory produces, and why it never reproduced on
+    // a clean rebuild. Before this it compiled a pipeline without the stage and failed several tests
+    // later with a push-constant or descriptor VUID.
+    const char* sScratchShader = "shaders/teeth_empty.spv";
+    {
+        std::ofstream empty(sScratchShader, std::ios::binary | std::ios::trunc);
+        REQUIRE(empty.good());
+    }
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    RenderGraphNodeCreateInfo node{};
+    node.nodeName = "UnreadableShaderNode";
+    node.shaderNames = {"teeth_empty"};
+    CHECK_THROWS_AS(builder.AddNode(node), std::runtime_error);
+
+    std::filesystem::remove(sScratchShader);
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: an empty plan does not wedge a slot", "[RenderGraphBuilder]")

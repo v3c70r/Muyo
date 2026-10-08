@@ -453,7 +453,12 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     }
 
     // Load ray tracing shaders (raygen / miss / closest hit).
-    for (size_t i = 0; i < nodeCreateInfo.rtShaderNames.size() && i < rgn.rtShaders.size(); ++i)
+    if (nodeCreateInfo.rtShaderNames.size() > rgn.rtShaders.size())
+    {
+        throw std::runtime_error("Node '" + nodeName + "' declares more ray tracing shaders than the " +
+                                 std::to_string(rgn.rtShaders.size()) + " supported (raygen / miss / closest hit).");
+    }
+    for (size_t i = 0; i < nodeCreateInfo.rtShaderNames.size(); ++i)
     {
         auto key = m_shaderAssetManager.LoadShader(nodeCreateInfo.rtShaderNames[i]);
         if (!key)
