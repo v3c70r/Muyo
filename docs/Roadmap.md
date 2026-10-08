@@ -50,7 +50,7 @@ record a **verdict that no field holds** — including for work that was never f
 | | Lines | State |
 | --- | --- | --- |
 | `src/RenderGraph/` | 3,154 | Drives the **tests only**. Foundation, sync2, executor in flight. |
-| `src/RenderPasses/` | 4,403 | What actually renders: 11 passes plus `ShadowPassManager`. |
+| `src/RenderPasses/` | 4,403 | What actually renders: 11 pass instantiations (10 distinct types) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. |
 | `src/app/helloVulkan.cpp` | 374 | Owns the frame loop and hand-rolled semaphores. |
 
 The single fact that matters: **the graph has zero production adoption.** Every guarantee it makes is
@@ -245,8 +245,9 @@ definition of "critical".
 has two halves — P0–P3 is the *first consumer*, L is the *library itself* — and because "after P3" is a
 verdict rather than an absence of one.
 
-**Three custom fields:** `Critical path` (single-select), `Debt` (`Fix early` / `Subsumes debt` /
-`After P3`), and `Depends on` (text, sparse).
+**Four custom fields:** `Area` (single-select), `Depends on` (text, sparse), `Critical path`
+(single-select), and `Debt` (`Fix early` / `Subsumes debt` / `After P3`). The rest are GitHub's
+built-ins.
 
 **Eight saved views:** `Roadmap (by phase)`, `Critical path`, one per phase (`P0 - Frame synchronization`
 as a board, `P1 - Graph parity`, `Adoption (P2 + P3)`), one for the library track
