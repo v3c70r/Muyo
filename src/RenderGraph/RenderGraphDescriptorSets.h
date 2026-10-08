@@ -1,6 +1,7 @@
 #pragma once
 // built-in descriptor bindings
 
+#include <stdexcept>
 #include <unordered_map>
 
 #include "DescriptorManager.h"
@@ -172,9 +173,16 @@ public:
         writeDescSet.descriptorCount = 1;
         writeDescSet.descriptorType = descriptorType;
 
+        // These must outlive the vkUpdateDescriptorSets call below: writeDescSet points at one of
+        // them. Declaring them inside the branches leaves pBufferInfo / pImageInfo dangling by the
+        // time the update happens - undefined behaviour that a Debug build survives (the stack slot
+        // still holds the values) and -O3 does not, where the descriptor is written with a null
+        // buffer handle. That is what made the Release suite render nothing in three tests.
+        VkDescriptorBufferInfo bufferInfo = {};
+        VkDescriptorImageInfo imageInfo = {};
+
         if (const auto* pBufferResource = dynamic_cast<const BufferResource*>(pResource))
         {
-            VkDescriptorBufferInfo bufferInfo = {};
             bufferInfo.buffer = pBufferResource->buffer();
             bufferInfo.offset = 0;
             bufferInfo.range = pBufferResource->GetSize();
@@ -182,15 +190,17 @@ public:
         }
         else if (const auto* pImageResource = dynamic_cast<const ImageResource*>(pResource))
         {
-            VkDescriptorImageInfo imageInfo = {};
             imageInfo.imageView = pImageResource->getView();
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             writeDescSet.pImageInfo = &imageInfo;
         }
         else
         {
-            assert(false && "Unsupported resource type for binding");
-            return;
+            // Runtime check, not an assert: under NDEBUG an unsupported type would silently leave the
+            // descriptor unwritten and surface later as a draw-time VUID far from the cause (#30).
+            throw std::runtime_error(
+                "BindResourceToDescriptorSet: unsupported resource type; a descriptor "
+                "can only be bound to a BufferResource or an ImageResource.");
         }
 
         vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1, &writeDescSet, 0, nullptr);
