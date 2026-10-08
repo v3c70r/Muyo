@@ -156,6 +156,22 @@ Operational notes, each of which has cost someone a red herring:
   and on a real driver, and naming the vendor described neither correctly. `GraphicsTestEnv` logs the
   selected device and whether a dedicated compute family is present, so a run states its own scope
   instead of leaving it to be assumed.
+- **Plan tests across the configuration axes, and say which ones each covers.** "It passes" has
+  repeatedly meant less here than it sounded, because the axes differ silently:
+
+  | Axis | Why it matters |
+  | --- | --- |
+  | Device | a software device (llvmpipe) passes everything and exercises no driver behaviour. |
+  | Queue topology | one family takes the single-queue path and cannot validate handover machinery. |
+  | In-flight count | 1 serialises; overlap, aliasing and chaining only appear above 1. |
+  | Build configuration | `NDEBUG` removes asserts, and a Release build currently fails tests Debug passes. |
+  | Resource sharing | per-execution vs shared resources decide whether a change can alias anything. |
+
+  A test whose subject is one of these must state the axis it needs and fail or report loudly when the
+  machine does not provide it — a green run on a configuration that cannot exercise the subject is not
+  evidence about it. Where a contract matters, prefer a device-independent test of the mechanism (a
+  hand-built plan, a direct call) over relying on the topology, the in-flight count or the build
+  configuration being present.
 - **Coverage must not depend on the machine.** A contract that only holds under one topology gets a
   device-independent test — a hand-built plan, a direct call — alongside any integration test. Where
   an integration test's *subject* is the topology, it must say so rather than pass quietly: a green
