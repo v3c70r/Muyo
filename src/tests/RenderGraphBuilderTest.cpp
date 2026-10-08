@@ -364,6 +364,190 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builde
     REQUIRE(CountNonBlackPixels(pTarget) > 0);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains executions through semaphores",
+                 "[RenderGraphBuilder][AsyncCompute]")
+{
+    // Every other test calls Execute() with no argument, so RenderGraphExecuteInfo had no coverage at
+    // all: nothing passed a waitSemaphore or a signalSemaphore. In particular the *join* had never
+    // executed anywhere on any machine - the extra empty submission that folds several segments' done
+    // semaphores into the caller's single outward one. That join is the path a windowed frame loop
+    // needs, because a multi-segment frame cannot signal the caller from one terminal submit.
+    if (!GetRenderDevice()->IsComputeQueueDedicated())
+    {
+        WARN("no dedicated compute queue family: the plan still has two segments here, but no handover");
+    }
+
+    std::vector<Vertex> quadVertices = {
+        {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 0.0f}},
+        {{1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f, 1.0f, 0.0f}},
+        {{-1.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f, 1.0f, 0.0f}},
+    };
+    std::vector<uint32_t> quadIndices = {0, 1, 2, 2, 3, 0};
+    auto* pQuadVB = GetRenderResourceManager()->GetVertexBuffer<Vertex>("ChainQuadVertexBuffer", quadVertices);
+    auto* pQuadIB = GetRenderResourceManager()->GetIndexBuffer<uint32_t>("ChainQuadIndexBuffer", quadIndices);
+    const uint32_t nQuadIndexCount = static_cast<uint32_t>(quadIndices.size());
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("ChainOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                                                   VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.ImportResource("ChainQuadVertexBuffer", pQuadVB);
+    builder.ImportResource("ChainQuadIndexBuffer", pQuadIB);
+
+    RenderGraphNodeCreateInfo quadPass = {
+        .nodeName = "ChainQuadNode",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("ChainQuadVertexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("ChainQuadIndexBuffer"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("ChainOutput"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"triangle.vert", "triangle_no_tex.frag.slang"},
+        .psoDesc = {.depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false, .stencilEnable = false},
+                    .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute = [nQuadIndexCount](RenderGraphNodeContext& ctx)
+        {
+            auto* pVertexBuffer = ctx.GetResource<VertexBuffer<Vertex>>("ChainQuadVertexBuffer");
+            auto* pIndexBuffer = ctx.GetResource<IndexBuffer>("ChainQuadIndexBuffer");
+            REQUIRE(pVertexBuffer != nullptr);
+            REQUIRE(pIndexBuffer != nullptr);
+
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = pVertexBuffer->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(ctx.commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
+        }};
+
+    RenderGraphNodeCreateInfo fillPass = {
+        .nodeName = "ChainFill",
+        .queueType = QueueType::COMPUTE,
+        .async = true,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("ChainOutput"),
+                                     .io = ResourceIOType::READ_WRITE,
+                                     .usage = ResourceUsage::STORAGE_IMAGE,
+                                     .kind = ResourceKind::IMAGE,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"testFillColor.comp.slang"},
+        .execute = [](RenderGraphNodeContext& ctx)
+        { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+
+    builder.AddNode(fillPass);
+    builder.AddNode(quadPass);
+    builder.AddDependency(fillPass.nodeName, quadPass.nodeName);
+    builder.Build();
+
+    auto* pTarget = GetRenderResourceManager()->GetColorTarget("ChainOutput");
+    REQUIRE(pTarget != nullptr);
+
+    VkDevice device = GetRenderDevice()->GetDevice();
+    VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    VkFenceCreateInfo fenceInfo{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+    VkSemaphore semaphoreInitial = VK_NULL_HANDLE;
+    VkSemaphore semaphoreChain = VK_NULL_HANDLE;
+    VkSemaphore semaphoreFinished = VK_NULL_HANDLE;
+    VkFence fencePresignal = VK_NULL_HANDLE;
+    VkFence fenceFinished = VK_NULL_HANDLE;
+    VK_ASSERT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoreInitial));
+    VK_ASSERT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoreChain));
+    VK_ASSERT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphoreFinished));
+    VK_ASSERT(vkCreateFence(device, &fenceInfo, nullptr, &fencePresignal));
+    VK_ASSERT(vkCreateFence(device, &fenceInfo, nullptr, &fenceFinished));
+
+    // An empty submission is the only way to observe a *binary* semaphore from the host: it cannot be
+    // waited on directly, so the signal (or the wait) is routed through a queue. This is the shape
+    // A1.4 replaces with timeline values, which the host can wait on.
+    std::vector<VkCommandBuffer> pendingCommandBuffers;
+    const auto submitEmpty = [&](VkSemaphore waitOn, VkSemaphore signalOn, VkFence fence)
+    {
+        VkCommandBuffer cmdBuf = GetRenderDevice()->AllocateImmediateCommandBuffer();
+        pendingCommandBuffers.push_back(cmdBuf);
+
+        VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
+        VK_ASSERT(vkEndCommandBuffer(cmdBuf));
+
+        VkSemaphoreSubmitInfo waitInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        waitInfo.semaphore = waitOn;
+        waitInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        VkSemaphoreSubmitInfo signalInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
+        signalInfo.semaphore = signalOn;
+        signalInfo.stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+
+        VkCommandBufferSubmitInfo cmdInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+        cmdInfo.commandBuffer = cmdBuf;
+
+        VkSubmitInfo2 submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+        submitInfo.commandBufferInfoCount = 1;
+        submitInfo.pCommandBufferInfos = &cmdInfo;
+        if (waitOn != VK_NULL_HANDLE)
+        {
+            submitInfo.waitSemaphoreInfoCount = 1;
+            submitInfo.pWaitSemaphoreInfos = &waitInfo;
+        }
+        if (signalOn != VK_NULL_HANDLE)
+        {
+            submitInfo.signalSemaphoreInfoCount = 1;
+            submitInfo.pSignalSemaphoreInfos = &signalInfo;
+        }
+        VK_ASSERT(vkQueueSubmit2(GetRenderDevice()->GetImmediateQueue(), 1, &submitInfo, fence));
+    };
+
+    // Pre-signal: execution 1 must have something to wait on. Waiting the fence here is what makes it
+    // ordered ahead of that execution.
+    submitEmpty(VK_NULL_HANDLE, semaphoreInitial, fencePresignal);
+    VK_ASSERT(vkWaitForFences(device, 1, &fencePresignal, VK_TRUE, UINT64_MAX));
+
+    // Execution 1 waits on the pre-signalled semaphore and signals the chain semaphore. With more than
+    // one segment the join is what signals it, not a terminal queue submit.
+    builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = semaphoreInitial, .signalSemaphore = semaphoreChain});
+
+    // Execution 2 waits on that chain semaphore. It also covers the backpressure path: the builder
+    // has one in-flight slot, so acquiring one here blocks until execution 1's fence signalled.
+    builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = semaphoreChain, .signalSemaphore = semaphoreFinished});
+
+    // If the join did not signal the caller's semaphore this submission never completes, so the wait
+    // is bounded rather than UINT64_MAX: unbounded, the failure mode is an infinite hang that only a
+    // wall-clock timeout outside the process can catch. Bounding it turns a broken join into a
+    // VK_TIMEOUT at this line, naming the contract that broke. (With layers active the validator
+    // usually gets there first and rejects the unsignallable wait at submit time,
+    // VUID-vkQueueSubmit2-semaphore-03873.)
+    submitEmpty(semaphoreFinished, VK_NULL_HANDLE, fenceFinished);
+    // VK_ASSERT reports the VkResult, so a broken join surfaces here as VK_TIMEOUT rather than as a
+    // bare bool comparison.
+    VK_ASSERT(vkWaitForFences(device, 1, &fenceFinished, VK_TRUE, 5'000'000'000));
+
+    REQUIRE(CountNonBlackPixels(pTarget) > 0);
+
+    // Freed only now: for a non-blocking submission the caller owns completion, and freeing a command
+    // buffer the driver may still be reading trips VUID-vkFreeCommandBuffers-pCommandBuffers-00047.
+    for (VkCommandBuffer cmdBuf : pendingCommandBuffers)
+    {
+        GetRenderDevice()->FreeImmediateCommandBuffer(cmdBuf);
+    }
+    vkDestroyFence(device, fencePresignal, nullptr);
+    vkDestroyFence(device, fenceFinished, nullptr);
+    vkDestroySemaphore(device, semaphoreInitial, nullptr);
+    vkDestroySemaphore(device, semaphoreChain, nullptr);
+    vkDestroySemaphore(device, semaphoreFinished, nullptr);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a later submission destroys the previous handover set",
                  "[RenderGraphBuilder]")
 {
