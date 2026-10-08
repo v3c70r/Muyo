@@ -442,7 +442,10 @@ External synchronization for one execution.
 | Member | Description |
 | --- | --- |
 | `VkSemaphore waitSemaphore` | Waited on before this execution's first work - e.g. the swapchain image-acquired semaphore. |
+| `uint64_t waitValue` | Value to wait for when waitSemaphore is a timeline semaphore. This is what lets a caller chain one execution onto another's completion: pass the same timeline the earlier execution signalled and the value it signalled. Ignored for a binary semaphore. |
 | `VkSemaphore signalSemaphore` | Signalled once all of this execution's queues have completed - e.g. for vkQueuePresentKHR. |
+| `uint64_t signalValue` | Value to signal when signalSemaphore is a timeline semaphore. Must be greater than the semaphore's current value, so the default 0 is never valid for one. Ignored for a binary semaphore. |
+| `VkFence signalFence` | Signalled once all of this execution's queues have completed. Unlike signalSemaphore this is waitable from the host, and unlike a query it needs no submission of the caller's own. |
 
 ### `class Muyo::RenderGraph::RenderGraphExecutor`
 

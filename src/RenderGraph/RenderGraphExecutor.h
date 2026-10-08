@@ -16,14 +16,18 @@ namespace Muyo::RenderGraph
 {
 /// External synchronization for one execution.
 ///
-/// Deliberately has no `signalFence`: a Vulkan submit signals at most one fence, so a caller-supplied
-/// fence and the executor's per-slot fence could not both come from the completion submit without an
-/// extra submission. A1.4 replaces the slot fence with a timeline value, which serves both, so the
-/// caller-facing fence arrives there rather than here. The interim shape is `{wait, signal}` - #11.
+/// `signalSemaphore` and `signalFence` both mean "every queue of this execution has completed". The
+/// semaphore is what a present path needs; the fence is host-waitable, so a caller that only wants to
+/// know the work is done does not have to submit anything of its own to find out.
 ///
-/// `signalSemaphore` is the **only** completion signal a caller of the non-blocking path gets, and it
-/// is not host-waitable (binary semaphores have no `vkWaitSemaphores`). To know the work finished,
-/// either pass a semaphore into a later submission and give that a fence, or call `WaitIdle()`.
+/// Passing neither is legitimate: the executor tracks completion itself with timeline values, and
+/// `WaitIdle()` observes it. Asking for no outward signal therefore costs nothing - in particular it
+/// needs no join submission.
+///
+/// The executor's own timelines stay private. A caller that wants to chain executions owns its own
+/// timeline and passes it as both `signalSemaphore`/`signalValue` here and
+/// `waitSemaphore`/`waitValue` on the next execution, so the chaining contract does not depend on how
+/// the executor lays out its internal counters.
 ///
 /// Overlapping executions of the same graph share that graph's resources and are unordered relative
 /// to each other unless chained through these semaphores.
@@ -31,15 +35,46 @@ struct RenderGraphExecuteInfo
 {
     /// Waited on before this execution's first work - e.g. the swapchain image-acquired semaphore.
     VkSemaphore waitSemaphore = VK_NULL_HANDLE;
+    /// Value to wait for when `waitSemaphore` is a timeline semaphore. This is what lets a caller chain
+    /// one execution onto another's completion: pass the same timeline the earlier execution signalled
+    /// and the value it signalled. Ignored for a binary semaphore.
+    ///
+    /// With a timeline, 0 is legal but waits for nothing - a counter starts at 0, so the wait is already
+    /// satisfied. Pass the value you actually mean.
+    uint64_t waitValue = 0;
     /// Signalled once *all* of this execution's queues have completed - e.g. for vkQueuePresentKHR.
     VkSemaphore signalSemaphore = VK_NULL_HANDLE;
+    /// Value to signal when `signalSemaphore` is a timeline semaphore. Must be greater than the
+    /// semaphore's current value, so the default 0 is never valid for one. Ignored for a binary
+    /// semaphore.
+    ///
+    /// A signal of 0 on a counter at 0 is rejected (VUID-VkSubmitInfo2-semaphore-03882), so a caller
+    /// chaining onto a timeline it owns has to pass the value it intends - which is also the value the
+    /// next execution waits for. If the only question is "has this finished?", `signalFence` needs no
+    /// value at all.
+    uint64_t signalValue = 0;
+    /// Signalled once *all* of this execution's queues have completed. Unlike `signalSemaphore` this is
+    /// waitable from the host, and unlike a query it needs no submission of the caller's own.
+    VkFence signalFence = VK_NULL_HANDLE;
 };
 
 /// Executes a recorded render graph.
 ///
 /// The graph records one command buffer per queue segment (see `RenderGraphExecutionPlan`) and hands
 /// them here. Everything after recording belongs to the executor: the in-flight slots, the
-/// cross-queue handover semaphores, the queue submissions, and waiting for work to finish.
+/// cross-queue handovers, the queue submissions, and what completion means.
+///
+/// **Completion is a timeline value per queue** - not a fence, and not a binary semaphore. Every
+/// segment signals the next value on its queue's timeline, and waits on the values of the segments it
+/// consumes, so an execution has completed exactly when the values it signalled have been reached.
+/// Three things follow, and each replaces something the binary design could not express:
+///
+///  - a caller can wait for an execution itself, either through `signalFence` or by waiting on the
+///    values, where a binary semaphore is not host-waitable at all;
+///  - slot reclamation is a value comparison against a counter, so a slot is reusable the moment its
+///    work is done rather than when a particular submission happened to signal a fence;
+///  - nothing is created or destroyed per submission except command buffers, so overlapping executions
+///    cannot alias each other's signalling state.
 ///
 /// The executor owns the command buffers, because they cannot be recycled while an execution is still
 /// in flight - which is what the in-flight slots exist to track. `AcquireSlot` blocks while every
@@ -89,26 +124,48 @@ public:
     VkQueue GetQueueForType(QueueType type) const;
 
 private:
-    /// One in-flight execution's state. Everything in it is owned by this slot, so two executions
-    /// never share a semaphore, a fence or a command buffer.
+    /// A timeline semaphore for one queue, and the next value to hand out.
+    ///
+    /// One per *queue*, not per slot: a timeline is a counter shared by everything submitted to that
+    /// queue, and its values must be signalled in increasing order. So slots own no semaphores at all,
+    /// which is what lets executions overlap without aliasing each other's signalling state.
+    struct QueueTimeline
+    {
+        VkQueue queue = VK_NULL_HANDLE;          ///< The queue this timeline tracks.
+        VkSemaphore semaphore = VK_NULL_HANDLE;  ///< Timeline semaphore; never reset, only counted up.
+        uint64_t nextValue = 0;                  ///< Next value to signal; handed out in submit order.
+    };
+
+    /// One in-flight execution's state.
     struct InFlightSlot
     {
-        VkFence fence = VK_NULL_HANDLE;               ///< Signalled by this slot's completion submit.
-        bool bSubmitted = false;                      ///< The fence is pending and must be waited on.
+        bool bSubmitted = false;                      ///< Work outstanding; must be waited for.
         std::vector<VkCommandBuffer> commandBuffers;  ///< One per segment, allocated on AcquireSlot.
         std::vector<QueueType> segmentQueues;         ///< Queue of each buffer, to return it correctly.
-        std::vector<VkSemaphore> handoverSemaphores;  ///< One per (producer, consumer) transfer pair.
-        std::vector<VkSemaphore> doneSemaphores;      ///< One per segment, used by the completion join.
+        /// What this execution must reach to be complete: one entry per queue it touched, holding the
+        /// *highest* value it signalled there. Values never repeat, so a completed slot's entries stay
+        /// satisfied and waiting on them again is a no-op.
+        std::vector<std::pair<VkSemaphore, uint64_t>> completion;
     };
 
     VkCommandBuffer AllocateCommandBufferForType(QueueType type) const;
     void FreeCommandBufferForType(QueueType type, VkCommandBuffer cmdBuf) const;
-    /// Destroy the slot's semaphores and return its command buffers. Only safe once its fence has
-    /// signalled.
+    /// @param type A resolved queue key.
+    /// @return The timeline for the queue that key submits to.
+    QueueTimeline& TimelineFor(QueueType type);
+    /// Non-blocking: are all of the slot's completion values already reached?
+    /// @param slot Slot to test.
+    /// @return True when the slot's work has completed.
+    bool IsComplete(const InFlightSlot& slot) const;
+    /// Block until the slot's completion values are reached.
+    /// @param slot Slot to wait for.
+    void WaitFor(const InFlightSlot& slot) const;
+    /// Return the slot's command buffers for reuse. Only safe once it has completed.
     void ReleaseSlotObjects(InFlightSlot& slot);
 
     VkRenderDevice* m_renderDevice = nullptr;
     VkDevice m_device = VK_NULL_HANDLE;
+    std::vector<QueueTimeline> m_timelines;
     std::vector<InFlightSlot> m_slots;
     uint32_t m_nextSlot = 0;
 };

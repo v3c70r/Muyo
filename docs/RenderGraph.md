@@ -14,9 +14,9 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.
-- **The builder serialises executions.** `Execute()` records into an in-flight slot, submits, and
-  waits on that slot's fence before returning. The `async` flag expresses intent and generates the
-  correct cross-queue synchronisation, but work does not yet overlap across frames.
+- **The builder serialises executions.** `Execute()` records into an in-flight slot, submits, and waits
+  for that execution's terminal timeline values before returning. The `async` flag expresses intent and
+  generates the correct cross-queue synchronisation, but work does not yet overlap across frames.
   `Execute(RenderGraphExecuteInfo)` submits without waiting, and the executor supports several
   in-flight slots - but the builder runs one (`inFlightCount == 1`), so a second call blocks until the
   first completes. Raising that count needs more than a slot number: descriptor sets are written at
@@ -29,9 +29,12 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
   [DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md).
 - **Device floor.** The engine requires Vulkan 1.3 and enables `synchronization2` and
   `timelineSemaphore` at device creation; both are verified against `vkGetPhysicalDeviceFeatures2`
-  and device creation fails with a named error if either is missing. Timeline semaphores are the
-  primitive the frame-sync work will build on — nothing creates one yet, so for now this is only a
-  raised hardware floor.
+  and device creation fails with a named error if either is missing. The executor **uses** timeline
+  semaphores rather than merely requiring them: completion is a value on a per-queue timeline, so
+  `RenderGraphExecuteInfo` carries `waitSemaphore`/`waitValue` and
+  `signalSemaphore`/`signalValue`/`signalFence`. A caller can therefore chain one execution onto
+  another's completion by passing a timeline it owns, or wait for an execution through a fence, without
+  submitting anything of its own to find out.
 
 ## Core concepts
 
