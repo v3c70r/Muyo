@@ -152,9 +152,52 @@ except `#40`, which needs `#15` and `#16`.
    test suite is thinnest. Anything touching present or images-in-flight needs the reviewer's hardware
    as well as the developer's.
 
+## How this is reflected in GitHub
+
+The plan lives in three places, and they are meant to say the same thing:
+
+| Layer | Holds |
+| --- | --- |
+| This document | The phases, their gates, the debt policy, the risks. The reasoning. |
+| **Milestones** | The phases, as a grouping every issue belongs to. `P0 Frame synchronization`, `P1 Graph parity`, `P2 App adoption`, `P3 Deprecation`. |
+| **Project "Muyo RenderGraph"** | A view over the above, plus the one thing a milestone cannot carry: the `Critical path` field. |
+
+Project fields and views, all created through the API except where noted:
+
+- **`Critical path`** (single-select `Yes`/`No`) — the issues on the path that decides when P2 can
+  start: `#11` (A1.4, A1.5), `#18`, `#15`, `#16`, `#20`, `#51`. Everything else is `No`.
+- **`Depends on`** (text) — sparse, used where an issue is genuinely blocked (`#40`).
+- Views: **Roadmap (by phase)** (all items), **Critical path**, **P0 - Frame synchronization**
+  (board), **Debt - fix early**, **P1 - Graph parity**, **Adoption (P2 + P3)**.
+- The project **README** carries the summary above, so the project page answers "what is the plan"
+  without a link-click.
+- The project **short description** states the goal in one line.
+
+Two API limits worth knowing before editing views by script:
+
+- **Grouping and sorting are UI-only.** `ProjectV2View.groupByFields` and `sortByFields` are readable
+  but not settable — `ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`. So "group by
+  Milestone" is one click per view, and a script cannot finish the job.
+- **Filters are not validated, and the field name must be the slug.** `updateProjectV2View` accepts
+  any string, including `nosuchfield:xyz`. A filter referring to a field that is not an exact slug
+  (lower-case, spaces to hyphens — `critical-path:Yes`, not `"Critical path":Yes`) matches **nothing**
+  rather than everything, so a typo shows an empty view and reports no error. Check a filter's count
+  before trusting it:
+
+  ```bash
+  gh api graphql -f query='query($p:ID!,$q:String){ node(id:$p){ ... on ProjectV2 {
+    items(first:100,query:$q){ totalCount } } } }' \
+    -f p=PVT_kwHOACw01s4BmAfF -f q='critical-path:Yes' --jq '.data.node.items.totalCount'
+  ```
+
+A **roadmap-layout** view is deliberately not created. The layout positions items by a date or
+iteration field, and this plan is gate-based rather than dated — adding dates would mean inventing a
+schedule to make a chart look populated. If a timeline is wanted, it needs two date fields and a
+stated target per phase, which is a commitment to make on purpose rather than as a side effect of
+choosing a layout.
+
 ## Maintaining this document
 
-This document is the roadmap; the GitHub **milestones** are the phases and the **project board** is a
-view over them. When a phase's gate changes, change it here in the same PR. When an issue moves between
-phases, move its milestone — do not leave the two disagreeing, which is the doc-versus-reality drift
-that AGENTS.md section 5 already has a rule about.
+When a phase's gate changes, change it here in the same PR. When an issue moves between phases, move
+its milestone **and** revisit its `Critical path` value — do not leave the three layers disagreeing,
+which is the doc-versus-reality drift AGENTS.md section 5 already has a rule about.
