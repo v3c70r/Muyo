@@ -1,9 +1,15 @@
-# Roadmap: the RenderGraph replaces RenderPassManager
+# Roadmap: ship the RenderGraph as a library; retire RenderPassManager on the way
 
 ## Goal
 
-`RenderGraph` is the only renderer. `src/RenderPasses/` and `RenderPassManager` are deleted, and every
-frame in the application — including `helloVulkan` — is built from graph nodes.
+**Ship `RenderGraph` as an independent library/tool.** `helloVulkan` is its *first consumer* — a rendering
+pipeline built on top of it — and the consumers after that do not look like a renderer at all: ML model
+inference, LLM inference (long-running, compute-only), and hybrids where some queues span a frame
+boundary.
+
+**Retiring `RenderPassManager` is a milestone on that path, not the goal.** It matters because the first
+consumer must actually use the library — a graph exercised only by its own tests is not a library anyone
+else will adopt — but "the old renderer is deleted" is a consequence of the goal, not the goal.
 
 **Definition of done:**
 
@@ -11,6 +17,32 @@ frame in the application — including `helloVulkan` — is built from graph nod
 grep -rn "RenderPassManager" src/          # expect: no matches
 ls src/RenderPasses/ 2>/dev/null           # expect: does not exist
 ```
+
+## Where the plan lives
+
+This document holds **reasoning**. GitHub holds **state**. They are split so each fact has one owner and
+one place to edit:
+
+| Fact | Owner | Where to edit |
+| --- | --- | --- |
+| Which phase an issue belongs to | Milestone | `P0`…`P3` |
+| A phase's gate, and why it is the gate | Milestone description | the milestone itself |
+| Which issues are on the critical path | Project field | `Critical path` |
+| What is blocked by what | Project field | `Depends on` |
+| Where an issue has got to | Project field | `Status` |
+| Why the phases are ordered this way | **This document** | below |
+| The debt policy — including why some debt is deliberately *not* fixed | **This document** | below |
+| The risks, and what mitigates them | **This document** | below |
+| Where the project stands overall | **This document** | below |
+
+**The consequence: this document does not list which issues are in a phase, and does not restate a
+gate.** A phase's members are its milestone — open it, that is the list. Restating them here is what
+made the first version of this document need editing twice for every backlog change, which is the
+duplication it warns about three sections further down.
+
+The debt tables below are the exception that proves the rule: they cite issue numbers because they
+record a **verdict that no field holds** — including for work that was never filed as an issue at all
+(the subsumed `TODO`s, which live in code). If a fact can be a field, make it a field.
 
 ## Where we are
 
@@ -25,63 +57,76 @@ exercised by the test suite and by nothing else, and `RenderPassManager` keeps i
 in the meantime (`m_imageAvailable` reused every frame, per-swapchain-image fences). That asymmetry is
 the risk this roadmap exists to close — see Risks.
 
+## The library goal, and what it constrains now
+
+Two pieces of work are imminent and would bake in assumptions that are expensive to remove. This section
+is the reason to read the roadmap before starting them.
+
+### A1.5 should be split: presentation is a client concern
+
+`FrameSync` as planned — `NUM_BUFFERS` slots, per-frame acquire/render-finished binaries, an
+images-in-flight map, present ids — is **swapchain machinery**. A library whose second consumer is an
+inference job must not contain it.
+
+The execution path is currently presentation-free: the only mentions of a swapchain anywhere in
+`src/RenderGraph/` are comments describing what a *caller* might pass (`signalSemaphore`, "e.g. for
+`vkQueuePresentKHR`"). A1.5 as written would be the first presentation-shaped code in the library, and
+A1.4's timeline values are exactly what makes the split natural — completion becomes a value the client
+waits on, and how it then presents is its own business.
+
+- **library**: execution, completion as a timeline value, chaining one execution on another, slot
+  reclamation. No surface, no present, no notion of a frame.
+- **client**: acquire, images in flight, present ids, and the helper that wires a frame loop to the
+  library's timelines. `helloVulkan` needs it; an inference client does not.
+
+### Constraints to respect from here
+
+| Constraint | Why it is expensive to retrofit |
+| --- | --- |
+| **No frame boundary in the library** | An inference client submits work that outlives many display frames. `Execute()` draining at frame end is a convenience to keep, not the model: completion has to be expressible as a timeline value the client can chain across frames. |
+| **Device, allocator and descriptor allocation injected, not global** | There are 15 call sites inside `src/RenderGraph/` that reach for `GetRenderDevice()` and friends. A library cannot own the engine's singletons. |
+| **Compute-only is a first-class profile** | No surface, no present, possibly no colour attachments. Nothing on the execution path may require a graphics family or a swapchain. |
+| **Long-lived resources are first-class** | Weights and a KV cache live for the process, not a frame. The transient/persistent split (`#15`, `#16`) has to serve that, not only per-frame render targets. |
+| **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
+
+### Distance to a shippable library
+
+Measured, not estimated:
+
+- **`muyo_rg` is already a separate target, but a library in name only.** It declares no dependencies of
+  its own — no `target_link_libraries`, VMA as a private include directory — and compiles inside the
+  engine's include scope.
+- **13 of its files include engine headers** from outside `src/RenderGraph/`, concentrated in
+  `RenderGraphBuilder.h` (12 of them: `MeshResourceManager`, `PerObjResourceManager`, `ShaderAsset`,
+  `PSODesc`, …).
+- **15 call sites reach for engine singletons** rather than receiving them.
+
+None of that blocks the first consumer; all of it blocks a second one.
+
 ## Phases
 
-Each phase has a **gate**: the observable that must hold before the next phase starts. The gate is the
-point; the issue list is how it gets there.
+Each phase has a **gate** — the observable that must hold before the next phase starts. The gate, and
+the issues in the phase, live on the milestone; this section is only about why the phases are ordered
+the way they are.
 
-### P0 — The graph owns frame synchronization
+### Why this order
 
-Issue: **#11 (A1)**. Done: graph core (#9), sync2 migration (#10), executor and in-flight slots
-(A1.1–A1.3b). Remaining: **A1.4** per-queue timeline semaphores — which also supplies the
-caller-facing `signalFence` deliberately deferred in A1.3b — and **A1.5** `FrameSync`
-(`NUM_BUFFERS` slots, per-frame acquire/render-finished binaries, images-in-flight map, present ids).
+**P0 before P1** because frame synchronization is the thing the graph is *for*. Until it owns acquire,
+present and images-in-flight, moving the application onto it would replace one hand-rolled frame sync
+with another, and the migration would buy nothing that could be measured. P0 also supplies the
+`signalFence` deferred in A1.3b, which is what a present path needs.
 
-Rider: **#39** (reuse slot command buffers; the pools already have `RESET_COMMAND_BUFFER_BIT`).
+**P1 before P2** because the graph must express what the legacy passes do before the loop can move:
+clears and resolves (`#18`), material binding at scene scale (`#15`), transient memory (`#16`), pipeline
+caching (`#17`). These are capabilities, not polish — the frame loop cannot be ported around their
+absence.
 
-**Gate:** a windowed frame loop presents through the graph with several frames in flight, and the
-application holds no semaphore, fence or image index.
+**P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
+still references `RenderPassManager` from outside `src/RenderPasses/` has to go first — which is why the
+`DebugUI` coupling and `ShadowPassManager` are P2 work rather than P3 cleanup.
 
-### P1 — The graph can express the legacy frame
-
-The legacy path clears, resolves, binds materials at scene scale, caches pipelines and renders a
-shadow atlas. The graph must do all of it, at comparable cost, before the application can move.
-
-| Issue | Why it gates |
-| --- | --- |
-| **#18 A6** transfer and clear usages | The legacy passes clear attachments and resolve; the graph's node API must express that rather than the pass doing it by hand. |
-| **#16 A3** transient lifetime and aliasing | Memory, and the prerequisite for more than one execution in flight. |
-| **#15 A4** content-addressed descriptor sets | The MATERIAL pool cliff: per-node sets are correct but do not survive a real scene. |
-| **#17 A5** pipeline and shader caching | Per-frame cost parity. |
-| **#13 C8** `SetData` realloc invalidates descriptors | Correctness at the boundary the graph leans on. |
-| **#12 A2** precise barrier masks | Today's masks are conservative *and correct*; this is the performance half of parity. |
-| **#14 C9**, **#19 A7** RT barriers and hardening | Gate the ray-tracing path specifically; the rest of P1 does not depend on them. |
-| **#40** in-flight count above 1 | Depends on #15 and #16; real overlap otherwise aliases descriptor state and transients. |
-
-**Gate:** a scene renders through the graph with validated correctness and cost in the same range as
-the legacy path. Ray tracing is a separate gate on the same phase.
-
-### P2 — The application runs on the graph
-
-Issue: **#20** — port the render loop (`src/app/helloVulkan.cpp`) to graph nodes. Two dependencies that
-are not part of #20 today and must be, or the port stalls halfway:
-
-- **DebugUI is coupled to `RenderPassManager`** — viewport size, camera, `ReloadEnvironmentMap`,
-  and `GetRenderPasses()` for the debug pass list. It needs a frame/renderer interface, not a
-  `RenderPassManager*`.
-- **`ShadowPassManager` is a second frame manager** — it owns N `RenderPassRSM` passes and its own
-  command buffers, and must become graph nodes before `src/RenderPasses/` can be deleted.
-
-**Gate:** `helloVulkan` renders through the graph, and `RenderPassManager` is referenced only by its
-own files and the not-yet-deleted passes.
-
-### P3 — Deprecation
-
-Delete `RenderPassManager`, `src/RenderPasses/`, the `DebugUI` coupling and the `ShadowPassManager`.
-This is a deletion of ~4,400 lines and should be a PR whose diff is almost entirely negative — if it
-needs behaviour changes, P2 was not finished.
-
-**Gate:** the definition of done at the top of this document.
+**Where this can go wrong** is P1 growing without P2 starting, because each missing capability is a
+plausible reason to wait. The mitigation is in P2's gate itself: it is capability, not completeness.
 
 ## Technical debt policy
 
@@ -121,19 +166,9 @@ amount of code, and work spent polishing what is about to be removed is worse th
 
 ## Critical path
 
-```
-A1.4 ──▶ A1.5 ─────────────────────┐
-                                   ├──▶ #20 (P2) ──▶ P3 deletion
-#18 ─┬─▶ #15 ─┬─▶ #40              │
-     │        │                    │
-     ├─▶ #16 ─┘                    │
-     ├─▶ #17 ──────────────────────┘
-     └─▶ #12, #13
-#14, #19 ─────────▶ (RT parity gate, parallel)
-```
-
-The path that matters is **A1.4 → A1.5 → #20**. Everything in P1 can proceed in parallel with P0
-except `#40`, which needs `#15` and `#16`.
+`A1.4 → A1.5` and `#18 → #15/#16` converge on the port, and the port gates the deletion. The issues
+themselves are in the project's **Critical path** view, which filters on the `Critical path` field — not
+here, for the reason above.
 
 ## Risks
 
@@ -147,54 +182,48 @@ except `#40`, which needs `#15` and `#16`.
    graph only.
 3. **RT parity pulls P2 later.** If ray tracing must be at parity, #14 and #19 join the critical path;
    if it need not, the graph can adopt the raster path first and let RT follow.
-4. **No CI (#22), so the migration is verified on one machine.** The migration touches the frame loop
+4. **The library is shaped by its first consumer, and never extracted.** The renderer's needs would become
+   the API by default, and every later client would inherit them. The mitigation is the split above —
+   A1.5 is the first concrete step, and the constraints table is the checklist — rather than a promise to
+   extract later. A second consumer that is *not* a renderer is the only real test of the boundary, so a
+   small compute-only example is worth more than any amount of interface design.
+5. **No CI (#22), so the migration is verified on one machine.** The migration touches the frame loop
    and swapchain, which is where a single-vendor, single-topology check is weakest — and where the
    test suite is thinnest. Anything touching present or images-in-flight needs the reviewer's hardware
    as well as the developer's.
 
-## How this is reflected in GitHub
+## How the GitHub half is set up
 
-The plan lives in three places, and they are meant to say the same thing:
+Four **milestones** (`P0 Frame synchronization` … `P3 Deprecation`), each carrying its gate in its
+description. Two custom fields: **`Critical path`** (single-select) and **`Depends on`** (text, sparse).
+Six saved views: `Roadmap (by phase)`, `Critical path`, `P0 - Frame synchronization` (board),
+`Debt - fix early`, `P1 - Graph parity`, `Adoption (P2 + P3)`. The project README states the goal and
+points here for the reasoning.
 
-| Layer | Holds |
-| --- | --- |
-| This document | The phases, their gates, the debt policy, the risks. The reasoning. |
-| **Milestones** | The phases, as a grouping every issue belongs to. `P0 Frame synchronization`, `P1 Graph parity`, `P2 App adoption`, `P3 Deprecation`. |
-| **Project "Muyo RenderGraph"** | A view over the above, plus the one thing a milestone cannot carry: the `Critical path` field. |
+Three API limits worth knowing before editing any of this by script:
 
-Project fields and views, all created through the API except where noted:
-
-- **`Critical path`** (single-select `Yes`/`No`) — the issues on the path that decides when P2 can
-  start: `#11` (A1.4, A1.5), `#18`, `#15`, `#16`, `#20`, `#51`. Everything else is `No`.
-- **`Depends on`** (text) — sparse, used where an issue is genuinely blocked (`#40`).
-- Views: **Roadmap (by phase)** (all items), **Critical path**, **P0 - Frame synchronization**
-  (board), **Debt - fix early**, **P1 - Graph parity**, **Adoption (P2 + P3)**.
-- The project **README** carries the summary above, so the project page answers "what is the plan"
-  without a link-click.
-- The project **short description** states the goal in one line.
-
-Two API limits worth knowing before editing views by script:
-
-- **Grouping and sorting are UI-only.** `ProjectV2View.groupByFields` and `sortByFields` are readable
-  but not settable — `ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`. So "group by
-  Milestone" is one click per view, and a script cannot finish the job.
-- **Filters are not validated, and the field name must be the slug.** `updateProjectV2View` accepts
-  any string, including `nosuchfield:xyz`. A filter referring to a field that is not an exact slug
-  (lower-case, spaces to hyphens — `critical-path:Yes`, not `"Critical path":Yes`) matches **nothing**
-  rather than everything, so a typo shows an empty view and reports no error. Check a filter's count
-  before trusting it:
+- **Grouping and sorting are UI-only.** `ProjectV2View.groupByFields` and `sortByFields` are readable but
+  not settable — `ProjectV2ViewConfigurationInput` accepts only `visibleFieldIds`. A script can create a
+  view, name it, set its layout and filter, and still not finish it. **Group `Roadmap (by phase)` by
+  `Milestone`** by hand.
+- **Filters are not validated, and a field name must be the exact slug.** `updateProjectV2View` accepts
+  `nosuchfield:xyz` without complaint, so acceptance is not evidence. `critical-path:Yes` matches the six
+  intended items; `"Critical path":Yes` matches **nothing**. A typo therefore shows an empty view and
+  reports no error, so check a filter's count first:
 
   ```bash
   gh api graphql -f query='query($p:ID!,$q:String){ node(id:$p){ ... on ProjectV2 {
     items(first:100,query:$q){ totalCount } } } }' \
     -f p=PVT_kwHOACw01s4BmAfF -f q='critical-path:Yes' --jq '.data.node.items.totalCount'
   ```
+- **Projects are not in git.** Field and milestone edits have no diff and no review, which is the
+  reason a decision whose *rationale* matters belongs in this document instead. Moving an issue between
+  milestones does not need a PR; changing a gate should be considered a decision worth recording here.
 
-A **roadmap-layout** view is deliberately not created. The layout positions items by a date or
-iteration field, and this plan is gate-based rather than dated — adding dates would mean inventing a
-schedule to make a chart look populated. If a timeline is wanted, it needs two date fields and a
-stated target per phase, which is a commitment to make on purpose rather than as a side effect of
-choosing a layout.
+A **roadmap-layout** view is deliberately not created: that layout positions items by a date or
+iteration field, and this plan is gate-based. Adding dates to populate a chart would mean inventing a
+schedule. If a timeline is wanted, it needs two date fields and a stated target per phase — a commitment
+to make on purpose, not as a side effect of choosing a layout.
 
 ## Maintaining this document
 
