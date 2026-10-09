@@ -468,4 +468,5 @@ been reproduced on the merged content.
 | [`docs/README.md`](docs/README.md) | How to generate and check the docs. |
 | [`docs/Roadmap.md`](docs/Roadmap.md) | The plan: goal, phases, gates, debt policy, risks. Reasoning lives here; state lives in the GitHub milestones and project fields — the doc's "Where the plan lives" section is the contract between them. |
 | [`docs/RenderGraph-Library-Design.md`](docs/RenderGraph-Library-Design.md) | The library target architecture: the layer stack, per-concern boundaries, and decisions recorded with their triggers. |
+| [`docs/Consumers.md`](docs/Consumers.md) | Who consumes the library and the guarantees each relies on — the checkable form of the boundary. |
 | [Project board](https://github.com/users/v3c70r/projects/3) | Backlog, area, status, critical path, debt verdicts. |
