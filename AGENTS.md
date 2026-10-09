@@ -146,6 +146,11 @@ Operational notes, each of which has cost someone a red herring:
 - **`tests` does not depend on the `Shaders` target.** Build both — `cmake --build build --target
   tests Shaders` — or the tests fail at runtime on missing `.spv` files (they are loaded from
   `shaders/` relative to the *working directory*, not the source tree).
+- **Shader lists are CMake `GLOB`s, evaluated at configure time.** An existing build directory does not
+  see a newly added `.slang` file until it is reconfigured, so that one case fails with `Failed to open
+  file` while everything around it passes — and the fix is `cmake -S . -B build`, not the shader. Both
+  sessions on the specialization-constants PR hit it inside an hour, one of them after *adding* the shader
+  and building successfully in a different directory.
 - **`--clean-first` deletes the generated `.spv` files too**, so this trap also fires in an *existing*
   build directory, not just a fresh one: `cmake --build build --target tests --clean-first` (used to
   count warnings from a known state) empties `build/shaders/`, and the next run fails ten shader-loading
@@ -368,6 +373,14 @@ grep "\[test device\]" run.err                           # what this run actuall
 A zero warning count is suspicious, not clean — it can mean validation is not delivering messages
 at all (the `assert()`-gated messenger bug did exactly that, silently, in Release). Read the
 `[test device]` line before treating green as evidence about the cross-queue path.
+
+**Record the validation layer's version beside the counts, because a clean run is evidence about a
+*code + layer* pair and not about the code alone.** The specialization-constants PR is the worked
+example: `VUID-VkBufferMemoryBarrier2-dstAccessMask-03917` is enforced over the `ALL_COMMANDS` expansion
+by layer 1.4.363 and not by 1.4.313, so the same commit aborted every configuration on one machine and
+was clean on the other. Neither run was wrong; only one was seeing the barrier the code emits. The spec
+version is already in the VUID text the run prints (`.../view/1.4.363.0/...`), so it costs nothing to
+quote — and "no validation errors" without it is a claim about an unnamed pair.
 
 **Tooling without root.** Ubuntu packages extract locally:
 `apt-get download <pkg> && dpkg-deb -x <pkg>.deb <dir>`, run with
