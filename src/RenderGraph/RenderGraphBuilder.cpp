@@ -727,9 +727,15 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
 
     // Conservative stage masks: use ALL_COMMANDS so any prior stage is flushed and any later stage is blocked.
-    // HOST must be included explicitly so CPU-written (host-visible) buffers with HOST_WRITE srcAccess are valid.
+    // HOST must be included explicitly on *both* sides: ALL_COMMANDS does not imply it, and a barrier whose
+    // srcAccess or dstAccess is HOST_WRITE needs HOST in the matching stage mask
+    // (VUID-VkBufferMemoryBarrier2-dstAccessMask-03917 / -srcAccessMask-03916). The source side had it and
+    // the destination side did not, which went unnoticed until a GPU node wrote a STORAGE_BUFFER - the
+    // resolver's {STORAGE_BUFFER, WRITE} profile is HOST_WRITE, so the first such node emitted a barrier
+    // this rejected. The *semantic* fix, giving a GPU writer a SHADER_WRITE destination instead of a host
+    // profile, is #12's subject and deliberately not here.
     const VkPipelineStageFlags2 srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
-    const VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    const VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
 
     for (const auto& use : resourceUses)
     {
