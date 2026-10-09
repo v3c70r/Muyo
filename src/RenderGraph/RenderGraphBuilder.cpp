@@ -207,6 +207,46 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             }
         }
 
+        // Specialization constants. The ids are validated against the node's merged reflection first:
+        // the driver ignores map entries for constants a shader does not declare, so a typo would leave
+        // that constant on its baked default and surface as a wrong number far from the cause. The width
+        // comes from reflection rather than from the caller for the same reason.
+        std::vector<VkSpecializationMapEntry> specializationEntries;
+        std::vector<uint64_t> specializationValues;
+        specializationEntries.reserve(rgn.specializationConstants.size());
+        specializationValues.reserve(rgn.specializationConstants.size());
+        for (const SpecializationValue& supplied : rgn.specializationConstants)
+        {
+            const auto& reflected = mergedReflection.specializationConstants;
+            const auto it = std::find_if(reflected.begin(), reflected.end(),
+                                         [&supplied](const auto& constant) { return constant.id == supplied.id; });
+            if (it == reflected.end())
+            {
+                throw std::runtime_error("Node '" + rgn.name + "' supplies specialization constant " +
+                                         std::to_string(supplied.id) + ", which none of its shaders declares.");
+            }
+            if (it->size == 0 || it->size > sizeof(uint64_t))
+            {
+                throw std::runtime_error("Node '" + rgn.name + "' supplies specialization constant " +
+                                         std::to_string(supplied.id) + " whose reflected size (" +
+                                         std::to_string(it->size) + " bytes) is not 1-8 bytes.");
+            }
+            VkSpecializationMapEntry entry{};
+            entry.constantID = supplied.id;
+            entry.offset = static_cast<uint32_t>(specializationValues.size() * sizeof(uint64_t));
+            entry.size = it->size;
+            specializationEntries.push_back(entry);
+            specializationValues.push_back(supplied.value);
+        }
+        // The entries address the values as a fixed-stride blob, of which Vulkan reads `size` bytes per
+        // entry. It has to outlive the pipeline-creation calls below, which is why it lives here.
+        VkSpecializationInfo specializationInfo{};
+        specializationInfo.mapEntryCount = static_cast<uint32_t>(specializationEntries.size());
+        specializationInfo.pMapEntries = specializationEntries.empty() ? nullptr : specializationEntries.data();
+        specializationInfo.dataSize = specializationValues.size() * sizeof(uint64_t);
+        specializationInfo.pData = specializationValues.empty() ? nullptr : specializationValues.data();
+        const VkSpecializationInfo* pSpecializationInfo = specializationEntries.empty() ? nullptr : &specializationInfo;
+
         VkPipelineRenderingCreateInfo renderingInfo{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
             .colorAttachmentCount = static_cast<uint32_t>(colorAttachmentFormats.size()),
@@ -218,8 +258,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         {
             result.bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
             // Create pipeline
-            result.pipeline =
-                CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, result.pipelineLayout, renderingInfo);
+            result.pipeline = CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, result.pipelineLayout,
+                                                        renderingInfo, pSpecializationInfo);
         }
         else if (rgn.queueType == QueueType::COMPUTE)
         {
@@ -229,6 +269,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             stageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
             stageInfo.module = shaderModules.front();
             stageInfo.pName = "main";
+            stageInfo.pSpecializationInfo = pSpecializationInfo;
             VkComputePipelineCreateInfo pipelineInfo{};
             pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
             pipelineInfo.stage = stageInfo;
@@ -238,6 +279,15 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         }
         else if (rgn.queueType == QueueType::RAY_TRACING)
         {
+            // Refused rather than ignored: the ray tracing pipeline path does not apply specialization
+            // constants yet, and silently keeping the baked defaults is the failure this whole change
+            // exists to remove. Tracked by #62.
+            if (!rgn.specializationConstants.empty())
+            {
+                throw std::runtime_error("Ray tracing node '" + rgn.name +
+                                         "' supplies specialization constants, which the ray tracing pipeline path "
+                                         "does not apply yet (#62).");
+            }
             result.bindingPoint = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
             BuildRayTracingPipeline(result, rgn, rtShaderModules);
 
@@ -431,6 +481,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     rgn.async = nodeCreateInfo.async;
     rgn.costHint = nodeCreateInfo.costHint;
     rgn.attachmentClearValues = nodeCreateInfo.attachmentClearValues;
+    rgn.specializationConstants = nodeCreateInfo.specializationConstants;
 
     // Load shaders
     if (nodeCreateInfo.shaderNames.size() > static_cast<size_t>(MAX_SHADER_STAGES))
@@ -676,9 +727,15 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
 
     // Conservative stage masks: use ALL_COMMANDS so any prior stage is flushed and any later stage is blocked.
-    // HOST must be included explicitly so CPU-written (host-visible) buffers with HOST_WRITE srcAccess are valid.
+    // HOST must be included explicitly on *both* sides: ALL_COMMANDS does not imply it, and a barrier whose
+    // srcAccess or dstAccess is HOST_WRITE needs HOST in the matching stage mask
+    // (VUID-VkBufferMemoryBarrier2-dstAccessMask-03917 / -srcAccessMask-03916). The source side had it and
+    // the destination side did not, which went unnoticed until a GPU node wrote a STORAGE_BUFFER - the
+    // resolver's {STORAGE_BUFFER, WRITE} profile is HOST_WRITE, so the first such node emitted a barrier
+    // this rejected. The *semantic* fix, giving a GPU writer a SHADER_WRITE destination instead of a host
+    // profile, is #12's subject and deliberately not here.
     const VkPipelineStageFlags2 srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
-    const VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    const VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
 
     for (const auto& use : resourceUses)
     {

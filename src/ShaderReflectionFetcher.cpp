@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 
 #include "ShaderAsset.h"
 #include "VkRenderDevice.h"
@@ -154,9 +155,14 @@ ShaderReflection FetchShaderReflection(const SpirvCode& spirvCode)
                 ShaderReflection::SpecializationConstant sc;
                 sc.id = spec->constant_id;
                 sc.name = spec->name ? spec->name : "";
-                // TODO(qgu): make this work when we need to get SpecializationConstant
-                // sc.type = spec->format;
-                // sc.defaultValue = spec->default_value;
+                // Raw bytes, sized by the shader. The earlier TODO assumed a `format` field and a
+                // uint32_t value; reflection provides neither - it reports a type description and
+                // `default_value_size`, which is 8 for a 64-bit constant.
+                sc.size = spec->default_value_size;
+                if (spec->default_value != nullptr && spec->default_value_size <= sc.defaultValue.size())
+                {
+                    std::memcpy(sc.defaultValue.data(), spec->default_value, spec->default_value_size);
+                }
                 reflection.specializationConstants.push_back(sc);
             }
         }

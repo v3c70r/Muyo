@@ -24,7 +24,8 @@ PipelineStateBuilder& PipelineStateBuilder::SetShaderModule(VkShaderModule shade
     return *this;
 }
 
-PipelineStateBuilder& PipelineStateBuilder::setShaderModules(const std::vector<VkShaderModule>& shaderModules)
+PipelineStateBuilder& PipelineStateBuilder::setShaderModules(const std::vector<VkShaderModule>& shaderModules,
+                                                             const VkSpecializationInfo* pSpecializationInfo)
 {
     assert(shaderModules.size() == 2);
     m_vShaderStageInfos.reserve(shaderModules.size());
@@ -34,12 +35,14 @@ PipelineStateBuilder& PipelineStateBuilder::setShaderModules(const std::vector<V
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
     vertShaderStageInfo.module = shaderModules[0];
     vertShaderStageInfo.pName = "main";
+    vertShaderStageInfo.pSpecializationInfo = pSpecializationInfo;
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
     fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
     fragShaderStageInfo.module = shaderModules[1];
     fragShaderStageInfo.pName = "main";
+    fragShaderStageInfo.pSpecializationInfo = pSpecializationInfo;
 
     m_vShaderStageInfos = {vertShaderStageInfo, fragShaderStageInfo};
     return *this;
