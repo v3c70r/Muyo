@@ -124,6 +124,11 @@ Measured, not estimated:
 
 None of that blocks the first consumer; all of it blocks a second one.
 
+And the boundary is not self-assessed: [`Consumers.md`](Consumers.md) states which consumers exist and
+which guarantee each relies on, `holds` or `gap`, with the gap naming its issue. That is the checkable
+form of everything in this section — a guarantee with no consumer behind it is a guess, and a consumer
+with no guarantee named is a hidden dependency.
+
 ## Phases
 
 Each phase has a **gate** — the observable that must hold before the next phase starts. The gate, and
@@ -210,6 +215,14 @@ The union is deliberately broad: it is every issue whose slippage moves an end d
 it stops being useful, narrow the field to *what blocks the current phase* rather than widening the
 definition of "critical".
 
+**The field is scoped to this project.** It answers "whose slippage moves *Muyo's* end date", so a
+consumer's own schedule does not belong on it: `muyo-llm`'s M1 blocking list is tracked in muyo-llm's
+repository, and the issues here that block it are indexed in [`Consumers.md`](Consumers.md). A
+consumer-driven gap in the graph's capability is therefore usually `Critical path: No` even when it is
+on a consumer's path — the file is the cross-project index, and the field is not. Recording the scoping
+rather than leaving it implicit, because the two answers are both defensible and the field would
+otherwise be read differently by each session that touched it.
+
 ## Risks
 
 1. **The migration is deferred by one more graph feature.** This is the real risk, and the phase gates
@@ -225,11 +238,14 @@ definition of "critical".
    needs RT at parity** — `helloVulkan` renders it today, so the honest answer is "probably yes, not
    yet decided". Recorded with its trigger so `#14`/`#19` can be scheduled rather than re-argued each
    time someone asks.
-4. **The library is shaped by its first consumer, and never extracted.** The renderer's needs would become
-   the API by default, and every later client would inherit them. The mitigation is the split above —
-   A1.5 is the first concrete step, and the constraints table is the checklist — rather than a promise to
-   extract later. A second consumer that is *not* a renderer is the only real test of the boundary, so a
-   small compute-only example is worth more than any amount of interface design.
+4. **The library is shaped by its first consumer.** The renderer's needs become the API by default and
+   every later client inherits them. Mitigated on two fronts, and no longer hypothetically: A1.5's split
+   keeps presentation out of the library, and **a second consumer that is not a renderer now exists** —
+   `muyo-llm`, an LLM inference engine built on `muyo_rg`, owned by the same author as a permanent check
+   rather than a one-off experiment. [`Consumers.md`](Consumers.md) is that mitigation made checkable:
+   the guarantees each consumer relies on, `holds` or `gap`, with each gap naming its issue. The residual
+   risk is no longer the absence of a second consumer but the table going stale — which that file's own
+   rules place on the change that breaks a guarantee.
 5. **No CI (#22), so verification is manual — which is not the same as single-vendor.** The project has
    two machines on different vendors (RADV REMBRANDT and an RTX 3090, both with a dedicated compute
    family), and the runbook in AGENTS.md section 6 already treats a hardware re-run as part of review.
@@ -276,6 +292,13 @@ Three API limits worth knowing before editing any of this by script:
 - **Projects are not in git.** Field and milestone edits have no diff and no review, which is the
   reason a decision whose *rationale* matters belongs in this document instead. Moving an issue between
   milestones does not need a PR; changing a gate should be considered a decision worth recording here.
+
+**`Area` classifies where a change is, not why.** A consumer-driven gap in pipeline compilation is
+`Graph API`; the consumer is named in the issue body and in `Consumers.md`. `Adoption` is reserved for a
+rendering pipeline adopting the graph — the P2 migration — rather than for library-boundary work that
+happens to be consumer-driven, because the same change for a renderer reason would otherwise land in a
+different area than for a consumer reason. Each option carries its own description on the board, so the
+vocabulary is visible where it is used.
 
 A **roadmap-layout** view is deliberately not created: that layout positions items by a date or
 iteration field, and this plan is gate-based. Adding dates to populate a chart would mean inventing a
