@@ -295,11 +295,15 @@ struct PSODesc
 /// @param shaderModuels  Vertex shader module followed by the fragment shader module.
 /// @param pipelineLayout Pipeline layout (descriptor sets and push constants).
 /// @param renderingInfo  Dynamic-rendering attachment formats.
+/// @param pSpecializationInfo Values for the shaders' specialization constants, applied to both stages,
+///        or nullptr. Entries naming a constant a stage does not declare are ignored by Vulkan, so one
+///        map can serve both.
 /// @return The created pipeline (caller owns it).
 inline VkPipeline CreatePipelineFromPSODesc(const PSODesc& psoDesc, VkDevice vkDevice,
                                             const std::vector<VkShaderModule>& shaderModuels,
                                             VkPipelineLayout pipelineLayout,
-                                            VkPipelineRenderingCreateInfo renderingInfo)
+                                            VkPipelineRenderingCreateInfo renderingInfo,
+                                            const VkSpecializationInfo* pSpecializationInfo = nullptr)
 {
     // Create pipeline
     PipelineStateBuilder psoBuilder;
@@ -356,7 +360,7 @@ inline VkPipeline CreatePipelineFromPSODesc(const PSODesc& psoDesc, VkDevice vkD
     }
     psoBuilder.setVertextInfo(indexDescs, attributeDescs);
 
-    VkPipeline pipeline = psoBuilder.setShaderModules(shaderModuels)
+    VkPipeline pipeline = psoBuilder.setShaderModules(shaderModuels, pSpecializationInfo)
                               .setAssembly(iaBuilder.Build())
                               .setDynamicStates(dynamicStates)
                               .setRasterizer(rsBuilder.Build())

@@ -32,6 +32,17 @@ using ResourceDescRegistry = std::unordered_map<ResourceHandle, ResourceDesc>;
 /// Maximum number of shader stages a node may declare (vertex + fragment, or raygen/miss/hit...).
 static constexpr int MAX_SHADER_STAGES = 8;
 
+/// A value supplied for one of a shader's specialization constants.
+///
+/// Its width is deliberately absent: the shader's reflection knows whether the constant is 8, 16, 32 or
+/// 64 bits, so the graph takes the width from there. A caller therefore cannot disagree with the shader
+/// about the size of its own constant, which is the failure a raw byte array invites.
+struct SpecializationValue
+{
+    uint32_t id = 0;     ///< The `constant_id` the shader declared.
+    uint64_t value = 0;  ///< Interpreted as the constant's declared width, little-endian.
+};
+
 /// User-facing declaration of a single render graph node (pass).
 struct RenderGraphNodeCreateInfo
 {
@@ -43,6 +54,15 @@ struct RenderGraphNodeCreateInfo
     bool async = false;
     std::vector<ResourceUse> resourceUses;  ///< Resources the node reads/writes.
     std::vector<std::string> shaderNames;   ///< Shader names for graphics (vert+frag) or compute.
+    /// Values for this node's shader specialization constants, by `constant_id`.
+    ///
+    /// A shader that declares a constant and is not given one keeps the default baked into its SPIR-V,
+    /// which is rarely what a caller wants: llama.cpp's compute shaders make the workgroup size and the
+    /// operand types specialization constants, so the baked defaults read out of bounds or compute the
+    /// wrong shape. An id that none of the node's shaders declare is a Build() error rather than an
+    /// ignored entry, because the driver ignores unknown ids silently and the symptom would be a wrong
+    /// number rather than a failure.
+    std::vector<SpecializationValue> specializationConstants;
     /// Ray tracing only: ray generation / miss / closest-hit shader names, in that order.
     /// When queueType == RAY_TRACING these are compiled into a ray tracing pipeline (with a
     /// graph-managed shader binding table) and the node automatically issues vkCmdTraceRaysKHR
@@ -128,6 +148,7 @@ private:
         PSODesc psoDesc = {};
         uint32_t costHint = 1;
         std::vector<VkClearValue> attachmentClearValues;
+        std::vector<SpecializationValue> specializationConstants;
         RenderGraphNodeCallback execute;
     };
 

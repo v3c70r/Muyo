@@ -1,4 +1,6 @@
 #pragma once
+#include <array>
+#include <cstddef>
 #include <cstdint>
 namespace Muyo
 {
@@ -62,15 +64,22 @@ struct ShaderReflection
     };
     std::vector<EntryPoint> entryPoints;
 
+    /// A shader specialization constant, as the SPIR-V declares it.
+    ///
+    /// The value is raw rather than typed because that is what reflection reports: a type description
+    /// plus a byte size, not one of the `SpvReflectFormat` values an earlier revision assumed (there is
+    /// no `format` field on the reflect struct at all, which is why the original fill-in was left as a
+    /// TODO). Raw is also what `VkSpecializationInfo` consumes, and it is correct where a `uint32_t`
+    /// was not: a 64-bit constant's default is 8 bytes.
     struct SpecializationConstant
     {
-        uint32_t id;
-        std::string name;
-        uint32_t type;
-        uint32_t defaultValue;
+        uint32_t id = 0;                          ///< `constant_id` as declared by the shader.
+        std::string name;                         ///< Debug name, from reflection.
+        uint32_t size = 0;                        ///< Default size in bytes: 4 for 8/16/32-bit, 8 for 64-bit.
+        std::array<std::byte, 8> defaultValue{};  ///< Little-endian raw bytes; the first `size` are meaningful.
         bool operator==(const SpecializationConstant& other) const
         {
-            return id == other.id && name == other.name && type == other.type && defaultValue == other.defaultValue;
+            return id == other.id && name == other.name && size == other.size && defaultValue == other.defaultValue;
         }
     };
     std::vector<SpecializationConstant> specializationConstants;

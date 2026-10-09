@@ -124,7 +124,7 @@ Comparison operation used by depth/stencil state.
 | `GREATER_EQUAL` | Passes if greater or equal. |
 | `ALWAYS` | Always passes. |
 
-### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineLayout pipelineLayout, VkPipelineRenderingCreateInfo renderingInfo)`
+### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineLayout pipelineLayout, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr)`
 
 Build a graphics pipeline from a PSODesc using dynamic rendering.
 
@@ -315,6 +315,7 @@ User-facing declaration of a single render graph node (pass).
 | `bool async` | Opt-in: only when set (and queueType == COMPUTE) may the node be scheduled on the dedicated async compute queue and run concurrently with the graphics queue. Without it the node is recorded on the graphics queue, so no cross-queue synchronization is generated for it. |
 | `std::vector< ResourceUse > resourceUses` | Resources the node reads/writes. |
 | `std::vector< std::string > shaderNames` | Shader names for graphics (vert+frag) or compute. |
+| `std::vector< SpecializationValue > specializationConstants` | Values for this node's shader specialization constants, by constant_id. |
 | `std::vector< std::string > rtShaderNames` | Ray tracing only: ray generation / miss / closest-hit shader names, in that order. When queueType == RAY_TRACING these are compiled into a ray tracing pipeline (with a graph-managed shader binding table) and the node automatically issues vkCmdTraceRaysKHR over the extent of its first STORAGE_IMAGE resource. Resources are bound by their explicit DescriptorBinding (reflection-derived set/binding), so a node can bind the TLAS, storage images and uniform buffers it declares. |
 | `PSODesc psoDesc` | Graphics pipeline state (ignored for compute/RT). |
 | `uint32_t costHint` | Reserved for the future scheduler. |
@@ -324,6 +325,15 @@ User-facing declaration of a single render graph node (pass).
 ### `std::unordered_map< ResourceHandle, ResourceDesc > ResourceDescRegistry`
 
 Map of every declared resource handle to its allocation description.
+
+### `struct Muyo::RenderGraph::SpecializationValue`
+
+A value supplied for one of a shader's specialization constants.
+
+| Member | Description |
+| --- | --- |
+| `uint32_t id` | The constant_id the shader declared. |
+| `uint64_t value` | Interpreted as the constant's declared width, little-endian. |
 
 
 ## `RenderGraphDescriptorSets.h`

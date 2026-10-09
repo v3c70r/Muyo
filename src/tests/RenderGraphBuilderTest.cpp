@@ -568,6 +568,77 @@ void RecordEmptyCommandBuffers(const RenderGraphExecutor::ExecutionSlot& slot)
 }
 }  // namespace
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants reach the compiled pipeline",
+                 "[RenderGraphBuilder]")
+{
+    // #62. The graph reflected a shader's specialization constants and never applied them, so every
+    // constant kept the value baked into its SPIR-V. That is invisible to the renderer, whose shaders do
+    // not use them, and fatal to a consumer that does: llama.cpp's compute shaders make the workgroup
+    // size and the operand types constants, so the baked defaults read out of bounds or compute the
+    // wrong shape - a wrong number rather than an error.
+    //
+    // The shader stores both constants straight into a storage buffer, so the test distinguishes a
+    // value supplied at pipeline creation from the default (1234 and 1). Revert the wiring in
+    // CompileRenderGraphNode and this reads the defaults instead.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource(
+        "SpecOut", BufferResourceDesc{.count = 2,
+                                      .stride = sizeof(uint32_t),
+                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    RenderGraphNodeCreateInfo node{
+        .nodeName = "SpecConstantNode",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("SpecOut"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"testSpecConstant.comp.slang"},
+        .specializationConstants = {{.id = 0, .value = 7}, {.id = 1, .value = 3}},
+        .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
+
+    builder.AddNode(node);
+    builder.Build();
+    builder.Execute();
+
+    // Reachable from outside because AddResource registers the created resource with the resource
+    // manager under the handle name; ResolveResource is private to the builder.
+    auto* pOut = GetRenderResourceManager()->GetResource<BufferResource>("SpecOut");
+    REQUIRE(pOut != nullptr);
+
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 2 * sizeof(uint32_t));
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.buffer = pOut->buffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            dependency.bufferMemoryBarrierCount = 1;
+            dependency.pBufferMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(cmdBuf, &dependency);
+
+            VkBufferCopy region{};
+            region.size = 2 * sizeof(uint32_t);
+            vkCmdCopyBuffer(cmdBuf, pOut->buffer(), readback.buffer(), 1, &region);
+        });
+
+    const uint32_t* pValues = static_cast<const uint32_t*>(readback.Map());
+    INFO("constant 0 = " << pValues[0] << ", constant 1 = " << pValues[1]);
+    CHECK(pValues[0] == 7);
+    CHECK(pValues[1] == 3);
+    readback.Unmap();
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a multi-segment handover completes through timeline values",
                  "[RenderGraphBuilder]")
 {

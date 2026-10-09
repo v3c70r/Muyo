@@ -21,7 +21,11 @@ class PipelineStateBuilder
 public:
     PipelineStateBuilder& SetShaderModule(VkShaderModule shaderModule, VkShaderStageFlagBits shaderStageBit);
 
-    PipelineStateBuilder& setShaderModules(const std::vector<VkShaderModule>& shaderModules);
+    /// @param shaderModules Vertex shader module followed by the fragment shader module.
+    /// @param pSpecializationInfo Applied to both stages; entries naming constants a stage does not
+    ///        declare are ignored by Vulkan, so one map can serve both.
+    PipelineStateBuilder& setShaderModules(const std::vector<VkShaderModule>& shaderModules,
+                                           const VkSpecializationInfo* pSpecializationInfo = nullptr);
 
     PipelineStateBuilder& setVertextInfo(const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
                                          const std::vector<VkVertexInputAttributeDescription>& attribDescriptions);
