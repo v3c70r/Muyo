@@ -7,6 +7,11 @@
 #include <string>
 
 #if defined(_WIN32)
+// windows.h defines min/max as macros unless NOMINMAX is set, which breaks any translation
+// unit that later uses std::min/std::max or std::numeric_limits<T>::max().
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <dlfcn.h>
