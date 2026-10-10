@@ -390,6 +390,12 @@ matters — include-block handling differs across versions and the format verdic
 
 **Teeth, attribution, flakes.**
 
+- *Absence claims:* a grep that finds no guard, no pattern or no count proves nothing about the
+  forms it did not search for. Platform guards come in at least two idioms (`#if defined(_WIN32)`
+  ... `#else`, and `#if defined(__unix__)` ... `#else`) - calling a file "unguarded" after grepping
+  only one manufactured a false blocking finding on #61, and a count whose pattern required a
+  leading `//` was off by one on #52. An absence claim names every pattern it ruled out.
+
 - *Teeth:* revert the fix — or mutate the guard it added — in the local worktree, rebuild, and
   watch the test fail with the expected symptom. Revert the mutation afterwards.
 - *Attribution:* when a defect is found, build the PR's base commit the same way and run the same
