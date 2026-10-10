@@ -44,7 +44,7 @@ tracking issue and, where it blocks a consumer, is marked.
 | Device, allocator and descriptor allocation are injected, not global | muyo-llm | **gap** | #53 |
 | A stated public surface (what is API and what is detail) | all | **gap** | #53 |
 | Specialization constants are applied at pipeline creation | muyo-llm | holds | — |
-| Cooperative matrix can be enabled at device creation | muyo-llm | **gap, blocks M1** | #63 |
+| Cooperative matrix can be enabled at device creation | muyo-llm | **gap** | #63 |
 | A client can supply SPIR-V bytes / a shader search path, not only a file name | muyo-llm | **gap** | #53 |
 | Declaration errors fail at `Build()`, naming the graph entity | muyo-llm | **gap** | #55 |
 
