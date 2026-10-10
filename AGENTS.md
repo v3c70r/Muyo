@@ -463,6 +463,28 @@ been reproduced on the merged content.
   saying which case it was, so read that line before treating a green run as evidence about
   transfers. A machine with one queue family takes the single-queue path, which is a legitimate
   configuration rather than a failure, but it cannot validate handover machinery.
+- **AMDVLK ships an *implicit* layer that replaces device enumeration, not just adds a driver.** With
+  `VK_LAYER_AMD_switchable_graphics_64` active (its manifest is in `/etc/vulkan/implicit_layer.d/`, so the
+  loader enables it for every application), `vulkaninfo` and every app see **only AMDVLK's device** — RADV
+  and llvmpipe disappear from the list, and `devices[0]` stops being RADV. Verified here: without it three
+  devices enumerate (RADV, AMDVLK, llvmpipe) and RADV is first; with it, one.
+
+  The session sets `DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1=1` in `~/.config/environment.d/`, so RADV stays
+  the default for the desktop and for shells after a re-login. **Select AMDVLK explicitly when it is wanted**
+  — it is the only device here with `VK_KHR_cooperative_matrix`:
+
+  ```bash
+  VK_DRIVER_FILES=/etc/vulkan/icd.d/amd_icd64.json <program>     # VK_ICD_FILENAMES is the deprecated alias
+  ```
+
+  Two consequences for verification. A re-run of a PR whose table says `RADV REMBRANDT` will report AMDVLK
+  until the environment applies, and that is the environment rather than a regression — read the
+  `[test device]` line. And the cooperative-matrix property sets **differ by device**: AMDVLK offers
+  `F16/F16->F32 M=16 N=8 K=16` shapes (16x16x16 among them), llvmpipe offers `M=8 N=8 K=8`. A test that
+  assumes a shape is testing the device, not the code.
+
+  The cleaner fix is to remove the layer registration itself, which needs root and covers processes that do
+  not inherit the user environment: `sudo mv /etc/vulkan/implicit_layer.d/amd_icd64.json{,.disabled}`.
 - `thirdparty/*` submodules frequently show as dirty. Do not commit submodule pointer churn unless
   the pointer change is intentional.
 
