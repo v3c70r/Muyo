@@ -4,6 +4,19 @@ Companion to [Roadmap.md](Roadmap.md). The roadmap says *when*; this says *what 
 No part of this is implemented — it is the shape to build toward, written down while there is one
 consumer so the second one is not what discovers it.
 
+## Decisions, with their triggers
+
+Each of these names what would reopen it, so a session arriving without history can tell a settled
+question from an open one instead of re-arguing it. The sections below carry the reasoning; this is the
+index.
+
+| Decision | Reopened by | Where |
+| --- | --- | --- |
+| The public surface is C++ headers; a C ABI is a later wrapper | a consumer that cannot use C++ headers | §1 below |
+| `muyo_device` is a shared library, not an inverted dependency | a client that cannot take the shared library | §2 below |
+| Error reporting is unresolved, deliberately | deciding it, or a consumer that cannot act on the errors we report | §3 below |
+| No C++ modules: fix the paths and add an export set instead | the surface is split (#53) **and** a consumer asks for a module | the packaging section |
+
 ## The stack
 
 The proposal was `RenderDevice → RenderGraph → RenderPipeline`. That is right, with three corrections:
@@ -59,7 +72,7 @@ several are currently on the wrong side of it.
 | Swapchain, present, frame pacing | **host** | — | Not the graph's, not the pipeline's. |
 | Validation-layer enablement | **host** | — | See below; this is currently the device's and should not be. |
 
-## Three decisions
+## Decisions
 
 ### 1. C++ headers now; a C ABI is a later wrapper
 
@@ -103,6 +116,87 @@ validation layer, a debug messenger, and their cost — an inference service doe
 So: instance/device/queues/memory stay in the device layer; **validation policy moves to the host**, with
 the device offering a debug-messenger hook it can be given. Until then, every consumer of the library
 gets validation whether it asked or not.
+
+## Packaging an external consumer, and why not C++ modules yet
+
+How an external application *takes* the library is a separate question from how the library is layered, and
+it is the one #68 is about. Measured before deciding.
+
+### What a consumer pays today
+
+One translation unit that includes only `RenderGraph/RenderGraphBuilder.h`, compiled with the flags the
+project itself uses. The provenance is part of the figure: these were reproduced on a second machine and
+the magnitude held while the counts did not, so an absolute number quoted without its machine is wrong.
+
+| | here — GCC 13.3, system Vulkan headers `VK_HEADER_VERSION 313` | reviewer's RTX 3090 box — SDK 1.4.363 |
+| --- | --- | --- |
+| transitive headers | **479** unique, **169** from `thirdparty/` | **541** raw / **502** unique, **147** from `thirdparty/` |
+| preprocessed lines | **178,394** | **135,153** |
+| compile time, trivial TU | **1.8 s** | **0.19 s** |
+
+What both agree on is the claim the numbers exist to support: hundreds of headers, six figures of
+preprocessed lines, paid per including translation unit, with `thirdparty/` a large fraction of it. The
+variance is header revision, raw-versus-unique counting and machine speed — none of which is the point.
+
+The public header reaches imgui, tinygltf, meshoptimizer, glm, SPIRV-Reflect and the engine's resource
+managers. That is the "every header under `src/RenderGraph/` is public today" constraint in numbers: the
+surface is not a surface, it is the engine. #53 is the fix, and nothing below replaces it.
+
+### Modules: feasible, and the wrong first move
+
+Feasibility was checked rather than assumed:
+
+| | |
+| --- | --- |
+| clang 21 | C++20 named modules work end to end — `.cppm` → `.pcm` → link → run |
+| g++ 13.3 | **no**; it treats `.cppm` as a linker input, and GCC 14 is the first release with real support |
+| g++ 14.2 / 15 | available from apt, so the floor is a decision rather than a constraint |
+| `import std` | unavailable — no libc++, and it needs CMake ≥ 3.30 against the 3.28 here |
+| generator | Ninja is the supported path for CMake's module scanning; this project uses Unix Makefiles and Ninja is not installed |
+
+None of that is disqualifying on its own. The reasons it is the wrong *first* move are:
+
+1. **Modularising today's surface is modularising the engine.** 479 headers behind one `import muyo_rg;` is
+   the same dependency graph with a better front door. Split first (#53), then the module is small enough to
+   be worth having.
+2. **Module artifacts are compiler-specific, and there is no cross-compiler ABI.** Demonstrated: GCC cannot
+   read a `.pcm` clang produced — `failed to read compiled module`. A *prebuilt* module therefore pins every
+   consumer to one compiler family and version, which is a harder ask than a header, and the opposite of
+   what a library with a second consumer in another project wants. The way out is to ship module *source*
+   and have each consumer compile it, which removes the pin but keeps the parse cost — amortised over their
+   translation units rather than paid per include, which is still the real win.
+3. **It does not address distribution.** #68 is `CMAKE_SOURCE_DIR` resolving to the consumer's root, 28
+   paths built from it, and `muyo_rg` declaring no dependencies. Modules change none of that; a consumer
+   still cannot configure the project.
+4. **The upside is narrower than it looks.** A module would *enforce* the boundary — the compiler rejects
+   reaching into internals, where a header split only reduces what is reachable — and that is a genuine
+   advantage, the same one #53 wants from a stated surface. But it is a second-order benefit next to
+   "the consumer cannot build the thing".
+
+**Decision: fix #68 with paths and declared dependencies, add install/export rules for the packaging case,
+and revisit modules with a trigger** — when the public surface has been split (#53) *and* a consumer asks for
+one. Recorded the same way as the C-ABI decision, so it can be revisited rather than re-argued.
+
+### What the embed drags across, stated rather than discovered
+
+#68 made embedding work. These are the properties that came with it, because "embeddable" that hides
+them is a different promise from the one the probe verified.
+
+**Development targets are guarded; build dependencies are not.** The demo app, the PSO compiler, the test
+suite and the docs check are `MUYO_TOP_LEVEL`-only, which is also what keeps the Catch2 fetch — a network
+dependency on a framework the consumer will never build — out of an embedder's configure. Two things stay
+deliberately: VMA's `FetchContent`, because it is a build dependency of `muyo` rather than a development
+one, and the `Shaders` target, because it costs no network and a consumer may want this project's
+shaders — which means an embed building `all` still compiles them.
+
+**The embed still requires network, for VMA.** A consumer with no network access cannot configure at all,
+not because of the tests but because `vk_mem_alloc.h` is fetched from GitHub and is on the public header
+path. Vendoring it, or accepting a system copy, is a packaging decision and belongs with #73.
+
+**Target names are global.** `glfw`, `imgui`, `imnodes`, `stb`, `tinyobj`, `tinygltf` and `meshoptimizer`
+are declared in the consumer's namespace once this project is a subdirectory, so a consumer embedding
+another copy of any of them gets a redefinition error naming neither project. Aliases or a name prefix are
+the standard cures and they belong with #73, not with #68.
 
 ## Consumers include coding agents
 
