@@ -110,26 +110,18 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "VkRenderDevice: the cooperative-matrix 
     INFO("unavailable - this device is RADV, which does not expose it; see AGENTS.md section 8");
     CHECK(pDevice->IsCooperativeMatrixSupported() == bExposesExtension);
 
-    // Which branch this machine provides, said out loud. A green run on a device without the extension says
-    // nothing about the positive branch, and a silent skip is how that gets forgotten.
-    if (pDevice->IsCooperativeMatrixSupported())
-    {
-        const auto& vProperties = pDevice->GetCooperativeMatrixProperties();
-        REQUIRE_FALSE(vProperties.empty());
-        for (const VkCooperativeMatrixPropertiesKHR& properties : vProperties)
-        {
-            // Shapes are the point of the query: a caller reads them because they differ by device
-            // (AMDVLK 16x16x16, llvmpipe 8x8x8), so a zero anywhere means the query filled nothing.
-            CHECK(properties.MSize > 0);
-            CHECK(properties.NSize > 0);
-            CHECK(properties.KSize > 0);
-        }
-    }
-    else
+    // Nothing here enumerates property sets, deliberately. The fetch runs only for a caller that requests
+    // the extension - this environment does not, because the renderer must not require cooperative matrix -
+    // and enumerating them dereferences a driver dispatch entry that some driver + layer combinations leave
+    // NULL (#72), where the crash *is* the probe. So the shape assertions belong to a consumer that asks;
+    // what this asserts is the contract either side of that request.
+    INFO("this machine's device " << (bExposesExtension ? "exposes" : "does not expose")
+                                  << " VK_KHR_cooperative_matrix");
+    CHECK(pDevice->GetCooperativeMatrixProperties().empty());
+    if (!bExposesExtension)
     {
         WARN(
-            "this device does not expose VK_KHR_cooperative_matrix, so the positive branch of the query is "
-            "not covered by this run");
-        CHECK(pDevice->GetCooperativeMatrixProperties().empty());
+            "no cooperative matrix on this device, so the supported branch is not covered by this run - "
+            "AMDVLK exposes it here, RADV does not");
     }
 }

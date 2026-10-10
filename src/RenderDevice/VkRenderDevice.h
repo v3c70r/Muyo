@@ -89,12 +89,17 @@ public:
     ///         feature that gates it. Queried at device creation; false before `CreateDevice` runs.
     bool IsCooperativeMatrixSupported() const { return m_bCooperativeMatrixSupported; }
 
-    /// @return The cooperative-matrix property sets the device advertises - which shapes and component
-    ///         types it can actually compute - or empty when the extension is unsupported.
+    /// @return The cooperative-matrix property sets - which shapes and component types the device can
+    ///         actually compute - or empty when the extension is unsupported **or was not requested**.
     ///
-    /// A caller must read this rather than assume a shape. The sets differ by driver: on this machine
-    /// AMDVLK advertises `F16/F16->F32` at 16x16x16 among eleven sets while llvmpipe advertises 8x8x8, so
-    /// a constant in the code would be testing the driver rather than the kernel (AGENTS.md section 8).
+    /// Fetched only for a caller that asked for the extension. Enumerating the sets dereferences a driver
+    /// dispatch entry that some driver + validation-layer combinations leave NULL (#72), and that cannot be
+    /// probed for safely because the crash *is* the probe. So a renderer that never asks pays nothing, and a
+    /// consumer that asks gets the shapes it needs to pick a kernel.
+    ///
+    /// Read them rather than assuming a shape: the sets differ by device. On this machine AMDVLK advertises
+    /// `F16/F16->F32` at 16x16x16 among eleven sets while llvmpipe advertises 8x8x8, so a constant in the
+    /// code would be testing the driver rather than the kernel (AGENTS.md section 8).
     const std::vector<VkCooperativeMatrixPropertiesKHR>& GetCooperativeMatrixProperties() const
     {
         return m_vCooperativeMatrixProperties;

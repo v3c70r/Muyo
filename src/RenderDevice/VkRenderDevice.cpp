@@ -337,8 +337,18 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
         m_bCooperativeMatrixSupported = supportedCooperativeMatrix.cooperativeMatrix == VK_TRUE;
     }
 
-    if (bCooperativeMatrixRequested && m_bCooperativeMatrixSupported)
+    if (bCooperativeMatrixRequested)
     {
+        // Reaching here means the extension is present, because the check above throws otherwise. The
+        // feature is what gates it, and a caller that asked has to hear about a feature that is false here
+        // rather than discover it at the first dispatch - the extension case is loud, so this one is too.
+        if (!m_bCooperativeMatrixSupported)
+        {
+            throw std::runtime_error(std::string("Device '") + deviceProperties.deviceName + "' exposes " +
+                                     VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME +
+                                     " but reports cooperativeMatrix = VK_FALSE, so it cannot be enabled");
+        }
+
         // Enable rather than merely query: the feature that gates the extension has to be on the chain,
         // and this struct is the device's own so that it outlives vkCreateDevice.
         m_cooperativeMatrixFeatures.cooperativeMatrix = VK_TRUE;
@@ -347,10 +357,12 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
         ExtensionHeader* pLastFeature = reinterpret_cast<ExtensionHeader*>(&features2);
         while (pLastFeature->pNext != nullptr) pLastFeature = reinterpret_cast<ExtensionHeader*>(pLastFeature->pNext);
         pLastFeature->pNext = &m_cooperativeMatrixFeatures;
-    }
 
-    if (m_bCooperativeMatrixSupported)
-    {
+        // Property sets are fetched *only* here, for a caller that asked for the extension, and deliberately
+        // not as part of the always-on support query. Enumerating them can dereference a NULL dispatch entry
+        // in the validation chassis on some driver + layer combinations - a cross-stack fault reported on an
+        // RTX 3090 with VVL 1.4.363 (see #72) - and there is no way to probe for that safely, because the
+        // crash *is* the probe. A renderer that never requests cooperative matrix never runs it.
         const auto pfnGetCooperativeMatrixProperties =
             reinterpret_cast<PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR>(
                 vkGetInstanceProcAddr(m_instance, "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"));
@@ -373,11 +385,16 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     }
 
     // One line, because which device a run used is what makes a green result mean anything, and whether it
-    // can do cooperative matrix is the difference between two branches of the same test.
+    // can do cooperative matrix is the difference between two branches of the same test. "Enabled" says the
+    // caller asked and the feature was set, which is also when property sets were fetched.
     if (m_bCooperativeMatrixSupported)
     {
-        std::cerr << "[device] " << deviceProperties.deviceName << ": VK_KHR_cooperative_matrix available, "
-                  << m_vCooperativeMatrixProperties.size() << " property sets" << std::endl;
+        std::cerr << "[device] " << deviceProperties.deviceName << ": VK_KHR_cooperative_matrix available";
+        if (bCooperativeMatrixRequested)
+        {
+            std::cerr << ", enabled, " << m_vCooperativeMatrixProperties.size() << " property sets";
+        }
+        std::cerr << std::endl;
     }
     else
     {
