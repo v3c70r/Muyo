@@ -221,6 +221,10 @@ The union is deliberately broad: it is every issue whose slippage moves an end d
 it stops being useful, narrow the field to *what blocks the current phase* rather than widening the
 definition of "critical".
 
+**A closed issue clears its mark**, because the field answers whose slippage moves an end date and a
+closed item has no slippage left. #11 is the first case: it closed with A1.5 delivered (as the split), and
+leaving it marked would have the Critical path view claiming a finished item still decides the schedule.
+
 **The field is scoped to this project.** It answers "whose slippage moves *Muyo's* end date", so a
 consumer's own schedule does not belong on it: `muyo-llm`'s M1 blocking list is tracked in muyo-llm's
 repository, and the issues here that block it are indexed in [`Consumers.md`](Consumers.md). A
