@@ -49,7 +49,7 @@ record a **verdict that no field holds** — including for work that was never f
 
 | | Lines | State |
 | --- | --- | --- |
-| `src/RenderGraph/` | 3,154 | Drives the **tests only**. Foundation, sync2, executor in flight. |
+| `src/RenderGraph/` | 3,381 | Drives the **tests only**. Foundation, sync2, timeline execution, spec-constant pipelines. |
 | `src/RenderPasses/` | 4,403 | What actually renders: 11 pass instantiations (10 distinct types) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. |
 | `src/app/helloVulkan.cpp` | 374 | Owns the frame loop and hand-rolled semaphores. |
 
@@ -88,6 +88,12 @@ waits on, and how it then presents is its own business.
   library's timelines. `helloVulkan` needs it; an inference client does not.
 
 ### Constraints to respect from here
+
+**This table owns *why* a constraint is expensive to retrofit; [`Consumers.md`](Consumers.md) owns
+*who depends on it and whether it holds*.** They list overlapping subjects by design — a constraint with
+no consumer behind it is a guess, and a consumer with no constraint named is a hidden dependency — but
+each fact has one owner: adding a constraint means a row here for the reasoning and a row there for the
+state, and neither should try to carry the other's half.
 
 | Constraint | Why it is expensive to retrofit |
 | --- | --- |
@@ -174,7 +180,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | 25 occurrences of the string `TODO` under `src/`, and exactly one names what will handle it. Twenty-four are `//` markers (my first count said 24 because the pattern required a `//`); the twenty-fifth is `assert("TODO: update node date")` in `Scene.cpp`, which asserts **nothing** — a string literal is always non-null — so it is worse than a marker, because it reads like a check. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible, which is the failure this whole document exists to avoid. |
+| **TODO hygiene** | Of the `TODO` markers under `src/`, one names what will handle it (`ResourceBarrier.cpp:64`, `TODO(A2)`) and the rest name nothing. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted here, because the count moved twice while this document was being reviewed and a number is the part that rots. One is worse than a marker: `assert("TODO: update node date")` in `Scene.cpp` asserts **nothing** (a string literal is always non-null), so it reads like a check. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible, which is the failure this document exists to avoid. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
@@ -215,6 +221,10 @@ The union is deliberately broad: it is every issue whose slippage moves an end d
 it stops being useful, narrow the field to *what blocks the current phase* rather than widening the
 definition of "critical".
 
+**A closed issue clears its mark**, because the field answers whose slippage moves an end date and a
+closed item has no slippage left. #11 is the first case: it closed with A1.5 delivered (as the split), and
+leaving it marked would have the Critical path view claiming a finished item still decides the schedule.
+
 **The field is scoped to this project.** It answers "whose slippage moves *Muyo's* end date", so a
 consumer's own schedule does not belong on it: `muyo-llm`'s M1 blocking list is tracked in muyo-llm's
 repository, and the issues here that block it are indexed in [`Consumers.md`](Consumers.md). A
@@ -244,8 +254,12 @@ otherwise be read differently by each session that touched it.
    `muyo-llm`, an LLM inference engine built on `muyo_rg`, owned by the same author as a permanent check
    rather than a one-off experiment. [`Consumers.md`](Consumers.md) is that mitigation made checkable:
    the guarantees each consumer relies on, `holds` or `gap`, with each gap naming its issue. The residual
-   risk is no longer the absence of a second consumer but the table going stale — which that file's own
-   rules place on the change that breaks a guarantee.
+   risk is no longer the absence of a second consumer but two things that file cannot fix itself: the
+   table going stale (which its rules place on the change that breaks a guarantee), and the fact that
+   **the boundary check now runs in another repository**. muyo-llm compiling against the public surface
+   is the strongest evidence the surface is real, and nothing here runs it — with no CI (#22) that check
+   is manual and happens when someone remembers. Worth a periodic build of the consumer against `master`,
+   and worth naming as a limitation rather than assuming the boundary is continuously verified.
 5. **No CI (#22), so verification is manual — which is not the same as single-vendor.** The project has
    two machines on different vendors (RADV REMBRANDT and an RTX 3090, both with a dedicated compute
    family), and the runbook in AGENTS.md section 6 already treats a hardware re-run as part of review.
