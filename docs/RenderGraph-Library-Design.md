@@ -4,6 +4,19 @@ Companion to [Roadmap.md](Roadmap.md). The roadmap says *when*; this says *what 
 No part of this is implemented — it is the shape to build toward, written down while there is one
 consumer so the second one is not what discovers it.
 
+## Decisions, with their triggers
+
+Each of these names what would reopen it, so a session arriving without history can tell a settled
+question from an open one instead of re-arguing it. The sections below carry the reasoning; this is the
+index.
+
+| Decision | Reopened by | Where |
+| --- | --- | --- |
+| The public surface is C++ headers; a C ABI is a later wrapper | a consumer that cannot use C++ headers | §1 below |
+| `muyo_device` is a shared library, not an inverted dependency | a client that cannot take the shared library | §2 below |
+| Error reporting is unresolved, deliberately | deciding it, or a consumer that cannot act on the errors we report | §3 below |
+| No C++ modules: fix the paths and add an export set instead | the surface is split (#53) **and** a consumer asks for a module | the packaging section |
+
 ## The stack
 
 The proposal was `RenderDevice → RenderGraph → RenderPipeline`. That is right, with three corrections:
@@ -59,7 +72,7 @@ several are currently on the wrong side of it.
 | Swapchain, present, frame pacing | **host** | — | Not the graph's, not the pipeline's. |
 | Validation-layer enablement | **host** | — | See below; this is currently the device's and should not be. |
 
-## Three decisions
+## Decisions
 
 ### 1. C++ headers now; a C ABI is a later wrapper
 
@@ -112,13 +125,18 @@ it is the one #68 is about. Measured before deciding.
 ### What a consumer pays today
 
 One translation unit that includes only `RenderGraph/RenderGraphBuilder.h`, compiled with the flags the
-project itself uses:
+project itself uses. The provenance is part of the figure: these were reproduced on a second machine and
+the magnitude held while the counts did not, so an absolute number quoted without its machine is wrong.
 
-| | |
-| --- | --- |
-| transitive headers | **479**, of which **169** are `thirdparty/` |
-| preprocessed lines | **178,394** |
-| compile time for a trivial TU | **1.8 s** |
+| | here — GCC 13.3, system Vulkan headers `VK_HEADER_VERSION 313` | reviewer's RTX 3090 box — SDK 1.4.363 |
+| --- | --- | --- |
+| transitive headers | **479** unique, **169** from `thirdparty/` | **541** raw / **502** unique, **147** from `thirdparty/` |
+| preprocessed lines | **178,394** | **135,153** |
+| compile time, trivial TU | **1.8 s** | **0.19 s** |
+
+What both agree on is the claim the numbers exist to support: hundreds of headers, six figures of
+preprocessed lines, paid per including translation unit, with `thirdparty/` a large fraction of it. The
+variance is header revision, raw-versus-unique counting and machine speed — none of which is the point.
 
 The public header reaches imgui, tinygltf, meshoptimizer, glm, SPIRV-Reflect and the engine's resource
 managers. That is the "every header under `src/RenderGraph/` is public today" constraint in numbers: the
@@ -158,6 +176,27 @@ None of that is disqualifying on its own. The reasons it is the wrong *first* mo
 **Decision: fix #68 with paths and declared dependencies, add install/export rules for the packaging case,
 and revisit modules with a trigger** — when the public surface has been split (#53) *and* a consumer asks for
 one. Recorded the same way as the C-ABI decision, so it can be revisited rather than re-argued.
+
+### What the embed drags across, stated rather than discovered
+
+#68 made embedding work. These are the properties that came with it, because "embeddable" that hides
+them is a different promise from the one the probe verified.
+
+**Development targets are guarded; build dependencies are not.** The demo app, the PSO compiler, the test
+suite and the docs check are `MUYO_TOP_LEVEL`-only, which is also what keeps the Catch2 fetch — a network
+dependency on a framework the consumer will never build — out of an embedder's configure. Two things stay
+deliberately: VMA's `FetchContent`, because it is a build dependency of `muyo` rather than a development
+one, and the `Shaders` target, because it costs no network and a consumer may want this project's
+shaders — which means an embed building `all` still compiles them.
+
+**The embed still requires network, for VMA.** A consumer with no network access cannot configure at all,
+not because of the tests but because `vk_mem_alloc.h` is fetched from GitHub and is on the public header
+path. Vendoring it, or accepting a system copy, is a packaging decision and belongs with #73.
+
+**Target names are global.** `glfw`, `imgui`, `imnodes`, `stb`, `tinyobj`, `tinygltf` and `meshoptimizer`
+are declared in the consumer's namespace once this project is a subdirectory, so a consumer embedding
+another copy of any of them gets a redefinition error naming neither project. Aliases or a name prefix are
+the standard cures and they belong with #73, not with #68.
 
 ## Consumers include coding agents
 
