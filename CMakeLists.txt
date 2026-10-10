@@ -6,6 +6,16 @@ project(Muyo)
 # embedded, which silently points every path built from them at the wrong tree (#68).
 set(MUYO_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 set(MUYO_BINARY_ROOT "${CMAKE_CURRENT_BINARY_DIR}")
+
+# True when this project is the root of the build. Everything guarded by it - the demo app, the PSO
+# compiler, the test suite, the docs check - is for developing this project rather than consuming it,
+# and the guard is what keeps the Catch2 fetch, a network dependency, out of an embedder's configure.
+# PROJECT_IS_TOP_LEVEL is the idiomatic spelling but needs CMake 3.21; this file declares 3.10, where
+# it would silently evaluate to false and the tests would quietly never be built.
+set(MUYO_TOP_LEVEL FALSE)
+if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(MUYO_TOP_LEVEL TRUE)
+endif()
 # Compile time features
 option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
 option (FEATURE_SYNCHRONIZATION2 "Compile with ray tracing feature" off)
@@ -271,12 +281,14 @@ file(GLOB PSOCompiler_SRC
     "src/app/PSOCompiler.cpp"
     )
 
+if (MUYO_TOP_LEVEL)
 add_executable(helloVulkan ${main_SRC})
 target_link_libraries(helloVulkan PUBLIC muyo)
 
 
 add_executable(PSOCompiler ${PSOCompiler_SRC})
 target_link_libraries(PSOCompiler PUBLIC muyo)
+endif()
 
 
 # Build glsl shaders
@@ -332,15 +344,23 @@ add_custom_target(
     DEPENDS ${SPIRV_BINARY_FILES}
     )
 
+if (MUYO_TOP_LEVEL)
 add_dependencies(helloVulkan Shaders)
 
 # Copy over asset
 add_custom_command(
     TARGET helloVulkan
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${PROJECT_SOURCE_DIR}/assets ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${MUYO_ROOT}/assets ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
     )
+endif()
 message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
+# Everything from here to the end of the docs block is a development concern: it declares targets a
+# consumer has no reason to build and, in the case of Catch2, fetches one over the network. Kept out
+# of an embedder's configure entirely (#68 review A1). The Shaders custom target stays unguarded -
+# it is a build dependency with no network cost, and a consumer may want this project's shaders.
+if (MUYO_TOP_LEVEL)
 
 # Tests
 
@@ -374,9 +394,11 @@ catch_discover_tests(tests)
 
 # Keep ImTextureID_Invalid consistent (see src/ImGuiUserConfig.h) across all imgui consumers.
 target_compile_definitions(muyo PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+if (MUYO_TOP_LEVEL)
 target_compile_definitions(helloVulkan PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
 target_compile_definitions(PSOCompiler PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
 target_compile_definitions(tests PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+endif()
 
 # ── RenderGraph API documentation ────────────────────────────────────────────
 # Doxygen + Python are optional. When both are present, `render_graph_docs`
@@ -403,6 +425,8 @@ if(DOXYGEN_EXECUTABLE AND Python3_Interpreter_FOUND)
 else()
     message(STATUS "RenderGraph docs disabled (doxygen/Python3 not found); see docs/README.md")
 endif()
+
+endif() # MUYO_TOP_LEVEL: tests, demo, PSO compiler, docs check
 
 # Disable tests for now until proper method has been found to load the gltf
 #add_executable(testSceneImporter
