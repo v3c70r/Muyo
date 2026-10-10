@@ -1,6 +1,8 @@
 #include "VkRenderDevice.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <iostream>
 #include <set>
 #include <stdexcept>
@@ -40,6 +42,26 @@ bool HasLayer(const std::vector<VkLayerProperties>& vSupportedLayers, const char
         if (strcmp(layerProperty.layerName, sName) == 0) return true;
     }
     return false;
+}
+
+bool HasDeviceExtension(const std::vector<VkExtensionProperties>& vSupportedExtensions, const char* sName)
+{
+    if (sName == nullptr) return false;
+    for (const auto& extensionProperty : vSupportedExtensions)
+    {
+        if (strcmp(extensionProperty.extensionName, sName) == 0) return true;
+    }
+    return false;
+}
+
+const char* FindUnsupportedDeviceExtension(const std::vector<const char*>& vRequestedExtensions,
+                                           const std::vector<VkExtensionProperties>& vSupportedExtensions)
+{
+    for (const char* sRequested : vRequestedExtensions)
+    {
+        if (!HasDeviceExtension(vSupportedExtensions, sRequested)) return sRequested;
+    }
+    return nullptr;
 }
 
 void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
@@ -276,6 +298,91 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
 
         // query support
         // This will qury support for the chain
+    }
+
+    // Requested device extensions. These used to be enabled blindly, so a name the device does not report
+    // reached vkCreateDevice and came back as VK_ERROR_EXTENSION_NOT_PRESENT - a bare result naming neither
+    // the extension nor the device. Checked here instead, so the failure says which of the two it was.
+    uint32_t nSupportedDeviceExtensionCount = 0;
+    VK_ASSERT(
+        vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &nSupportedDeviceExtensionCount, nullptr));
+    std::vector<VkExtensionProperties> vSupportedDeviceExtensions(nSupportedDeviceExtensionCount);
+    VK_ASSERT(vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &nSupportedDeviceExtensionCount,
+                                                   vSupportedDeviceExtensions.data()));
+
+    VkPhysicalDeviceProperties deviceProperties{};
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
+
+    if (const char* sUnsupported = FindUnsupportedDeviceExtension(vDeviceExtensions, vSupportedDeviceExtensions))
+    {
+        throw std::runtime_error(std::string("Device '") + deviceProperties.deviceName +
+                                 "' does not support the requested extension: " + sUnsupported);
+    }
+
+    // Cooperative matrix is queried whether or not it is requested, so a consumer can ask before deciding
+    // and so the answer is in the log. The extension query is not enough on its own: the feature gates it,
+    // and a device may expose one without the other.
+    const bool bCooperativeMatrixRequested =
+        std::find_if(vDeviceExtensions.begin(), vDeviceExtensions.end(), [](const char* sName)
+                     { return sName != nullptr && strcmp(sName, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME) == 0; }) !=
+        vDeviceExtensions.end();
+
+    if (HasDeviceExtension(vSupportedDeviceExtensions, VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME))
+    {
+        VkPhysicalDeviceCooperativeMatrixFeaturesKHR supportedCooperativeMatrix{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
+        VkPhysicalDeviceFeatures2 cooperativeMatrixQuery{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        cooperativeMatrixQuery.pNext = &supportedCooperativeMatrix;
+        vkGetPhysicalDeviceFeatures2(m_physicalDevice, &cooperativeMatrixQuery);
+        m_bCooperativeMatrixSupported = supportedCooperativeMatrix.cooperativeMatrix == VK_TRUE;
+    }
+
+    if (bCooperativeMatrixRequested && m_bCooperativeMatrixSupported)
+    {
+        // Enable rather than merely query: the feature that gates the extension has to be on the chain,
+        // and this struct is the device's own so that it outlives vkCreateDevice.
+        m_cooperativeMatrixFeatures.cooperativeMatrix = VK_TRUE;
+        m_cooperativeMatrixFeatures.cooperativeMatrixRobustBufferAccess = VK_FALSE;
+        m_cooperativeMatrixFeatures.pNext = nullptr;
+        ExtensionHeader* pLastFeature = reinterpret_cast<ExtensionHeader*>(&features2);
+        while (pLastFeature->pNext != nullptr) pLastFeature = reinterpret_cast<ExtensionHeader*>(pLastFeature->pNext);
+        pLastFeature->pNext = &m_cooperativeMatrixFeatures;
+    }
+
+    if (m_bCooperativeMatrixSupported)
+    {
+        const auto pfnGetCooperativeMatrixProperties =
+            reinterpret_cast<PFN_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR>(
+                vkGetInstanceProcAddr(m_instance, "vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR"));
+        if (pfnGetCooperativeMatrixProperties != nullptr)
+        {
+            uint32_t nPropertyCount = 0;
+            if (pfnGetCooperativeMatrixProperties(m_physicalDevice, &nPropertyCount, nullptr) == VK_SUCCESS &&
+                nPropertyCount > 0)
+            {
+                m_vCooperativeMatrixProperties.resize(nPropertyCount);
+                for (VkCooperativeMatrixPropertiesKHR& properties : m_vCooperativeMatrixProperties)
+                {
+                    properties.sType = VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR;
+                }
+                VK_ASSERT(pfnGetCooperativeMatrixProperties(m_physicalDevice, &nPropertyCount,
+                                                            m_vCooperativeMatrixProperties.data()));
+                m_vCooperativeMatrixProperties.resize(nPropertyCount);
+            }
+        }
+    }
+
+    // One line, because which device a run used is what makes a green result mean anything, and whether it
+    // can do cooperative matrix is the difference between two branches of the same test.
+    if (m_bCooperativeMatrixSupported)
+    {
+        std::cerr << "[device] " << deviceProperties.deviceName << ": VK_KHR_cooperative_matrix available, "
+                  << m_vCooperativeMatrixProperties.size() << " property sets" << std::endl;
+    }
+    else
+    {
+        std::cerr << "[device] " << deviceProperties.deviceName << ": VK_KHR_cooperative_matrix not available"
+                  << std::endl;
     }
 
     // Verify every core feature we are about to enable is actually supported. Query into a

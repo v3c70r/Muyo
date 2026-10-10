@@ -27,6 +27,24 @@ bool HasInstanceExtension(const std::vector<VkExtensionProperties>& vSupportedEx
 /// @return True when an entry's name equals `sName`.
 bool HasLayer(const std::vector<VkLayerProperties>& vSupportedLayers, const char* sName);
 
+/// Whether a physical device reports a device extension.
+/// @param vSupportedExtensions Extensions enumerated from the physical device.
+/// @param sName Extension name to look for.
+/// @return True when an entry's name equals `sName`.
+bool HasDeviceExtension(const std::vector<VkExtensionProperties>& vSupportedExtensions, const char* sName);
+
+/// The first requested device extension the physical device does not report, or nullptr when all are.
+///
+/// Requested device extensions were previously enabled blindly, so asking for one the device lacks
+/// surfaced as `VK_ERROR_EXTENSION_NOT_PRESENT` from `vkCreateDevice` - a bare result naming neither the
+/// extension nor the device. Free and pure so both branches are testable on any machine, including one
+/// whose device lacks nothing.
+/// @param vRequestedExtensions Extensions the caller asked to enable.
+/// @param vSupportedExtensions Extensions the device reports.
+/// @return The name of the first unsupported request, or nullptr when every request is supported.
+const char* FindUnsupportedDeviceExtension(const std::vector<const char*>& vRequestedExtensions,
+                                           const std::vector<VkExtensionProperties>& vSupportedExtensions);
+
 class VkRenderDevice
 {
 public:
@@ -67,6 +85,21 @@ public:
         return m_queueFamilyIndices.nComputeQueueFamily >= 0 &&
                m_queueFamilyIndices.nComputeQueueFamily != m_queueFamilyIndices.nGraphicsQueueFamily;
     }
+    /// @return True when the selected physical device exposes `VK_KHR_cooperative_matrix` *and* the
+    ///         feature that gates it. Queried at device creation; false before `CreateDevice` runs.
+    bool IsCooperativeMatrixSupported() const { return m_bCooperativeMatrixSupported; }
+
+    /// @return The cooperative-matrix property sets the device advertises - which shapes and component
+    ///         types it can actually compute - or empty when the extension is unsupported.
+    ///
+    /// A caller must read this rather than assume a shape. The sets differ by driver: on this machine
+    /// AMDVLK advertises `F16/F16->F32` at 16x16x16 among eleven sets while llvmpipe advertises 8x8x8, so
+    /// a constant in the code would be testing the driver rather than the kernel (AGENTS.md section 8).
+    const std::vector<VkCooperativeMatrixPropertiesKHR>& GetCooperativeMatrixProperties() const
+    {
+        return m_vCooperativeMatrixProperties;
+    }
+
     VkInstance& GetInstance() { return m_instance; }
 
     void SetDevice(VkDevice device) { m_device = device; }
@@ -212,6 +245,16 @@ private:  // Members
 
     bool m_bIsValidationEnabled = false;
     std::vector<const char*> m_vLayers;
+
+    /// Cooperative matrix, queried at device creation whether or not it is requested, so a consumer can
+    /// ask before deciding and the answer appears in the log.
+    bool m_bCooperativeMatrixSupported = false;
+    std::vector<VkCooperativeMatrixPropertiesKHR> m_vCooperativeMatrixProperties;
+    /// Owned by the device rather than by a caller, because it must outlive `vkCreateDevice`, and chained
+    /// only when the caller requests the extension - the renderer does not use cooperative matrix and must
+    /// not start requiring it (AGENTS.md section 3: verify, never enable blindly).
+    VkPhysicalDeviceCooperativeMatrixFeaturesKHR m_cooperativeMatrixFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
 
 protected:
     VkInstance m_instance = VK_NULL_HANDLE;
