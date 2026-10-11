@@ -1,9 +1,10 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
-#include <filesystem>
-#include <fstream>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -637,6 +638,101 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     CHECK(pValues[0] == 7);
     CHECK(pValues[1] == 3);
     readback.Unmap();
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only that byte range",
+                 "[RenderGraphBuilder]")
+{
+    // #81. The node binds bytes [8, 16) of a 16-byte buffer, and this shader writes gOut[0] and gOut[1]
+    // - so with the range honoured the values land on elements 2 and 3. Without it the binding starts
+    // at zero: the shader still runs and still writes, which is why the test is on the values rather
+    // than on a missing feature. It fails as wrong numbers, which is the failure mode the range
+    // exists to prevent.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource(
+        "RangedOut", BufferResourceDesc{.count = 4,
+                                        .stride = sizeof(uint32_t),
+                                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                        .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    RenderGraphNodeCreateInfo node{
+        .nodeName = "RangedNode",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{
+            .handle = ResourceHandle("RangedOut"),
+            .io = ResourceIOType::WRITE,
+            .usage = ResourceUsage::STORAGE_BUFFER,
+            .kind = ResourceKind::BUFFER,
+            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0},
+            .bufferRange = BufferRange{.offset = 2 * sizeof(uint32_t), .size = 2 * sizeof(uint32_t)}}},
+        .shaderNames = {"testSpecConstant.comp.slang"},
+        .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
+
+    builder.AddNode(node);
+    builder.Build();
+    builder.Execute();
+
+    auto* pOut = GetRenderResourceManager()->GetResource<BufferResource>("RangedOut");
+    REQUIRE(pOut != nullptr);
+
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 4 * sizeof(uint32_t));
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.buffer = pOut->buffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            dependency.bufferMemoryBarrierCount = 1;
+            dependency.pBufferMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(cmdBuf, &dependency);
+
+            VkBufferCopy region{};
+            region.size = 4 * sizeof(uint32_t);
+            vkCmdCopyBuffer(cmdBuf, pOut->buffer(), readback.buffer(), 1, &region);
+        });
+
+    const uint32_t* pValues = static_cast<const uint32_t*>(readback.Map());
+    INFO("element 2 = " << pValues[2] << ", element 3 = " << pValues[3]
+                        << " (the shader's baked defaults are 1234 and 1)");
+    CHECK(pValues[2] == 1234);
+    CHECK(pValues[3] == 1);
+    readback.Unmap();
+}
+
+TEST_CASE("BufferRange: an unusable range is rejected with the reason named", "[RenderGraphBuilder]")
+{
+    // Device-independent on purpose. The validator is a free function that takes the device's alignment
+    // as an argument, so the rule is tested here rather than only on a device whose
+    // minStorageBufferOffsetAlignment happens to be interesting - this one's is 4 bytes, and a driver
+    // is allowed to demand far more.
+    //
+    // The messages carry the numbers because of what these checks are for: an out-of-range binding is
+    // the failure whose absence reads or writes the wrong bytes instead of reporting anything.
+    CHECK_THROWS_WITH(ValidateBufferRange("Node", "Buf", BufferRange{.offset = 0, .size = 0}, 64, 4),
+                      Catch::Matchers::ContainsSubstring("zero-sized") &&
+                          Catch::Matchers::ContainsSubstring("'Node'") && Catch::Matchers::ContainsSubstring("'Buf'"));
+    CHECK_THROWS_WITH(ValidateBufferRange("Node", "Buf", BufferRange{.offset = 32, .size = 64}, 64, 4),
+                      Catch::Matchers::ContainsSubstring("[32, 96)") && Catch::Matchers::ContainsSubstring("64 bytes"));
+    CHECK_THROWS_WITH(ValidateBufferRange("Node", "Buf", BufferRange{.offset = 68, .size = 4}, 64, 4),
+                      Catch::Matchers::ContainsSubstring("outside the buffer's 64 bytes"));
+    // The alignment is the device's number, so the message names it rather than a constant of ours.
+    CHECK_THROWS_WITH(ValidateBufferRange("Node", "Buf", BufferRange{.offset = 6, .size = 4}, 64, 4),
+                      Catch::Matchers::ContainsSubstring("6") &&
+                          Catch::Matchers::ContainsSubstring("4-byte descriptor offset alignment"));
+
+    // The cases that must pass, including the two boundaries: exactly the whole buffer, and an offset
+    // whose only sin is being odd when the device requires no alignment at all.
+    CHECK_NOTHROW(ValidateBufferRange("Node", "Buf", BufferRange{.offset = 0, .size = 64}, 64, 4));
+    CHECK_NOTHROW(ValidateBufferRange("Node", "Buf", BufferRange{.offset = 8, .size = 56}, 64, 4));
+    CHECK_NOTHROW(ValidateBufferRange("Node", "Buf", BufferRange{.offset = 63, .size = 1}, 64, 1));
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants reach a graphics pipeline",

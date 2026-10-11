@@ -171,6 +171,7 @@ ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
     resolved.access = policy.access;
     resolved.bindingSemantic = use.bindingSemantic;
     resolved.descriptorBinding = use.descriptorBinding;
+    resolved.bufferRange = use.bufferRange;
 
     if (use.kind == ResourceKind::IMAGE)
     {

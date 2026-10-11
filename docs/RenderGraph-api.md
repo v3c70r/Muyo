@@ -379,7 +379,7 @@ Owns the three built-in semantic descriptor set layouts used by graphics nodes.
 | `~RenderGraphDescriptorSets()` | Destroy the semantic set layouts owned by this instance. |
 | `VkDescriptorSet AllocateSemanticSet(ResourceBindingSemantic bindingSemantic)` | The descriptor set for a semantic set index. Allocate a fresh descriptor set for one node from the shared layout of a semantic set. The caller owns the set and must free it with DescriptorManager::FreeDescriptorSet. |
 | `VkDescriptorSetLayout GetDescriptorSetLayout(ResourceBindingSemantic bindingSemantic) const` | The descriptor set layout for a semantic set index. |
-| `void BindResourceToDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType descriptorType, const IRenderResource *pResource, uint32_t bindingIndex)` | Write a resource into a specific descriptor set. descriptorSet Target set (per node). descriptorType Type resolved via GetBindingType. pResource Buffer or image to bind. bindingIndex Binding within the set. |
+| `void BindResourceToDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType descriptorType, const IRenderResource *pResource, uint32_t bindingIndex, const std::optional< BufferRange > &bufferRange=std::nullopt)` | Write a resource into a specific descriptor set. descriptorSet Target set (per node). descriptorType Type resolved via GetBindingType. pResource Buffer or image to bind. bindingIndex Binding within the set. bufferRange Byte range of a buffer to bind, or empty for the whole buffer. Already validated by RenderGraphBuilder::ResolveBufferRange at Build. |
 | `static VkDescriptorType GetBindingType(ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)` | The descriptor type a semantic binding expects, or VK_DESCRIPTOR_TYPE_MAX_ENUM. |
 | `static ResourceBindingSemantic GetSemantic(uint32_t setIndex)` | The semantic set corresponding to a raw descriptor set index (0/1/2). |
 
@@ -506,6 +506,15 @@ Context handed to a node's execute callback.
 
 ## `RenderGraphNodeResource.h`
 
+### `struct Muyo::RenderGraph::BufferRange`
+
+A byte range inside a buffer resource - a view of part of it.
+
+| Member | Description |
+| --- | --- |
+| `uint64_t offset` | Byte offset from the start of the buffer. |
+| `uint64_t size` | Byte length of the range. Must not be zero. |
+
 ### `struct Muyo::RenderGraph::DescriptorBinding`
 
 Explicit shader descriptor location (set + binding) for a resource.
@@ -546,6 +555,7 @@ A ResourceUse after the graph has resolved it to concrete barrier state.
 | `VkExtent3D extent` | Optional extent (validation / trace dispatch). |
 | `ResourceBindingSemantic bindingSemantic` | Built-in set. |
 | `std::optional< DescriptorBinding > descriptorBinding` | Explicit set/binding. |
+| `std::optional< BufferRange > bufferRange` | Byte range of a buffer resource to bind, carried through from the declaration. |
 
 ### `enum ResourceBindingSemantic`
 
@@ -617,10 +627,15 @@ A node's declaration that it uses a resource (the interface passed to RenderGrap
 | `ResourceKind kind` | Concrete resource kind. |
 | `ResourceBindingSemantic bindingSemantic` | Built-in set for graphics nodes. |
 | `std::optional< DescriptorBinding > descriptorBinding` | Optional explicit descriptor location. Only used when bindingSemantic == NONE. |
+| `std::optional< BufferRange > bufferRange` | Optional byte range of a buffer resource to bind. Absent binds the whole buffer. |
 
 ### `uint64_t ResourceVersion`
 
 Monotonic version counter used to track resource writes across nodes.
+
+### `void Muyo::RenderGraph::ValidateBufferRange(const ResourceHandle &nodeName, const ResourceHandle &handle, const BufferRange &range, uint64_t bufferSize, uint64_t requiredAlignment)`
+
+Validate a declared byte range against the buffer it addresses and a device alignment limit.
 
 
 ## `RenderGraphResourceDesc.h`

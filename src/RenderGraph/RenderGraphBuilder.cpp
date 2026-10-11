@@ -47,9 +47,31 @@ namespace Muyo::RenderGraph
 RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
     : m_shaderAssetManager(renderDevice->GetDevice())
     , m_vkDevice(renderDevice->GetDevice())
+    , m_renderDevice(renderDevice)
     , m_descriptorSetManager(*GetDescriptorManager())
     , m_executor(renderDevice)
 {
+    VkPhysicalDeviceProperties deviceProperties{};
+    vkGetPhysicalDeviceProperties(renderDevice->GetPhysicalDevice(), &deviceProperties);
+    m_minUniformBufferOffsetAlignment = deviceProperties.limits.minUniformBufferOffsetAlignment;
+    m_minStorageBufferOffsetAlignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
+}
+
+std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::ResolveBufferRange(const ResourceHandle& nodeName,
+                                                                             const ResolvedResourceUse& use,
+                                                                             const BufferResource& buffer,
+                                                                             VkDescriptorType descriptorType) const
+{
+    if (!use.bufferRange.has_value())
+    {
+        return {0, buffer.GetSize()};
+    }
+
+    const bool bUniform = descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+                          descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    const VkDeviceSize nAlignment = bUniform ? m_minUniformBufferOffsetAlignment : m_minStorageBufferOffsetAlignment;
+    ValidateBufferRange(nodeName, use.handle, *use.bufferRange, buffer.GetSize(), nAlignment);
+    return {static_cast<VkDeviceSize>(use.bufferRange->offset), static_cast<VkDeviceSize>(use.bufferRange->size)};
 }
 
 RenderGraphBuilder::~RenderGraphBuilder()
@@ -382,9 +404,10 @@ void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& 
         }
         else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
         {
+            const auto [nOffset, nRange] = ResolveBufferRange(logicalNode.name, use, *pBuffer, descriptorType);
             bufferInfo.buffer = pBuffer->buffer();
-            bufferInfo.offset = 0;
-            bufferInfo.range = pBuffer->GetSize();
+            bufferInfo.offset = nOffset;
+            bufferInfo.range = nRange;
             write.pBufferInfo = &bufferInfo;
         }
         else if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
@@ -530,6 +553,22 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
                                      "' which is neither declared with AddResource nor imported.");
         }
         ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
+        // A range on a semantic binding is validated here, at Build: the reflection path validates its
+        // own at the descriptor write (the descriptor type comes from reflection there), and the
+        // semantic path's type comes from the semantic table, which is known now. Validating both at
+        // Build keeps a bad range from throwing mid-record, in Execute.
+        if (resolved.bufferRange.has_value() && resolved.bindingSemantic != ResourceBindingSemantic::NONE)
+        {
+            if (const auto* pBuffer = dynamic_cast<const BufferResource*>(ResolveResource(resolved.handle)))
+            {
+                const VkDescriptorType descriptorType =
+                    RenderGraphDescriptorSets::GetBindingType(resolved.bindingSemantic, 0);
+                if (descriptorType != VK_DESCRIPTOR_TYPE_MAX_ENUM)
+                {
+                    ResolveBufferRange(nodeName, resolved, *pBuffer, descriptorType);
+                }
+            }
+        }
         // Fill in allocation-time properties (format / extent) so pipeline + barrier generation can use them.
         if (const auto desc = GetResourceDesc(resourceUse.handle))
         {
@@ -1035,8 +1074,8 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
                             const VkDescriptorType descriptorType =
                                 RenderGraphDescriptorSets::GetBindingType(use.bindingSemantic, 0);
                             if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;
-                            m_descriptorSetManager.BindResourceToDescriptorSet(rgn.descriptorSets[nSetIndex],
-                                                                               descriptorType, pResource, 0);
+                            m_descriptorSetManager.BindResourceToDescriptorSet(
+                                rgn.descriptorSets[nSetIndex], descriptorType, pResource, 0, use.bufferRange);
                         }
 
                         vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,

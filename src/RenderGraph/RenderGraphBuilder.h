@@ -174,6 +174,13 @@ private:
     // otherwise look in the graph-owned resource manager.
     const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
 
+    // The offset/range to write into VkDescriptorBufferInfo for a buffer binding, validated against
+    // the buffer and this device's alignment limit. Whole buffer when the use declares no range.
+    std::pair<VkDeviceSize, VkDeviceSize> ResolveBufferRange(const ResourceHandle& nodeName,
+                                                             const ResolvedResourceUse& use,
+                                                             const BufferResource& buffer,
+                                                             VkDescriptorType descriptorType) const;
+
     // Queue routing. `GetQueueKey` (which node runs where) lives with the execution plan in
     // RenderGraphExecutionPlan.h; these resolve a queue key against this device. Submission itself
     // - queues, handover semaphores, waiting - belongs to RenderGraphExecutor.
@@ -208,6 +215,12 @@ private:
     DependencyGraph<std::string> m_dependencyGraph;
     ShaderAssetManager m_shaderAssetManager;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
+    // Kept for the device's descriptor offset alignment limits, which have to be checked when a use
+    // declares a buffer range: a driver may demand far more alignment than this machine's storage
+    // buffer needs, and the failure otherwise surfaces at bind time naming neither (#81).
+    VkRenderDevice* m_renderDevice = nullptr;
+    VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
+    VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
     RenderGraphDescriptorSets m_descriptorSetManager;
     // Owns submission, cross-queue synchronization and waiting. The graph only records.
     RenderGraphExecutor m_executor;
