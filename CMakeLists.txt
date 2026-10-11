@@ -266,7 +266,12 @@ target_include_directories(muyo
 # #53 removes VMA from the surface; until then it has to be reachable.
 target_include_directories(muyo_rg PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
 
-target_link_libraries(muyo imgui imguizmo imnodes ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
+# SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: RenderGraphBuilder.h includes
+# ShaderReflectionFetcher.h, which includes spirv_reflect.h, so a consumer compiles against its headers
+# - and `muyo` compiles ShaderReflectionFetcher.cpp, which calls spvReflect*. Only the in-tree `tests`
+# target named it, so an embedder linking muyo_rg got "undefined reference to spvReflectCreateShaderModule"
+# from an object the linker pulled in on demand (filed by muyo-llm as Finding F1).
+target_link_libraries(muyo imgui imguizmo imnodes SPIRV-Reflect ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
 
 # muyo_rg does not stand alone today: it reaches into the engine for resource managers, the device
 # singleton and the shader reflection service. Declared rather than implied, so the coupling is visible
