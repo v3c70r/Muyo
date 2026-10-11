@@ -1,0 +1,20 @@
+// The SPIR-V here carries OpCapability StorageBuffer16BitAccess: a runtime array of 16-bit floats in
+// a storage buffer, which is what a compute consumer's F16 kernels declare. Without
+// storageBuffer16BitAccess enabled on the device, vkCreateShaderModule rejects this module - the
+// failure that blocked the first non-renderer consumer (#78). This file exists so that gap has a
+// device-independent observable, and it mirrors the llama.cpp-style kernels that surfaced it.
+#version 450
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, binding = 0) buffer Output
+{
+    float16_t data[];
+} gOutput;
+
+void main()
+{
+    gOutput.data[gl_GlobalInvocationID.x] = float16_t(1.0);
+}
