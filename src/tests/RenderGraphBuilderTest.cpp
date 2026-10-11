@@ -643,14 +643,30 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only that byte range",
                  "[RenderGraphBuilder]")
 {
-    // #81. The node binds bytes [8, 16) of a 16-byte buffer, and this shader writes gOut[0] and gOut[1]
-    // - so with the range honoured the values land on elements 2 and 3. Without it the binding starts
-    // at zero: the shader still runs and still writes, which is why the test is on the values rather
-    // than on a missing feature. It fails as wrong numbers, which is the failure mode the range
-    // exists to prevent.
+    // #81. The node binds a byte range partway into the buffer, and this shader writes gOut[0] and
+    // gOut[1] - so with the range honoured the values land on the first two elements *of the range*.
+    // Without it the binding starts at zero: the shader still runs and still writes, which is why the
+    // test is on the values rather than on a missing feature. It fails as wrong numbers, which is the
+    // failure mode the range exists to prevent.
+    //
+    // The offset is derived from the device rather than written down. It has to be a multiple of
+    // minStorageBufferOffsetAlignment, which is 4 bytes on AMD and 16 on an NVIDIA or llvmpipe device -
+    // hardcoding 8 made this test fail on every stricter one, and fail *masked*: the Build() throw
+    // unwound into the fixture's teardown, whose leaked-object validation error aborted with the
+    // exception text erased (review C1). Deriving it keeps the case rather than skipping it, which
+    // would drop coverage on exactly the devices where the alignment rule matters.
+    VkPhysicalDeviceProperties deviceProperties{};
+    vkGetPhysicalDeviceProperties(GetRenderDevice()->GetPhysicalDevice(), &deviceProperties);
+    const uint32_t nAlignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
+    const uint32_t nOffsetElements =
+        std::max<uint32_t>(nAlignment, sizeof(uint32_t)) / static_cast<uint32_t>(sizeof(uint32_t));
+    const uint32_t nElementCount = nOffsetElements + 2;
+    INFO("minStorageBufferOffsetAlignment = " << nAlignment << " bytes, so the range starts at element "
+                                              << nOffsetElements);
+
     RenderGraphBuilder builder(GetRenderDevice());
     builder.AddResource(
-        "RangedOut", BufferResourceDesc{.count = 4,
+        "RangedOut", BufferResourceDesc{.count = nElementCount,
                                         .stride = sizeof(uint32_t),
                                         .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                         .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
@@ -664,7 +680,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
             .usage = ResourceUsage::STORAGE_BUFFER,
             .kind = ResourceKind::BUFFER,
             .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0},
-            .bufferRange = BufferRange{.offset = 2 * sizeof(uint32_t), .size = 2 * sizeof(uint32_t)}}},
+            .bufferRange = BufferRange{.offset = nOffsetElements * sizeof(uint32_t), .size = 2 * sizeof(uint32_t)}}},
         .shaderNames = {"testSpecConstant.comp.slang"},
         .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
 
@@ -675,7 +691,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
     auto* pOut = GetRenderResourceManager()->GetResource<BufferResource>("RangedOut");
     REQUIRE(pOut != nullptr);
 
-    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 4 * sizeof(uint32_t));
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
+                            nElementCount * sizeof(uint32_t));
     GetRenderDevice()->ExecuteImmediateCommand(
         [&](VkCommandBuffer cmdBuf)
         {
@@ -695,15 +712,15 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
             vkCmdPipelineBarrier2(cmdBuf, &dependency);
 
             VkBufferCopy region{};
-            region.size = 4 * sizeof(uint32_t);
+            region.size = nElementCount * sizeof(uint32_t);
             vkCmdCopyBuffer(cmdBuf, pOut->buffer(), readback.buffer(), 1, &region);
         });
 
     const uint32_t* pValues = static_cast<const uint32_t*>(readback.Map());
-    INFO("element 2 = " << pValues[2] << ", element 3 = " << pValues[3]
-                        << " (the shader's baked defaults are 1234 and 1)");
-    CHECK(pValues[2] == 1234);
-    CHECK(pValues[3] == 1);
+    INFO("element " << nOffsetElements << " = " << pValues[nOffsetElements] << ", element " << (nOffsetElements + 1)
+                    << " = " << pValues[nOffsetElements + 1] << " (the shader's baked defaults are 1234 and 1)");
+    CHECK(pValues[nOffsetElements] == 1234);
+    CHECK(pValues[nOffsetElements + 1] == 1);
     readback.Unmap();
 }
 
