@@ -271,9 +271,26 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     // Vertex array in pathTracing.rchit has a 40-byte stride, which is only valid with
     // scalar block layout.
     features12.scalarBlockLayout = VK_TRUE;
+    // 16-bit *arithmetic*, which is the other half of what a consumer's F16 kernels need and is a
+    // separate feature from 16-bit *storage*: storageBuffer16BitAccess only lets a shader hold 16-bit
+    // values in a buffer, while shaderFloat16 lets it compute with them. Found by creating a module
+    // from a kernel-shaped shader rather than by reading: with only the storage flags set, validation
+    // rejected it with "SPIR-V Capability Float16 was declared, but one of the following requirements
+    // must be met (VkPhysicalDeviceVulkan12Features::shaderFloat16 OR VK_AMD_gpu_shader_half_float)".
+    // The consumer requires GL_EXT_shader_explicit_arithmetic_types_float16, so it needs this too.
+    features12.shaderFloat16 = VK_TRUE;
     VkPhysicalDeviceVulkan11Features features11 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
     features11.multiview = VK_TRUE;
     features11.shaderDrawParameters = VK_TRUE;
+    // 16-bit storage. The renderer does not use it; a compute consumer's F16 kernels do, and that
+    // consumer cannot turn it on from outside: the promoted struct is already in this chain, so
+    // appending VkPhysicalDevice16BitStorageFeatures is VUID-VkDeviceCreateInfo-pNext-02829 and a
+    // second copy of this struct is a duplicate. Both flags are needed because both appear in the
+    // kernels - StorageBuffer16BitAccess for a runtime array of half, UniformAndStorageBuffer16BitAccess
+    // for 16-bit inside a block. Deliberately the narrowest unblock (#78); the general answer is the
+    // caller supplying these structs, which is the host's policy to set (#58).
+    features11.storageBuffer16BitAccess = VK_TRUE;
+    features11.uniformAndStorageBuffer16BitAccess = VK_TRUE;
 
     features2.pNext = &features11;
     features11.pNext = &features12;
@@ -427,6 +444,11 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     require(supported2.features.shaderStorageImageWriteWithoutFormat, "shaderStorageImageWriteWithoutFormat");
     require(supported11.multiview, "multiview");
     require(supported11.shaderDrawParameters, "shaderDrawParameters");
+    // #78. Required rather than enabled-when-available, because a consumer has no way to ask for it and
+    // a device that lacks it would otherwise fail later, inside vkCreateShaderModule, naming neither the
+    // feature nor the reason. Requiring it states the contract and fails here with the feature's name.
+    require(supported11.storageBuffer16BitAccess, "storageBuffer16BitAccess");
+    require(supported11.uniformAndStorageBuffer16BitAccess, "uniformAndStorageBuffer16BitAccess");
     require(supported12.bufferDeviceAddress, "bufferDeviceAddress");
     require(supported12.separateDepthStencilLayouts, "separateDepthStencilLayouts");
     require(supported12.runtimeDescriptorArray, "runtimeDescriptorArray");
@@ -434,6 +456,7 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     require(supported12.drawIndirectCount, "drawIndirectCount");
     require(supported12.scalarBlockLayout, "scalarBlockLayout");
     require(supported12.timelineSemaphore, "timelineSemaphore");
+    require(supported12.shaderFloat16, "shaderFloat16");
     require(supported13.maintenance4, "maintenance4");
     require(supported13.dynamicRendering, "dynamicRendering");
     require(supported13.synchronization2, "synchronization2");

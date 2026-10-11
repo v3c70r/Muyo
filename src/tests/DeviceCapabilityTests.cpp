@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "GraphicsTestEnv.h"
+#include "ShaderAsset.h"
 #include "VkRenderDevice.h"
 
 namespace
@@ -123,5 +124,39 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "VkRenderDevice: the cooperative-matrix 
         WARN(
             "no cooperative matrix on this device, so the supported branch is not covered by this run - "
             "AMDVLK exposes it here, RADV does not");
+    }
+}
+
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
+                 "VkRenderDevice: 16-bit storage is enabled, so an F16 kernel's module is accepted", "[RenderDevice]")
+{
+    // #78: an enablement gap, not a support gap. The feature was promoted to core in Vulkan 1.1, and a
+    // core optional feature is still off unless the device chain sets it - so a consumer running F16
+    // kernels got "SPIR-V contains a 16-bit OpVariable with StorageBuffer StorageClass, but
+    // storageBuffer16BitAccess was not enabled" from vkCreateShaderModule, with no way to fix it from
+    // outside. See the comment on the features11 block for why the consumer cannot append it.
+    //
+    // The observable is the consumer's own failure rather than our bookkeeping: create the module and
+    // require it to be accepted. Two modules, because a device feature is only proven by SPIR-V that
+    // demands it - the GLSL one carries OpCapability StorageBuffer16BitAccess (a runtime array of half,
+    // which is the llama.cpp shape) and the slang one carries UniformAndStorageBuffer16BitAccess
+    // (16-bit inside a block), covering both flags this enables.
+    const std::vector<std::string> shaderPaths = {"shaders/test16BitStorage.comp.spv",
+                                                  "shaders/test16BitStorageUniform.comp.slang.spv"};
+    for (const std::string& shaderPath : shaderPaths)
+    {
+        INFO("shader: " << shaderPath << " (rebuild the Shaders target if this is missing)");
+        Muyo::SpirvCode spirv = Muyo::ReadSpv(shaderPath);
+        REQUIRE(spirv.size() > 0);
+
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = spirv.size() * sizeof(uint32_t);
+        createInfo.pCode = spirv.data();
+
+        VkShaderModule shaderModule = VK_NULL_HANDLE;
+        REQUIRE(vkCreateShaderModule(Muyo::GetRenderDevice()->GetDevice(), &createInfo, nullptr, &shaderModule) ==
+                VK_SUCCESS);
+        vkDestroyShaderModule(Muyo::GetRenderDevice()->GetDevice(), shaderModule, nullptr);
     }
 }
