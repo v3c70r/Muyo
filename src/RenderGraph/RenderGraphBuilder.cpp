@@ -120,6 +120,15 @@ RenderGraphBuilder::~RenderGraphBuilder()
 
 RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle, ResourceDesc desc)
 {
+    const ResourceLifetime lifetime = std::visit([](const auto& d) { return d.lifetime; }, desc);
+    if (lifetime == ResourceLifetime::Imported)
+    {
+        // AddResource means "the graph allocates this", so a desc asking to be Imported contradicts the
+        // call. Reported here rather than at Build because it is a mistake at the line that made it.
+        throw std::runtime_error("AddResource('" + handle +
+                                 "') declares lifetime Imported, but AddResource is the call that makes the "
+                                 "graph allocate a resource. Use ImportResource for one the graph does not own.");
+    }
     m_resourceDescRegistry[handle] = std::move(desc);
     return *this;
 }
@@ -650,6 +659,58 @@ void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::s
     }
 }
 
+void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::string>& executionOrder)
+{
+    m_transientLiveRanges.clear();
+    std::unordered_set<ResourceHandle> written;
+
+    for (size_t nNode = 0; nNode < executionOrder.size(); ++nNode)
+    {
+        const RenderGraphNode& node = m_renderGraphNodes.at(executionOrder[nNode]);
+        for (const ResolvedResourceUse& use : node.resourceUses)
+        {
+            // Imported resources belong to the caller, so their content is not this execution's to
+            // produce. That is the whole difference between an import and a graph-owned resource.
+            if (m_importedResources.find(use.handle) != m_importedResources.end()) continue;
+
+            const std::optional<ResourceDesc> desc = GetResourceDesc(use.handle);
+            if (!desc.has_value()) continue;
+            if (std::visit([](const auto& d) { return d.lifetime; }, *desc) != ResourceLifetime::Transient)
+            {
+                continue;
+            }
+
+            const bool bWrites = use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE;
+            if (!bWrites && written.find(use.handle) == written.end())
+            {
+                // Named, because the whole value of the check is telling the author which line is wrong.
+                // The message also names the escape, since the mistake is usually a missing Persistent.
+                throw std::runtime_error(
+                    "Node '" + executionOrder[nNode] + "' reads transient resource '" + use.handle +
+                    "' with nothing writing it first. A transient's content is valid only from its first "
+                    "write within one execution, so this read would take whatever the memory happens to "
+                    "hold. Declare it Persistent if it is meant to carry content across executions.");
+            }
+            if (bWrites)
+            {
+                written.insert(use.handle);
+            }
+
+            // The live interval. A read cannot come before the first write in a graph that passed the
+            // check above, so the first use is a write and the two definitions coincide here.
+            auto it = m_transientLiveRanges.find(use.handle);
+            if (it == m_transientLiveRanges.end())
+            {
+                m_transientLiveRanges.emplace(use.handle, TransientLiveRange{nNode, nNode});
+            }
+            else
+            {
+                it->second.lastUse = nNode;
+            }
+        }
+    }
+}
+
 void RenderGraphBuilder::Build()
 {
     if (m_dependencyGraph.HasCycle())
@@ -664,6 +725,10 @@ void RenderGraphBuilder::Build()
     {
         throw std::runtime_error("Render graph contains a cycle; topological sort is incomplete.");
     }
+
+    // Before allocating anything: a declaration error should not cost an allocation, and this needs only
+    // the order and the declarations.
+    ValidateTransientLifetimes(executionOrder);
 
     // Allocate all graph-owned resources before compiling nodes.
     for (const auto& [handle, desc] : m_resourceDescRegistry)

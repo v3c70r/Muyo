@@ -224,6 +224,32 @@ private:
                         std::vector<VkRenderingAttachmentInfo>& colorAttachments,
                         std::vector<VkClearValue>& clearValues);
 
+    // A graph-owned transient's live interval, in execution order.
+    //
+    // Derived from first to last use. It is the input aliasing needs - two transients may share memory
+    // exactly when their intervals do not overlap - and it is what makes the read-before-write check
+    // below a statement about a range rather than about one node.
+    struct TransientLiveRange
+    {
+        size_t firstUse = 0;
+        size_t lastUse = 0;
+    };
+
+    // Derive every graph-owned transient's live range and reject a read that no write precedes.
+    //
+    // A transient promises content from its first write to its last read *within one execution*, so a
+    // read with nothing writing it first is a declaration error. Without the check it silently reads
+    // whatever the memory holds: the first reader's barrier moves an image out of
+    // VK_IMAGE_LAYOUT_UNDEFINED, and a transition from UNDEFINED discards contents rather than keeping
+    // them. `Persistent` and `Imported` are exempt because their content is not this execution's to
+    // produce - which is what declaring either of them means.
+    void ValidateTransientLifetimes(const std::vector<std::string>& executionOrder);
+
+    // Live ranges from the last `Build()`, keyed by handle. Nothing reads this until aliasing lands;
+    // it is kept because re-deriving it later would mean re-walking the order for a fact this pass
+    // already computed.
+    std::unordered_map<ResourceHandle, TransientLiveRange> m_transientLiveRanges;
+
     // Tracked resource access state for barrier generation between nodes.
     struct ResourceAccessState
     {
