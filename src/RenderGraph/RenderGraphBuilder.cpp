@@ -680,7 +680,12 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
                 continue;
             }
 
-            const bool bWrites = use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE;
+            // TRANSFER_WRITE counts: a copy or an upload is a write like any other, and leaving it out
+            // rejected a graph in which one node's transfer fills a transient and the next reads it -
+            // which is what transfer roles are for. Found by the transfer round trip test, and it was
+            // reachable before that through DRAW_COMMAND_BUFFER with TRANSFER_WRITE, which no test used.
+            const bool bWrites = use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE ||
+                                 use.io == ResourceIOType::TRANSFER_WRITE;
             if (!bWrites && written.find(use.handle) == written.end())
             {
                 // Named, because the whole value of the check is telling the author which line is wrong.

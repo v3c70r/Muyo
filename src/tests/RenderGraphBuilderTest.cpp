@@ -838,6 +838,163 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a declared resource canno
         Catch::Matchers::ContainsSubstring("AddResource") && Catch::Matchers::ContainsSubstring("ImportResource"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip through the graph", "[RenderGraphBuilder]")
+{
+    // #18. A node that only moves data had no role to declare: the usage table covered render, compute
+    // and ray-tracing access, so a copy had to borrow the usage of whatever the data *is* - and a buffer
+    // written by a transfer had no policy at all (`STORAGE_BUFFER` with `WRITE` is a *host* write here,
+    // which is the trap muyo-llm found). TRANSFER_SOURCE and TRANSFER_DEST are those roles, and the layout
+    // transitions follow from them: an image is moved into TRANSFER_SRC/DST_OPTIMAL and on out again.
+    //
+    // The path is compute -> buffer -> image -> host, so both new policies and three transitions are on
+    // it, and the callbacks pass the layout the use declared to vkCmdCopy* - so a transition the graph
+    // failed to emit is a validation error rather than a quiet success. The only barrier the test records
+    // itself is the transfer-to-host edge at the end, which is the documented boundary.
+    constexpr uint32_t kExtent = 8;
+    constexpr VkDeviceSize kImageBytes = static_cast<VkDeviceSize>(kExtent) * kExtent * 4;
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    const ImageResourceDesc imageDesc{
+        .format = VK_FORMAT_R8G8B8A8_UNORM,
+        .extent = {kExtent, kExtent},
+        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT};
+    builder.AddResource("TransferImageIn", imageDesc);
+    builder.AddResource("TransferImageOut", imageDesc);
+    builder.AddResource("TransferMid",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = kImageBytes,
+                                           .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddResource("TransferReadback", BufferResourceDesc{.count = 1,
+                                                               .stride = kImageBytes,
+                                                               .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                                               .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    // 1. Compute writes a known colour into the first image. Existing usage, existing shader; it is here
+    //    so the transfer reads something whose value the test knows.
+    builder.AddNode({.nodeName = "WriteGreen",
+                     .queueType = QueueType::COMPUTE,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("TransferImageIn"),
+                                                  .io = ResourceIOType::READ_WRITE,
+                                                  .usage = ResourceUsage::STORAGE_IMAGE,
+                                                  .kind = ResourceKind::IMAGE,
+                                                  .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+                     .shaderNames = {"testFillColor.comp.slang"},
+                     .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }});
+
+    // 2. Image -> buffer: the first new policy on the read side, the second on the write side.
+    builder.AddNode({.nodeName = "ImageToBuffer",
+                     .queueType = QueueType::COPY,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("TransferImageIn"),
+                                                  .io = ResourceIOType::READ,
+                                                  .usage = ResourceUsage::TRANSFER_SOURCE,
+                                                  .kind = ResourceKind::IMAGE},
+                                      ResourceUse{.handle = ResourceHandle("TransferMid"),
+                                                  .io = ResourceIOType::TRANSFER_WRITE,
+                                                  .usage = ResourceUsage::TRANSFER_DEST,
+                                                  .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext& ctx)
+                     {
+                         const auto* pSrc = ctx.GetResource<ImageResource>("TransferImageIn");
+                         const auto* pDst = ctx.GetResource<BufferResource>("TransferMid");
+                         VkBufferImageCopy region{};
+                         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                         region.imageExtent = {kExtent, kExtent, 1};
+                         // The layout is the one the use declared, so a missing transition is a validation error.
+                         vkCmdCopyImageToBuffer(ctx.commandBuffer, pSrc->getImage(),
+                                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, pDst->buffer(), 1, &region);
+                     }});
+
+    // 3. Buffer -> second image, which is the image-side TRANSFER_DEST: the graph has to move it out of
+    //    UNDEFINED into TRANSFER_DST_OPTIMAL even though nothing has touched it yet.
+    builder.AddNode({.nodeName = "BufferToImage",
+                     .queueType = QueueType::COPY,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("TransferMid"),
+                                                  .io = ResourceIOType::READ,
+                                                  .usage = ResourceUsage::TRANSFER_SOURCE,
+                                                  .kind = ResourceKind::BUFFER},
+                                      ResourceUse{.handle = ResourceHandle("TransferImageOut"),
+                                                  .io = ResourceIOType::TRANSFER_WRITE,
+                                                  .usage = ResourceUsage::TRANSFER_DEST,
+                                                  .kind = ResourceKind::IMAGE}},
+                     .execute = [](RenderGraphNodeContext& ctx)
+                     {
+                         const auto* pSrc = ctx.GetResource<BufferResource>("TransferMid");
+                         const auto* pDst = ctx.GetResource<ImageResource>("TransferImageOut");
+                         VkBufferImageCopy region{};
+                         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                         region.imageExtent = {kExtent, kExtent, 1};
+                         vkCmdCopyBufferToImage(ctx.commandBuffer, pSrc->buffer(), pDst->getImage(),
+                                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+                     }});
+
+    // 4. Back out to a host-visible buffer, which is where the value can be checked.
+    builder.AddNode({.nodeName = "MergeToReadback",
+                     .queueType = QueueType::COPY,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("TransferImageOut"),
+                                                  .io = ResourceIOType::READ,
+                                                  .usage = ResourceUsage::TRANSFER_SOURCE,
+                                                  .kind = ResourceKind::IMAGE},
+                                      ResourceUse{.handle = ResourceHandle("TransferReadback"),
+                                                  .io = ResourceIOType::TRANSFER_WRITE,
+                                                  .usage = ResourceUsage::TRANSFER_DEST,
+                                                  .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext& ctx)
+                     {
+                         const auto* pSrc = ctx.GetResource<ImageResource>("TransferImageOut");
+                         const auto* pDst = ctx.GetResource<BufferResource>("TransferReadback");
+                         VkBufferImageCopy region{};
+                         region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                         region.imageExtent = {kExtent, kExtent, 1};
+                         vkCmdCopyImageToBuffer(ctx.commandBuffer, pSrc->getImage(),
+                                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, pDst->buffer(), 1, &region);
+                     }});
+
+    // The graph takes its order from explicit dependencies - it does not infer an edge from one node
+    // writing what the next reads - so the chain is declared here. Without it the topological sort is
+    // free to run the copies in any order, and the transient check below is what catches that.
+    builder.AddDependency("WriteGreen", "ImageToBuffer");
+    builder.AddDependency("ImageToBuffer", "BufferToImage");
+    builder.AddDependency("BufferToImage", "MergeToReadback");
+
+    builder.Build();
+    builder.Execute();
+
+    auto* pReadback = GetRenderResourceManager()->GetResource<BufferResource>("TransferReadback");
+    REQUIRE(pReadback != nullptr);
+
+    // The one barrier the test records: the graph does not order the last node against a host read
+    // (Findings F4 in the consumer's notes), so a transfer-to-host edge is the caller's.
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.buffer = pReadback->buffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            dependency.bufferMemoryBarrierCount = 1;
+            dependency.pBufferMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(cmdBuf, &dependency);
+        });
+
+    const uint8_t* pPixels = static_cast<const uint8_t*>(pReadback->Map());
+    INFO("first pixel: r=" << static_cast<int>(pPixels[0]) << " g=" << static_cast<int>(pPixels[1])
+                           << " b=" << static_cast<int>(pPixels[2]) << " a=" << static_cast<int>(pPixels[3])
+                           << " (the shader writes opaque green)");
+    CHECK(pPixels[0] == 0);
+    CHECK(pPixels[1] == 255);
+    CHECK(pPixels[2] == 0);
+    CHECK(pPixels[3] == 255);
+    pReadback->Unmap();
+}
+
 TEST_CASE("BufferRange: an unusable range is rejected with the reason named", "[RenderGraphBuilder]")
 {
     // Device-independent on purpose. The validator is a free function that takes the device's alignment
