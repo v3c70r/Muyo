@@ -1,0 +1,164 @@
+name: CI
+
+# Runs on GitHub-hosted runners with mesa's lavapipe as the Vulkan device, so it gates everything that
+# does not need a driver: both configurations build, the checked-in API reference matches the headers,
+# the changed lines are formatted, and the whole test suite passes with the validation layer on.
+#
+# What it cannot gate, recorded rather than implied - see AGENTS.md section 4 for the axis table:
+#
+#   * Queue topology. lavapipe reports one queue family with one queue, so no cross-family ownership
+#     transfer and no dedicated compute queue is exercised; the suite takes the single-queue path.
+#     The "[test device]" line the job records says so on every run.
+#   * Driver-specific behaviour. A software device passing is not evidence about a driver.
+#
+# Those two stay with the development machine and the review machine, which is where the hardware
+# runbook in AGENTS.md section 6 already puts them. A green run here is evidence about a code and
+# validation-layer pair on a software device, and the job prints both so the claim is self-describing.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-docs:
+    name: build both configurations + docs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # The format check diffs against the merge base with master, so it needs the history.
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          # doxygen: the checked-in RenderGraph-api.md is generated with 1.9.8, which is this release's
+          # package (docs/README.md). A different version is a suspected cause of a --check mismatch.
+          # The X11 development packages are for the bundled GLFW, which muyo links even headless.
+          # slangc is the one tool the SDK provides that the distribution does not.
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 doxygen clang-format git \
+            libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
+            libvulkan1 libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers
+
+      - name: Install the Vulkan SDK
+        run: |
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list \
+            https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
+
+      - name: Record the tool versions this run used
+        run: |
+          echo "doxygen       $(doxygen --version)"
+          echo "clang-format  $(clang-format --version)"
+          echo "slangc        $(command -v slangc)"
+          echo "glslang       $(command -v glslangValidator)"
+
+      # Both configurations, because AGENTS.md section 4 requires both to build and both to pass. The
+      # shader GLOBs are read at configure time, so a fresh configure is what makes a new .slang file
+      # visible - the trap that has cost this repository several red herrings.
+      - name: Configure and build (default)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DGLFW_BUILD_WAYLAND=OFF
+          cmake --build build --target tests Shaders -j"$(nproc)"
+
+      - name: Configure and build (ray tracing)
+        run: |
+          cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON -DCMAKE_BUILD_TYPE=Debug -DGLFW_BUILD_WAYLAND=OFF
+          cmake --build build-rt --target tests Shaders -j"$(nproc)"
+
+      - name: Documentation coverage and the checked-in reference
+        run: python3 scripts/render_graph_docs.py --check
+
+      - name: Format the lines this change touched
+        run: |
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          scripts/sanity.sh format
+
+  tests:
+    name: tests (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Debug,           build_type: Debug,    rt: OFF, dir: build }
+          - { name: Release,         build_type: Release,  rt: OFF, dir: build }
+          - { name: Debug + RT,      build_type: Debug,    rt: ON,  dir: build-rt }
+          - { name: Release + RT,    build_type: Release,  rt: ON,  dir: build-rt }
+          - { name: Sanitize,        build_type: Sanitize, rt: OFF, dir: build-san }
+    env:
+      # The suite is headless by design - no glfwInit and no VkSurface anywhere under src/tests - so
+      # this runs with no display at all, deliberately. That is the test: a green run here is evidence
+      # for the Consumers.md row that says no surface, present or swapchain is required on the
+      # execution path, and setting up a virtual display would remove the chance to show it.
+      DISPLAY: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 \
+            libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
+            libvulkan1 libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers
+
+      - name: Install the Vulkan SDK (slangc, for the shader targets)
+        run: |
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list \
+            https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B ${{ matrix.dir }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+                -DFEATURE_RAY_TRACING=${{ matrix.rt }} -DGLFW_BUILD_WAYLAND=OFF
+          cmake --build ${{ matrix.dir }} --target tests Shaders -j"$(nproc)"
+
+      - name: Run the suite
+        run: |
+          # tests and assets are both read relative to the working directory (AGENTS.md section 4).
+          ln -sfn "$PWD/assets" ${{ matrix.dir }}/assets
+          cd ${{ matrix.dir }}
+          set +e
+          LSAN_OPTIONS="suppressions=$PWD/../san.supp:print_suppressions=1" ./tests > tests.out 2> tests.err
+          status=$?
+          set -e
+          tail -3 tests.out
+          exit $status
+
+      - name: Record what this run was
+        if: always()
+        run: |
+          cd ${{ matrix.dir }}
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            echo '```'
+            grep -F "[test device]" tests.err || echo "no [test device] line: the suite did not create a device"
+            vulkaninfo 2>/dev/null | grep -m1 "KHRONOS_validation" || echo "no validation layer line"
+            echo "queue family count / queue counts:"
+            vulkaninfo 2>/dev/null | grep -E "queueCount" || true
+            echo '```'
+            echo
+            echo "Debug callback output (VUIDs):"
+            echo '```'
+            grep -oE "#VUID-[A-Za-z0-9-]+" tests.err | sort | uniq -c || echo "(none)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
