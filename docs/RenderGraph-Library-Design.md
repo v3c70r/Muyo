@@ -232,6 +232,13 @@ kind has a mechanism, and the mechanism *is* the notification:
   it loud where a loud form exists, deprecate where it does not, and list it under `Breaking`. What must
   not happen is a silent change of meaning.
 
+**The guarantee rows are the floor of what counts as breaking, not the ceiling.** A consumer will depend on
+observable behaviour the rows never mention - timing, allocation, ordering, the number of dispatches a node
+records - and Hyrum's law says that becomes a dependency whether or not it was promised. Read this rule
+generously: if a change can be observed by a consumer who only used documented behaviour, it belongs under
+`Breaking` even when no row names the thing that changed. The alternative - "our rows do not mention frame
+pacing, so the change is not breaking" - is a technically correct argument that loses a consumer.
+
 This is what keeps versioning as cheap as it is: the library does not chase anyone, and a consumer that
 compiles against a new version is told by their own compiler.
 
@@ -260,6 +267,13 @@ something is removed.
 deprecated in one release and removed in a later one, never the same one. The consumer sees the warning
 in their own build and migrates before the removal lands; nothing has to keep the old version alive.
 
+**When releases begin**: with the first package (#73). Until then a master commit is not a release, and
+the window above has nothing to count against - so `Breaking` and `Deprecated` entries still apply to
+master as they are written, and an entity's removal clock starts at the first tagged version, not at the
+commit that deprecated it. Saying so matters because the alternative reading - that a deprecation on
+master starts a window immediately - would make the rule unsatisfiable before there is anything to
+release.
+
 Revisited when a consumer cannot move for reasons of its own - that is the point at which an LTS branch
 has to be maintained rather than merely promised.
 
@@ -268,6 +282,13 @@ has to be maintained rather than merely promised.
 **1.0 when the public surface is stated (#53's second half) and `Consumers.md` has no `gap` row.** Before
 that it is 0.x, where breaking changes are allowed and still follow everything above. Releasing 1.0 while
 the surface is a gap would make the number claim something it does not.
+
+**And the compatibility mode is a question 0.x has to answer before #73 writes the version file.** Semver
+permits anything to break inside a 0.x series, so `find_package(muyo_rg 0.9 SameMajorVersion)` would
+silently accept a breaking 0.10 - the exact case the compatibility field exists to prevent, defeated by
+the pre-1.0 convention. So either the package is exact-match (or `SameMinorVersion`) while the major is 0,
+or the version file states that 0.x minors do break. #73 decides it; the policy names it here because the
+choice belongs with the rest of this section rather than being discovered in a `ConfigVersion.cmake`.
 
 ## Consumers include coding agents
 
