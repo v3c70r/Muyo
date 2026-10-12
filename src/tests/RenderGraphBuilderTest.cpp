@@ -746,6 +746,98 @@ TEST_CASE("RenderGraphBuilder: a missing service is named and never dereferenced
                       Catch::Matchers::ContainsSubstring("services.descriptorManager is null"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: reading a transient nothing writes fails at Build",
+                 "[RenderGraphBuilder]")
+{
+    // #16. A transient's content is valid from its first write to its last read *within one execution*,
+    // and nothing enforced that: the read took whatever the memory held, because the first reader's
+    // barrier moves the image out of VK_IMAGE_LAYOUT_UNDEFINED, which discards contents rather than
+    // preserving them. The message names the node, the resource, and the escape - the mistake is usually
+    // a missing Persistent. Revert the check and this Build() succeeds, which is the bug.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("NeverWritten", BufferResourceDesc{.count = 4,
+                                                           .stride = sizeof(uint32_t),
+                                                           .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "ReadsIt",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("NeverWritten"),
+                                     .io = ResourceIOType::READ,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"copyBuffer.comp.slang"},
+        .execute = [](RenderGraphNodeContext&) {}});
+
+    CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'ReadsIt'") &&
+                                           Catch::Matchers::ContainsSubstring("'NeverWritten'") &&
+                                           Catch::Matchers::ContainsSubstring("Persistent"));
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
+                 "[RenderGraphBuilder]")
+{
+    // The two exempt cases, which are the reason the check cannot simply demand a writer. A Persistent
+    // resource carries content from an earlier execution and an imported one from outside the graph, so
+    // demanding a write for either would reject exactly the graphs that declare them correctly.
+    SECTION("Persistent declared with AddResource")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("History", BufferResourceDesc{.count = 4,
+                                                          .stride = sizeof(uint32_t),
+                                                          .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                          .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                          .lifetime = ResourceLifetime::Persistent});
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = "ReadsHistory",
+            .queueType = QueueType::COMPUTE,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("History"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::STORAGE_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"copyBuffer.comp.slang"},
+            .execute = [](RenderGraphNodeContext&) {}});
+
+        CHECK_NOTHROW(builder.Build());
+    }
+
+    SECTION("imported, so the graph never allocates it")
+    {
+        BufferResource imported(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 4 * sizeof(uint32_t));
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.ImportResource("Outside", &imported);
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = "ReadsOutside",
+            .queueType = QueueType::COMPUTE,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("Outside"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::STORAGE_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"copyBuffer.comp.slang"},
+            .execute = [](RenderGraphNodeContext&) {}});
+
+        CHECK_NOTHROW(builder.Build());
+    }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a declared resource cannot ask to be Imported",
+                 "[RenderGraphBuilder]")
+{
+    // AddResource is the call that makes the graph allocate, so a desc saying Imported contradicts it.
+    // Reported at the line that made the mistake rather than at Build, and the message names the call
+    // that was meant - the trap is expecting Imported to mean "do not allocate".
+    RenderGraphBuilder builder(GetRenderDevice());
+    CHECK_THROWS_WITH(
+        builder.AddResource("Contradiction", BufferResourceDesc{.count = 4,
+                                                                .stride = sizeof(uint32_t),
+                                                                .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                                .lifetime = ResourceLifetime::Imported}),
+        Catch::Matchers::ContainsSubstring("AddResource") && Catch::Matchers::ContainsSubstring("ImportResource"));
+}
+
 TEST_CASE("BufferRange: an unusable range is rejected with the reason named", "[RenderGraphBuilder]")
 {
     // Device-independent on purpose. The validator is a free function that takes the device's alignment

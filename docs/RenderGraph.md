@@ -46,6 +46,34 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
 | Node | `RenderGraphNodeCreateInfo` | A pass: queue, shaders, resources, PSO, execute callback. |
 | Builder | `RenderGraphBuilder` | Declares the graph, `Build()` compiles it, `Execute()` runs it. |
 
+## Resource lifetimes
+
+Every graph-owned resource declares a `ResourceLifetime`, and the three values differ in what content a
+node may rely on:
+
+| Lifetime | Content is valid | Who allocates |
+| --- | --- | --- |
+| `Transient` (default) | from its **first write to its last read within one execution** - nothing carries to the next one | the graph |
+| `Persistent` | across execution boundaries (TAA history, accumulation) | the graph |
+| `Imported` | wherever the caller says - the graph never writes it unless a node does | the caller, via `ImportResource` |
+
+`Build()` enforces the first row rather than leaving it as an assumption: a node that **reads a transient
+nothing writes first** fails with the node and the resource named, because the read would otherwise take
+whatever the memory happens to hold - the first reader's barrier moves an image out of
+`VK_IMAGE_LAYOUT_UNDEFINED`, and a transition from `UNDEFINED` discards contents rather than keeping them.
+The message names the escape too, since the usual cause is a missing `Persistent`.
+
+The other two are exempt for the same reason: their content is not this execution's to produce. A
+graph-owned resource declaring `Imported` is rejected at `AddResource`, because that call is precisely what
+makes the graph allocate it.
+
+**Aliasing.** Non-overlapping transient live ranges are the resource the graph may share memory across,
+which is why the lifetime is a *declaration* rather than a hint: two transients whose ranges do not overlap
+may occupy the same bytes, and a `Persistent` one never may. The ranges are derived at `Build()` today and
+the memory saving that consumes them is not implemented yet - so nothing in the current allocator reuses
+memory, and a consumer that is relying on a transient's bytes outside its live range is relying on
+something the policy explicitly does not promise, whether or not the aliasing lands.
+
 ## Minimal example
 
 ```cpp
