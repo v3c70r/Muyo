@@ -46,7 +46,8 @@ silently diverge from it.
   route is now a small, self-describing PR rather than a straight commit — it just has one more step, and
   the step is the one that keeps the review record honest.
   Everything else keeps the branch-and-squash flow.
-- **Merge with squash**: `gh pr merge <n> --squash`. Trunk history is then one commit per
+- **Merge with squash**: `gh pr merge <n> --squash` — **enforced by the ruleset since 2026-10-12**, which
+  allows only that method. Trunk history is then one commit per
   workstream, and the PR body becomes the commit body — so write it to be read as `git log`.
 - Keep one concern per pull request. A mechanical refactor and a behaviour change are two PRs even
   when the second would be a one-line edit of the first.
@@ -465,7 +466,7 @@ what is defined when. The format-pass review verified 107/107 files this way.
 | Enforced | Not enforced, and the manual rule that covers it |
 | --- | --- |
 | A pull request, from anyone including an administrator | **CI is not a required check**, so a PR can merge with a red run. Read the checks before merging; the ruleset will not stop you. |
-| **One approving review** | **Squash-only is in the name but not in the rule**: all three merge methods are allowed and there is no linear-history requirement. `gh pr merge --squash` remains a convention this file states rather than one GitHub holds you to. |
+| **One approving review**; **squash-only merge**, enforced since 2026-10-12 (`allowed_merge_methods = [squash]`, which is what the ruleset's name already claimed) | No linear-history requirement, so the squash is a squash by the merge method and not by the shape of the history. |
 | No deletion, no force-push to `master` | **Stale approvals are not dismissed on push**, and the last push does not need its own approval — so a fixup pushed after review keeps the approval it invalidated. The section below already requires a re-check; the gate does not. |
 
 Two identities, and now they are real ones: work is authored by `v3c70r` and reviewed by
