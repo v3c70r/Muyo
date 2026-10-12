@@ -731,7 +731,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
     readback.Unmap();
 }
 
-TEST_CASE("RenderGraphBuilder: a service it cannot run without is named, not dereferenced", "[RenderGraphBuilder]")
+TEST_CASE("RenderGraphBuilder: a missing service is named and never dereferenced", "[RenderGraphBuilder]")
 {
     // #53. The graph takes its device, resource allocator and descriptor allocator by construction, and a
     // missing one has to be a message rather than a null dereference inside a member initialiser - which
