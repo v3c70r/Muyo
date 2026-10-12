@@ -32,8 +32,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-docs:
-    name: build both configurations + docs
+  docs-and-format:
+    name: docs + format
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -42,45 +42,22 @@ jobs:
           # The format check diffs against the merge base with master, so it needs the history.
           fetch-depth: 0
 
-      - name: Install build dependencies
+      # No build, and so no compiler, no X11 packages and no Vulkan SDK: the docs check runs doxygen
+      # and the format check runs clang-format on a diff. Building here as well used to repeat the
+      # Debug and Debug+RT builds the test matrix already does - 189 s of the job's 270 - for a job
+      # whose own two checks take one second and zero. The build gate is the matrix, which builds each
+      # configuration once *and* runs it, which is strictly stronger than a build-only job.
+      - name: Install doxygen and clang-format
         run: |
           sudo apt-get update
           # doxygen: the checked-in RenderGraph-api.md is generated with 1.9.8, which is this release's
           # package (docs/README.md). A different version is a suspected cause of a --check mismatch.
-          # The X11 development packages are for the bundled GLFW, which muyo links even headless.
-          # slangc is the one tool the SDK provides that the distribution does not.
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build python3 doxygen clang-format git \
-            libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
-            libvulkan1 libvulkan-dev mesa-vulkan-drivers
-          # Not vulkan-validationlayers or vulkan-tools: the SDK ships both, and adding the
-          # distribution's copies would make *which* layer loads - and which vulkaninfo reports -
-          # depend on path order. The layer a run uses is the SDK's, which is the version the
-          # hardware runs record.
-
-      - name: Install the Vulkan SDK (tarball, pinned)
-        uses: ./.github/actions/install-vulkan-sdk
-        with:
-          version: ${{ env.VULKAN_SDK_VERSION }}
+          sudo apt-get install -y --no-install-recommends python3 doxygen clang-format git
 
       - name: Record the tool versions this run used
         run: |
           echo "doxygen       $(doxygen --version)"
           echo "clang-format  $(clang-format --version)"
-          echo "VULKAN_SDK    $VULKAN_SDK"
-
-      # Both configurations, because AGENTS.md section 4 requires both to build and both to pass. The
-      # shader GLOBs are read at configure time, so a fresh configure is what makes a new .slang file
-      # visible - the trap that has cost this repository several red herrings.
-      - name: Configure and build (default)
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DGLFW_BUILD_WAYLAND=OFF
-          cmake --build build --target tests Shaders -j"$(nproc)"
-
-      - name: Configure and build (ray tracing)
-        run: |
-          cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON -DCMAKE_BUILD_TYPE=Debug -DGLFW_BUILD_WAYLAND=OFF
-          cmake --build build-rt --target tests Shaders -j"$(nproc)"
 
       - name: Documentation coverage and the checked-in reference
         run: python3 scripts/render_graph_docs.py --check
