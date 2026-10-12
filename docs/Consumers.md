@@ -52,8 +52,16 @@ tracking issue and, where it blocks a consumer, is marked.
 
 ## Rules for consumers and for changes
 
-- **A change that would break a guarantee names the consumer and updates its row in the same PR.**
-  The row is the contract; leaving it stale is the drift `AGENTS.md` §5 already has a rule about.
+- **A change that would break a guarantee names the guarantee and updates its row in the same PR, and is
+  listed under `Breaking` in the changelog.** Naming the *guarantee* rather than every consumer is what
+  keeps this file an inventory instead of a registry: it scales by promise, and a third party finds the
+  change through the version and the changelog (`docs/RenderGraph-Library-Design.md`, "Versioning the
+  library"). The row is the contract; leaving it stale is the drift `AGENTS.md` §5 has a rule about.
+- **First-party consumers are named as well.** `muyo-llm`, and `helloVulkan` as it adopts the graph, are
+  how the library's coverage is measured rather than only who consumes it, so a change that breaks one
+  names it and does not merge with that upgrade unplanned.
+- **Rows describe the current version.** Only the current version is supported, so a first-party consumer
+  that has not upgraded leaves its rows stale - and a stale row is not evidence about the library.
 - **A new consumer adds its row here before it adds code.** The row states which guarantees it
   relies on, so a gap is visible while it is cheap to fix.
 - **A consumer-driven change follows the normal process.** File an issue first if the roadmap does not
