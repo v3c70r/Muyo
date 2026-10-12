@@ -24,6 +24,16 @@ silently diverge from it.
   Two sessions have already edited the wrong branch here; both were caught only by reading the
   diff, and one produced an edit against a file version that did not have the fix it was extending.
   `git status --short` before `git add` is the cheap habit.
+- **A branch created from a remote ref inherits that ref as its upstream.** `git checkout -B
+  versioning-policy origin/master` sets the new branch to track `origin/master`, so a later bare `git
+  push` is aimed at **trunk**. What stopped it here was `push.default=simple`, which refuses when the
+  upstream branch name differs from the local one - and the push failed with no output at all through a
+  `| tail -1`, so the only reason the wrong target was caught is that the state was checked instead of
+  assumed (`origin/master` had not moved). Two habits follow: push with an explicit refspec
+  (`git push origin HEAD:refs/heads/<name>`), and set the upstream deliberately with
+  `git branch --set-upstream-to` rather than inheriting it from the base. **A push whose output you did
+  not read is a push whose target you do not know** - which is the same rule as reading an exit status
+  rather than grepping for a word, one layer out.
 - Never commit directly to `master` — **one exception: `AGENTS.md` itself**. A process lesson that
   is not recorded is a lesson the next session does not have, so working-agreement updates are
   committed straight to trunk (small, self-describing commits) instead of waiting for a PR cycle.
