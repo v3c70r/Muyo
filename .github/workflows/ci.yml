@@ -139,7 +139,17 @@ jobs:
             vulkaninfo 2>/dev/null | grep -m1 "KHRONOS_validation" || echo "no validation layer line"
             echo "queue counts: $(vulkaninfo 2>/dev/null | grep -c queueCount) families reported below"
             vulkaninfo 2>/dev/null | grep -E "queueCount" || true
-            echo "validation messages (VUIDs):"
-            grep -oE "#VUID-[A-Za-z0-9-]+" tests.err | sort | uniq -c || true
-            echo "(the fork test's VUID-vkWaitForFences-pFences-parameter is expected; anything else is not)"
+            # The one expected exclusion is computed rather than left to the reader. The fork test
+            # deliberately passes a bad pointer to vkWaitForFences and inherits the parent's stderr, so
+            # two occurrences of that VUID are the *clean* result (AGENTS.md section 6) - and the
+            # difference between a clean run and a run with one real validation error is otherwise a
+            # memory test. Printing the delta makes "clean" one number.
+            expected="VUID-vkWaitForFences-pFences-parameter"
+            seen=$(grep -oE "#?VUID-[A-Za-z0-9-]+" tests.err 2>/dev/null | tr -d '#' | sort -u || true)
+            unexpected=$(printf '%s\n' "$seen" | grep -v -x "$expected" | grep -c . || true)
+            echo "validation VUIDs seen: $(printf '%s' "$seen" | tr '\n' ' ')"
+            echo "unexpected VUIDs: $unexpected"
+            if [ "$unexpected" != "0" ]; then
+              echo "::error::$unexpected unexpected validation message(s); the debug callback asserts on ERROR, so this run should have aborted"
+            fi
           } | tee -a "$GITHUB_STEP_SUMMARY"
