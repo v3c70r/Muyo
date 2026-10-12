@@ -3,7 +3,6 @@
 
 #include <functional>
 
-#include "MeshResourceManager.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderResourceManager.h"
 
@@ -16,8 +15,11 @@ namespace Muyo::RenderGraph
 struct RenderGraphNodeContext
 {
     QueueType queueType = QueueType::GRAPHICS;  ///< Queue this node is running on.
-    RenderResourceManager& resourceManager;     ///< Global resource manager (graph-owned resources).
-    MeshResourceManager& meshManager;           ///< Mesh manager (shared vertex/index buffers).
+    RenderResourceManager& resourceManager;     ///< Allocates and owns graph-declared resources.
+    // No mesh manager here. It was a reference the graph had to fill from the renderer's singleton for
+    // every node, including compute ones, and no caller ever read it - a node callback that needs mesh
+    // buffers captures them itself (consumer finding F5, #53). Carrying it made the graph require a
+    // renderer-shaped service it has no use for.
 
     // GPU-side fields (valid only for GPU nodes)
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;                      ///< Command buffer to record into.

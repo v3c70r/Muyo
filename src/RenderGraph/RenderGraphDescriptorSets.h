@@ -90,8 +90,11 @@ class RenderGraphDescriptorSets
 {
 public:
     /// Allocate the three semantic set layouts and their descriptor sets.
+    /// @param device      Device the sets belong to, so this class does not reach for the engine's
+    ///                    global device accessor to update them (#53).
     /// @param descManager Descriptor manager owning the pool and layout cache.
-    explicit RenderGraphDescriptorSets(DescriptorManager& descManager) : m_descManager(descManager)
+    explicit RenderGraphDescriptorSets(VkDevice device, DescriptorManager& descManager)
+        : m_device(device), m_descManager(descManager)
     {
         m_descriptorSetLayouts[ResourceBindingSemantic::PER_VIEW] =
             m_descManager.AllocateDescriptorSetLayout(bindingsPerSet[EnumIndex(ResourceBindingSemantic::PER_VIEW)]);
@@ -206,10 +209,11 @@ public:
                 "can only be bound to a BufferResource or an ImageResource.");
         }
 
-        vkUpdateDescriptorSets(GetRenderDevice()->GetDevice(), 1, &writeDescSet, 0, nullptr);
+        vkUpdateDescriptorSets(m_device, 1, &writeDescSet, 0, nullptr);
     }
 
 private:
+    VkDevice m_device = VK_NULL_HANDLE;
     DescriptorManager& m_descManager;
     // Note: descriptor sets are allocated per node (see AllocateSemanticSet); only the shared
     // layouts live here.

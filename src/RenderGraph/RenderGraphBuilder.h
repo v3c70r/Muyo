@@ -13,7 +13,6 @@
 
 #include "CompiledRenderGraph.h"
 #include "DependencyGraph.h"
-#include "MeshResourceManager.h"
 #include "PSODesc.h"
 #include "PerObjResourceManager.h"
 #include "RenderGraphDescriptorSets.h"
@@ -77,11 +76,36 @@ struct RenderGraphNodeCreateInfo
     RenderGraphNodeCallback execute;  ///< Records the node's work.
 };
 
+/// The services a graph is *given*, rather than looking up as globals (#53).
+///
+/// The split follows the design document: the graph owns the **policy** - transient lifetimes, barriers,
+/// scheduling, descriptor content - while the **mechanism** belongs to the host. The device, the memory
+/// and the descriptors are the host's, so they arrive by construction. A caller that supplies all three
+/// runs a graph without the engine's globals, which is what lets a compute-only consumer use it without
+/// the renderer. `RenderGraphBuilder(VkRenderDevice*)` still fills the other two from those globals for
+/// in-tree callers that have not moved, and is marked as the transition rather than the shape.
+///
+/// Deliberately not here yet: a shader source provider (the graph still loads `.spv` by file name) and a
+/// pipeline cache (there is no channel for one at all). Both are capabilities rather than
+/// de-globalisation, and each belongs with the guarantee it closes - "a client can supply SPIR-V bytes"
+/// and the cost work.
+struct RenderGraphServices
+{
+    /// Device the graph creates pipelines, command buffers and synchronisation with. Required.
+    VkRenderDevice* device = nullptr;
+    /// Allocates and owns the graph's declared resources. Required.
+    RenderResourceManager* resourceManager = nullptr;
+    /// Allocates descriptor set layouts and sets. Required.
+    DescriptorManager* descriptorManager = nullptr;
+};
+
 /// Declares and runs a render graph.
 ///
 /// Typical use:
 /// @code
-/// RenderGraphBuilder builder(GetRenderDevice());
+/// RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
+///                                               .resourceManager = GetRenderResourceManager(),
+///                                               .descriptorManager = GetDescriptorManager()});
 /// builder.AddResource("Color", ImageResourceDesc{ .format = ..., .extent = ..., .usage = ... });
 /// builder.ImportResource("Vertices", meshManager.m_pVertexBuffer);
 /// builder.AddNode({ .nodeName = "Opaque", .queueType = QueueType::GRAPHICS, ... });
@@ -95,6 +119,13 @@ struct RenderGraphNodeCreateInfo
 class RenderGraphBuilder
 {
 public:
+    /// @param services The device, resource allocator and descriptor allocator the graph uses. Each is
+    ///                 required; a missing one is reported by name rather than dereferenced later, and
+    ///                 the check throws so it survives `NDEBUG`.
+    explicit RenderGraphBuilder(const RenderGraphServices& services);
+    /// Transitional: fills the remaining services from the engine's globals, for the callers that still
+    /// use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is
+    /// why it is documented as the transition rather than as an equal alternative.
     /// @param renderDevice Device used to create pipelines, command buffers and synchronisation.
     explicit RenderGraphBuilder(VkRenderDevice* renderDevice);
     /// Releases compiled pipelines, descriptor sets and command buffers.
@@ -213,12 +244,12 @@ private:
     CompiledRenderGraph m_compiledGraph;
 
     DependencyGraph<std::string> m_dependencyGraph;
+    /// The injected services, declared **before** the members whose construction dereferences them: a
+    /// member initialiser list runs in declaration order, so putting this first is what lets
+    /// `RequireServices` reject a missing one by name before anything dereferences it.
+    RenderGraphServices m_services;
     ShaderAssetManager m_shaderAssetManager;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
-    // Kept for the device's descriptor offset alignment limits, which have to be checked when a use
-    // declares a buffer range: a driver may demand far more alignment than this machine's storage
-    // buffer needs, and the failure otherwise surfaces at bind time naming neither (#81).
-    VkRenderDevice* m_renderDevice = nullptr;
     VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
     VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
     RenderGraphDescriptorSets m_descriptorSetManager;
