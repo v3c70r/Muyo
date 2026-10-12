@@ -1,0 +1,59 @@
+name: Install the Vulkan SDK
+description: >
+  The pinned LunarG SDK, as the tarball the Linux documentation recommends, extracted and sourced
+  through its own setup-env.sh - the same way AGENTS.md section 4 tells a developer to do it. Two
+  things follow from that rather than from the apt repository: the version is pinned instead of
+  tracking whatever `vulkan-sdk` currently is, and the Vulkan **validation layer** in a CI run is the
+  SDK's, so the code-and-layer pair a clean run is evidence about is the one the hardware runs record.
+
+inputs:
+  version:
+    description: SDK version, matching the $VULKAN_SDK of the development machine.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the SDK from cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/vulkan-sdk
+        # Version in the key, so a bump is a miss rather than a stale hit.
+        key: vulkan-sdk-${{ runner.os }}-${{ inputs.version }}
+
+    - name: Download and extract
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # 366 MB. The three LunarG URLs for a version are aliases of one file, this is the documented
+        # one; extraction lands in <root>/<version>/{setup-env.sh,x86_64}.
+        curl -sSL -o "$RUNNER_TEMP/vulkan_sdk.tar.xz" \
+          "https://sdk.lunarg.com/sdk/download/${{ inputs.version }}/linux/vulkan_sdk.tar.xz"
+        mkdir -p "$RUNNER_TEMP/vulkan-sdk"
+        tar -xJf "$RUNNER_TEMP/vulkan_sdk.tar.xz" -C "$RUNNER_TEMP/vulkan-sdk"
+        rm -f "$RUNNER_TEMP/vulkan_sdk.tar.xz"
+
+    - name: Source setup-env.sh and persist what it sets
+      shell: bash
+      run: |
+        # setup-env.sh derives VULKAN_SDK as <root>/$(uname -m), prepends the SDK's bin, points
+        # LD_LIBRARY_PATH at its loader, and sets VK_ADD_LAYER_PATH for its layers - explicitly
+        # unsetting VK_LAYER_PATH first, which is why that variable is not persisted here.
+        source "$RUNNER_TEMP/vulkan-sdk/${{ inputs.version }}/setup-env.sh"
+        {
+          echo "VULKAN_SDK=$VULKAN_SDK"
+          echo "PATH=$PATH"
+          echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+          echo "VK_ADD_LAYER_PATH=${VK_ADD_LAYER_PATH:-}"
+          echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}"
+          echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}"
+        } >> "$GITHUB_ENV"
+
+    - name: Report what was installed
+      shell: bash
+      run: |
+        echo "VULKAN_SDK    $VULKAN_SDK"
+        echo "slangc        $(command -v slangc)  $(slangc --version 2>/dev/null | head -1)"
+        echo "glslang       $(command -v glslangValidator)"
+        echo "layers        $(ls "$VULKAN_SDK/share/vulkan/explicit_layer.d" 2>/dev/null | tr '\n' ' ')"

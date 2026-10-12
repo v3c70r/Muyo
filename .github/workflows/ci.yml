@@ -21,6 +21,12 @@ on:
   pull_request:
     branches: [master]
 
+env:
+  # Pinned, because the whole point of moving off the apt repository is that `vulkan-sdk` there tracks
+  # whatever is current and this repository records the version a run used. Matches the development
+  # machine's $VULKAN_SDK so CI and a local build are the same SDK.
+  VULKAN_SDK_VERSION: "1.4.363.0"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -46,23 +52,22 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build python3 doxygen clang-format git \
             libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
-            libvulkan1 libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers
+            libvulkan1 libvulkan-dev mesa-vulkan-drivers
+          # Not vulkan-validationlayers or vulkan-tools: the SDK ships both, and adding the
+          # distribution's copies would make *which* layer loads - and which vulkaninfo reports -
+          # depend on path order. The layer a run uses is the SDK's, which is the version the
+          # hardware runs record.
 
-      - name: Install the Vulkan SDK
-        run: |
-          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
-            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list \
-            https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
-          sudo apt-get update
-          sudo apt-get install -y vulkan-sdk
+      - name: Install the Vulkan SDK (tarball, pinned)
+        uses: ./.github/actions/install-vulkan-sdk
+        with:
+          version: ${{ env.VULKAN_SDK_VERSION }}
 
       - name: Record the tool versions this run used
         run: |
           echo "doxygen       $(doxygen --version)"
           echo "clang-format  $(clang-format --version)"
-          echo "slangc        $(command -v slangc)"
-          echo "glslang       $(command -v glslangValidator)"
+          echo "VULKAN_SDK    $VULKAN_SDK"
 
       # Both configurations, because AGENTS.md section 4 requires both to build and both to pass. The
       # shader GLOBs are read at configure time, so a fresh configure is what makes a new .slang file
@@ -114,16 +119,16 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build python3 \
             libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
-            libvulkan1 libvulkan-dev vulkan-validationlayers vulkan-tools mesa-vulkan-drivers
+            libvulkan1 libvulkan-dev mesa-vulkan-drivers
+          # Not vulkan-validationlayers or vulkan-tools: the SDK ships both, and adding the
+          # distribution's copies would make *which* layer loads - and which vulkaninfo reports -
+          # depend on path order. The layer a run uses is the SDK's, which is the version the
+          # hardware runs record.
 
-      - name: Install the Vulkan SDK (slangc, for the shader targets)
-        run: |
-          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
-            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc >/dev/null
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list \
-            https://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
-          sudo apt-get update
-          sudo apt-get install -y vulkan-sdk
+      - name: Install the Vulkan SDK (tarball, pinned)
+        uses: ./.github/actions/install-vulkan-sdk
+        with:
+          version: ${{ env.VULKAN_SDK_VERSION }}
 
       - name: Configure and build
         run: |
