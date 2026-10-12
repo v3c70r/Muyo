@@ -110,6 +110,31 @@ Compute and ray tracing nodes bind resources by **explicit set/binding** declare
 Graphics nodes use the three built-in semantic sets instead
 (`ResourceBindingSemantic::PER_VIEW` / `PER_OBJ` / `MATERIAL`).
 
+To bind part of a buffer rather than all of it, add a `bufferRange` to the use:
+
+```cpp
+{.handle = "Weights",
+ .io = ResourceIOType::READ,
+ .usage = ResourceUsage::STORAGE_BUFFER,
+ .kind = ResourceKind::BUFFER,
+ .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0},
+ .bufferRange = BufferRange{.offset = 4096, .size = 1024}},   // bytes
+```
+
+That becomes the descriptor's `offset` and `range`, so a shader sees one tensor of a packed weights
+buffer, or one row of a KV cache, as if it were the whole buffer. Three things bound the feature:
+
+- **It is resolved at `Build()`.** The range is written into the descriptor set once, so changing it
+  means rebuilding the graph. A base that is only known per execution is a different mechanism, not a
+  different value of this one — see issue #81 for the options and their costs.
+- **Alignment is the device's.** `offset` must be a multiple of
+  `minStorageBufferOffsetAlignment` (or the uniform equivalent), which may be far larger than the four
+  bytes this project's machine reports. A bad range fails at `Build()` naming the limit rather than at
+  bind time.
+- **It is a binding claim, not a disjointness claim.** Barriers stay per-resource and conservative, so
+  two uses of different bytes of one buffer are still ordered against each other. Nothing here makes
+  hazard analysis range-aware.
+
 ## GPU-driven rendering
 
 A compute node can generate `VkDrawIndexedIndirectCommand`s and an atomic count that a graphics

@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
+#include <string>
 
 #include "RenderGraphResourceHandle.h"
 #include "vulkan/vulkan_core.h"
@@ -97,6 +99,63 @@ struct DescriptorBinding
     uint32_t binding = 0;  ///< Binding index within the set.
 };
 
+/// A byte range inside a buffer resource - a view of part of it.
+///
+/// Declared on a `ResourceUse` to bind only `[offset, offset + size)`, which is what one tensor of a
+/// packed weights buffer or a row of a KV cache needs. Without it the whole buffer is bound, which is
+/// what every existing caller gets.
+///
+/// The range is resolved at `Build()`: it is written into `VkDescriptorBufferInfo` once, so changing it
+/// means rebuilding the graph. A base that is only known per execution is a different mechanism, not a
+/// different value of this one - see issue #81.
+struct BufferRange
+{
+    uint64_t offset = 0;  ///< Byte offset from the start of the buffer.
+    uint64_t size = 0;    ///< Byte length of the range. Must not be zero.
+};
+
+/// Validate a declared byte range against the buffer it addresses and a device alignment limit.
+///
+/// Free, and taking the alignment as an argument, for two reasons. It has to be callable from both
+/// places a buffer is bound into a descriptor, which are different classes. And the failure modes are
+/// worth testing on any machine: how much alignment a driver demands is a property of *that* device
+/// (`minStorageBufferOffsetAlignment` may be far larger than the 4 bytes this machine requires), while
+/// a free function with the limit passed in tests the rule without needing the device that exhibits
+/// it.
+///
+/// Both checks exist because neither is caught where the mistake is made: an out-of-range range reads
+/// or writes the wrong bytes, and a misaligned one is a validation error at bind time, far from the
+/// line that declared it.
+///
+/// @param nodeName          Node that declared the range; named in the message.
+/// @param handle            Buffer handle; named in the message.
+/// @param range             The declared range.
+/// @param bufferSize        Size of the addressed buffer, in bytes.
+/// @param requiredAlignment Device limit for the binding's descriptor type. 1 disables the check.
+/// @throws std::runtime_error if the range is zero-sized, out of bounds, or misaligned.
+inline void ValidateBufferRange(const ResourceHandle& nodeName, const ResourceHandle& handle, const BufferRange& range,
+                                uint64_t bufferSize, uint64_t requiredAlignment)
+{
+    if (range.size == 0)
+    {
+        throw std::runtime_error("Node '" + nodeName + "' binds buffer '" + handle +
+                                 "' with a zero-sized range. Leave bufferRange unset to bind the whole buffer.");
+    }
+    if (range.offset > bufferSize || range.size > bufferSize - range.offset)
+    {
+        throw std::runtime_error("Node '" + nodeName + "' binds buffer '" + handle + "' at [" +
+                                 std::to_string(range.offset) + ", " + std::to_string(range.offset + range.size) +
+                                 ") which is outside the buffer's " + std::to_string(bufferSize) + " bytes.");
+    }
+    if (requiredAlignment > 1 && (range.offset % requiredAlignment) != 0)
+    {
+        throw std::runtime_error("Node '" + nodeName + "' binds buffer '" + handle + "' at offset " +
+                                 std::to_string(range.offset) + ", which is not a multiple of this device's " +
+                                 std::to_string(requiredAlignment) +
+                                 "-byte descriptor offset alignment for that descriptor type.");
+    }
+}
+
 /// A node's declaration that it uses a resource (the interface passed to RenderGraphBuilder).
 struct ResourceUse
 {
@@ -107,6 +166,8 @@ struct ResourceUse
     ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;  ///< Built-in set for graphics nodes.
     /// Optional explicit descriptor location. Only used when bindingSemantic == NONE.
     std::optional<DescriptorBinding> descriptorBinding = std::nullopt;
+    /// Optional byte range of a buffer resource to bind. Absent binds the whole buffer.
+    std::optional<BufferRange> bufferRange = std::nullopt;
 };
 
 /// A `ResourceUse` after the graph has resolved it to concrete barrier state.
@@ -132,6 +193,12 @@ struct ResolvedResourceUse
 
     ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;  ///< Built-in set.
     std::optional<DescriptorBinding> descriptorBinding = std::nullopt;        ///< Explicit set/binding.
+    /// Byte range of a buffer resource to bind, carried through from the declaration.
+    ///
+    /// Kept here because both consumers read this struct: the descriptor write needs it, and the
+    /// barrier path deliberately ignores it - a range is a *binding* claim, not a claim that two uses
+    /// touch disjoint bytes, so hazards stay per-resource and conservative.
+    std::optional<BufferRange> bufferRange = std::nullopt;
 };
 
 }  // namespace Muyo::RenderGraph

@@ -162,8 +162,11 @@ public:
     /// @param descriptorType Type resolved via `GetBindingType`.
     /// @param pResource     Buffer or image to bind.
     /// @param bindingIndex  Binding within the set.
+    /// @param bufferRange   Byte range of a buffer to bind, or empty for the whole buffer. Already
+    ///                      validated by `RenderGraphBuilder::ResolveBufferRange` at Build.
     void BindResourceToDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType descriptorType,
-                                     const IRenderResource* pResource, uint32_t bindingIndex)
+                                     const IRenderResource* pResource, uint32_t bindingIndex,
+                                     const std::optional<BufferRange>& bufferRange = std::nullopt)
     {
         VkWriteDescriptorSet writeDescSet = {};
         writeDescSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -184,8 +187,8 @@ public:
         if (const auto* pBufferResource = dynamic_cast<const BufferResource*>(pResource))
         {
             bufferInfo.buffer = pBufferResource->buffer();
-            bufferInfo.offset = 0;
-            bufferInfo.range = pBufferResource->GetSize();
+            bufferInfo.offset = bufferRange ? static_cast<VkDeviceSize>(bufferRange->offset) : 0;
+            bufferInfo.range = bufferRange ? static_cast<VkDeviceSize>(bufferRange->size) : pBufferResource->GetSize();
             writeDescSet.pBufferInfo = &bufferInfo;
         }
         else if (const auto* pImageResource = dynamic_cast<const ImageResource*>(pResource))
