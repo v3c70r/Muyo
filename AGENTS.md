@@ -173,7 +173,10 @@ Operational notes, each of which has cost someone a red herring:
 - **Selecting cases:** Catch2 specs are exact-match unless they contain a wildcard - a plain
   `"GPU frustum culling"` matches nothing (the case is `RenderGraphBuilder: GPU frustum culling
   (async compute queue)`); use `"*GPU frustum culling*"`. Multiple specs take comma-separated
-  wildcards in one argument: `./tests "DIAG*,*read-write*"`.
+  wildcards in one argument: `./tests "DIAG*,*read-write*"`. A comma **inside** one test's name splits the spec there too -
+  `"*named, not dereferenced*"` ran two unrelated patterns and silently selected a different test,
+  making a teeth mutation look like a pass during the #85 review; reword the wildcard to avoid a
+  comma that is part of the name.
 - **The debug callback asserts on `ERROR`**, so a validation error aborts the *whole run* at that
   point, not just the case. To see the remaining failures, judge from the stderr VUIDs and re-run
   selected cases by name.
