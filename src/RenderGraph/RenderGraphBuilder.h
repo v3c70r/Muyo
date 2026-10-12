@@ -13,7 +13,6 @@
 
 #include "CompiledRenderGraph.h"
 #include "DependencyGraph.h"
-#include "MeshResourceManager.h"
 #include "PSODesc.h"
 #include "PerObjResourceManager.h"
 #include "RenderGraphDescriptorSets.h"

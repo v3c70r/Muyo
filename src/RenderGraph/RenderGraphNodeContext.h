@@ -3,7 +3,6 @@
 
 #include <functional>
 
-#include "MeshResourceManager.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderResourceManager.h"
 
