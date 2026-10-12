@@ -67,6 +67,13 @@ The other two are exempt for the same reason: their content is not this executio
 graph-owned resource declaring `Imported` is rejected at `AddResource`, because that call is precisely what
 makes the graph allocate it.
 
+The check reads each node's **declaration order**, not what its callback does. A node that lists `[READ,
+WRITE]` for one transient - the read first - is rejected even if it writes before it reads, because the
+graph cannot see inside a callback. Both escapes say what you mean: list the write first, or declare the
+single use `READ_WRITE`, which is the flag for "this node both reads and writes it, and the order is its
+own business". Conservative is the right default for a graph that cannot look into the callback, but it is
+a rule a caller can trip on, so it is worth knowing before the first graph does.
+
 **Aliasing.** Non-overlapping transient live ranges are the resource the graph may share memory across,
 which is why the lifetime is a *declaration* rather than a hint: two transients whose ranges do not overlap
 may occupy the same bytes, and a `Persistent` one never may. The ranges are derived at `Build()` today and
