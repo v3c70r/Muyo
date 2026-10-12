@@ -581,7 +581,14 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     // The shader stores both constants straight into a storage buffer, so the test distinguishes a
     // value supplied at pipeline creation from the default (1234 and 1). Revert the wiring in
     // CompileRenderGraphNode and this reads the defaults instead.
-    RenderGraphBuilder builder(GetRenderDevice());
+    //
+    // Built from explicit services rather than the device-only constructor, so the injected path is the
+    // one an end-to-end case covers. The remaining cases take the transitional constructor, which fills
+    // the same three services from the engine's globals - both paths are therefore exercised, and #53's
+    // claim that no internal site reaches for a global is closed by grepping the directory.
+    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
+                                                   .resourceManager = GetRenderResourceManager(),
+                                                   .descriptorManager = GetDescriptorManager()});
     builder.AddResource(
         "SpecOut", BufferResourceDesc{.count = 2,
                                       .stride = sizeof(uint32_t),
@@ -722,6 +729,21 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
     CHECK(pValues[nOffsetElements] == 1234);
     CHECK(pValues[nOffsetElements + 1] == 1);
     readback.Unmap();
+}
+
+TEST_CASE("RenderGraphBuilder: a service it cannot run without is named, not dereferenced", "[RenderGraphBuilder]")
+{
+    // #53. The graph takes its device, resource allocator and descriptor allocator by construction, and a
+    // missing one has to be a message rather than a null dereference inside a member initialiser - which
+    // is why m_services is declared before the members that dereference it, and why this throws rather
+    // than asserting. Device-independent: every rejection happens before anything touches Vulkan.
+    CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{}),
+                      Catch::Matchers::ContainsSubstring("services.device is null"));
+    CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{.device = GetRenderDevice()}),
+                      Catch::Matchers::ContainsSubstring("services.resourceManager is null"));
+    CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{.device = GetRenderDevice(),
+                                                             .resourceManager = GetRenderResourceManager()}),
+                      Catch::Matchers::ContainsSubstring("services.descriptorManager is null"));
 }
 
 TEST_CASE("BufferRange: an unusable range is rejected with the reason named", "[RenderGraphBuilder]")

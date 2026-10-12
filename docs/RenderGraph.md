@@ -49,7 +49,16 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
 ## Minimal example
 
 ```cpp
-RenderGraphBuilder builder(GetRenderDevice());
+// The graph is given its device, resource allocator and descriptor allocator - it does not look them up.
+RenderGraphBuilder builder(RenderGraphServices{
+    .device            = GetRenderDevice(),
+    .resourceManager   = GetRenderResourceManager(),
+    .descriptorManager = GetDescriptorManager(),
+});
+
+// There is also RenderGraphBuilder(VkRenderDevice*), which fills the other two from the engine's
+// globals. It exists so the in-tree callers that still use them keep working; a consumer that wants to
+// run a graph without the renderer's singletons uses the form above.
 
 // Graph-owned resources.
 builder.AddResource("Color", ImageResourceDesc{

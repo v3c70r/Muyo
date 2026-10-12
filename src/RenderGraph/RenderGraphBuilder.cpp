@@ -44,17 +44,55 @@ uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment) { return (nSize + nAlignme
 namespace Muyo::RenderGraph
 {
 
-RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
-    : m_shaderAssetManager(renderDevice->GetDevice())
-    , m_vkDevice(renderDevice->GetDevice())
-    , m_renderDevice(renderDevice)
-    , m_descriptorSetManager(*GetDescriptorManager())
-    , m_executor(renderDevice)
+namespace
+{
+/// Reject a service the graph cannot run without, **before** anything dereferences it. `m_services` is
+/// declared ahead of the members whose construction dereferences it, and a member initialiser list runs
+/// in declaration order, so a missing entry becomes a named error here rather than a null dereference
+/// inside another member's constructor. A throw and not an assert, because a caller can falsify this and
+/// the error path has to survive `NDEBUG` (AGENTS.md section 3).
+const RenderGraphServices& RequireServices(const RenderGraphServices& services)
+{
+    if (services.device == nullptr)
+    {
+        throw std::runtime_error(
+            "RenderGraphBuilder: services.device is null. The graph has no device to create pipelines, "
+            "command buffers or synchronisation with.");
+    }
+    if (services.resourceManager == nullptr)
+    {
+        throw std::runtime_error(
+            "RenderGraphBuilder: services.resourceManager is null. The graph allocates its declared "
+            "resources through it.");
+    }
+    if (services.descriptorManager == nullptr)
+    {
+        throw std::runtime_error(
+            "RenderGraphBuilder: services.descriptorManager is null. The graph allocates descriptor set "
+            "layouts and sets through it.");
+    }
+    return services;
+}
+}  // namespace
+
+RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
+    : m_services(RequireServices(services))
+    , m_shaderAssetManager(m_services.device->GetDevice())
+    , m_vkDevice(m_services.device->GetDevice())
+    , m_descriptorSetManager(m_services.device->GetDevice(), *m_services.descriptorManager)
+    , m_executor(m_services.device)
 {
     VkPhysicalDeviceProperties deviceProperties{};
-    vkGetPhysicalDeviceProperties(renderDevice->GetPhysicalDevice(), &deviceProperties);
+    vkGetPhysicalDeviceProperties(m_services.device->GetPhysicalDevice(), &deviceProperties);
     m_minUniformBufferOffsetAlignment = deviceProperties.limits.minUniformBufferOffsetAlignment;
     m_minStorageBufferOffsetAlignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
+}
+
+RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
+    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice,
+                                             .resourceManager = GetRenderResourceManager(),
+                                             .descriptorManager = GetDescriptorManager()})
+{
 }
 
 std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::ResolveBufferRange(const ResourceHandle& nodeName,
@@ -76,7 +114,7 @@ std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::ResolveBufferRange(con
 
 RenderGraphBuilder::~RenderGraphBuilder()
 {
-    m_compiledGraph.Destroy(m_vkDevice, GetDescriptorManager()->GetDescriptorPool());
+    m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
     m_vkDevice = VK_NULL_HANDLE;
 }
 
@@ -104,7 +142,7 @@ const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle&
     {
         return it->second;
     }
-    return GetRenderResourceManager()->template GetResource<IRenderResource>(handle);
+    return m_services.resourceManager->template GetResource<IRenderResource>(handle);
 }
 
 CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderGraphBuilder::RenderGraphNode& rgn)
@@ -351,7 +389,7 @@ void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& 
                                                .pImmutableSamplers = nullptr});
     }
 
-    auto& descriptorManager = *GetDescriptorManager();
+    auto& descriptorManager = *m_services.descriptorManager;
     rgn.descriptorSetLayouts.resize(setCount, VK_NULL_HANDLE);
     rgn.descriptorSets.resize(setCount, VK_NULL_HANDLE);
     for (uint32_t set = 0; set < setCount; ++set)
@@ -449,7 +487,7 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     // ── Shader binding table ──────────────────────────────────────────────
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProps{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR};
-    GetRenderDevice()->GetPhysicalDeviceProperties(rtProps);
+    m_services.device->GetPhysicalDeviceProperties(rtProps);
 
     const uint32_t nHandleSize = rtProps.shaderGroupHandleSize;
     const uint32_t nHandleSizeAligned = AlignUp(nHandleSize, rtProps.shaderGroupHandleAlignment);
@@ -473,8 +511,8 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
                                                           handles.data()));
 
     ShaderBindingTableBuffer* pSBT =
-        GetRenderResourceManager()->GetShaderBindingTableBuffer("SBT_" + logicalNode.name, sbtSize);
-    const VkDeviceAddress sbtAddress = GetRenderDevice()->GetBufferDeviceAddress(pSBT->buffer());
+        m_services.resourceManager->GetShaderBindingTableBuffer("SBT_" + logicalNode.name, sbtSize);
+    const VkDeviceAddress sbtAddress = m_services.device->GetBufferDeviceAddress(pSBT->buffer());
     rgenRegion.deviceAddress = sbtAddress;
     missRegion.deviceAddress = sbtAddress + rgenRegion.size;
     hitRegion.deviceAddress = sbtAddress + rgenRegion.size + missRegion.size;
@@ -619,7 +657,7 @@ void RenderGraphBuilder::Build()
         throw std::runtime_error("Render graph contains a cycle!");
     }
 
-    m_compiledGraph.Destroy(m_vkDevice, GetDescriptorManager()->GetDescriptorPool());
+    m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
     m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())
@@ -631,7 +669,7 @@ void RenderGraphBuilder::Build()
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
         if (m_importedResources.find(handle) != m_importedResources.end()) continue;
-        AllocateResource(desc, *GetRenderResourceManager(), handle);
+        AllocateResource(desc, *m_services.resourceManager, handle);
     }
 
     std::unordered_map<ResourceHandle, uint32_t> resourceCurrentVersions;
@@ -940,8 +978,8 @@ uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
 
 RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
 {
-    return RenderGraphQueueFamilies{GetRenderDevice()->GetGraphicsQueueFamily(),
-                                    GetRenderDevice()->GetComputeQueueFamily()};
+    return RenderGraphQueueFamilies{m_services.device->GetGraphicsQueueFamily(),
+                                    m_services.device->GetComputeQueueFamily()};
 }
 
 /// The blocking form: records, submits, and waits for the GPU before returning. Kept as the
@@ -959,8 +997,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 
     RenderGraphNodeContext context{
         .queueType = QueueType::GRAPHICS,
-        .resourceManager = *GetRenderResourceManager(),
-        .meshManager = *GetMeshResourceManager(),
+        .resourceManager = *m_services.resourceManager,
     };
 
     std::unordered_set<ResourceHandle> alreadyWritten;

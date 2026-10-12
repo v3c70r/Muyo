@@ -292,7 +292,8 @@ Declares and runs a render graph.
 
 | Member | Description |
 | --- | --- |
-| `RenderGraphBuilder(VkRenderDevice *renderDevice)` | renderDevice Device used to create pipelines, command buffers and synchronisation. |
+| `RenderGraphBuilder(const RenderGraphServices &services)` | services The device, resource allocator and descriptor allocator the graph uses. Each is required; a missing one is reported by name rather than dereferenced later, and the check throws so it survives NDEBUG. |
+| `RenderGraphBuilder(VkRenderDevice *renderDevice)` | Transitional: fills the remaining services from the engine's globals, for the callers that still use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is why it is documented as the transition rather than as an equal alternative. renderDevice Device used to create pipelines, command buffers and synchronisation. |
 | `~RenderGraphBuilder()` | Releases compiled pipelines, descriptor sets and command buffers. |
 | `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. *this for chaining. |
 | `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. *this for chaining. |
@@ -321,6 +322,16 @@ User-facing declaration of a single render graph node (pass).
 | `uint32_t costHint` | Reserved for the future scheduler. |
 | `std::vector< VkClearValue > attachmentClearValues` | Optional clear values for the node's attachments, in attachment declaration order. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
+
+### `struct Muyo::RenderGraph::RenderGraphServices`
+
+The services a graph is given, rather than looking up as globals (#53).
+
+| Member | Description |
+| --- | --- |
+| `VkRenderDevice * device` | Device the graph creates pipelines, command buffers and synchronisation with. Required. |
+| `RenderResourceManager * resourceManager` | Allocates and owns the graph's declared resources. Required. |
+| `DescriptorManager * descriptorManager` | Allocates descriptor set layouts and sets. Required. |
 
 ### `std::unordered_map< ResourceHandle, ResourceDesc > ResourceDescRegistry`
 
@@ -375,7 +386,7 @@ Owns the three built-in semantic descriptor set layouts used by graphics nodes.
 
 | Member | Description |
 | --- | --- |
-| `RenderGraphDescriptorSets(DescriptorManager &descManager)` | Allocate the three semantic set layouts and their descriptor sets. descManager Descriptor manager owning the pool and layout cache. |
+| `RenderGraphDescriptorSets(VkDevice device, DescriptorManager &descManager)` | Allocate the three semantic set layouts and their descriptor sets. device Device the sets belong to, so this class does not reach for the engine's global device accessor to update them (#53). descManager Descriptor manager owning the pool and layout cache. |
 | `~RenderGraphDescriptorSets()` | Destroy the semantic set layouts owned by this instance. |
 | `VkDescriptorSet AllocateSemanticSet(ResourceBindingSemantic bindingSemantic)` | The descriptor set for a semantic set index. Allocate a fresh descriptor set for one node from the shared layout of a semantic set. The caller owns the set and must free it with DescriptorManager::FreeDescriptorSet. |
 | `VkDescriptorSetLayout GetDescriptorSetLayout(ResourceBindingSemantic bindingSemantic) const` | The descriptor set layout for a semantic set index. |
@@ -495,8 +506,7 @@ Context handed to a node's execute callback.
 | Member | Description |
 | --- | --- |
 | `QueueType queueType` | Queue this node is running on. |
-| `RenderResourceManager & resourceManager` | Global resource manager (graph-owned resources). |
-| `MeshResourceManager & meshManager` | Mesh manager (shared vertex/index buffers). |
+| `RenderResourceManager & resourceManager` | Allocates and owns graph-declared resources. |
 | `VkCommandBuffer commandBuffer` | Command buffer to record into. |
 | `VkPipeline pipeline` | Bound pipeline. |
 | `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
