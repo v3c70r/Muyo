@@ -34,9 +34,17 @@ silently diverge from it.
   `git branch --set-upstream-to` rather than inheriting it from the base. **A push whose output you did
   not read is a push whose target you do not know** - which is the same rule as reading an exit status
   rather than grepping for a word, one layer out.
-- Never commit directly to `master` — **one exception: `AGENTS.md` itself**. A process lesson that
-  is not recorded is a lesson the next session does not have, so working-agreement updates are
-  committed straight to trunk (small, self-describing commits) instead of waiting for a PR cycle.
+- **Do not chain state-changing git commands with `&&`.** A `git branch -f master origin/master` that
+  refuses (it does while the worktree is *on* master) stops the chain, so the `git checkout <branch>` after
+  it never runs - and the next command executes on the branch you thought you had left. That is how the
+  `-u` push below bound `master`'s upstream to a feature branch's remote, one turn after this rule was
+  written. Chain reads freely; run writes as separate steps, and check `git branch --show-current` and
+  `@{upstream}` afterwards rather than assuming the step you meant was the step that ran.
+- Never commit directly to `master`. **The `AGENTS.md` exception is gone as of 2026-10-12**, not by a
+  change of mind but because the master ruleset (below) refuses a direct push from anyone, including an
+  administrator: it has no bypass actors. A process lesson still has to be recorded promptly, so the
+  route is now a small, self-describing PR rather than a straight commit — it just has one more step, and
+  the step is the one that keeps the review record honest.
   Everything else keeps the branch-and-squash flow.
 - **Merge with squash**: `gh pr merge <n> --squash`. Trunk history is then one commit per
   workstream, and the PR body becomes the commit body — so write it to be read as `git log`.
@@ -450,6 +458,21 @@ that no include crossed a `#define`/`#if`/code boundary — the one way `SortInc
 what is defined when. The format-pass review verified 107/107 files this way.
 
 ### Triage and merge
+
+**The merge gate is a repository ruleset, and it is worth knowing exactly what it enforces** — as of
+2026-10-12, `master: PR + review, squash only`, active, with **no bypass actors**:
+
+| Enforced | Not enforced, and the manual rule that covers it |
+| --- | --- |
+| A pull request, from anyone including an administrator | **CI is not a required check**, so a PR can merge with a red run. Read the checks before merging; the ruleset will not stop you. |
+| **One approving review** | **Squash-only is in the name but not in the rule**: all three merge methods are allowed and there is no linear-history requirement. `gh pr merge --squash` remains a convention this file states rather than one GitHub holds you to. |
+| No deletion, no force-push to `master` | **Stale approvals are not dismissed on push**, and the last push does not need its own approval — so a fixup pushed after review keeps the approval it invalidated. The section below already requires a re-check; the gate does not. |
+
+Two identities, and now they are real ones: work is authored by `v3c70r` and reviewed by
+**`qgu-reviewer`**, which is a separate account so that an approval is a GitHub *state* rather than a
+comment saying "approve". That is what makes `gh pr view <n> --json reviewDecision` worth reading, and it
+is why the reviews before 2026-10-12 read as comments: a single account cannot approve its own pull
+request.
 
 Triage **every** finding and say which you did:
 
