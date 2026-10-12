@@ -55,7 +55,7 @@ struct UsagePolicy
 ///
 /// This is the authoritative reference for how the graph synchronises resources; a use with no
 /// entry here is rejected by `ResolvePolicy`.
-constexpr std::array<std::pair<UsageKey, UsagePolicy>, 26> K_USAGE_POLICIES = {
+constexpr std::array<std::pair<UsageKey, UsagePolicy>, 28> K_USAGE_POLICIES = {
     {// ───────────── Images ─────────────
      {{ResourceUsage::SAMPLED, ResourceIOType::READ},
       {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
@@ -120,6 +120,17 @@ constexpr std::array<std::pair<UsageKey, UsagePolicy>, 26> K_USAGE_POLICIES = {
      // Transfer/CPU Write case (e.g., vkCmdCopyBuffer or Host mapping)
      {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::TRANSFER_WRITE},
       {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+     // ───────────── Transfer / clear ─────────────
+     // The transfer stage rather than ALL_COMMANDS: a copy or an upload is only ordered against other
+     // transfer work and against whatever reads the result, so saying so lets the graph overlap it with a
+     // running shader phase instead of stalling both.
+     {{ResourceUsage::TRANSFER_SOURCE, ResourceIOType::READ},
+      {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}},
+     // TRANSFER_WRITE and not WRITE: for a buffer, WRITE means a *host* write in this table - that is how a
+     // mapped upload declares itself - so a copy destination has to say it is a transfer. A clear needs
+     // the same access, which is why one role covers it.
+     {{ResourceUsage::TRANSFER_DEST, ResourceIOType::TRANSFER_WRITE},
+      {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}},
      // ───────────── Ray Tracing / Mesh / Work Graph ─────────────
      {{ResourceUsage::ACCEL_STRUCTURE, ResourceIOType::READ},
       {VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
@@ -134,14 +145,17 @@ constexpr std::array<std::pair<UsageKey, UsagePolicy>, 26> K_USAGE_POLICIES = {
       {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
        VK_IMAGE_LAYOUT_UNDEFINED}}}};
 
-/// Looks up the `UsagePolicy` for a key; throws if the pair is unsupported.
-constexpr UsagePolicy ResolvePolicy(UsageKey key)
+/// Looks up the `UsagePolicy` for a key.
+///
+/// @return The policy, or nothing when the pair is unsupported - the caller reports that with the
+///         resource and both names in the message, which a bare string here cannot do.
+constexpr std::optional<UsagePolicy> ResolvePolicy(UsageKey key)
 {
     for (auto&& [k, v] : K_USAGE_POLICIES)
     {
         if (k == key) return v;
     }
-    throw std::runtime_error("No barrier policy for this ResourceUsage/ResourceIOType pair");
+    return std::nullopt;
 }
 
 /// Resolve a node's `ResourceUse` into a `ResolvedResourceUse`.
@@ -159,7 +173,17 @@ ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
         throw std::logic_error("Push constants are not resolved as resources");
     }
 
-    const UsagePolicy policy = ResolvePolicy({use.usage, use.io});
+    const std::optional<UsagePolicy> policy = ResolvePolicy({use.usage, use.io});
+    if (!policy.has_value())
+    {
+        // Named, because this is the error a caller meets when a declaration picks the wrong pair - most
+        // often TRANSFER_DEST with WRITE, which for a buffer means a host write in this table. The resource
+        // is named too, so a node with several uses says which one is wrong.
+        throw std::runtime_error(std::string("Resource '") + use.handle + "' declares usage " + NameOf(use.usage) +
+                                 " with IO " + NameOf(use.io) +
+                                 ", which has no barrier policy. Check the pair: for a buffer, WRITE means a "
+                                 "host write and a copy destination needs TRANSFER_WRITE.");
+    }
 
     ResolvedResourceUse resolved{};
     resolved.handle = use.handle;
@@ -167,15 +191,15 @@ ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
     resolved.kind = use.kind;
     resolved.io = use.io;
     resolved.usage = use.usage;
-    resolved.stages = policy.stages;
-    resolved.access = policy.access;
+    resolved.stages = policy->stages;
+    resolved.access = policy->access;
     resolved.bindingSemantic = use.bindingSemantic;
     resolved.descriptorBinding = use.descriptorBinding;
     resolved.bufferRange = use.bufferRange;
 
     if (use.kind == ResourceKind::IMAGE)
     {
-        resolved.imageLayout = policy.layout;
+        resolved.imageLayout = policy->layout;
     }
 
     return resolved;

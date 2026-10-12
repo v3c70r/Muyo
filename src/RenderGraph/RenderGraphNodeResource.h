@@ -63,6 +63,18 @@ enum class ResourceUsage : uint8_t
     INDIRECT_BUFFER,      ///< Indirect draw/dispatch buffer.
     DRAW_COMMAND_BUFFER,  ///< Draw/draw-count command buffer (written by compute, read by draws).
 
+    // Transfer / clear
+    /// Copy source (`vkCmdCopyImageToBuffer`, `vkCmdCopyBufferToImage`, `vkCmdCopyBuffer`...).
+    /// Images are moved to `VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL`.
+    TRANSFER_SOURCE,
+    /// Copy, upload, clear or fill destination (`vkCmdCopy*`, `vkCmdClear*Image`, `vkCmdFillBuffer`).
+    ///
+    /// One role covers all four because the barrier they need is the same one: the transfer stage,
+    /// `VK_ACCESS_2_TRANSFER_WRITE_BIT`, and `VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL` for an image - a
+    /// clear is a transfer write in the specification's own terms, not a colour-attachment one. Which
+    /// command the node records is its own business; the graph only needs the access.
+    TRANSFER_DEST,
+
     // RT / Mesh / Work Graph
     ACCEL_STRUCTURE,  ///< Top-level acceleration structure (TLAS).
     TASK_PAYLOAD,     ///< Mesh shader task payload.
@@ -75,6 +87,73 @@ enum class ResourceUsage : uint8_t
 
 /// Monotonic version counter used to track resource writes across nodes.
 using ResourceVersion = uint64_t;
+
+/// @return The name of an IO type, for diagnostics.
+///
+/// A switch with no default on purpose: adding a value becomes a warning here rather than a message
+/// that prints a number.
+constexpr const char* NameOf(ResourceIOType io)
+{
+    switch (io)
+    {
+        case ResourceIOType::READ:
+            return "READ";
+        case ResourceIOType::WRITE:
+            return "WRITE";
+        case ResourceIOType::READ_WRITE:
+            return "READ_WRITE";
+        case ResourceIOType::TRANSFER_WRITE:
+            return "TRANSFER_WRITE";
+    }
+    return "(unknown IO type)";
+}
+
+/// @return The name of a usage, for diagnostics.
+constexpr const char* NameOf(ResourceUsage usage)
+{
+    switch (usage)
+    {
+        case ResourceUsage::SAMPLED:
+            return "SAMPLED";
+        case ResourceUsage::STORAGE_IMAGE:
+            return "STORAGE_IMAGE";
+        case ResourceUsage::COLOR_ATTACHMENT:
+            return "COLOR_ATTACHMENT";
+        case ResourceUsage::DEPTH_STENCIL_ATTACHMENT:
+            return "DEPTH_STENCIL_ATTACHMENT";
+        case ResourceUsage::INPUT_ATTACHMENT:
+            return "INPUT_ATTACHMENT";
+        case ResourceUsage::RESOLVE_ATTACHMENT:
+            return "RESOLVE_ATTACHMENT";
+        case ResourceUsage::UNIFORM_BUFFER:
+            return "UNIFORM_BUFFER";
+        case ResourceUsage::STORAGE_BUFFER:
+            return "STORAGE_BUFFER";
+        case ResourceUsage::VERTEX_BUFFER:
+            return "VERTEX_BUFFER";
+        case ResourceUsage::INDEX_BUFFER:
+            return "INDEX_BUFFER";
+        case ResourceUsage::INDIRECT_BUFFER:
+            return "INDIRECT_BUFFER";
+        case ResourceUsage::DRAW_COMMAND_BUFFER:
+            return "DRAW_COMMAND_BUFFER";
+        case ResourceUsage::TRANSFER_SOURCE:
+            return "TRANSFER_SOURCE";
+        case ResourceUsage::TRANSFER_DEST:
+            return "TRANSFER_DEST";
+        case ResourceUsage::ACCEL_STRUCTURE:
+            return "ACCEL_STRUCTURE";
+        case ResourceUsage::TASK_PAYLOAD:
+            return "TASK_PAYLOAD";
+        case ResourceUsage::MESH_PAYLOAD:
+            return "MESH_PAYLOAD";
+        case ResourceUsage::WORKGRAPH_NODE:
+            return "WORKGRAPH_NODE";
+        case ResourceUsage::PUSH_CONSTANTS:
+            return "PUSH_CONSTANTS";
+    }
+    return "(unknown usage)";
+}
 
 /// Built-in descriptor set the graph writes a resource into for graphics nodes.
 ///

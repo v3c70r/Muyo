@@ -74,6 +74,28 @@ single use `READ_WRITE`, which is the flag for "this node both reads and writes 
 own business". Conservative is the right default for a graph that cannot look into the callback, but it is
 a rule a caller can trip on, so it is worth knowing before the first graph does.
 
+## Declaring a transfer
+
+A node that only moves data - a copy, an upload, a clear, a fill - declares the **role**, not the command:
+
+```cpp
+ResourceUse{.handle = "Upload",
+            .io = ResourceIOType::TRANSFER_WRITE,
+            .usage = ResourceUsage::TRANSFER_DEST,
+            .kind = ResourceKind::IMAGE},
+```
+
+`TRANSFER_SOURCE` and `TRANSFER_DEST` are the two roles, and the graph moves an image into
+`TRANSFER_SRC_OPTIMAL` / `TRANSFER_DST_OPTIMAL` accordingly - so a node passes the layout its use declared
+to `vkCmdCopy*` and the transition in between is the graph's.
+
+Two things the table is precise about, because they are easy to get wrong. **A copy destination must say
+`TRANSFER_WRITE`**: for a buffer, `WRITE` means a *host* write here, which is how a mapped upload declares
+itself, so the two are not interchangeable. And **a clear needs no role of its own**: `vkCmdClear*Image`
+and `vkCmdFillBuffer` are transfer writes in the specification's own terms, so `TRANSFER_DEST` covers them
+and the node records whichever command it means. A pair with no policy is rejected at `Build()` naming the
+resource, both values and the likely fix.
+
 **Aliasing.** Non-overlapping transient live ranges are the resource the graph may share memory across,
 which is why the lifetime is a *declaration* rather than a hint: two transients whose ranges do not overlap
 may occupy the same bytes, and a `Persistent` one never may. The ranges are derived at `Build()` today and

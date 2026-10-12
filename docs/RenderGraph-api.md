@@ -534,6 +534,14 @@ Explicit shader descriptor location (set + binding) for a resource.
 | `uint32_t set` | Descriptor set index. |
 | `uint32_t binding` | Binding index within the set. |
 
+### `constexpr const char * Muyo::RenderGraph::NameOf(ResourceIOType io)`
+
+The name of an IO type, for diagnostics. A switch with no default on purpose: adding a value becomes a warning here rather than a message that prints a number.
+
+### `constexpr const char * Muyo::RenderGraph::NameOf(ResourceUsage usage)`
+
+The name of a usage, for diagnostics.
+
 ### `enum QueueType`
 
 Which executor / queue a node runs on. CPU is treated as a queue inside the graph.
@@ -619,6 +627,8 @@ The semantic role of a resource within a node.
 | `INDEX_BUFFER` | Index buffer. |
 | `INDIRECT_BUFFER` | Indirect draw/dispatch buffer. |
 | `DRAW_COMMAND_BUFFER` | Draw/draw-count command buffer (written by compute, read by draws). |
+| `TRANSFER_SOURCE` | Copy source (vkCmdCopyImageToBuffer, vkCmdCopyBufferToImage, vkCmdCopyBuffer...). Images are moved to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. |
+| `TRANSFER_DEST` | Copy, upload, clear or fill destination (vkCmdCopy*, vkCmdClear*Image, vkCmdFillBuffer). One role covers all four because the barrier they need is the same one: the transfer stage, `VK_ACCESS_2_TRANSFER_WRITE_BIT`, and `VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL` for an image - a clear is a transfer write in the specification's own terms, not a colour-attachment one. Which command the node records is its own business; the graph only needs the access. |
 | `ACCEL_STRUCTURE` | Top-level acceleration structure (TLAS). |
 | `TASK_PAYLOAD` | Mesh shader task payload. |
 | `MESH_PAYLOAD` | Mesh shader output payload. |
@@ -707,13 +717,13 @@ Stable string name identifying a resource, node or imported object in the graph.
 
 ## `ResourceUseResolver.h`
 
-### `constexpr std::array< std::pair< UsageKey, UsagePolicy >, 26 > K_USAGE_POLICIES`
+### `constexpr std::array< std::pair< UsageKey, UsagePolicy >, 28 > K_USAGE_POLICIES`
 
 Barrier policy table: maps every supported (ResourceUsage, ResourceIOType) pair to the pipeline stages, access mask and image layout the graph uses when a node touches it.
 
-### `constexpr UsagePolicy Muyo::RenderGraph::ResolvePolicy(UsageKey key)`
+### `constexpr std::optional< UsagePolicy > Muyo::RenderGraph::ResolvePolicy(UsageKey key)`
 
-Looks up the UsagePolicy for a key; throws if the pair is unsupported.
+Looks up the UsagePolicy for a key.
 
 ### `ResolvedResourceUse Muyo::RenderGraph::ResolveResourceUse(const ResourceUse &use)`
 
