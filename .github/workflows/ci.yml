@@ -152,18 +152,17 @@ jobs:
         if: always()
         run: |
           cd ${{ matrix.dir }}
+          # Both to the log and to the step summary. The log because that is how this repository reads
+          # a run - grep it - and the summary because a green check should say what it covered without
+          # anyone opening the log. The same text, generated once.
           {
             echo "### ${{ matrix.name }}"
             echo
-            echo '```'
             grep -F "[test device]" tests.err || echo "no [test device] line: the suite did not create a device"
             vulkaninfo 2>/dev/null | grep -m1 "KHRONOS_validation" || echo "no validation layer line"
-            echo "queue family count / queue counts:"
+            echo "queue counts: $(vulkaninfo 2>/dev/null | grep -c queueCount) families reported below"
             vulkaninfo 2>/dev/null | grep -E "queueCount" || true
-            echo '```'
-            echo
-            echo "Debug callback output (VUIDs):"
-            echo '```'
-            grep -oE "#VUID-[A-Za-z0-9-]+" tests.err | sort | uniq -c || echo "(none)"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo "validation messages (VUIDs):"
+            grep -oE "#VUID-[A-Za-z0-9-]+" tests.err | sort | uniq -c || true
+            echo "(the fork test's VUID-vkWaitForFences-pFences-parameter is expected; anything else is not)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
