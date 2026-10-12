@@ -191,10 +191,26 @@ Operational notes, each of which has cost someone a red herring:
   point, not just the case. To see the remaining failures, judge from the stderr VUIDs and re-run
   selected cases by name.
 
-- **There is no CI, by choice.** Testing happens on the development machine; the workflows in
-  `.github/workflows/` are stale and have never fired — do not rely on them, and do not add
-  anything that assumes a hosted runner. Revisit when a dedicated runner exists ([#22]); the
-  build-only + docs job described there is the first thing to add.
+- **CI exists, and it gates what a software device can prove.** `.github/workflows/ci.yml` runs on
+github-hosted runners with mesa's lavapipe as the Vulkan device: both configurations build, the
+checked-in reference matches the headers (`render_graph_docs.py --check`), the changed lines are
+`clang-format` clean, and the whole suite passes in Debug, Release, both ray-tracing shapes and under
+the sanitizers - with the validation layer on. The workflow's header states the two axes it does **not**
+cover, and the job writes them into the run summary on every build:
+
+  - **Queue topology.** lavapipe reports one queue family with one queue, so no cross-family ownership
+transfer and no dedicated compute queue is exercised; the suite takes the single-queue path. The
+`[test device]` line says so on every run.
+  - **Driver-specific behaviour.** A software device passing is not evidence about a driver.
+
+Those two stay with the development machine and the review machine. **A green check is not a substitute
+for the hardware run in section 6**, and it never was: a clean run is evidence about a *code and
+validation-layer* pair on a *software device*, which is why the job records the device line and the layer
+version rather than just a tick. On a pull request, treat CI as the thing that rules out the cheap
+classes (a broken build, a stale reference, an unformatted line, a validation error) before a human or a
+GPU is spent on it. [#22](https://github.com/v3c70r/Muyo/issues/22) tracks what a hardware runner would
+add; the workflows that used to sit here unrun (2021, `actions/checkout@v2`, SDK 1.3.211) are deleted
+rather than left as configuration nothing executes.
 - **Tests are GPU-dependent.** Run them locally on a GPU. Validation is enabled in debug builds and
   the debug callback asserts on `ERROR` severity, so a validation error fails a test.
 - **A regression test must have teeth.** Before claiming a test covers a bug, confirm it *fails*

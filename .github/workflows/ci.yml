@@ -1,0 +1,155 @@
+name: CI
+
+# Runs on GitHub-hosted runners with mesa's lavapipe as the Vulkan device, so it gates everything that
+# does not need a driver: both configurations build, the checked-in API reference matches the headers,
+# the changed lines are formatted, and the whole test suite passes with the validation layer on.
+#
+# What it cannot gate, recorded rather than implied - see AGENTS.md section 4 for the axis table:
+#
+#   * Queue topology. lavapipe reports one queue family with one queue, so no cross-family ownership
+#     transfer and no dedicated compute queue is exercised; the suite takes the single-queue path.
+#     The "[test device]" line the job records says so on every run.
+#   * Driver-specific behaviour. A software device passing is not evidence about a driver.
+#
+# Those two stay with the development machine and the review machine, which is where the hardware
+# runbook in AGENTS.md section 6 already puts them. A green run here is evidence about a code and
+# validation-layer pair on a software device, and the job prints both so the claim is self-describing.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  # Pinned, because the whole point of moving off the apt repository is that `vulkan-sdk` there tracks
+  # whatever is current and this repository records the version a run used. Matches the development
+  # machine's $VULKAN_SDK so CI and a local build are the same SDK.
+  VULKAN_SDK_VERSION: "1.4.363.0"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs-and-format:
+    name: docs + format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # The format check diffs against the merge base with master, so it needs the history.
+          fetch-depth: 0
+
+      # No build, and so no compiler, no X11 packages and no Vulkan SDK: the docs check runs doxygen
+      # and the format check runs clang-format on a diff. Building here as well used to repeat the
+      # Debug and Debug+RT builds the test matrix already does - 189 s of the job's 270 - for a job
+      # whose own two checks take one second and zero. The build gate is the matrix, which builds each
+      # configuration once *and* runs it, which is strictly stronger than a build-only job.
+      - name: Install doxygen and clang-format
+        run: |
+          sudo apt-get update
+          # doxygen: the checked-in RenderGraph-api.md is generated with 1.9.8, which is this release's
+          # package (docs/README.md). A different version is a suspected cause of a --check mismatch.
+          sudo apt-get install -y --no-install-recommends python3 doxygen clang-format git
+
+      - name: Record the tool versions this run used
+        run: |
+          echo "doxygen       $(doxygen --version)"
+          echo "clang-format  $(clang-format --version)"
+
+      - name: Documentation coverage and the checked-in reference
+        run: python3 scripts/render_graph_docs.py --check
+
+      - name: Format the lines this change touched
+        run: |
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          scripts/sanity.sh format
+
+  tests:
+    name: tests (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Debug,           build_type: Debug,    rt: OFF, dir: build }
+          - { name: Release,         build_type: Release,  rt: OFF, dir: build }
+          - { name: Debug + RT,      build_type: Debug,    rt: ON,  dir: build-rt }
+          - { name: Release + RT,    build_type: Release,  rt: ON,  dir: build-rt }
+          - { name: Sanitize,        build_type: Sanitize, rt: OFF, dir: build-san }
+    env:
+      # The suite is headless by design - no glfwInit and no VkSurface anywhere under src/tests - so
+      # this runs with no display at all, deliberately. That is the test: a green run here is evidence
+      # for the Consumers.md row that says no surface, present or swapchain is required on the
+      # execution path, and setting up a virtual display would remove the chance to show it.
+      DISPLAY: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build python3 \
+            libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
+            libvulkan1 libvulkan-dev mesa-vulkan-drivers
+          # Not vulkan-validationlayers or vulkan-tools: the SDK ships both, and adding the
+          # distribution's copies would make *which* layer loads - and which vulkaninfo reports -
+          # depend on path order. The layer a run uses is the SDK's, which is the version the
+          # hardware runs record.
+
+      - name: Install the Vulkan SDK (tarball, pinned)
+        uses: ./.github/actions/install-vulkan-sdk
+        with:
+          version: ${{ env.VULKAN_SDK_VERSION }}
+
+      - name: Configure and build
+        run: |
+          cmake -S . -B ${{ matrix.dir }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+                -DFEATURE_RAY_TRACING=${{ matrix.rt }} -DGLFW_BUILD_WAYLAND=OFF
+          cmake --build ${{ matrix.dir }} --target tests Shaders -j"$(nproc)"
+
+      - name: Run the suite
+        run: |
+          # tests and assets are both read relative to the working directory (AGENTS.md section 4).
+          ln -sfn "$PWD/assets" ${{ matrix.dir }}/assets
+          cd ${{ matrix.dir }}
+          set +e
+          LSAN_OPTIONS="suppressions=$PWD/../san.supp:print_suppressions=1" ./tests > tests.out 2> tests.err
+          status=$?
+          set -e
+          tail -3 tests.out
+          exit $status
+
+      - name: Record what this run was
+        if: always()
+        run: |
+          cd ${{ matrix.dir }}
+          # Both to the log and to the step summary. The log because that is how this repository reads
+          # a run - grep it - and the summary because a green check should say what it covered without
+          # anyone opening the log. The same text, generated once.
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            grep -F "[test device]" tests.err || echo "no [test device] line: the suite did not create a device"
+            vulkaninfo 2>/dev/null | grep -m1 "KHRONOS_validation" || echo "no validation layer line"
+            echo "queue counts: $(vulkaninfo 2>/dev/null | grep -c queueCount) families reported below"
+            vulkaninfo 2>/dev/null | grep -E "queueCount" || true
+            # The one expected exclusion is computed rather than left to the reader. The fork test
+            # deliberately passes a bad pointer to vkWaitForFences and inherits the parent's stderr, so
+            # two occurrences of that VUID are the *clean* result (AGENTS.md section 6) - and the
+            # difference between a clean run and a run with one real validation error is otherwise a
+            # memory test. Printing the delta makes "clean" one number.
+            expected="VUID-vkWaitForFences-pFences-parameter"
+            seen=$(grep -oE "#?VUID-[A-Za-z0-9-]+" tests.err 2>/dev/null | tr -d '#' | sort -u || true)
+            unexpected=$(printf '%s\n' "$seen" | grep -v -x "$expected" | grep -c . || true)
+            echo "validation VUIDs seen: $(printf '%s' "$seen" | tr '\n' ' ')"
+            echo "unexpected VUIDs: $unexpected"
+            if [ "$unexpected" != "0" ]; then
+              echo "::error::$unexpected unexpected validation message(s); the debug callback asserts on ERROR, so this run should have aborted"
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"

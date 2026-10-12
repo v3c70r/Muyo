@@ -257,15 +257,23 @@ otherwise be read differently by each session that touched it.
    risk is no longer the absence of a second consumer but two things that file cannot fix itself: the
    table going stale (which its rules place on the change that breaks a guarantee), and the fact that
    **the boundary check now runs in another repository**. muyo-llm compiling against the public surface
-   is the strongest evidence the surface is real, and nothing here runs it — with no CI (#22) that check
-   is manual and happens when someone remembers. Worth a periodic build of the consumer against `master`,
-   and worth naming as a limitation rather than assuming the boundary is continuously verified.
-5. **No CI (#22), so verification is manual — which is not the same as single-vendor.** The project has
-   two machines on different vendors (RADV REMBRANDT and an RTX 3090, both with a dedicated compute
-   family), and the runbook in AGENTS.md section 6 already treats a hardware re-run as part of review.
-   **The two-machine matrix is the standard for anything touching present or images-in-flight** — P0's
-   client half and all of P2 — because that is where a single-vendor, single-topology check is weakest and
-   where the test suite is thinnest. For everything else one machine is enough.
+   is the strongest evidence the surface is real, and nothing here runs it — the CI job (below) builds
+   this repository, not the consumer, so that check is still manual and happens when someone remembers.
+   Worth a periodic build of the consumer against `master`, and worth naming as a limitation rather than
+   assuming the boundary is continuously verified.
+5. **CI now gates the cheap classes, and hardware still gates the rest.** `.github/workflows/ci.yml` runs
+   on github-hosted runners against mesa's lavapipe: both configurations build, the reference and the
+   formatting are checked, and the suite passes in Debug, Release, both ray-tracing shapes and under the
+   sanitizers. It **cannot** gate the two axes that need a driver — a second queue *family* (lavapipe
+   reports one family with one queue, so no ownership transfer and no dedicated compute queue) and
+   driver-specific behaviour — and the job records both on every run so a green check states its own
+   scope. **Verification is therefore still manual where it matters most, which is not the same as
+   single-vendor:** the project has two machines on different vendors (RADV REMBRANDT and an RTX 3090,
+   both with a dedicated compute family), and the runbook in AGENTS.md section 6 already treats a
+   hardware re-run as part of review. **The two-machine matrix is the standard for anything touching
+   present or images-in-flight** — P0's client half and all of P2 — because that is where a
+   single-vendor, single-topology check is weakest and where the test suite is thinnest. For everything
+   else one machine is enough.
 
 ## How the GitHub half is set up
 
