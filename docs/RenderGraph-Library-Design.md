@@ -16,6 +16,7 @@ index.
 | `muyo_device` is a shared library, not an inverted dependency | a client that cannot take the shared library | §2 below |
 | Error reporting is unresolved, deliberately | deciding it, or a consumer that cannot act on the errors we report | §3 below |
 | No C++ modules: fix the paths and add an export set instead | the surface is split (#53) **and** a consumer asks for a module | the packaging section |
+| Versioning: the library publishes, first-party consumers are named and must not lag | a consumer that cannot move, or a second first-party consumer | the versioning section |
 
 ## The stack
 
@@ -197,6 +198,76 @@ path. Vendoring it, or accepting a system copy, is a packaging decision and belo
 are declared in the consumer's namespace once this project is a subdirectory, so a consumer embedding
 another copy of any of them gets a redefinition error naming neither project. Aliases or a name prefix are
 the standard cures and they belong with #73, not with #68.
+
+## Versioning the library, and how a consumer learns about a change
+
+The package (#73) will carry a version. This says what the version means, how a breaking change reaches a
+consumer, and which consumers are not allowed to lag behind it.
+
+### The library publishes; the consumer pulls
+
+A library cannot keep a registry of its consumers, and a per-consumer notification requirement does not
+survive the second or third one. So the notification lives **in the artifact**, and the consumer finds it
+on their own terms:
+
+| Mechanism | Who it reaches | Cost to the library |
+| --- | --- | --- |
+| `project(... VERSION)` plus a version header (`MUYO_RG_VERSION` and its components) | everyone who compiles or finds the package | none |
+| `CHANGELOG.md` with `Breaking` / `Deprecated` sections | anyone who reads before upgrading | one entry per change |
+| `[[deprecated]]` on the old spelling | **every consumer, in their own build, without the library knowing they exist** | one attribute |
+| `SameMajorVersion` in the package version file (#73) | `find_package(muyo_rg 1.2)` | none |
+
+### The rule that makes a version sufficient: a breaking change has to be detectable
+
+A changelog only reaches a consumer who reads it, so a breaking change may not depend on being read. Each
+kind has a mechanism, and the mechanism *is* the notification:
+
+- **Removed or renamed entity** → a compile error.
+- **Replaced entity** → `[[deprecated("use X")]]`, so the warning lands in the consumer's own build and
+  names the replacement.
+- **A new requirement** → a **named runtime failure**. Raising the device floor (#79) is the worked
+  example: a device without the feature now fails at device creation naming it, rather than producing a
+  wrong result.
+- **Changed semantics** → the honest hard case, because nothing reaches the consumer automatically. Make
+  it loud where a loud form exists, deprecate where it does not, and list it under `Breaking`. What must
+  not happen is a silent change of meaning.
+
+This is what keeps versioning as cheap as it is: the library does not chase anyone, and a consumer that
+compiles against a new version is told by their own compiler.
+
+### First-party consumers are named, and are expected not to lag
+
+Third-party consumers pull. **First-party** ones - `muyo-llm` today, `helloVulkan` as it adopts the graph -
+are a small known set and are named, because they are not only consumers: they are how the library's
+coverage is measured. A first-party consumer on an older version leaves the library's claims about the
+current version unverified, which is a worse problem than a notification one.
+
+So two things differ for them:
+
+- **The change names them.** A breaking change says which first-party consumer has to move, and a PR that
+  breaks one does not merge with that upgrade unplanned.
+- **Their rows in `Consumers.md` are claims about the current version.** A first-party consumer that has
+  not upgraded leaves its rows stale, and the row is the contract.
+
+### Only the current version is supported
+
+Recorded with its consequence rather than left implicit: there is no backport policy and no branch to
+maintain, and a first-party consumer is expected to be on the current version. That is affordable only
+because of the detection rule above - a consumer compiling against the new version is warned before
+something is removed.
+
+**The deprecation window is notice, not support**, which is how the two fit together: an entity is
+deprecated in one release and removed in a later one, never the same one. The consumer sees the warning
+in their own build and migrates before the removal lands; nothing has to keep the old version alive.
+
+Revisited when a consumer cannot move for reasons of its own - that is the point at which an LTS branch
+has to be maintained rather than merely promised.
+
+### 1.0 means the boundary exists, not that the code is finished
+
+**1.0 when the public surface is stated (#53's second half) and `Consumers.md` has no `gap` row.** Before
+that it is 0.x, where breaking changes are allowed and still follow everything above. Releasing 1.0 while
+the surface is a gap would make the number claim something it does not.
 
 ## Consumers include coding agents
 
