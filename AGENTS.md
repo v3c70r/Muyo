@@ -496,6 +496,24 @@ review.** Both halves were paid for, and both are checkable.
   account exists is to make one impossible rather than to make it impolite. A session that both wrote the
   branch and reviewed it has produced no review, whatever the thread says.
 
+- **Which account a `gh` call uses is session state, not an argument.** The active account is persistent
+  config (`gh auth switch`), every subsequent `gh` call uses it, and the output of a *successful* call does
+  not name who posted it. So a review can be complete, honest, and posted as the wrong actor — and the gate
+  then refuses it as a *missing* review rather than as one from the wrong identity, which reads like a bug in
+  the gate. Read the identity back the same way the branch is read back, and do it before the call:
+
+  ```bash
+  gh auth switch --user qgu-reviewer   # once per session; the setting persists
+  gh api user --jq .login              # names who the next state-changing call will post as
+  ```
+
+  #94 is the worked example, and it was three layers deep in one evening. The review was first posted as the
+  **author's** account, because that account was still active from earlier work in the same session; the
+  delete then failed twice, having passed a GraphQL `IC_…` node ID to the REST delete endpoint, which wants
+  the numeric one; and only the re-submission produced a review. Every one of those calls succeeded at being
+  *a* call. The later slip — an approving *comment* instead of an approving *review* — is the same shape one
+  layer up, and it happened again on the pull request that documents it.
+
 The check is the evidence, so run it rather than recalling it:
 
 ```bash
