@@ -852,3 +852,14 @@ A transient buffer whose memory belongs to an aliasing block rather than to the 
 | `bool IsMapped() const` | True while this resource holds a host mapping. The graph's contract is that a mapping does not outlive the node whose use declared the resource, because that is what makes its slot exclusively its own for as long as the pointer is held. |
 | `size_t GetAliasedSize() const` | The size the buffer was created with, which is what the block's plan reserved for it. |
 | `~TransientBufferResource() override` | Unmap before the base destructor destroys the buffer. The block is freed after every resource bound into it is gone, so this runs while the mapping is still valid - which is the whole reason the graph's teardown order is resources first, blocks second. |
+
+### `class Muyo::RenderGraph::TransientImageResource`
+
+A transient image whose memory belongs to an aliasing block rather than to the image.
+
+| Member | Description |
+| --- | --- |
+| `TransientImageResource(const ImageResourceDesc &desc, VkImageUsageFlags usage)` | desc The image declaration, which is also its aliasing class. usage The usage flags to create it with - EffectiveImageUsageFlags of the declaration, so that this path and the resource manager's cannot disagree about what an image is. |
+| `const VkImageCreateInfo & ImageInfoForCreate() const` | The create info this image must be created with, which the caller needs because the allocator creates it before the resource can own it. |
+| `void Adopt(VkImage image)` | Take ownership of the unbound image the allocator created, and create its view. image Image this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns. The view is created from it here because a view cannot exist before its image does. |
+| `void CreateView()` | Create this image's view. |

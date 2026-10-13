@@ -160,6 +160,10 @@ const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle&
     {
         return it->second.get();
     }
+    if (auto it = m_aliasedImages.find(handle); it != m_aliasedImages.end())
+    {
+        return it->second.get();
+    }
     return m_services.resourceManager->template GetResource<IRenderResource>(handle);
 }
 
@@ -169,10 +173,9 @@ namespace
 /// @return True when this build gives the resource its own memory inside an aliasing block instead of
 ///         letting the resource manager allocate one for it. Buffers only: images still take the
 ///         manager's path, and the planner's image classes are ready for the slice that wires them.
-bool IsAliasedTransientBuffer(const ResourceDesc& desc)
+bool IsAliasedTransient(const ResourceDesc& desc)
 {
-    const auto* pBuffer = std::get_if<BufferResourceDesc>(&desc);
-    return pBuffer != nullptr && pBuffer->lifetime == ResourceLifetime::Transient;
+    return std::visit([](const auto& d) { return d.lifetime == ResourceLifetime::Transient; }, desc);
 }
 
 /// Destroys a half-compiled node's GPU objects if its compilation leaves by exception.
@@ -780,6 +783,7 @@ void RenderGraphBuilder::DestroyAliasedTransients()
     // Resources first, then their memory: a block cannot be released while a resource is still bound to
     // it, which is the order VMA's own implementation uses (destroy the buffer, then free).
     m_aliasedBuffers.clear();
+    m_aliasedImages.clear();
     for (VmaAllocation& block : m_aliasBlocks) GetMemoryAllocator()->FreeAliasingBlock(block);
     m_aliasBlocks.clear();
     m_transientMemoryPlan = TransientMemoryPlan{};
@@ -791,33 +795,54 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
     requests.reserve(m_resourceDescRegistry.size());
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
-        if (!IsAliasedTransientBuffer(desc)) continue;
+        if (!IsAliasedTransient(desc)) continue;
         if (m_importedResources.find(handle) != m_importedResources.end()) continue;
 
         const auto liveRange = m_transientLiveRanges.find(handle);
         if (liveRange == m_transientLiveRanges.end()) continue;
 
-        const auto* pBufferDesc = std::get_if<BufferResourceDesc>(&desc);
-        const VkDeviceSize nSize = pBufferDesc->count * pBufferDesc->stride;
-        auto resource =
-            std::make_unique<TransientBufferResource>(nSize, pBufferDesc->usage, pBufferDesc->memoryProperties);
+        VkMemoryRequirements requirements = {};
+        TransientMemoryClass classKey;
 
-        VkBuffer buffer = VK_NULL_HANDLE;
-        GetMemoryAllocator()->CreateUnboundBuffer(nSize, pBufferDesc->usage, buffer);
-        resource->Adopt(buffer);
-        const VkMemoryRequirements requirements = GetMemoryAllocator()->QueryBufferRequirements(buffer);
+        if (const auto* pBufferDesc = std::get_if<BufferResourceDesc>(&desc))
+        {
+            const VkDeviceSize nSize = pBufferDesc->count * pBufferDesc->stride;
+            auto resource =
+                std::make_unique<TransientBufferResource>(nSize, pBufferDesc->usage, pBufferDesc->memoryProperties);
+            VkBuffer buffer = VK_NULL_HANDLE;
+            GetMemoryAllocator()->CreateUnboundBuffer(nSize, pBufferDesc->usage, buffer);
+            resource->Adopt(buffer);
+            requirements = GetMemoryAllocator()->QueryBufferRequirements(buffer);
+            classKey = ClassOf(desc, requirements.memoryTypeBits);
+            m_aliasedBuffers.emplace(handle, std::move(resource));
+        }
+        else
+        {
+            const auto& imageDesc = std::get<ImageResourceDesc>(desc);
+            // The same usage computation the resource manager uses, from the same function: an image's
+            // aliasing class is its create info, so the two paths must not be able to disagree.
+            const VkImageUsageFlags usage = EffectiveImageUsageFlags(imageDesc.format, imageDesc.usage);
+            auto resource = std::make_unique<TransientImageResource>(imageDesc, usage);
+            VkImage image = VK_NULL_HANDLE;
+            GetMemoryAllocator()->CreateUnboundImage(resource->ImageInfoForCreate(), image);
+            resource->Adopt(image);
+            requirements = GetMemoryAllocator()->QueryImageRequirements(image);
+            classKey = ClassOf(desc, requirements.memoryTypeBits);
+            // Images have no memory usage in their declaration, and a render target's storage is
+            // device-local by definition, so the block's usage is not something the caller chose here.
+            classKey.memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY;
+            m_aliasedImages.emplace(handle, std::move(resource));
+        }
 
         TransientMemoryRequest request;
         request.handle = handle;
-        request.classKey = ClassOf(desc, requirements.memoryTypeBits);
+        request.classKey = classKey;
         request.size = requirements.size;
         request.alignment = requirements.alignment;
         request.memoryTypeBits = requirements.memoryTypeBits;
         request.firstUse = liveRange->second.firstUse;
         request.lastUse = liveRange->second.lastUse;
         requests.push_back(std::move(request));
-
-        m_aliasedBuffers.emplace(handle, std::move(resource));
     }
 
     m_transientMemoryPlan = PlanTransientMemory(requests);
@@ -837,6 +862,15 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
         {
             for (const ResourceHandle& member : slot.members)
             {
+                if (block.classKey.isImage)
+                {
+                    TransientImageResource* pResource = m_aliasedImages.at(member).get();
+                    GetMemoryAllocator()->BindImageToBlock(pResource->getImage(), allocation, slot.offset);
+                    // After the bind, never before: a view of an image with no memory bound is a validation
+                    // error, and it is the one order this path has to get right.
+                    pResource->CreateView();
+                    continue;
+                }
                 TransientBufferResource* pResource = m_aliasedBuffers.at(member).get();
                 GetMemoryAllocator()->BindBufferToBlock(pResource->buffer(), allocation, slot.offset);
                 // Told now rather than at creation: the offset is what the plan just decided, and it is
@@ -875,7 +909,7 @@ void RenderGraphBuilder::Build()
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
         if (m_importedResources.find(handle) != m_importedResources.end()) continue;
-        if (IsAliasedTransientBuffer(desc)) continue;
+        if (IsAliasedTransient(desc)) continue;
         AllocateResource(desc, *m_services.resourceManager, handle);
     }
     BuildAliasedTransients(executionOrder);

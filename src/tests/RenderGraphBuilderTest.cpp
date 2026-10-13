@@ -53,7 +53,7 @@ namespace Muyo::RenderGraph
 {
 // Copies the (already rendered) color target back to the host and returns how many
 // pixels are not fully black. A value of 0 means nothing was actually drawn.
-static uint32_t CountNonBlackPixels(RenderTarget* pTarget)
+static uint32_t CountNonBlackPixels(const ImageResource* pTarget)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
     const size_t pixelSize = 8;  // R16G16B16A16_SFLOAT
@@ -126,7 +126,7 @@ static float HalfToFloat(uint16_t h)
 }
 
 // Copies the color target back and counts pixels whose channels are all at least the given minimum.
-static uint32_t CountPixelsMatching(RenderTarget* pTarget, const glm::vec3& vMin)
+static uint32_t CountPixelsMatching(const ImageResource* pTarget, const glm::vec3& vMin)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
     const size_t pixelSize = 8;  // R16G16B16A16_SFLOAT
@@ -248,7 +248,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     }
 
     // The quad must actually cover the viewport.
-    auto* pQuadTarget = GetRenderResourceManager()->GetColorTarget("TriangleOutput");
+    auto* pQuadTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("TriangleOutput"));
     REQUIRE(pQuadTarget != nullptr);
     REQUIRE(CountNonBlackPixels(pQuadTarget) > 0);
 }
@@ -356,7 +356,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builde
     builder.AddDependency(fillPass.nodeName, quadPass.nodeName);
     builder.Build();
 
-    auto* pTarget = GetRenderResourceManager()->GetColorTarget("TwiceOutput");
+    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("TwiceOutput"));
     REQUIRE(pTarget != nullptr);
 
     builder.Execute();
@@ -456,7 +456,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains exec
     builder.AddDependency(fillPass.nodeName, quadPass.nodeName);
     builder.Build();
 
-    auto* pTarget = GetRenderResourceManager()->GetColorTarget("ChainOutput");
+    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("ChainOutput"));
     REQUIRE(pTarget != nullptr);
 
     VkDevice device = GetRenderDevice()->GetDevice();
@@ -769,6 +769,64 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: transients that are never
     REQUIRE(plan.SlotCount() == 1);
     REQUIRE(plan.blocks.front().slots.front().members.size() == 2);
     CHECK(plan.reservedBytes < plan.individualBytes);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never live at once share one offset",
+                 "[RenderGraphBuilder]")
+{
+    // The image half of the buffer case above, and the observable #16's image slice adds. Two images with
+    // identical create info, written strictly one after the other, have disjoint live ranges and must land
+    // in one slot with two members. An image's aliasing class *is* its create info, so identical
+    // declarations are one class; before this slice images took the per-resource path, so this graph
+    // reserved two images' worth of bytes and SlotCount() was zero.
+    //
+    // Unlike the buffer case, this one also executes: the failing test this slice fixed made its targets
+    // Persistent, so nothing else in the suite drives the whole aliased-image path - create unbound, query,
+    // plan, bind, then create the view. Validation is on, so a wrong order (the view before the bind) or a
+    // leaked image shows up as a validation error rather than silently.
+    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
+                                                   .resourceManager = GetRenderResourceManager(),
+                                                   .descriptorManager = GetDescriptorManager()});
+    for (const char* name : {"ImageAliasFirst", "ImageAliasSecond"})
+    {
+        builder.AddResource(name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                    .extent = {WIDTH, HEIGHT},
+                                                    .usage = VK_IMAGE_USAGE_STORAGE_BIT});
+    }
+
+    const auto addWriter = [&builder](const char* nodeName, const char* handle)
+    {
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = nodeName,
+            .queueType = QueueType::COMPUTE,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle(handle),
+                                         // READ_WRITE, not WRITE: STORAGE_IMAGE+WRITE has no barrier policy
+                                         // today, and the callback below only writes, so the pair is
+                                         // immaterial to the live range this case is about.
+                                         .io = ResourceIOType::READ_WRITE,
+                                         .usage = ResourceUsage::STORAGE_IMAGE,
+                                         .kind = ResourceKind::IMAGE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"testFillColor.comp.slang"},
+            .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }});
+    };
+    addWriter("ImageAliasWriteA", "ImageAliasFirst");
+    addWriter("ImageAliasWriteB", "ImageAliasSecond");
+
+    // Explicit, as in the buffer case: the graph's order comes from declared edges and infers none.
+    builder.AddDependency("ImageAliasWriteA", "ImageAliasWriteB");
+    builder.Build();
+
+    const TransientMemoryPlan& plan = builder.GetTransientMemoryPlan();
+    INFO("image aliasing: " << plan.blocks.size() << " blocks, " << plan.reservedBytes << " bytes reserved for "
+                            << plan.individualBytes << " bytes of transients, " << plan.SlotCount() << " offsets");
+    REQUIRE(plan.blocks.size() == 1);
+    REQUIRE(plan.blocks.front().classKey.isImage);
+    REQUIRE(plan.SlotCount() == 1);
+    REQUIRE(plan.blocks.front().slots.front().members.size() == 2);
+    CHECK(plan.reservedBytes < plan.individualBytes);
+
+    builder.Execute();
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only that byte range",
@@ -1247,7 +1305,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     builder.Build();
     builder.Execute();
 
-    auto* pTarget = GetRenderResourceManager()->GetColorTarget("SpecOutput");
+    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("SpecOutput"));
     REQUIRE(pTarget != nullptr);
     // The shader's baked default is 0.0, so red at all means the supplied value reached the pipeline.
     const uint32_t nRedPixels = CountPixelsMatching(pTarget, {0.2F, 0.0F, 0.0F});
@@ -1805,7 +1863,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
     result.nSourceCount = nSourceCount;
     result.nVisibleCount = nVisibleCount;
 
-    auto* pSceneTarget = GetRenderResourceManager()->GetColorTarget("TriangleOutput");
+    auto* pSceneTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("TriangleOutput"));
     REQUIRE(pSceneTarget != nullptr);
     result.nNonBlackPixels = CountNonBlackPixels(pSceneTarget);
     return result;
@@ -1883,8 +1941,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
 
 #ifdef FEATURE_RAY_TRACING
 // Copy an image back to the host and decode the R32G32B32A32_SFLOAT pixels.
-static std::vector<glm::vec4> ReadTargetFloats(RenderTarget* pTarget, VkImageLayout oldLayout, VkAccessFlags2 srcAccess,
-                                               VkPipelineStageFlags2 srcStage)
+static std::vector<glm::vec4> ReadTargetFloats(const ImageResource* pTarget, VkImageLayout oldLayout,
+                                               VkAccessFlags2 srcAccess, VkPipelineStageFlags2 srcStage)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
     const size_t pixelSize = 16;
@@ -2096,8 +2154,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
         builder.Execute();
     }
 
-    auto* pRasterOutput = GetRenderResourceManager()->GetColorTarget("RTParityRasterOutput");
-    auto* pRayOutput = GetRenderResourceManager()->GetColorTarget("RTParityRayOutput");
+    auto* pRasterOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTParityRasterOutput"));
+    auto* pRayOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTParityRayOutput"));
     REQUIRE(pRasterOutput != nullptr);
     REQUIRE(pRayOutput != nullptr);
 
@@ -2330,8 +2388,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
         builder.Execute();
     }
 
-    auto* pRasterOutput = GetRenderResourceManager()->GetColorTarget("RTMazdaRasterOutput");
-    auto* pRayOutput = GetRenderResourceManager()->GetColorTarget("RTMazdaRayOutput");
+    auto* pRasterOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTMazdaRasterOutput"));
+    auto* pRayOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTMazdaRayOutput"));
     REQUIRE(pRasterOutput != nullptr);
     REQUIRE(pRayOutput != nullptr);
 
@@ -2466,10 +2524,17 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
     }
     for (const char* name : {"TargetA", "TargetB"})
     {
+        // Persistent, not the default Transient: this test reads both images back after Execute() to see
+        // which camera each node used, and a transient's content is promised only from its first write to
+        // its last read *within* one execution. With a single write and no in-graph read, TargetA's
+        // declared range is one node wide, so the planner is free to bind TargetB over it - which it did,
+        // and TargetA read back black (the two targets were aliased at one offset). Nothing about aliasing
+        // is under test here; the subject is that two graphics nodes each get their own PER_VIEW set.
         builder.AddResource(
             name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                     .extent = {WIDTH, HEIGHT},
-                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                    .lifetime = ResourceLifetime::Persistent});
     }
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
@@ -2558,8 +2623,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
     builder.Build();
     builder.Execute();
 
-    auto* pTargetA = GetRenderResourceManager()->GetColorTarget("TargetA");
-    auto* pTargetB = GetRenderResourceManager()->GetColorTarget("TargetB");
+    auto* pTargetA = dynamic_cast<const ImageResource*>(builder.ResolveResource("TargetA"));
+    auto* pTargetB = dynamic_cast<const ImageResource*>(builder.ResolveResource("TargetB"));
     REQUIRE(pTargetA != nullptr);
     REQUIRE(pTargetB != nullptr);
 
@@ -2680,7 +2745,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
     builder.Build();
     builder.Execute();
 
-    auto* pTarget = GetRenderResourceManager()->GetColorTarget("Overlay");
+    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("Overlay"));
     REQUIRE(pTarget != nullptr);
 
     // Green survives only if the attachment was loaded rather than cleared; the red overlay is
@@ -2852,7 +2917,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
     builder.Build();
     builder.Execute();
 
-    auto* pTarget = GetRenderResourceManager()->GetColorTarget("WawTarget");
+    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("WawTarget"));
     REQUIRE(pTarget != nullptr);
     // The blend keeps both: red * 0.5 + green * 0.5.
     REQUIRE(CountPixelsMatching(pTarget, {0.25F, 0.25F, 0.0F}) > 0);
