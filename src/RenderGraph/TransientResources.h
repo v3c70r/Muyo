@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "RenderResource.h"
+#include "RenderResourceManager.h"
 
 namespace Muyo::RenderGraph
 {
@@ -150,5 +150,61 @@ private:
     /// base class's, and a reader asking how large this buffer is should not have to know which path
     /// created it.
     size_t m_nAliasedSize = 0;
+};
+
+/// A transient image whose memory belongs to an aliasing block rather than to the image.
+///
+/// Derives from `ImageResource` rather than from `TextureResource`: the graph's barrier, descriptor and
+/// binding paths all identify images with `dynamic_cast<const ImageResource*>`, so that is the whole
+/// requirement, and `TextureResource` adds a sampler and pixel loading that a render-graph target has no
+/// use for.
+///
+/// The memory half is the same trick as the buffer's. `m_allocation` stays null, so the inherited
+/// destructor's `FreeImage(image, VK_NULL_HANDLE)` is `vmaDestroyImage(allocator, image,
+/// VK_NULL_HANDLE)` - it destroys the image and frees no memory, which is right because the block owns
+/// the memory and the graph frees the block after every image bound into it is gone. The **view** is not
+/// aliased: a view belongs to one resource and is created and destroyed as usual.
+class TransientImageResource : public ImageResource
+{
+public:
+    /// @param desc  The image declaration, which is also its aliasing class.
+    /// @param usage The usage flags to create it with - `EffectiveImageUsageFlags` of the declaration, so
+    ///              that this path and the resource manager's cannot disagree about what an image is.
+    TransientImageResource(const ImageResourceDesc& desc, VkImageUsageFlags usage)
+    {
+        m_imageInfo.format = desc.format;
+        m_imageInfo.extent = {desc.extent.width, desc.extent.height, 1};
+        m_imageInfo.mipLevels = desc.mips;
+        m_imageInfo.arrayLayers = desc.layers;
+        m_imageInfo.usage = usage;
+
+        // The view's subresource range, which the inherited creator does not fill in. A depth format needs
+        // the depth aspect; everything else is colour, which is the same split the usage flags use.
+        m_imageViewInfo.subresourceRange.aspectMask = FormatSupportsOptimalTilingDepthAttachment(desc.format)
+                                                          ? VK_IMAGE_ASPECT_DEPTH_BIT
+                                                          : VK_IMAGE_ASPECT_COLOR_BIT;
+        m_imageViewInfo.subresourceRange.baseMipLevel = 0;
+        m_imageViewInfo.subresourceRange.levelCount = desc.mips;
+        m_imageViewInfo.subresourceRange.baseArrayLayer = 0;
+        m_imageViewInfo.subresourceRange.layerCount = desc.layers;
+    }
+
+    /// @return The create info this image must be created with, which the caller needs because the
+    ///         allocator creates it before the resource can own it.
+    const VkImageCreateInfo& ImageInfoForCreate() const { return m_imageInfo; }
+
+    /// Take ownership of the unbound image the allocator created, and create its view.
+    /// @param image Image this resource owns, binds into a block, and destroys - without freeing its
+    ///              memory, which the block owns. The view is created from it here because a view cannot
+    ///              exist before its image does.
+    void Adopt(VkImage image) { m_image = image; }
+
+    /// Create this image's view.
+    ///
+    /// Called after the image is bound into its block, not when it is adopted, because a view cannot be
+    /// created for an image with no memory bound - the validation layer says so in as many words
+    /// (`VUID-VkImageViewCreateInfo-image-01020`: "used with no memory bound"). The order is therefore
+    /// create unbound, query, plan, bind, view.
+    void CreateView() { CreateImageViewInternal(); }
 };
 }  // namespace Muyo::RenderGraph

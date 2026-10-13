@@ -309,6 +309,9 @@ private:
     /// bound to it, and they are recreated on every build - unlike manager-owned resources - because the
     /// plan, and therefore the offsets, can differ between builds.
     std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> m_aliasedBuffers;
+    /// Transient images bound into those same blocks. Separate map, same ownership and same teardown:
+    /// the two differ only in which allocator call binds them and whether they can be mapped.
+    std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> m_aliasedImages;
     /// The blocks those buffers are bound into. Freed after every resource above is destroyed.
     std::vector<VmaAllocation> m_aliasBlocks;
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.

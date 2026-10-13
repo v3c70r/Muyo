@@ -203,6 +203,22 @@ VkMemoryRequirements VkMemoryAllocator::QueryBufferRequirements(VkBuffer buffer)
     return requirements;
 }
 
+void VkMemoryAllocator::CreateUnboundImage(const VkImageCreateInfo& imageInfo, VkImage& image)
+{
+    VmaAllocatorInfo allocatorInfo = {};
+    vmaGetAllocatorInfo(m_allocator, &allocatorInfo);
+    VK_ASSERT(vkCreateImage(allocatorInfo.device, &imageInfo, nullptr, &image));
+}
+
+VkMemoryRequirements VkMemoryAllocator::QueryImageRequirements(VkImage image) const
+{
+    VmaAllocatorInfo allocatorInfo = {};
+    vmaGetAllocatorInfo(m_allocator, &allocatorInfo);
+    VkMemoryRequirements requirements = {};
+    vkGetImageMemoryRequirements(allocatorInfo.device, image, &requirements);
+    return requirements;
+}
+
 static VkMemoryAllocator allocator;
 VkMemoryAllocator* GetMemoryAllocator() { return &allocator; }
 

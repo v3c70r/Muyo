@@ -79,6 +79,20 @@ public:
     /// @return Its memory requirements, which is what a block has to satisfy for it.
     VkMemoryRequirements QueryBufferRequirements(VkBuffer buffer) const;
 
+    /// Create an image with no memory bound to it, for a caller that will bind it into a block itself.
+    ///
+    /// The image counterpart of `CreateUnboundBuffer`, and for the same reason: aliasing needs the
+    /// requirements of every member before it can choose any of their offsets. The returned image is
+    /// destroyed by `vmaDestroyImage(allocator, image, VK_NULL_HANDLE)` - what `FreeImage` already does
+    /// when the allocation is null - so a resource wrapping one needs no separate destructor.
+    /// @param imageInfo Vulkan image create info.
+    /// @param image     Receives the created, unbound image.
+    void CreateUnboundImage(const VkImageCreateInfo &imageInfo, VkImage &image);
+
+    /// @param image An image created by `CreateUnboundImage`.
+    /// @return Its memory requirements, which is what a block has to satisfy for it.
+    VkMemoryRequirements QueryImageRequirements(VkImage image) const;
+
 private:
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     VmaPool m_SBTPool = VK_NULL_HANDLE;  // SBT pool uses another aligment, need to be allocated in a separate pool

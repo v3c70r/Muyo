@@ -100,13 +100,17 @@ resource, both values and the likely fix.
 which is why the lifetime is a *declaration* rather than a hint: two transients whose ranges do not overlap
 may occupy the same bytes, and a `Persistent` one never may.
 
-`Build()` consumes the ranges. **Transient buffers** are created unbound, their requirements are queried,
-and they are bound into one block per compatibility class at offsets the planner chooses - so two transients
-whose ranges do not overlap share an address. **Images** still take the per-resource path; the planner's
-image classes exist and the wiring for them is the next slice. `GetTransientMemoryPlan()` reports what a
-build did: `reservedBytes` is what will be allocated, `individualBytes` is the sum of the transients, and
-`SharesMemory()` is the comparison - it answers false for a graph whose transients all overlap, which is a
-legitimate result rather than a failure.
+`Build()` consumes the ranges. **Transient buffers and images alike** are created unbound, their
+requirements are queried, and they are bound into one block per compatibility class at offsets the planner
+chooses - so two transients whose ranges do not overlap share an address. An image's compatibility class is
+its create info, so two images share a block only when format, extent, mips, layers and usage all match; both
+the graph path and the resource-manager path take the usage flags from `EffectiveImageUsageFlags`, so the two
+cannot disagree about what an image is. An image's **view is created only after it is bound** - a view of an
+image with no memory bound is a validation error (`VUID-VkImageViewCreateInfo-image-01020`) - so the order is
+create unbound, query, plan, bind, view. `GetTransientMemoryPlan()` reports what a build did: `reservedBytes`
+is what will be allocated, `individualBytes` is the sum of the transients, and `SharesMemory()` is the
+comparison - it answers false for a graph whose transients all overlap, which is a legitimate result rather
+than a failure.
 
 Two things to read correctly. **`reservedBytes` can exceed `individualBytes`** on a device with strict
 alignment: a slot's offset is aligned up to its widest member's alignment, and alignment limits are device

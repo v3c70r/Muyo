@@ -27,6 +27,26 @@ inline bool FormatSupportsOptimalTilingColorAttachment(VkFormat format)
     return properties.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 }
 
+/// The usage flags an image of this format is created with, before the caller's own are added.
+///
+/// A shared function rather than a line inside `GetRenderTarget` because two paths create images now: the
+/// resource manager, and the render graph allocating a transient unbound so it can be bound into a shared
+/// block. If those two disagreed about the usage flags, the same declaration would produce two different
+/// create infos - which is exactly what the graph's aliasing classes assume cannot happen, since they key
+/// an image on its create info.
+///
+/// @param format                 Image format.
+/// @param nAdditionalUsageFlags  Usage flags the caller asked for.
+/// @return The flags to create the image with.
+inline VkImageUsageFlags EffectiveImageUsageFlags(VkFormat format, VkImageUsageFlags nAdditionalUsageFlags)
+{
+    const bool bIsColorAttachment =
+        FormatSupportsOptimalTilingColorAttachment(format) && !FormatSupportsOptimalTilingDepthAttachment(format);
+    return nAdditionalUsageFlags |
+           (bIsColorAttachment ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
+                               : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+}
+
 class RenderResourceManager
 {
     using ResourceMap = std::unordered_map<std::string, std::unique_ptr<IRenderResource>>;
@@ -65,15 +85,9 @@ public:
     {
         if (m_mResources.find(sName) == m_mResources.end())
         {
-            bool bIsColorAttachment = FormatSupportsOptimalTilingColorAttachment(format) &&
-                                      !FormatSupportsOptimalTilingDepthAttachment(format);
-            VkImageUsageFlags nUsageFlags = nAdditionalUsageFlags;
-            m_mResources[sName] = std::make_unique<RenderTarget>(
-                format,
-                nUsageFlags |
-                    (bIsColorAttachment ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
-                                        : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT),
-                extent.width, extent.height, numMips, numLayers);
+            m_mResources[sName] =
+                std::make_unique<RenderTarget>(format, EffectiveImageUsageFlags(format, nAdditionalUsageFlags),
+                                               extent.width, extent.height, numMips, numLayers);
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<RenderTarget*>(m_mResources[sName].get());
