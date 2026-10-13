@@ -41,17 +41,23 @@ gate.** A phase's members are its milestone — open it, that is the list. Resta
 made the first version of this document need editing twice for every backlog change, which is the
 duplication it warns about three sections further down.
 
-The debt tables below are the exception that proves the rule: they cite issue numbers because they
-record a **verdict that no field holds** — including for work that was never filed as an issue at all
-(the subsumed `TODO`s, which live in code). If a fact can be a field, make it a field.
+The debt tables below are the exception that proves the rule, and the exception is narrower than it once
+read: the **verdict** is a field (`Debt`, one of the four custom fields below), and what the tables hold is
+the **reasoning** — why this verdict rather than another — plus the items that were never filed as an issue
+at all (the subsumed `TODO`s, which live in code). If a fact can be a field, make it a field.
 
 ## Where we are
 
 | | Lines | State |
 | --- | --- | --- |
-| `src/RenderGraph/` | 3,381 | Drives the **tests only**. Foundation, sync2, timeline execution, spec-constant pipelines. |
+| `src/RenderGraph/` | 3,777 | Drives the **tests only**. Foundation, sync2, timeline execution, spec-constant pipelines. |
 | `src/RenderPasses/` | 4,403 | What actually renders: 11 pass instantiations (10 distinct types) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. |
 | `src/app/helloVulkan.cpp` | 374 | Owns the frame loop and hand-rolled semaphores. |
+
+The counts are each tree's `*.cpp` and `*.h` concatenated and `wc -l`-ed —
+`cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h' | sort) | wc -l` — and they are a size signal rather
+than a target. They rotted once already: the graph gained roughly 400 lines while this document sat still,
+from `#18`, `#85`, `#90`, `#92` and `#94` alone.
 
 The single fact that matters: **the graph has zero production adoption.** Every guarantee it makes is
 exercised by the test suite and by nothing else, and `RenderPassManager` keeps its own frame-sync bugs
@@ -104,14 +110,16 @@ state, and neither should try to carry the other's half.
 | **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
 | **Diagnostics an agent can act on** | The library's consumers include coding agents, which read a log with no debugger and no follow-up question. That means failing at `Build()` on declaration errors, naming the graph node and resource rather than the handle, attributing GPU errors through debug labels, and documenting preconditions and failure modes. Cheap while the graph is small; a rewrite once errors are shaped like `VkBuffer 0x…`. |
 
-### What must land before the big P1 capabilities
+### What had to land before the big P1 capabilities
 
-`#53` is not one thing, and the order matters. The service injection — the 15 call sites that reach for
-`GetRenderDevice()`, `GetRenderResourceManager()` and `GetDescriptorManager()` — **comes before `#15`
-and `#16`**, because those two rewrite the descriptor and transient paths. Writing them against the
-singletons would replicate the coupling at scale and then have to be redone, which is the expensive
-retrofit the constraints table warns about. The rest of `#53` (public/private header split, standalone
-build, packaging) does not gate anything and can follow or run in parallel.
+`#53` is not one thing, and the order mattered. The service injection — the call sites that reached for
+`GetRenderDevice()`, `GetRenderResourceManager()` and `GetDescriptorManager()` — **had to come before `#15`
+and `#16`**, because those two rewrite the descriptor and transient paths; writing them against the
+singletons would have replicated the coupling at scale and then had to be redone, which is the expensive
+retrofit the constraints table warns about. It **landed in #85**, which is why `#15` and `#16` are written
+against `RenderGraphServices` now. The rest of `#53` (public/private header split, standalone build,
+packaging, client-supplied shader source) does not gate the P1 capabilities and can follow or run in
+parallel — it gates the library track, which is where its two Consumers.md rows sit.
 
 The reason to say it rather than leave it implied: "L overlaps P1 and constrains it" is a direction, not
 an order, and the difference is one doubled workstream.
@@ -149,9 +157,9 @@ with another, and the migration would buy nothing that could be measured. P0 als
 `signalFence` deferred in A1.3b, which is what a present path needs.
 
 **P1 before P2** because the graph must express what the legacy passes do before the loop can move:
-clears and resolves (`#18`), material binding at scene scale (`#15`), transient memory (`#16`), pipeline
-caching (`#17`). These are capabilities, not polish — the frame loop cannot be ported around their
-absence.
+clears and resolves (`#18`, landed), material binding at scene scale (`#15`), transient memory (`#16`),
+pipeline caching (`#17`). These are capabilities, not polish — the frame loop cannot be ported around
+their absence.
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
 still references `RenderPassManager` from outside `src/RenderPasses/` has to go first — which is why the
@@ -202,7 +210,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | --- | --- |
 | **Copy queue** (`QueueType::COPY` resolves to the graphics queue; `VkRenderDevice.h:59` `// TODO: Handle copy queue`) | The legacy path uses the graphics queue for every transfer, so a real transfer queue is a new capability, not parity. Unfiled today; file it when it is scheduled rather than carrying it. |
 | `ShaderReflectionFetcher` TODOs (input attachments, decorations, specialization constants) | They concern subpass features the graph does not use — it renders with dynamic rendering. Revisit only if subpasses return. |
-| **#24** clang-tidy, **#25** `-Wextra`, **#22** CI | Incremental adoption, none of it blocking. Adopt each scoped to changed lines as AGENTS.md section 5 describes. |
+| **#24** clang-tidy, **#25** `-Wextra` | Incremental adoption, none of it blocking. Adopt each scoped to changed lines as AGENTS.md section 5 describes. **#22** (CI) left this table by landing in #91; AGENTS.md section 4 is now the honest statement of what a green run does and does not prove. |
 
 ## Critical path
 
@@ -224,6 +232,7 @@ definition of "critical".
 **A closed issue clears its mark**, because the field answers whose slippage moves an end date and a
 closed item has no slippage left. #11 is the first case: it closed with A1.5 delivered (as the split), and
 leaving it marked would have the Critical path view claiming a finished item still decides the schedule.
+`#18` and `#68` were cleared the same way, on the same reasoning, when they landed.
 
 **The field is scoped to this project.** It answers "whose slippage moves *Muyo's* end date", so a
 consumer's own schedule does not belong on it: `muyo-llm`'s M1 blocking list is tracked in muyo-llm's
@@ -236,10 +245,11 @@ otherwise be read differently by each session that touched it.
 ## Risks
 
 1. **The migration is deferred by one more graph feature.** This is the real risk, and the phase gates
-   are its mitigation: **P2's gate is capability, not completeness.** Once A1.5 and #18 land, the loop
-   can move even while #12, #17 and #19 continue — the graph and the legacy renderer can coexist
-   during P2, so "the graph is not finished" is not a reason to keep `RenderPassManager` in the loop.
-   If P2 has not started after P0 and #18 are done, that is a signal to start it anyway.
+   are its mitigation: **P2's gate is capability, not completeness.** A1.5 and #18 have both landed, so
+   the condition this risk was written against is met: the loop can move even while #12, #17 and #19
+   continue — the graph and the legacy renderer can coexist during P2, so "the graph is not finished" is
+   not a reason to keep `RenderPassManager` in the loop. The condition being met while P2 has not started
+   is the risk arriving, not a sentence to re-read as still hypothetical.
 2. **Two renderers means every fix lands twice.** Mitigated by the do-not-fix table above: the way to
    keep the cost bounded is to stop polishing the code being deleted, and to put new behaviour in the
    graph only.
