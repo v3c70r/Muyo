@@ -6,6 +6,32 @@
 
 namespace Muyo::RenderGraph
 {
+void CompiledRenderGraphNode::Destroy(VkDevice device, VkDescriptorPool descriptorPool)
+{
+    if (ownsDescriptorSets && !descriptorSets.empty() && descriptorPool != VK_NULL_HANDLE)
+    {
+        vkFreeDescriptorSets(device, descriptorPool, static_cast<uint32_t>(descriptorSets.size()),
+                             descriptorSets.data());
+    }
+    if (ownsDescriptorSetLayouts)
+    {
+        for (VkDescriptorSetLayout layout : descriptorSetLayouts)
+        {
+            if (layout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, layout, nullptr);
+        }
+    }
+    if (pipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    if (pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, pipeline, nullptr);
+
+    // Cleared rather than merely destroyed, because this is documented as safe to call repeatedly and one
+    // of its callers acts while the node still exists: the compile guard that runs when compilation throws.
+    // A destroyed handle left in place would be freed a second time by whoever destroys the graph next.
+    pipeline = VK_NULL_HANDLE;
+    pipelineLayout = VK_NULL_HANDLE;
+    descriptorSets.clear();
+    descriptorSetLayouts.clear();
+}
+
 void CompiledRenderGraph::RebuildExecutionPlan(const RenderGraphQueueFamilies& families)
 {
     m_executionPlan = RenderGraphExecutionPlan{};
@@ -92,20 +118,7 @@ void CompiledRenderGraph::Destroy(VkDevice device, VkDescriptorPool descriptorPo
 {
     for (CompiledRenderGraphNode& rgn : m_nodes)
     {
-        if (rgn.ownsDescriptorSets && !rgn.descriptorSets.empty())
-        {
-            vkFreeDescriptorSets(device, descriptorPool, static_cast<uint32_t>(rgn.descriptorSets.size()),
-                                 rgn.descriptorSets.data());
-        }
-        if (rgn.ownsDescriptorSetLayouts)
-        {
-            for (VkDescriptorSetLayout layout : rgn.descriptorSetLayouts)
-            {
-                if (layout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, layout, nullptr);
-            }
-        }
-        if (rgn.pipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, rgn.pipelineLayout, nullptr);
-        if (rgn.pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, rgn.pipeline, nullptr);
+        rgn.Destroy(device, descriptorPool);
     }
     m_nodes.clear();
     // The plan holds indices into m_nodes; leaving it populated would make a later Execute() index

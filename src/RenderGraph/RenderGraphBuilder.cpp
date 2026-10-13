@@ -154,10 +154,49 @@ const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle&
     return m_services.resourceManager->template GetResource<IRenderResource>(handle);
 }
 
+namespace
+{
+/// Destroys a half-compiled node's GPU objects if its compilation leaves by exception.
+///
+/// A guard rather than a destroy call beside each `throw`, because the failure path is the one nobody
+/// exercises while writing a new declaration check: a check added here later is covered by construction,
+/// whereas a check added beside a bare `throw` is covered only if its author remembers to add one. This is
+/// #55's exception-safety half, and it is what lets a rejected declaration reach the caller as its own
+/// message instead of as a leaked-object VUID raised inside `vkDestroyDevice` - which the debug callback
+/// turns into an abort, so the message naming the node and resource is the one thing that never appears.
+class HalfCompiledNodeGuard
+{
+public:
+    HalfCompiledNodeGuard(CompiledRenderGraphNode& node, VkDevice device, VkDescriptorPool descriptorPool)
+        : m_node(node), m_device(device), m_descriptorPool(descriptorPool)
+    {
+    }
+    ~HalfCompiledNodeGuard()
+    {
+        if (!m_committed) m_node.Destroy(m_device, m_descriptorPool);
+    }
+
+    /// Hand the node to the caller: it is no longer destroyed when this scope exits.
+    void Commit() { m_committed = true; }
+
+    HalfCompiledNodeGuard(const HalfCompiledNodeGuard&) = delete;
+    HalfCompiledNodeGuard& operator=(const HalfCompiledNodeGuard&) = delete;
+
+private:
+    CompiledRenderGraphNode& m_node;
+    VkDevice m_device;
+    VkDescriptorPool m_descriptorPool;
+    bool m_committed = false;
+};
+}  // namespace
+
 CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderGraphBuilder::RenderGraphNode& rgn)
 {
     // Compile pipeline and pipeline layout from node
     CompiledRenderGraphNode result;
+    // From here on the node is owed to this scope: if any declaration check below rejects it, the objects
+    // already created for it are destroyed before the exception leaves.
+    HalfCompiledNodeGuard releaseOnThrow(result, m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
     // Copy the node's metadata: the compiled node carries everything needed at record time, so it
     // does not point back at the authoring structures.
     result.name = rgn.name;
@@ -372,6 +411,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         }
     }
 
+    releaseOnThrow.Commit();
     return result;
 }
 
@@ -742,39 +782,53 @@ void RenderGraphBuilder::Build()
         AllocateResource(desc, *m_services.resourceManager, handle);
     }
 
-    std::unordered_map<ResourceHandle, uint32_t> resourceCurrentVersions;
-    for (const auto& nodeName : executionOrder)
+    try
     {
-        // Update handle versions
-        auto& node = m_renderGraphNodes.at(nodeName);
-        for (auto& resource : node.resourceUses)
+        std::unordered_map<ResourceHandle, uint32_t> resourceCurrentVersions;
+        for (const auto& nodeName : executionOrder)
         {
-            ResourceHandle handle = std::string(resource.handle);
-            if (resourceCurrentVersions.find(handle) == resourceCurrentVersions.end())
+            // Update handle versions
+            auto& node = m_renderGraphNodes.at(nodeName);
+            for (auto& resource : node.resourceUses)
             {
-                resourceCurrentVersions[handle] = 0;
-            }
-            else
-            {
-                resource.version = resourceCurrentVersions[handle];
-                if (resource.io == ResourceIOType::WRITE || resource.io == ResourceIOType::READ_WRITE)
+                ResourceHandle handle = std::string(resource.handle);
+                if (resourceCurrentVersions.find(handle) == resourceCurrentVersions.end())
                 {
-                    resourceCurrentVersions[handle]++;
+                    resourceCurrentVersions[handle] = 0;
+                }
+                else
+                {
+                    resource.version = resourceCurrentVersions[handle];
+                    if (resource.io == ResourceIOType::WRITE || resource.io == ResourceIOType::READ_WRITE)
+                    {
+                        resourceCurrentVersions[handle]++;
+                    }
                 }
             }
+
+            // Compile RenderGraphNode
+            m_compiledGraph.AddNode(CompileRenderGraphNode(node));
         }
 
-        // Compile RenderGraphNode
-        m_compiledGraph.AddNode(CompileRenderGraphNode(node));
+        // Derive the scheduling plan (queue segments + cross-queue transfers) once, so Execute() reads
+        // it rather than recomputing it every frame.
+        //
+        // The plan freezes the device's queue family indices, so it must be rebuilt if the device
+        // changes. Today Build() always reruns after a device change (a builder is recreated), but a
+        // caller that reused a compiled graph across devices would have to rebuild it.
+        m_compiledGraph.RebuildExecutionPlan(GetQueueFamilies());
     }
-
-    // Derive the scheduling plan (queue segments + cross-queue transfers) once, so Execute() reads
-    // it rather than recomputing it every frame.
-    //
-    // The plan freezes the device's queue family indices, so it must be rebuilt if the device
-    // changes. Today Build() always reruns after a device change (a builder is recreated), but a
-    // caller that reused a compiled graph across devices would have to rebuild it.
-    m_compiledGraph.RebuildExecutionPlan(GetQueueFamilies());
+    catch (...)
+    {
+        // A build that fails leaves an *empty* graph, not a partial one. The nodes compiled before the
+        // failing one are destroyed here rather than whenever the builder happens to be destroyed, and the
+        // failing node's own objects were released by its compile guard. Two reasons this matters: a graph
+        // holding half a pass list is one Execute() would run with a plan that was never derived, and the
+        // objects in it would otherwise still be alive when the device is destroyed, which is exactly the
+        // leaked-object error that erases the diagnostic this issue exists to deliver.
+        m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
+        throw;
+    }
 }
 
 bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn,
