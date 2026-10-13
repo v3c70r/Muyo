@@ -749,3 +749,83 @@ Barrier policy (stages/access/layout) for a (usage, io) pair.
 | `VkPipelineStageFlags2 stages` | Destination pipeline stages. |
 | `VkAccessFlags2 access` | Destination access mask. |
 | `VkImageLayout layout` | Target image layout (ignored for buffers / AS / push constants). |
+
+
+## `TransientMemoryPlanner.h`
+
+### `TransientMemoryClass Muyo::RenderGraph::ClassOf(const ResourceDesc &desc, uint32_t memoryTypeBits)`
+
+desc A resource declaration. memoryTypeBits The memory type bits that declaration's requirements allow, from vkGetBufferMemoryRequirements / vkGetImageMemoryRequirements. The class that declaration belongs to. See TransientMemoryClass for why images are keyed on their whole create info and why the memory types are part of the key.
+
+### `TransientMemoryPlan Muyo::RenderGraph::PlanTransientMemory(const std::vector< TransientMemoryRequest > &requests)`
+
+Pack a build's transients into as few blocks as their live ranges allow.
+
+### `struct Muyo::RenderGraph::TransientMemoryBlock`
+
+One allocation, and the slots laid out inside it.
+
+| Member | Description |
+| --- | --- |
+| `TransientMemoryClass classKey` | The class every member of every slot belongs to. |
+| `VkDeviceSize size` | Bytes to allocate: the end of the last slot. |
+| `VkDeviceSize alignment` | Alignment to allocate with: the maximum over all slots. |
+| `uint32_t memoryTypeBits` | Memory type bits to allocate with: the intersection over all members. Zero is an error, reported by PlanTransientMemory rather than left for the allocator to fail on. |
+| `std::vector< TransientMemorySlot > slots` | The slots, in offset order. |
+
+### `struct Muyo::RenderGraph::TransientMemoryClass`
+
+The compatibility class a transient's memory belongs to.
+
+| Member | Description |
+| --- | --- |
+| `VkFormat format` | Pixel format, for images. Unused for buffers. |
+| `VkExtent2D extent` | Image extent, for images. Unused for buffers. |
+| `uint32_t mips` | Mip level count, for images. Unused for buffers. |
+| `uint32_t layers` | Array layer count, for images. Unused for buffers. |
+| `VkImageUsageFlags usage` | Image usage flags, for images. Unused for buffers. |
+| `uint32_t memoryTypeBits` | Memory type bits the device allows for this resource, from its memory requirements. |
+| `bool isImage` | True for images, false for buffers. The discriminator: a buffer's other fields are all defaults. |
+| `bool operator==(const TransientMemoryClass &other) const` | other Class to compare against. True when two transients may share a block. |
+| `bool operator<(const TransientMemoryClass &other) const` | other Class to compare against. A strict weak ordering, so classes can key a map. It orders blocks in the plan deterministically; it carries no meaning about memory. |
+
+### `struct Muyo::RenderGraph::TransientMemoryPlan`
+
+What a build's transients should do with memory: one block per class, one offset per non-overlapping group.
+
+| Member | Description |
+| --- | --- |
+| `std::vector< TransientMemoryBlock > blocks` | One per class that has any transient. Empty when the graph has no transients. |
+| `VkDeviceSize reservedBytes` | Bytes the graph will allocate: the sum of the blocks' sizes. |
+| `VkDeviceSize individualBytes` | Bytes it would allocate with one resource each: the sum of the requests' sizes. The two numbers together are the whole point - see SharesMemory. |
+| `std::size_t SlotCount() const` | How many distinct offsets the plan reserves across all blocks. |
+| `bool SharesMemory() const` | True when the plan allocates less than one resource each, i.e. some slot is shared. False is a legitimate answer for a graph whose transients all overlap; it is not a failure, and a caller that reports it as one would be reporting on its own graph. |
+
+### `struct Muyo::RenderGraph::TransientMemoryRequest`
+
+One transient's demand on memory, in the terms the planner can reason about.
+
+| Member | Description |
+| --- | --- |
+| `ResourceHandle handle` | The resource this request is for. Carried through to the plan for diagnostics and binding. |
+| `TransientMemoryClass classKey` | Which resources this may share a block with. See TransientMemoryClass. |
+| `VkDeviceSize size` | Bytes the resource requires, from its memory requirements. |
+| `VkDeviceSize alignment` | Alignment the resource requires, from the same call. Must be non-zero. |
+| `uint32_t memoryTypeBits` | Memory type bits the resource allows, from the same call. A block's are the intersection of its members'. |
+| `std::size_t firstUse` | Execution-order index of the first node that uses this resource. |
+| `std::size_t lastUse` | Execution-order index of the last node that uses this resource. Equal to firstUse for a resource touched by one node. |
+
+### `struct Muyo::RenderGraph::TransientMemorySlot`
+
+One offset inside a block, shared by every member whose live range does not overlap another's.
+
+| Member | Description |
+| --- | --- |
+| `std::vector< ResourceHandle > members` | Resources bound at this offset. Never two whose intervals overlap - that is the plan's promise. |
+| `VkDeviceSize offset` | Offset from the start of the block. |
+| `VkDeviceSize size` | Bytes reserved here: the largest member's size, aligned up to the widest member's alignment. |
+| `VkDeviceSize alignment` | The widest member's alignment. The offset above is a multiple of it. |
+
+### `std::string Muyo::RenderGraph::VerifyTransientMemoryPlan(const TransientMemoryPlan &plan, const std::vector< TransientMemoryRequest > &requests)`
+
+Check that a plan keeps the promise its shape makes.
