@@ -63,6 +63,22 @@ public:
     /// released while something is still bound, and the validation layer says so.
     void FreeAliasingBlock(VmaAllocation &block);
 
+    /// Create a buffer with no memory bound to it, for a caller that will bind it into a block itself.
+    ///
+    /// `AllocateBuffer` creates a buffer and its memory together, which is right for a resource that owns
+    /// its memory. Aliasing needs the two separated: every member's size must be known before the offsets
+    /// are chosen, and the memory is chosen after that. The buffer made here is destroyed by
+    /// `vmaDestroyBuffer(allocator, buffer, VK_NULL_HANDLE)` - the call `FreeBuffer` already makes when
+    /// the allocation is null - which is why a resource wrapping one needs no separate destructor.
+    /// @param nSize              Buffer size in bytes.
+    /// @param nBufferUsageFlags  Vulkan buffer usage flags.
+    /// @param buffer             Receives the created, unbound buffer.
+    void CreateUnboundBuffer(VkDeviceSize nSize, VkBufferUsageFlags nBufferUsageFlags, VkBuffer &buffer);
+
+    /// @param buffer A buffer created by `CreateUnboundBuffer`.
+    /// @return Its memory requirements, which is what a block has to satisfy for it.
+    VkMemoryRequirements QueryBufferRequirements(VkBuffer buffer) const;
+
 private:
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     VmaPool m_SBTPool = VK_NULL_HANDLE;  // SBT pool uses another aligment, need to be allocated in a separate pool
