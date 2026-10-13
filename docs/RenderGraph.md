@@ -117,7 +117,9 @@ alignment: a slot's offset is aligned up to its widest member's alignment, and a
 properties, so padding is real cost and not planner waste. And **a mapping must not outlive the node whose
 use declared the resource** - a graph-owned transient is mapped through its block, so nothing else can be
 bound to those bytes while the pointer is held, which is exactly what the live range guarantees for that
-node and nothing beyond it.
+node and nothing beyond it. `Execute()` **enforces** this rather than only documenting it: after every node
+callback it scans the graph's aliased buffers, and one still host-mapped throws naming the node and the
+resource. Unmap before the callback returns.
 
 ## Minimal example
 

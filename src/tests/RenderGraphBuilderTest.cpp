@@ -771,6 +771,59 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: transients that are never
     CHECK(plan.reservedBytes < plan.individualBytes);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transient mapping must not outlive its node",
+                 "[RenderGraphBuilder]")
+{
+    // #102. A graph-owned transient is mapped through its aliasing block, so the pointer is valid only
+    // while nothing else is bound to those bytes - the live range promises that for the node whose use
+    // declared the resource and nothing beyond it. A callback that maps and does not unmap breaks the
+    // invariant silently: the next node in the slot writes through the same bytes. The check runs at
+    // every node boundary and names both the node and the resource. With it removed, Execute() returns
+    // normally and the misuse is invisible, which is the test's teeth.
+    const auto buildLeakyGraph = [](QueueType queueType)
+    {
+        auto builder = std::make_unique<RenderGraphBuilder>(GetRenderDevice());
+        builder->AddResource("Leaky", BufferResourceDesc{.count = 4,
+                                                         .stride = sizeof(uint32_t),
+                                                         .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                         .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+        builder->AddNode(RenderGraphNodeCreateInfo{.nodeName = "LeavesItMapped",
+                                                   .queueType = queueType,
+                                                   .resourceUses = {ResourceUse{.handle = ResourceHandle("Leaky"),
+                                                                                .io = ResourceIOType::WRITE,
+                                                                                .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                                .kind = ResourceKind::BUFFER}},
+                                                   .execute = [](RenderGraphNodeContext& ctx)
+                                                   {
+                                                       auto* pBuffer = const_cast<BufferResource*>(
+                                                           ctx.GetResource<BufferResource>("Leaky"));
+                                                       REQUIRE(pBuffer != nullptr);
+                                                       void* pMapped = pBuffer->Map();
+                                                       REQUIRE(pMapped != nullptr);
+                                                       std::memset(pMapped, 0, 4 * sizeof(uint32_t));
+                                                       // Deliberately no Unmap: the node-boundary check is what must
+                                                       // catch this.
+                                                   }});
+        builder->Build();
+        return builder;
+    };
+
+    // Both call sites are covered: the host-side CPU loop and the GPU recording loop. The GPU check runs
+    // after the render pass is closed, so its throw cannot leave one open.
+    SECTION("host-side CPU node")
+    {
+        auto builder = buildLeakyGraph(QueueType::CPU);
+        CHECK_THROWS_WITH(builder->Execute(), Catch::Matchers::ContainsSubstring("'LeavesItMapped'") &&
+                                                  Catch::Matchers::ContainsSubstring("'Leaky'"));
+    }
+    SECTION("GPU node recording callback")
+    {
+        auto builder = buildLeakyGraph(QueueType::COMPUTE);
+        CHECK_THROWS_WITH(builder->Execute(), Catch::Matchers::ContainsSubstring("'LeavesItMapped'") &&
+                                                  Catch::Matchers::ContainsSubstring("'Leaky'"));
+    }
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never live at once share one offset",
                  "[RenderGraphBuilder]")
 {
