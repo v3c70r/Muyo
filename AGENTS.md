@@ -48,7 +48,8 @@ silently diverge from it.
   Everything else keeps the branch-and-squash flow.
 - **Merge with squash**: `gh pr merge <n> --squash` — **enforced by the ruleset since 2026-10-12**, which
   allows only that method. Trunk history is then one commit per
-  workstream, and the PR body becomes the commit body — so write it to be read as `git log`.
+  workstream, and the PR body becomes the commit body — so write it to be read as `git log`. The merge
+  happens once an approving **review** is on the PR (section 6), not once a comment reads like one.
 - Keep one concern per pull request. A mechanical refactor and a behaviour change are two PRs even
   when the second would be a one-line edit of the first.
 - For a large PR, post a **summary/index comment** on the PR (scope, features, fixes, review
@@ -474,6 +475,56 @@ Two identities, and now they are real ones: work is authored by `v3c70r` and rev
 comment saying "approve". That is what makes `gh pr view <n> --json reviewDecision` worth reading, and it
 is why the reviews before 2026-10-12 read as comments: a single account cannot approve its own pull
 request.
+
+**The author and the approving reviewer must not be the same actor, and the approval must be submitted as a
+review.** Both halves were paid for, and both are checkable.
+
+- **A comment is not an approval.** Writing "approve" in the thread leaves `reviewDecision` at
+  `REVIEW_REQUIRED`, because the gate reads the review *state* and not the text. [#94](https://github.com/v3c70r/Muyo/pull/94)
+  was refused for exactly this — `HTTP 405 … At least 1 approving review is required by reviewers with
+  write access` — with a complete review already posted as a comment. GitHub cannot convert a comment into
+  a review, so the remedy is a re-submission rather than an edit:
+
+  ```bash
+  gh pr review <n> --approve --body "<the review text>"   # from the reviewing account
+  gh pr view <n> --json reviewDecision                    # expect APPROVED; a comment leaves REVIEW_REQUIRED
+  ```
+
+- **The reviewer must be a different account from the author.** GitHub will not let an author approve their
+  own pull request, so this is enforced rather than trusted — but the enforcement is not the point. A review
+  written by the author in the PR thread, however honest, is a self-review, and the reason the second
+  account exists is to make one impossible rather than to make it impolite. A session that both wrote the
+  branch and reviewed it has produced no review, whatever the thread says.
+
+- **Which account a `gh` call uses is session state, not an argument.** The active account is persistent
+  config (`gh auth switch`), every subsequent `gh` call uses it, and the output of a *successful* call does
+  not name who posted it. So a review can be complete, honest, and posted as the wrong actor — and the gate
+  then refuses it as a *missing* review rather than as one from the wrong identity, which reads like a bug in
+  the gate. Read the identity back the same way the branch is read back, and do it before the call:
+
+  ```bash
+  gh auth switch --user qgu-reviewer   # once per session; the setting persists
+  gh api user --jq .login              # names who the next state-changing call will post as
+  ```
+
+  #94 is the worked example, and it was three layers deep in one evening. The review was first posted as the
+  **author's** account, because that account was still active from earlier work in the same session; the
+  delete then failed twice, having passed a GraphQL `IC_…` node ID to the REST delete endpoint, which wants
+  the numeric one; and only the re-submission produced a review. Every one of those calls succeeded at being
+  *a* call. The later slip — an approving *comment* instead of an approving *review* — is the same shape one
+  layer up, and it happened again on the pull request that documents it.
+
+The check is the evidence, so run it rather than recalling it:
+
+```bash
+# No pull request may be approved by its own author. Expect no output.
+gh api graphql -f query='{repository(owner:"v3c70r",name:"Muyo"){pullRequests(first:100,states:[OPEN,CLOSED,MERGED]){nodes{number author{login} reviews(first:30){nodes{state author{login}}}}}}}' \
+  --jq '.data.repository.pullRequests.nodes[] | . as $pr | select([$pr.reviews.nodes[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED") | .author.login] | index($pr.author.login)) | "self-reviewed #\($pr.number)"'
+```
+
+Run on 2026-10-13: 47 pull requests, **no self-reviewed one**, and 42 merged before the gate whose approval
+survives only as a comment — which is why those old merges cannot be re-audited as approvals, only read as
+the review that happened.
 
 Triage **every** finding and say which you did:
 
