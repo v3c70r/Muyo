@@ -23,7 +23,12 @@ silently diverge from it.
   is in progress, so "I am on master" no longer means "I am not about to commit code to master".
   Two sessions have already edited the wrong branch here; both were caught only by reading the
   diff, and one produced an edit against a file version that did not have the fix it was extending.
-  `git status --short` before `git add` is the cheap habit.
+  `git status --short` before `git add` is the cheap habit. **And check it again after finishing a detour
+  onto another branch**, because that is how it actually happens: switching to a PR branch to add one
+  paragraph, then starting the next piece of work without switching back. That is how the #55 commit
+  landed on #96's branch, with its upstream rebound to a new remote branch by the `-u` push - the second
+  time this file records that outcome, which is the point: the rule was already written and was not the
+  thing that failed. The check has to be *run*, at the start of work and again after any detour.
 - **A branch created from a remote ref inherits that ref as its upstream.** `git checkout -B
   versioning-policy origin/master` sets the new branch to track `origin/master`, so a later bare `git
   push` is aimed at **trunk**. What stopped it here was `push.default=simple`, which refuses when the
@@ -278,7 +283,14 @@ Rules:
   branch changed (via `clang-format-diff`), so a file that predates the branch never blocks work.
   The one-time whole-tree pass is [#23](https://github.com/v3c70r/Muyo/issues/23) and must be a
   standalone PR with no functional changes (use `.git-blame-ignore-revs` so it does not bury
-  history).
+  history). **A file the branch *adds* is invisible until it reaches the index:** the check diffs
+  `origin/master` against tracked state, so a brand-new `.h` or `.cpp` sits outside it and the local
+  verdict is clean while CI's is not. That is how an entire new header arrived at CI unformatted, with a
+  local `sanity: OK` quoted beside it. Two habits follow, and one sitting needed both: stage new files
+  before believing a local format pass, and after applying the formatter **re-run the check with a clean
+  working tree**, so the verdict is about the committed state rather than the working tree that produced
+  it. Staging only part of what the formatter touched is a second way to pass locally and fail in CI -
+  it happened in the same fix, because the formatter had reflowed a second file.
 - **Run the sanitizers before merge for anything touching memory, lifetimes, threading or resource
   ownership** — `scripts/sanity.sh sanitize`. It is the cheapest real-bug detector available today.
 - **Read `scripts/sanity.sh`'s exit status, not a grep of its output.** The script ends with a single
@@ -495,6 +507,18 @@ review.** Both halves were paid for, and both are checkable.
   written by the author in the PR thread, however honest, is a self-review, and the reason the second
   account exists is to make one impossible rather than to make it impolite. A session that both wrote the
   branch and reviewed it has produced no review, whatever the thread says.
+
+- **The two identities are also two git emails.** GitHub attributes authorship by commit *email*, so a
+  commit authored with the reviewer account's address puts the reviewer inside the author set - and the
+  gate then refuses their approval with the same message it gives for a missing review. [#99](https://github.com/v3c70r/Muyo/pull/99)
+  hit it from both ends at once: approving as the author was refused because the author opened the pull
+  request, and approving as the reviewer was refused because the branch's commits carried `qgu@qgu.io`,
+  which is registered to the reviewer account. **Both identities were disqualified by one config field,
+  and the message named neither.** The author's commits are authored with the author account's
+  `users.noreply` address - `git commit --amend --reset-author` fixes an existing branch, and feature
+  branches are not gated - and no branch the reviewer is expected to approve should carry the reviewer's
+  address. Which account may produce the approving *state* is decided here rather than by the ruleset:
+  the ruleset decides only that a state is required.
 
 - **Which account a `gh` call uses is session state, not an argument.** The active account is persistent
   config (`gh auth switch`), every subsequent `gh` call uses it, and the output of a *successful* call does
