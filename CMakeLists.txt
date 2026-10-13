@@ -395,6 +395,7 @@ add_executable(tests
     src/tests/DeviceCapabilityTests.cpp
     src/tests/RenderGraphBuilderTest.cpp
     src/tests/ShaderReflectionTests.cpp
+    src/tests/TransientMemoryPlannerTest.cpp
 )
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
 target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/RenderDoc)
