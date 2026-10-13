@@ -299,6 +299,8 @@ Declares and runs a render graph.
 | `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. *this for chaining. |
 | `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. *this for chaining. |
 | `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | The allocation description for a graph-owned resource, if any. |
+| `const IRenderResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. |
+| `const TransientMemoryPlan & GetTransientMemoryPlan() const` | The last build's transient memory plan: the blocks, their slots, and the two byte totals. reservedBytes < individualBytes is what sharing memory looks like from outside, and reservedBytes == individualBytes is a legitimate answer for a graph whose transients all overlap in time. Empty before the first build. |
 | `void AddNode(const RenderGraphNodeCreateInfo &nodeCreateInfo)` | Declare a node. Throws if the name is already used. |
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
 | `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. |
@@ -508,6 +510,7 @@ Context handed to a node's execute callback.
 | --- | --- |
 | `QueueType queueType` | Queue this node is running on. |
 | `RenderResourceManager & resourceManager` | Allocates and owns graph-declared resources. |
+| `std::function< const IRenderResource *(const ResourceHandle &)> resolveResource` | Resolve a handle the way the graph does: its own transients first (whose memory belongs to an aliasing block and which are therefore deliberately not registered with the manager), then ones the caller imported, then the manager's. Set by whoever executes; a context built without it falls back to the manager alone. |
 | `VkCommandBuffer commandBuffer` | Command buffer to record into. |
 | `VkPipeline pipeline` | Bound pipeline. |
 | `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
@@ -785,6 +788,7 @@ The compatibility class a transient's memory belongs to.
 | `uint32_t layers` | Array layer count, for images. Unused for buffers. |
 | `VkImageUsageFlags usage` | Image usage flags, for images. Unused for buffers. |
 | `uint32_t memoryTypeBits` | Memory type bits the device allows for this resource, from its memory requirements. |
+| `VmaMemoryUsage memoryUsage` | The memory usage its block will be allocated with. A block is one allocation, so everything in it is created with one usage - and two resources asking for different usages are asking for different contracts even when the device offers them the same memory types. |
 | `bool isImage` | True for images, false for buffers. The discriminator: a buffer's other fields are all defaults. |
 | `bool operator==(const TransientMemoryClass &other) const` | other Class to compare against. True when two transients may share a block. |
 | `bool operator<(const TransientMemoryClass &other) const` | other Class to compare against. A strict weak ordering, so classes can key a map. It orders blocks in the plan deterministically; it carries no meaning about memory. |
@@ -829,3 +833,22 @@ One offset inside a block, shared by every member whose live range does not over
 ### `std::string Muyo::RenderGraph::VerifyTransientMemoryPlan(const TransientMemoryPlan &plan, const std::vector< TransientMemoryRequest > &requests)`
 
 Check that a plan keeps the promise its shape makes.
+
+
+## `TransientResources.h`
+
+### `class Muyo::RenderGraph::TransientBufferResource`
+
+A transient buffer whose memory belongs to an aliasing block rather than to the buffer.
+
+| Member | Description |
+| --- | --- |
+| `TransientBufferResource(size_t nSize, VkBufferUsageFlags nUsage, VmaMemoryUsage nMemoryUsage)` | nSize Buffer size in bytes. The buffer itself is created by Adopt, not here. nUsage Vulkan buffer usage flags. nMemoryUsage The declared memory usage, which decides whether SetData can write through a host mapping or has to travel by transfer. |
+| `void Adopt(VkBuffer buffer)` | Take ownership of the unbound buffer the allocator created for this resource. buffer Buffer this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns. |
+| `void BindTo(VmaAllocation block, VkDeviceSize nOffset)` | Record the block and offset this resource was bound at, so a host mapping can find its bytes. block The block the buffer is bound into. Not owned, and outlived by nothing: the graph destroys every resource before it frees any block. nOffset Byte offset of this buffer inside that block. |
+| `void * Map() override` | Map this resource's bytes on the host. |
+| `void Unmap() override` | Release the mapping Map took. A resource that is not mapped is left alone, so a path that unmaps defensively cannot release the block out from under a member that still holds a pointer into it. |
+| `void SetData(const void *pData, size_t size) override` | Upload content into this buffer. |
+| `bool IsMapped() const` | True while this resource holds a host mapping. The graph's contract is that a mapping does not outlive the node whose use declared the resource, because that is what makes its slot exclusively its own for as long as the pointer is held. |
+| `size_t GetAliasedSize() const` | The size the buffer was created with, which is what the block's plan reserved for it. |
+| `~TransientBufferResource() override` | Unmap before the base destructor destroys the buffer. The block is freed after every resource bound into it is gone, so this runs while the mapping is still valid - which is the whole reason the graph's teardown order is resources first, blocks second. |

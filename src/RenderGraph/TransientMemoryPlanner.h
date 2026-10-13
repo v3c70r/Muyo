@@ -54,6 +54,10 @@ struct TransientMemoryClass
     VkImageUsageFlags usage = 0;
     /// Memory type bits the device allows for this resource, from its memory requirements.
     uint32_t memoryTypeBits = 0;
+    /// The memory usage its block will be allocated with. A block is one allocation, so everything in it
+    /// is created with one usage - and two resources asking for different usages are asking for different
+    /// contracts even when the device offers them the same memory types.
+    VmaMemoryUsage memoryUsage = VMA_MEMORY_USAGE_UNKNOWN;
     /// True for images, false for buffers. The discriminator: a buffer's other fields are all defaults.
     bool isImage = false;
 
@@ -61,7 +65,7 @@ struct TransientMemoryClass
     /// @return True when two transients may share a block.
     bool operator==(const TransientMemoryClass& other) const
     {
-        return isImage == other.isImage && memoryTypeBits == other.memoryTypeBits &&
+        return isImage == other.isImage && memoryTypeBits == other.memoryTypeBits && memoryUsage == other.memoryUsage &&
                (!isImage ||
                 (format == other.format && extent.width == other.extent.width && extent.height == other.extent.height &&
                  mips == other.mips && layers == other.layers && usage == other.usage));
@@ -78,7 +82,8 @@ struct TransientMemoryClass
         if (mips != other.mips) return mips < other.mips;
         if (layers != other.layers) return layers < other.layers;
         if (usage != other.usage) return usage < other.usage;
-        return memoryTypeBits < other.memoryTypeBits;
+        if (memoryTypeBits != other.memoryTypeBits) return memoryTypeBits < other.memoryTypeBits;
+        return memoryUsage < other.memoryUsage;
     }
 };
 
@@ -97,6 +102,7 @@ inline TransientMemoryClass ClassOf(const ResourceDesc& desc, uint32_t memoryTyp
             {
                 TransientMemoryClass cls;
                 cls.memoryTypeBits = memoryTypeBits;
+                cls.memoryUsage = d.memoryProperties;
                 return cls;
             }
             else

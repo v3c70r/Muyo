@@ -22,6 +22,8 @@
 #include "RenderGraphNodeResource.h"
 #include "RenderGraphResourceDesc.h"
 #include "ShaderAsset.h"
+#include "TransientMemoryPlanner.h"
+#include "TransientResources.h"
 
 namespace Muyo::RenderGraph
 {
@@ -143,6 +145,24 @@ public:
     /// @return The allocation description for a graph-owned resource, if any.
     std::optional<ResourceDesc> GetResourceDesc(const ResourceHandle& handle) const;
 
+    /// Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing
+    /// block), one the caller imported, or one the engine's resource manager owns.
+    ///
+    /// This is the graph's own resolution order, exposed because a caller reading back what a node wrote to
+    /// a graph-owned transient needs the same answer the graph's barrier and descriptor paths use. A
+    /// graph-owned transient is deliberately **not** registered with the resource manager: its memory
+    /// belongs to a block the graph frees, and a manager-owned copy would be a second resource under one
+    /// name with a different lifetime and a different address.
+    /// @param handle Resource handle.
+    /// @return The resource, or nullptr when the handle names nothing the graph can see.
+    const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
+
+    /// @return The last build's transient memory plan: the blocks, their slots, and the two byte totals.
+    ///         `reservedBytes < individualBytes` is what sharing memory looks like from outside, and
+    ///         `reservedBytes == individualBytes` is a legitimate answer for a graph whose transients all
+    ///         overlap in time. Empty before the first build.
+    const TransientMemoryPlan& GetTransientMemoryPlan() const { return m_transientMemoryPlan; }
+
     // ── Node declaration ─────────────────────────────────────────────────────
     /// Declare a node. Throws if the name is already used.
     void AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo);
@@ -203,7 +223,6 @@ private:
 
     // Resolve a handle to its concrete resource: imported resources take priority,
     // otherwise look in the graph-owned resource manager.
-    const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
 
     // The offset/range to write into VkDescriptorBufferInfo for a buffer binding, validated against
     // the buffer and this device's alignment limit. Whole buffer when the use declares no range.
@@ -281,6 +300,25 @@ private:
     RenderGraphDescriptorSets m_descriptorSetManager;
     // Owns submission, cross-queue synchronization and waiting. The graph only records.
     RenderGraphExecutor m_executor;
+
+    /// Transient buffers whose memory the graph owns as aliasing blocks rather than per resource.
+    ///
+    /// Keyed by handle so `ResolveResource` finds them, and owned here rather than by the resource
+    /// manager, because their memory belongs to a block and the block's lifetime is the graph's. They are
+    /// destroyed before the blocks are freed, since a block cannot be released while something is still
+    /// bound to it, and they are recreated on every build - unlike manager-owned resources - because the
+    /// plan, and therefore the offsets, can differ between builds.
+    std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> m_aliasedBuffers;
+    /// The blocks those buffers are bound into. Freed after every resource above is destroyed.
+    std::vector<VmaAllocation> m_aliasBlocks;
+    /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
+    TransientMemoryPlan m_transientMemoryPlan;
+
+    /// Create this build's aliased transients, plan their memory, and bind them into blocks.
+    /// @param executionOrder Node order, which is what the live ranges are indexed by.
+    void BuildAliasedTransients(const std::vector<std::string>& executionOrder);
+    /// Destroy the aliased resources and then free their blocks. Safe to call repeatedly.
+    void DestroyAliasedTransients();
 
     ResourceDescRegistry m_resourceDescRegistry;
     std::unordered_map<ResourceHandle, const IRenderResource*> m_importedResources;

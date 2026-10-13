@@ -115,6 +115,9 @@ std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::ResolveBufferRange(con
 RenderGraphBuilder::~RenderGraphBuilder()
 {
     m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
+    // After the compiled graph, because its descriptors and pipelines name these buffers, and before the
+    // device goes away, because the blocks hold memory this class owns.
+    DestroyAliasedTransients();
     m_vkDevice = VK_NULL_HANDLE;
 }
 
@@ -151,11 +154,27 @@ const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle&
     {
         return it->second;
     }
+    // Before the manager: an aliased buffer is not in the manager at all, and looking there first would
+    // find a same-named resource from an earlier build if one ever existed.
+    if (auto it = m_aliasedBuffers.find(handle); it != m_aliasedBuffers.end())
+    {
+        return it->second.get();
+    }
     return m_services.resourceManager->template GetResource<IRenderResource>(handle);
 }
 
 namespace
 {
+/// @param desc A resource declaration.
+/// @return True when this build gives the resource its own memory inside an aliasing block instead of
+///         letting the resource manager allocate one for it. Buffers only: images still take the
+///         manager's path, and the planner's image classes are ready for the slice that wires them.
+bool IsAliasedTransientBuffer(const ResourceDesc& desc)
+{
+    const auto* pBuffer = std::get_if<BufferResourceDesc>(&desc);
+    return pBuffer != nullptr && pBuffer->lifetime == ResourceLifetime::Transient;
+}
+
 /// Destroys a half-compiled node's GPU objects if its compilation leaves by exception.
 ///
 /// A guard rather than a destroy call beside each `throw`, because the failure path is the one nobody
@@ -756,6 +775,78 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
     }
 }
 
+void RenderGraphBuilder::DestroyAliasedTransients()
+{
+    // Resources first, then their memory: a block cannot be released while a resource is still bound to
+    // it, which is the order VMA's own implementation uses (destroy the buffer, then free).
+    m_aliasedBuffers.clear();
+    for (VmaAllocation& block : m_aliasBlocks) GetMemoryAllocator()->FreeAliasingBlock(block);
+    m_aliasBlocks.clear();
+    m_transientMemoryPlan = TransientMemoryPlan{};
+}
+
+void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& executionOrder)
+{
+    std::vector<TransientMemoryRequest> requests;
+    requests.reserve(m_resourceDescRegistry.size());
+    for (const auto& [handle, desc] : m_resourceDescRegistry)
+    {
+        if (!IsAliasedTransientBuffer(desc)) continue;
+        if (m_importedResources.find(handle) != m_importedResources.end()) continue;
+
+        const auto liveRange = m_transientLiveRanges.find(handle);
+        if (liveRange == m_transientLiveRanges.end()) continue;
+
+        const auto* pBufferDesc = std::get_if<BufferResourceDesc>(&desc);
+        const VkDeviceSize nSize = pBufferDesc->count * pBufferDesc->stride;
+        auto resource =
+            std::make_unique<TransientBufferResource>(nSize, pBufferDesc->usage, pBufferDesc->memoryProperties);
+
+        VkBuffer buffer = VK_NULL_HANDLE;
+        GetMemoryAllocator()->CreateUnboundBuffer(nSize, pBufferDesc->usage, buffer);
+        resource->Adopt(buffer);
+        const VkMemoryRequirements requirements = GetMemoryAllocator()->QueryBufferRequirements(buffer);
+
+        TransientMemoryRequest request;
+        request.handle = handle;
+        request.classKey = ClassOf(desc, requirements.memoryTypeBits);
+        request.size = requirements.size;
+        request.alignment = requirements.alignment;
+        request.memoryTypeBits = requirements.memoryTypeBits;
+        request.firstUse = liveRange->second.firstUse;
+        request.lastUse = liveRange->second.lastUse;
+        requests.push_back(std::move(request));
+
+        m_aliasedBuffers.emplace(handle, std::move(resource));
+    }
+
+    m_transientMemoryPlan = PlanTransientMemory(requests);
+
+    for (const TransientMemoryBlock& block : m_transientMemoryPlan.blocks)
+    {
+        VkMemoryRequirements blockRequirements = {};
+        blockRequirements.size = block.size;
+        blockRequirements.alignment = block.alignment;
+        blockRequirements.memoryTypeBits = block.memoryTypeBits;
+
+        VmaAllocation allocation =
+            GetMemoryAllocator()->AllocateAliasingBlock(blockRequirements, block.classKey.memoryUsage);
+        m_aliasBlocks.push_back(allocation);
+
+        for (const TransientMemorySlot& slot : block.slots)
+        {
+            for (const ResourceHandle& member : slot.members)
+            {
+                TransientBufferResource* pResource = m_aliasedBuffers.at(member).get();
+                GetMemoryAllocator()->BindBufferToBlock(pResource->buffer(), allocation, slot.offset);
+                // Told now rather than at creation: the offset is what the plan just decided, and it is
+                // what `Map` needs to find this resource's bytes inside the block.
+                pResource->BindTo(allocation, slot.offset);
+            }
+        }
+    }
+}
+
 void RenderGraphBuilder::Build()
 {
     if (m_dependencyGraph.HasCycle())
@@ -764,6 +855,9 @@ void RenderGraphBuilder::Build()
     }
 
     m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
+    // Before anything is created: a resource that is aliased into a block, or whose offsets may differ
+    // from the last build's, belongs to the build that planned it and not to the builder.
+    DestroyAliasedTransients();
     m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())
@@ -775,12 +869,16 @@ void RenderGraphBuilder::Build()
     // the order and the declarations.
     ValidateTransientLifetimes(executionOrder);
 
-    // Allocate all graph-owned resources before compiling nodes.
+    // Allocate all graph-owned resources before compiling nodes. A buffer transient is skipped here and
+    // created unbound below instead: its memory belongs to a block, and the manager's path would give it
+    // memory of its own.
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
         if (m_importedResources.find(handle) != m_importedResources.end()) continue;
+        if (IsAliasedTransientBuffer(desc)) continue;
         AllocateResource(desc, *m_services.resourceManager, handle);
     }
+    BuildAliasedTransients(executionOrder);
 
     try
     {
@@ -1123,6 +1221,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         .queueType = QueueType::GRAPHICS,
         .resourceManager = *m_services.resourceManager,
     };
+    // Nodes reach resources through the context, so it has to resolve the way the graph does - which now
+    // includes transients the graph owns and the manager therefore does not.
+    context.resolveResource = [this](const ResourceHandle& handle) { return ResolveResource(handle); };
 
     std::unordered_set<ResourceHandle> alreadyWritten;
     std::vector<VkRenderingAttachmentInfo> colorAttachments;

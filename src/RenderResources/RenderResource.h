@@ -107,7 +107,14 @@ public:
     {
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_buffer), GetVkObjectType(), sName.c_str());
     }
-    void SetData(const void* pData, size_t size)
+    /// Upload content into this buffer, allocating or reallocating storage if the base class owns it.
+    ///
+    /// Virtual for the same reason `Map` is: a resource whose storage belongs to a shared block cannot
+    /// allocate, and cannot grow. An override reaches the staging copy - the part that is about the
+    /// resource rather than about its memory - by calling this with a size the resource already has.
+    /// @param pData Source bytes.
+    /// @param size  Byte count, which must not exceed the storage the resource has.
+    virtual void SetData(const void* pData, size_t size)
     {
         if (m_buffer != VK_NULL_HANDLE && size > m_nSize)
         {
@@ -173,13 +180,21 @@ public:
         }
     }
 
-    void* Map()
+    /// Map this resource's memory on the host.
+    ///
+    /// Virtual because a resource's memory is not always its own: a render-graph transient is bound into
+    /// a shared block, so what has to be mapped is the block, at an offset. The base implementation maps
+    /// the resource's own allocation, which is what everything that allocates its own memory wants.
+    /// @return A host pointer to the start of this resource's storage.
+    virtual void* Map()
     {
         void* pMappedPointer;
         GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedPointer);
         return pMappedPointer;
     }
-    void Unmap() { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
+    /// Release a mapping taken by `Map`. Must be called before the resource is destroyed - and, for an
+    /// aliased resource, before the block it shares is freed.
+    virtual void Unmap() { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
 
     uint32_t GetSize() const { return m_nSize; }
 

@@ -178,6 +178,31 @@ void VkMemoryAllocator::FreeAliasingBlock(VmaAllocation& block)
     block = nullptr;
 }
 
+void VkMemoryAllocator::CreateUnboundBuffer(VkDeviceSize nSize, VkBufferUsageFlags nBufferUsageFlags, VkBuffer& buffer)
+{
+    VkBufferCreateInfo bufferInfo = {};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = nSize;
+    bufferInfo.usage = nBufferUsageFlags;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    // The device comes from VMA rather than from the engine's global accessor: this file owns the
+    // allocator, and a buffer created on a device the allocator does not use is the wrong kind of
+    // failure to debug.
+    VmaAllocatorInfo allocatorInfo = {};
+    vmaGetAllocatorInfo(m_allocator, &allocatorInfo);
+    VK_ASSERT(vkCreateBuffer(allocatorInfo.device, &bufferInfo, nullptr, &buffer));
+}
+
+VkMemoryRequirements VkMemoryAllocator::QueryBufferRequirements(VkBuffer buffer) const
+{
+    VmaAllocatorInfo allocatorInfo = {};
+    vmaGetAllocatorInfo(m_allocator, &allocatorInfo);
+    VkMemoryRequirements requirements = {};
+    vkGetBufferMemoryRequirements(allocatorInfo.device, buffer, &requirements);
+    return requirements;
+}
+
 static VkMemoryAllocator allocator;
 VkMemoryAllocator* GetMemoryAllocator() { return &allocator; }
 

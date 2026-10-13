@@ -98,10 +98,22 @@ resource, both values and the likely fix.
 
 **Aliasing.** Non-overlapping transient live ranges are the resource the graph may share memory across,
 which is why the lifetime is a *declaration* rather than a hint: two transients whose ranges do not overlap
-may occupy the same bytes, and a `Persistent` one never may. The ranges are derived at `Build()` today and
-the memory saving that consumes them is not implemented yet - so nothing in the current allocator reuses
-memory, and a consumer that is relying on a transient's bytes outside its live range is relying on
-something the policy explicitly does not promise, whether or not the aliasing lands.
+may occupy the same bytes, and a `Persistent` one never may.
+
+`Build()` consumes the ranges. **Transient buffers** are created unbound, their requirements are queried,
+and they are bound into one block per compatibility class at offsets the planner chooses - so two transients
+whose ranges do not overlap share an address. **Images** still take the per-resource path; the planner's
+image classes exist and the wiring for them is the next slice. `GetTransientMemoryPlan()` reports what a
+build did: `reservedBytes` is what will be allocated, `individualBytes` is the sum of the transients, and
+`SharesMemory()` is the comparison - it answers false for a graph whose transients all overlap, which is a
+legitimate result rather than a failure.
+
+Two things to read correctly. **`reservedBytes` can exceed `individualBytes`** on a device with strict
+alignment: a slot's offset is aligned up to its widest member's alignment, and alignment limits are device
+properties, so padding is real cost and not planner waste. And **a mapping must not outlive the node whose
+use declared the resource** - a graph-owned transient is mapped through its block, so nothing else can be
+bound to those bytes while the pointer is held, which is exactly what the live range guarantees for that
+node and nothing beyond it.
 
 ## Minimal example
 

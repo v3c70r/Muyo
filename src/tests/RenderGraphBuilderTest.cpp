@@ -613,7 +613,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
 
     // Reachable from outside because AddResource registers the created resource with the resource
     // manager under the handle name; ResolveResource is private to the builder.
-    auto* pOut = GetRenderResourceManager()->GetResource<BufferResource>("SpecOut");
+    // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
+    // aliasing block the graph owns, so the manager deliberately does not hold it.
+    const auto* pOut = dynamic_cast<const BufferResource*>(builder.ResolveResource("SpecOut"));
     REQUIRE(pOut != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 2 * sizeof(uint32_t));
@@ -715,6 +717,60 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps it
     recovered.Build();
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: transients that are never live at once share one offset",
+                 "[RenderGraphBuilder]")
+{
+    // #16's observable, on a graph built for it rather than borrowed. Two host-written buffers, used
+    // strictly one after the other, so their live ranges do not overlap and the planner has nothing to be
+    // careful about - which is what makes the saving real rather than incidental.
+    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
+                                                   .resourceManager = GetRenderResourceManager(),
+                                                   .descriptorManager = GetDescriptorManager()});
+    for (const char* name : {"AliasFirst", "AliasSecond"})
+    {
+        builder.AddResource(name, BufferResourceDesc{.count = 4,
+                                                     .stride = sizeof(uint32_t),
+                                                     .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                     .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    }
+
+    const auto addWriter = [&builder](const char* nodeName, const char* handle, uint32_t value)
+    {
+        builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = nodeName,
+                                                  .queueType = QueueType::CPU,
+                                                  .resourceUses = {ResourceUse{.handle = ResourceHandle(handle),
+                                                                               .io = ResourceIOType::WRITE,
+                                                                               .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                               .kind = ResourceKind::BUFFER}},
+                                                  .execute = [handle, value](RenderGraphNodeContext& ctx)
+                                                  {
+                                                      const auto* pBuffer = ctx.GetResource<BufferResource>(handle);
+                                                      REQUIRE(pBuffer != nullptr);
+                                                      auto* pWritable = const_cast<BufferResource*>(pBuffer);
+                                                      // Through the mapping (a) gives an aliased buffer: the storage is
+                                                      // the block's, so there is no allocation of the resource's own to
+                                                      // write into.
+                                                      std::memcpy(pWritable->Map(), &value, sizeof(value));
+                                                      pWritable->Unmap();
+                                                  }});
+    };
+    addWriter("AliasWriteA", "AliasFirst", 0xA1A1A1A1u);
+    addWriter("AliasWriteB", "AliasSecond", 0xB2B2B2B2u);
+
+    // Explicit, because the graph takes its order from declared edges and infers none: without this the
+    // two writers have no relationship and their live ranges could not be told apart.
+    builder.AddDependency("AliasWriteA", "AliasWriteB");
+    builder.Build();
+
+    const TransientMemoryPlan& plan = builder.GetTransientMemoryPlan();
+    INFO("aliasing: " << plan.blocks.size() << " blocks, " << plan.reservedBytes << " bytes reserved for "
+                      << plan.individualBytes << " bytes of transients, " << plan.SlotCount() << " offsets");
+    REQUIRE(plan.blocks.size() == 1);
+    REQUIRE(plan.SlotCount() == 1);
+    REQUIRE(plan.blocks.front().slots.front().members.size() == 2);
+    CHECK(plan.reservedBytes < plan.individualBytes);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only that byte range",
                  "[RenderGraphBuilder]")
 {
@@ -763,7 +819,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
     builder.Build();
     builder.Execute();
 
-    auto* pOut = GetRenderResourceManager()->GetResource<BufferResource>("RangedOut");
+    // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
+    // aliasing block the graph owns, so the manager deliberately does not hold it.
+    const auto* pOut = dynamic_cast<const BufferResource*>(builder.ResolveResource("RangedOut"));
     REQUIRE(pOut != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
@@ -933,10 +991,14 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
                                            .stride = kImageBytes,
                                            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                            .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
-    builder.AddResource("TransferReadback", BufferResourceDesc{.count = 1,
-                                                               .stride = kImageBytes,
-                                                               .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                                               .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    // TRANSFER_SRC as well as DST: the readback copies out of it, and an aliased transient cannot be
+    // mapped through the resource - its memory belongs to the block. A buffer used as a copy source has to
+    // say so, which is the declaration-based design doing its job rather than a new restriction.
+    builder.AddResource("TransferReadback",
+                        BufferResourceDesc{.count = 1,
+                                           .stride = kImageBytes,
+                                           .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     // 1. Compute writes a known colour into the first image. Existing usage, existing shader; it is here
     //    so the transfer reads something whose value the test knows.
@@ -1028,19 +1090,26 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
     builder.Build();
     builder.Execute();
 
-    auto* pReadback = GetRenderResourceManager()->GetResource<BufferResource>("TransferReadback");
+    // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
+    // aliasing block the graph owns, so the manager deliberately does not hold it.
+    const auto* pReadback = dynamic_cast<const BufferResource*>(builder.ResolveResource("TransferReadback"));
     REQUIRE(pReadback != nullptr);
 
-    // The one barrier the test records: the graph does not order the last node against a host read
-    // (Findings F4 in the consumer's notes), so a transfer-to-host edge is the caller's.
+    // The graph's transient cannot be mapped through the resource, and that is a consequence of aliasing
+    // rather than an accident: an aliased buffer has no allocation of its own, so `BufferResource::Map`
+    // has nothing to map. Copy it out the way the other cases do - which also makes this case about
+    // content rather than about the transient happening to be host-visible.
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 4);
     GetRenderDevice()->ExecuteImmediateCommand(
         [&](VkCommandBuffer cmdBuf)
         {
+            // The graph does not order the last node against whatever reads it next (finding F4 in the
+            // consumer's notes), so the transfer-to-transfer edge is the caller's.
             VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
             barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
             barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.buffer = pReadback->buffer();
@@ -1050,9 +1119,28 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
             dependency.bufferMemoryBarrierCount = 1;
             dependency.pBufferMemoryBarriers = &barrier;
             vkCmdPipelineBarrier2(cmdBuf, &dependency);
+
+            VkBufferCopy copyRegion{};
+            copyRegion.size = 4;
+            vkCmdCopyBuffer(cmdBuf, pReadback->buffer(), readback.buffer(), 1, &copyRegion);
+
+            // The transfer-to-host edge, still the caller's.
+            barrier = VkBufferMemoryBarrier2{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_HOST_READ_BIT;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.buffer = readback.buffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            dependency.bufferMemoryBarrierCount = 1;
+            dependency.pBufferMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(cmdBuf, &dependency);
         });
 
-    const uint8_t* pPixels = static_cast<const uint8_t*>(pReadback->Map());
+    const uint8_t* pPixels = static_cast<const uint8_t*>(readback.Map());
     INFO("first pixel: r=" << static_cast<int>(pPixels[0]) << " g=" << static_cast<int>(pPixels[1])
                            << " b=" << static_cast<int>(pPixels[2]) << " a=" << static_cast<int>(pPixels[3])
                            << " (the shader writes opaque green)");
@@ -1060,7 +1148,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
     CHECK(pPixels[1] == 255);
     CHECK(pPixels[2] == 0);
     CHECK(pPixels[3] == 255);
-    pReadback->Unmap();
+    readback.Unmap();
 }
 
 TEST_CASE("BufferRange: an unusable range is rejected with the reason named", "[RenderGraphBuilder]")
@@ -1673,10 +1761,33 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
     builder.AddDependency(drawCommandPrepPass.nodeName, cullingPass.nodeName);
     builder.AddDependency(cullingPass.nodeName, cubePassCreateInfo.nodeName);
     builder.Build();
+
+    // #16's observable, asserted rather than described: the graph shares memory between transients whose
+    // live ranges do not overlap. This scenario has several of them - a draw-command buffer, the count
+    // paired with it, per-view data - so the plan has to reserve less than one buffer each. If a later
+    // change stops aliasing, this is what says so instead of a memory report nobody reads.
+    const TransientMemoryPlan& transientPlan = builder.GetTransientMemoryPlan();
+    INFO("aliasing: " << transientPlan.blocks.size() << " blocks, " << transientPlan.reservedBytes
+                      << " bytes reserved for " << transientPlan.individualBytes << " bytes of transients");
+    REQUIRE(transientPlan.individualBytes > 0);
+    // No saving here, and that is the planner being right rather than idle: every transient in this
+    // scenario is read by a later node, so every live range runs to the end of the execution and none of
+    // them may share an offset. The case below is the one built so they can.
+    //
+    // Asserted as the semantic rather than as an inequality, because the inequality is device-dependent: a
+    // slot's offset is aligned up to its widest member's alignment, and alignment limits are properties of
+    // the device. On a stricter device the plan legitimately reserves *more* than the sum of the transients
+    // - 53728 bytes against 53668 on an RTX 3090, 60 bytes of padding - so `reservedBytes <=
+    // individualBytes` would be a claim about the author's driver rather than about the planner. This
+    // mirrors #82's C1, one layer up: there the offset had to be derived from the device's alignment, here
+    // the expectation about totals has to stop assuming one.
+    CHECK_FALSE(transientPlan.SharesMemory());
     builder.Execute();
 
     // Read back the GPU-generated draw count.
-    auto* pDrawCount = GetRenderResourceManager()->GetResource<BufferResource>("DrawCount");
+    // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
+    // aliasing block the graph owns, so the manager deliberately does not hold it.
+    const auto* pDrawCount = dynamic_cast<const BufferResource*>(builder.ResolveResource("DrawCount"));
     REQUIRE(pDrawCount != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t));

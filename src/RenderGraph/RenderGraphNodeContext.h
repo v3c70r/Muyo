@@ -16,6 +16,15 @@ struct RenderGraphNodeContext
 {
     QueueType queueType = QueueType::GRAPHICS;  ///< Queue this node is running on.
     RenderResourceManager& resourceManager;     ///< Allocates and owns graph-declared resources.
+    /// Resolve a handle the way the graph does: its own transients first (whose memory belongs to an
+    /// aliasing block and which are therefore deliberately not registered with the manager), then ones
+    /// the caller imported, then the manager's. Set by whoever executes; a context built without it falls
+    /// back to the manager alone.
+    ///
+    /// This is not decoration. A node callback reaches its resources through `GetResource`, and aliasing
+    /// moved some of them outside the manager - so asking the manager got a null and the callback
+    /// dereferenced it. Imported resources had the same hole before aliasing existed, for the same reason.
+    std::function<const IRenderResource*(const ResourceHandle&)> resolveResource;
     // No mesh manager here. It was a reference the graph had to fill from the renderer's singleton for
     // every node, including compute ones, and no caller ever read it - a node callback that needs mesh
     // buffers captures them itself (consumer finding F5, #53). Carrying it made the graph require a
@@ -34,6 +43,16 @@ struct RenderGraphNodeContext
     template <class T>
     T* GetResource(const ResourceHandle& handle) const
     {
+        if (resolveResource)
+        {
+            // The graph's resolver answers for everything it can see, and falls back to the manager itself.
+            // `T*` rather than `const T*` because callbacks that fill a resource need the pointer they got
+            // before; nothing here owns a resource through a const reference.
+            if (const IRenderResource* pResource = resolveResource(handle))
+            {
+                return const_cast<T*>(dynamic_cast<const T*>(pResource));
+            }
+        }
         return resourceManager.template GetResource<T>(handle);
     }
 };
