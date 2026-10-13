@@ -44,6 +44,7 @@ GPU objects and execution metadata for one node, produced by RenderGraphBuilder:
 | `QueueType queueType` | Queue the node was compiled for. |
 | `VkPipelineBindPoint bindingPoint` | Bind point of the compiled pipeline. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
+| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy this node's GPU objects and clear the handles. Safe to call repeatedly. |
 
 
 ## `DependencyGraph.h`

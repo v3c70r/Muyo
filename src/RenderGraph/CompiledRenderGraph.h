@@ -49,6 +49,17 @@ struct CompiledRenderGraphNode
     QueueType queueType = QueueType::GRAPHICS;
     /// Bind point of the compiled pipeline.
     VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    /// Destroy this node's GPU objects and clear the handles. Safe to call repeatedly.
+    ///
+    /// Used in two places, and the second is the one that matters: destroying a built graph, and
+    /// releasing a node whose compilation threw part-way through. A compile creates its pipeline layout,
+    /// descriptor set layouts and sets, and pipeline in that order, while its declaration checks are
+    /// interleaved between them - so a rejected declaration can throw with objects already created, and a
+    /// caller that never sees them is a caller that cannot destroy them.
+    /// @param device Device the objects were created on.
+    /// @param descriptorPool Pool the node's descriptor sets were allocated from.
+    void Destroy(VkDevice device, VkDescriptorPool descriptorPool);
+
     /// Records the node's work.
     RenderGraphNodeCallback execute;
 };

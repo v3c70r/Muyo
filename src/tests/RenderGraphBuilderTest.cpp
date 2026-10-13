@@ -647,6 +647,74 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     readback.Unmap();
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps its message and leaves the device clean",
+                 "[RenderGraphBuilder]")
+{
+    // #55. A Build() precondition failure used to reach the caller as a process abort with its message
+    // erased: the throw unwound out of a partially compiled node, the objects that compilation had
+    // already created were never destroyed, and device teardown then reported
+    // VUID-vkDestroyDevice-device-05137 for the leaked ones. The debug callback asserts on ERROR, so the
+    // run stopped there - before anything had reported the exception.
+    //
+    // This case is the one that leaks rather than the one that merely annoys, and the ordering is the
+    // reason: the pipeline layout is created before the specialization constants are validated against
+    // reflection, so an id no shader declares throws *after* the device already holds objects for this
+    // node. A declaration error caught earlier - ValidateTransientLifetimes runs before anything is
+    // created - cannot reach this path, which is why the other Build() throw tests pass today.
+    //
+    // Both halves of the acceptance are this one case. The CHECK_THROWS_WITH is the first: the message
+    // names the node and the constant, and the process is alive to read it. The second is the teardown
+    // the fixture performs after this case returns - were the node's objects still alive, destroying the
+    // device would raise the leaked-object VUID and abort the run instead of failing a case.
+    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
+                                                   .resourceManager = GetRenderResourceManager(),
+                                                   .descriptorManager = GetDescriptorManager()});
+    builder.AddResource(
+        "SpecOut", BufferResourceDesc{.count = 2,
+                                      .stride = sizeof(uint32_t),
+                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    RenderGraphNodeCreateInfo node{
+        .nodeName = "BadSpecConstantNode",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("SpecOut"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"testSpecConstant.comp.slang"},
+        // The shader declares ids 0 and 1. 42 is a typo, and it has to be reported as one.
+        .specializationConstants = {{.id = 42, .value = 7}},
+        .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
+    builder.AddNode(node);
+
+    CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring(
+                                           "Node 'BadSpecConstantNode' supplies specialization constant 42"));
+
+    // A second builder against the same device, because "the failure cost the graph, not the device" is
+    // the part a long-running service depends on.
+    RenderGraphBuilder recovered(RenderGraphServices{.device = GetRenderDevice(),
+                                                     .resourceManager = GetRenderResourceManager(),
+                                                     .descriptorManager = GetDescriptorManager()});
+    recovered.AddResource("RecoveredOut", BufferResourceDesc{.count = 1,
+                                                             .stride = sizeof(uint32_t),
+                                                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                             .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    recovered.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "RecoveredNode",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("RecoveredOut"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"testSpecConstant.comp.slang"},
+        .specializationConstants = {{.id = 0, .value = 5}, {.id = 1, .value = 1}},
+        .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }});
+    recovered.Build();
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only that byte range",
                  "[RenderGraphBuilder]")
 {
