@@ -142,6 +142,42 @@ void VkMemoryAllocator::FreeImage(VkImage& image, VmaAllocation& allocation)
     vmaDestroyImage(m_allocator, image, allocation);
 }
 
+// The aliasing path below checks its VkResults, unlike the calls above it, which date from before the
+// project adopted the rule that a Vulkan result is never ignored. New code follows the rule; the older
+// calls are a separate cleanup rather than something to copy.
+
+VmaAllocation VkMemoryAllocator::AllocateAliasingBlock(const VkMemoryRequirements& requirements,
+                                                       VmaMemoryUsage nMemoryUsage)
+{
+    VmaAllocationCreateInfo allocInfo = {};
+    allocInfo.usage = nMemoryUsage;
+    // VMA's documented requirement for memory that will hold aliasing resources: without it a dedicated
+    // allocation may be handed out, and a dedicated allocation carries VkMemoryDedicatedAllocateInfo -
+    // which by its own contract belongs to a single resource and cannot be shared with another.
+    allocInfo.flags = VMA_ALLOCATION_CREATE_CAN_ALIAS_BIT;
+
+    VmaAllocation block = nullptr;
+    VK_ASSERT(vmaAllocateMemory(m_allocator, &requirements, &allocInfo, &block, nullptr));
+    return block;
+}
+
+void VkMemoryAllocator::BindBufferToBlock(VkBuffer buffer, VmaAllocation block, VkDeviceSize nOffset)
+{
+    VK_ASSERT(vmaBindBufferMemory2(m_allocator, block, nOffset, buffer, nullptr));
+}
+
+void VkMemoryAllocator::BindImageToBlock(VkImage image, VmaAllocation block, VkDeviceSize nOffset)
+{
+    VK_ASSERT(vmaBindImageMemory2(m_allocator, block, nOffset, image, nullptr));
+}
+
+void VkMemoryAllocator::FreeAliasingBlock(VmaAllocation& block)
+{
+    if (block == nullptr) return;
+    vmaFreeMemory(m_allocator, block);
+    block = nullptr;
+}
+
 static VkMemoryAllocator allocator;
 VkMemoryAllocator* GetMemoryAllocator() { return &allocator; }
 

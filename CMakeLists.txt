@@ -226,7 +226,12 @@ include(FetchContent)
 FetchContent_Declare(
   VMA
   GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-  GIT_TAG master
+  # Pinned to the commit this project's aliasing path was verified against (#94). It sits 15 commits past
+  # the v3.4.0 tag, so neither the tag nor master would name the code the block-sharing guarantee rests on -
+  # and aliasing semantics, the CAN_ALIAS flag in particular, is exactly what a VMA update could change.
+  # Pinning to the commit rather than the tag keeps the verified code; fetching a raw SHA from GitHub was
+  # checked to work before relying on it. Same reasoning as the pinned Vulkan SDK tarball in CI (#91).
+  GIT_TAG bfb2ca99e1e7e9684dc06546b552ee3eff4b10aa
 )
 FetchContent_MakeAvailable(VMA)
 target_compile_features(muyo PUBLIC cxx_std_20)
