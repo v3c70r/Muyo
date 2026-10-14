@@ -80,6 +80,7 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
     , m_shaderAssetManager(m_services.device->GetDevice())
     , m_vkDevice(m_services.device->GetDevice())
     , m_executor(m_services.device)
+    , m_descriptorSetCache(m_vkDevice, *m_services.descriptorManager)
 {
     VkPhysicalDeviceProperties deviceProperties{};
     vkGetPhysicalDeviceProperties(m_services.device->GetPhysicalDevice(), &deviceProperties);
@@ -426,81 +427,121 @@ void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& 
                                                .stageFlags = binding.stageFlags,
                                                .pImmutableSamplers = nullptr});
     }
+    // Canonical order, so the cache key is stable: reflection does not promise one.
+    for (auto& bindings : bindingsPerSet)
+    {
+        std::sort(bindings.begin(), bindings.end(),
+                  [](const VkDescriptorSetLayoutBinding& a, const VkDescriptorSetLayoutBinding& b)
+                  { return a.binding < b.binding; });
+    }
 
-    auto& descriptorManager = *m_services.descriptorManager;
     rgn.descriptorSetLayouts.resize(setCount, VK_NULL_HANDLE);
     rgn.descriptorSets.resize(setCount, VK_NULL_HANDLE);
+    // The cache owns the layouts and sets now, so the node must not free them.
+    rgn.ownsDescriptorSets = false;
+    rgn.ownsDescriptorSetLayouts = false;
+
+    // Bind each set by content: two nodes with the same reflected layout and the same bound resources
+    // share one set, so a bindless array is paid once rather than once per node (#15, #16 criterion 4).
     for (uint32_t set = 0; set < setCount; ++set)
     {
-        rgn.descriptorSetLayouts[set] = descriptorManager.AllocateDescriptorSetLayout(bindingsPerSet[set]);
-        rgn.descriptorSets[set] = descriptorManager.AllocateDescriptorSet(rgn.descriptorSetLayouts[set]);
-    }
-    rgn.ownsDescriptorSets = true;
-    rgn.ownsDescriptorSetLayouts = true;
-
-    // Write the node's explicitly-bound resources into the matching set/binding.
-    for (const auto& use : logicalNode.resourceUses)
-    {
-        if (!use.descriptorBinding.has_value()) continue;
-        const uint32_t set = use.descriptorBinding->set;
-        const uint32_t binding = use.descriptorBinding->binding;
-        if (set >= setCount) continue;
-
-        const IRenderResource* pResource = ResolveResource(use.handle);
-        if (pResource == nullptr) continue;
-
-        // Resolve the descriptor type from the reflection entry that matches this set/binding.
-        VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
-        for (const auto& reflected : mergedReflection.descriptorBindings)
+        std::vector<DescriptorSetKey::Bound> bound;
+        for (const auto& use : logicalNode.resourceUses)
         {
-            if (reflected.set == set && reflected.binding == binding)
-            {
-                descriptorType = reflected.type;
-                break;
-            }
-        }
-        if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;
+            if (!use.descriptorBinding.has_value() || use.descriptorBinding->set != set) continue;
+            const IRenderResource* pResource = ResolveResource(use.handle);
+            if (pResource == nullptr) continue;
 
-        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        write.dstSet = rgn.descriptorSets[set];
-        write.dstBinding = binding;
+            // The descriptor type comes from the reflection entry that matches this set/binding.
+            VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+            for (const auto& reflected : mergedReflection.descriptorBindings)
+            {
+                if (reflected.set == set && reflected.binding == use.descriptorBinding->binding)
+                {
+                    descriptorType = reflected.type;
+                    break;
+                }
+            }
+            if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;
+
+            DescriptorSetKey::Bound b{
+                .binding = use.descriptorBinding->binding, .type = descriptorType, .resource = pResource};
+            if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
+            {
+                const auto [nOffset, nRange] = ResolveBufferRange(logicalNode.name, use, *pBuffer, descriptorType);
+                b.bufferOffset = nOffset;
+                b.bufferRange = nRange;
+            }
+            else if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+            {
+                b.imageLayout = (descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                                    ? VK_IMAGE_LAYOUT_GENERAL
+                                    : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+            else if (dynamic_cast<const AccelerationStructure*>(pResource) == nullptr)
+            {
+                continue;
+            }
+            bound.push_back(b);
+        }
+        std::sort(bound.begin(), bound.end());
+
+        const DescriptorSetKey key{.set = set, .layout = bindingsPerSet[set], .bound = bound};
+        const DescriptorSetCache::Entry entry = m_descriptorSetCache.Acquire(
+            key, [this, &bound](VkDescriptorSet descriptorSet) { WriteDescriptorSetBindings(descriptorSet, bound); });
+        rgn.descriptorSetLayouts[set] = entry.layout;
+        rgn.descriptorSets[set] = entry.set;
+    }
+}
+
+void RenderGraphBuilder::WriteDescriptorSetBindings(VkDescriptorSet descriptorSet,
+                                                    const std::vector<DescriptorSetKey::Bound>& bound)
+{
+    if (bound.empty()) return;
+
+    // Every pNext/pBufferInfo/pImageInfo below points into these vectors, which stay put for the single
+    // vkUpdateDescriptorSets call. Reserving up front means the addresses are stable even if a push
+    // would otherwise reallocate.
+    std::vector<VkWriteDescriptorSet> writes(bound.size());
+    std::vector<VkDescriptorBufferInfo> bufferInfos(bound.size());
+    std::vector<VkDescriptorImageInfo> imageInfos(bound.size());
+    std::vector<VkWriteDescriptorSetAccelerationStructureKHR> asWrites(
+        bound.size(), VkWriteDescriptorSetAccelerationStructureKHR{
+                          VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR});
+
+    for (size_t i = 0; i < bound.size(); ++i)
+    {
+        const DescriptorSetKey::Bound& b = bound[i];
+        VkWriteDescriptorSet& write = writes[i];
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descriptorSet;
+        write.dstBinding = b.binding;
         write.dstArrayElement = 0;
         write.descriptorCount = 1;
-        write.descriptorType = descriptorType;
+        write.descriptorType = b.type;
 
-        VkDescriptorBufferInfo bufferInfo{};
-        VkDescriptorImageInfo imageInfo{};
-        VkWriteDescriptorSetAccelerationStructureKHR asWrite{
-            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
-        if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
+        if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(b.resource))
         {
-            asWrite.accelerationStructureCount = 1;
-            asWrite.pAccelerationStructures = &pAccel->GetAccelerationStructure();
-            write.pNext = &asWrite;
+            asWrites[i].accelerationStructureCount = 1;
+            asWrites[i].pAccelerationStructures = &pAccel->GetAccelerationStructure();
+            write.pNext = &asWrites[i];
         }
-        else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
+        else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(b.resource))
         {
-            const auto [nOffset, nRange] = ResolveBufferRange(logicalNode.name, use, *pBuffer, descriptorType);
-            bufferInfo.buffer = pBuffer->buffer();
-            bufferInfo.offset = nOffset;
-            bufferInfo.range = nRange;
-            write.pBufferInfo = &bufferInfo;
+            bufferInfos[i].buffer = pBuffer->buffer();
+            bufferInfos[i].offset = b.bufferOffset;
+            bufferInfos[i].range = b.bufferRange;
+            write.pBufferInfo = &bufferInfos[i];
         }
-        else if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+        else if (const auto* pImage = dynamic_cast<const ImageResource*>(b.resource))
         {
-            imageInfo.imageView = pImage->getView();
-            imageInfo.imageLayout = (descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                                        ? VK_IMAGE_LAYOUT_GENERAL
-                                        : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            write.pImageInfo = &imageInfo;
+            imageInfos[i].imageView = pImage->getView();
+            imageInfos[i].imageLayout = b.imageLayout;
+            write.pImageInfo = &imageInfos[i];
         }
-        else
-        {
-            continue;
-        }
-
-        vkUpdateDescriptorSets(m_vkDevice, 1, &write, 0, nullptr);
     }
+
+    vkUpdateDescriptorSets(m_vkDevice, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 }
 
 void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
@@ -870,6 +911,10 @@ void RenderGraphBuilder::Build()
     // Before anything is created: a resource that is aliased into a block, or whose offsets may differ
     // from the last build's, belongs to the build that planned it and not to the builder.
     DestroyAliasedTransients();
+    // And the descriptor sets are rebuilt from this build's resources: a rebuild can resolve a resource
+    // to a new handle, so a set from the previous build would hold a stale view. Frees them, because the
+    // cache owns them now and a node only references the handles.
+    m_descriptorSetCache.Clear();
     m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())

@@ -24,11 +24,12 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
   single-instance, so two in-flight executions would alias them.
 - **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
   only feed data into the graph; a GPU-to-CPU dependency is rejected.
-- **Descriptor sets are derived from shader reflection, one set per node.** Graphics, compute and ray
-  tracing all take the same path: a `ResourceUse` names its `(set, binding)`, reflection supplies the
-  layout and descriptor type, and the set is written at `Build()`. Sets are still per node, so a
-  material-binding node costs a bindless array each; the content-addressed redesign that dedupes them
-  is written up in [DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md).
+- **Descriptor sets are derived from shader reflection and content-addressed.** Graphics, compute and
+  ray tracing all take one path: a `ResourceUse` names its `(set, binding)`, reflection supplies the
+  layout and descriptor type, and the set is keyed on the *concrete views* bound into it. Nodes binding
+  the same resources therefore share one set, so a material-binding node no longer costs a bindless array
+  each. Sets are rebuilt per `Build()`; frame retention and `framesInFlight` are the design note's next
+  step ([DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md)).
 - **Device floor.** The engine requires Vulkan 1.3 and enables `synchronization2` and
   `timelineSemaphore` at device creation; both are verified against `vkGetPhysicalDeviceFeatures2`
   and device creation fails with a named error if either is missing. The executor **uses** timeline

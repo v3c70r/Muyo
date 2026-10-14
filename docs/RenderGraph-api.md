@@ -64,6 +64,57 @@ A directed acyclic graph used to order render graph nodes.
 | `size_t Muyo::DependencyGraph< T >::NodeCount() const` | Number of registered nodes. |
 
 
+## `DescriptorSetCache.h`
+
+### `class Muyo::RenderGraph::DescriptorSetCache`
+
+Owns graph descriptor sets and reuses one per distinct set of contents.
+
+| Member | Description |
+| --- | --- |
+| `DescriptorSetCache(VkDevice device, DescriptorManager &descManager)` | device Device the sets are created on. descManager Manager owning the pool and layout creation. |
+| `~DescriptorSetCache()` | Frees every set and layout this cache owns. |
+| `DescriptorSetCache(const DescriptorSetCache &)=delete` | The cache owns raw Vulkan handles, so copying would double-free. |
+| `DescriptorSetCache & operator=(const DescriptorSetCache &)=delete` | Deleted for the same reason as the copy constructor. |
+| `Entry Acquire(const DescriptorSetKey &key, const std::function< void(VkDescriptorSet)> &write)` | Return the set for a key, allocating and writing it on first use. |
+| `void Clear()` | Free every set and layout. Called between builds, so a rebuild cannot reuse a stale view. |
+| `std::size_t SetCount() const` | How many distinct sets the cache holds; the dedup observable for tests. |
+
+### `struct Muyo::RenderGraph::DescriptorSetCache::Entry`
+
+One cache entry: the layout a set was allocated from and the set itself.
+
+| Member | Description |
+| --- | --- |
+| `VkDescriptorSetLayout layout` | Shared layout, freed by the cache. |
+| `VkDescriptorSet set` | Shared set, freed by the cache. |
+
+### `struct Muyo::RenderGraph::DescriptorSetKey`
+
+Everything that decides a descriptor set's contents, so two nodes that would write the same set share one.
+
+| Member | Description |
+| --- | --- |
+| `uint32_t set` | Descriptor set index. |
+| `std::vector< VkDescriptorSetLayoutBinding > layout` | Reflected bindings, sorted by binding. |
+| `std::vector< Bound > bound` | Bound resources, sorted by binding. |
+| `bool operator<(const DescriptorSetKey &other) const` | other Key to compare against. A strict weak ordering, so a key set can be a std::map. |
+
+### `struct Muyo::RenderGraph::DescriptorSetKey::Bound`
+
+One resource bound into a binding, with everything the write needs.
+
+| Member | Description |
+| --- | --- |
+| `uint32_t binding` | Binding within the set. |
+| `VkDescriptorType type` | Descriptor type, from reflection. |
+| `const IRenderResource * resource` | Bound resource, by identity. |
+| `VkDeviceSize bufferOffset` | Buffer bind offset, already resolved. |
+| `VkDeviceSize bufferRange` | Buffer bind range, already resolved. |
+| `VkImageLayout imageLayout` | Image layout the descriptor samples in. |
+| `bool operator<(const Bound &other) const` | other Binding to compare against. A strict weak ordering, so the bound set can key a std::map. |
+
+
 ## `PSODesc.h`
 
 ### `enum BlendFactor`
@@ -301,6 +352,7 @@ Declares and runs a render graph.
 | `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | The allocation description for a graph-owned resource, if any. |
 | `const IRenderResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. |
 | `const TransientMemoryPlan & GetTransientMemoryPlan() const` | The last build's transient memory plan: the blocks, their slots, and the two byte totals. reservedBytes < individualBytes is what sharing memory looks like from outside, and reservedBytes == individualBytes is a legitimate answer for a graph whose transients all overlap in time. Empty before the first build. |
+| `std::size_t GetDescriptorSetCount() const` | How many distinct descriptor sets the last build allocated. A graph whose nodes bind the same resources at the same sets shares one set across them, so this is below the number of descriptor-bound nodes exactly when the cache deduplicated; it is the descriptor analogue of GetTransientMemoryPlan(). Zero before the first build. |
 | `void AddNode(const RenderGraphNodeCreateInfo &nodeCreateInfo)` | Declare a node. Throws if the name is already used. |
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
 | `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. |
