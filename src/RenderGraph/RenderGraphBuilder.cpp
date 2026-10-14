@@ -1238,6 +1238,23 @@ RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
                                     m_services.device->GetComputeQueueFamily()};
 }
 
+void RenderGraphBuilder::EnsureMappingsReleased(const std::string& nodeName) const
+{
+    // Only aliased buffers can be host-mapped, and they are the reason the rule exists: the pointer
+    // points into a block shared with other transients, so it must be released before the next node can
+    // be bound to the same bytes. A Persistent or imported resource maps its own storage and is not this
+    // rule's subject.
+    for (const auto& [handle, pBuffer] : m_aliasedBuffers)
+    {
+        if (!pBuffer->IsMapped()) continue;
+        throw std::runtime_error(
+            "Node '" + nodeName + "' left graph-owned transient buffer '" + handle +
+            "' mapped after its callback returned. A mapping is valid only for the node whose use declared the "
+            "resource: the buffer's bytes are shared with other transients, and a later node may be bound to "
+            "them. Unmap the resource before the callback returns.");
+    }
+}
+
 /// The blocking form: records, submits, and waits for the GPU before returning. Kept as the
 /// default so every existing caller keeps the contract it had. The overload below does not wait,
 /// but the builder still runs one execution in flight, so calls serialise rather than overlap.
@@ -1274,6 +1291,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         context.commandBuffer = VK_NULL_HANDLE;
         context.pipeline = VK_NULL_HANDLE;
         rgn.execute(context);
+        EnsureMappingsReleased(rgn.name);
         for (const auto& use : rgn.resourceUses)
         {
             if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
@@ -1397,6 +1415,10 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             {
                 vkCmdEndRendering(cmdBuf);
             }
+
+            // 6. Mapping lifetime: the callback's host mapping must not outlive the node. Checked after
+            // the render pass is closed, so the throw (a programmer error) cannot leave one open.
+            EnsureMappingsReleased(rgn.name);
         }
 
         // Release ownership of resources consumed by a later queue.

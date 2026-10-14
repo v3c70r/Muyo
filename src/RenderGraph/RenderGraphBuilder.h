@@ -323,6 +323,21 @@ private:
     /// Destroy the aliased resources and then free their blocks. Safe to call repeatedly.
     void DestroyAliasedTransients();
 
+    /// Throw when a node callback returned with a graph-owned transient still host-mapped.
+    ///
+    /// A transient buffer is mapped through its aliasing block, so the pointer is valid only while no
+    /// other transient shares its slot. The live range promises that for the node whose use declared the
+    /// resource and nothing beyond it, which is why the mapping must be released before the callback
+    /// returns: a later node may be bound to the same bytes. Nothing enforced that, and a leaked pointer
+    /// is a silent overwrite rather than an error, so this runs at every node boundary and names both the
+    /// node and the resource.
+    ///
+    /// Cost is one `IsMapped()` scan of the graph's aliased buffers per node - O(nodes x transient
+    /// buffers) per execution, and transient buffers are the only graph-owned resources that can be
+    /// mapped.
+    /// @param nodeName Node whose callback just returned, named in the error.
+    void EnsureMappingsReleased(const std::string& nodeName) const;
+
     ResourceDescRegistry m_resourceDescRegistry;
     std::unordered_map<ResourceHandle, const IRenderResource*> m_importedResources;
 };
