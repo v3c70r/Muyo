@@ -193,7 +193,6 @@ ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
     resolved.usage = use.usage;
     resolved.stages = policy->stages;
     resolved.access = policy->access;
-    resolved.bindingSemantic = use.bindingSemantic;
     resolved.descriptorBinding = use.descriptorBinding;
     resolved.bufferRange = use.bufferRange;
 

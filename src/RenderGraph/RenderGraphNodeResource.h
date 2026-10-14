@@ -155,23 +155,11 @@ constexpr const char* NameOf(ResourceUsage usage)
     return "(unknown usage)";
 }
 
-/// Built-in descriptor set the graph writes a resource into for graphics nodes.
-///
-/// Compute and ray tracing nodes use an explicit `DescriptorBinding` instead.
-enum class ResourceBindingSemantic : uint8_t
-{
-    PER_VIEW,  ///< Set 0: per-frame view/camera data.
-    PER_OBJ,   ///< Set 1: per-object data.
-    MATERIAL,  ///< Set 2: materials and the bindless texture array.
-    COUNT,     ///< Number of semantic sets; not a valid value.
-    NONE,      ///< Not bound to a built-in semantic set.
-};
-
 /// Explicit shader descriptor location (set + binding) for a resource.
 ///
-/// When set on a ResourceUse the graph builds the node's descriptors from this instead of the
-/// built-in semantic sets. Required for arbitrary compute passes (e.g. GPU-driven draw command
-/// generation) whose shaders bind raw set/binding.
+/// The graph derives a node's set layouts from the shader reflection and takes each resource's
+/// location from its `ResourceUse`, so a descriptor-bound resource must name its (set, binding). The
+/// engine's built-in set convention lives outside the library, in RenderGraphSemanticBindings.h.
 struct DescriptorBinding
 {
     uint32_t set = 0;      ///< Descriptor set index.
@@ -242,8 +230,8 @@ struct ResourceUse
     ResourceIOType io;                                                        ///< Read / write / read-write.
     ResourceUsage usage;                                                      ///< Semantic role.
     ResourceKind kind;                                                        ///< Concrete resource kind.
-    ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;  ///< Built-in set for graphics nodes.
-    /// Optional explicit descriptor location. Only used when bindingSemantic == NONE.
+    /// Descriptor location (set + binding), when the resource is bound into a descriptor set. The
+    /// shader reflection supplies the layout and the descriptor type; this names the slot.
     std::optional<DescriptorBinding> descriptorBinding = std::nullopt;
     /// Optional byte range of a buffer resource to bind. Absent binds the whole buffer.
     std::optional<BufferRange> bufferRange = std::nullopt;
@@ -270,8 +258,7 @@ struct ResolvedResourceUse
     VkFormat format;            ///< Optional format (validation / pipeline creation).
     VkExtent3D extent;          ///< Optional extent (validation / trace dispatch).
 
-    ResourceBindingSemantic bindingSemantic = ResourceBindingSemantic::NONE;  ///< Built-in set.
-    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;        ///< Explicit set/binding.
+    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;  ///< Descriptor location.
     /// Byte range of a buffer resource to bind, carried through from the declaration.
     ///
     /// Kept here because both consumers read this struct: the descriptor write needs it, and the

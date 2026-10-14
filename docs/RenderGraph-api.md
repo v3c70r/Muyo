@@ -350,58 +350,6 @@ A value supplied for one of a shader's specialization constants.
 | `uint64_t value` | Interpreted as the constant's declared width, little-endian. |
 
 
-## `RenderGraphDescriptorSets.h`
-
-### `struct Muyo::RenderGraph::BindingInfo`
-
-Descriptor binding location (set + binding).
-
-| Member | Description |
-| --- | --- |
-| `uint32_t bindingIndex` | Binding index within the set. |
-| `uint32_t setIndex` | Descriptor set index. |
-
-### `constexpr auto ENUM_COUNT`
-
-Number of enumerators in an enum that has a trailing COUNT value.
-
-### `struct Muyo::RenderGraph::EnumArray`
-
-std::array indexed by an enum value.
-
-| Member | Description |
-| --- | --- |
-| `std::array< T, ENUM_COUNT< E > > data` | Backing storage. |
-| `constexpr T & Muyo::RenderGraph::EnumArray< E, T >::operator[](E e)` | Mutable reference to the element for enum value e. |
-| `constexpr const T & Muyo::RenderGraph::EnumArray< E, T >::operator[](E e) const` | Const reference to the element for enum value e. |
-
-### `constexpr size_t Muyo::RenderGraph::EnumIndex(E e)`
-
-Converts an enum value to its underlying index.
-
-### `const uint32_t MAX_BINDLESS_TEXTURE_COUNT`
-
-Capacity of the bindless texture array in the MATERIAL set.
-
-### `class Muyo::RenderGraph::RenderGraphDescriptorSets`
-
-Owns the three built-in semantic descriptor set layouts used by graphics nodes.
-
-| Member | Description |
-| --- | --- |
-| `RenderGraphDescriptorSets(VkDevice device, DescriptorManager &descManager)` | Allocate the three semantic set layouts and their descriptor sets. device Device the sets belong to, so this class does not reach for the engine's global device accessor to update them (#53). descManager Descriptor manager owning the pool and layout cache. |
-| `~RenderGraphDescriptorSets()` | Destroy the semantic set layouts owned by this instance. |
-| `VkDescriptorSet AllocateSemanticSet(ResourceBindingSemantic bindingSemantic)` | The descriptor set for a semantic set index. Allocate a fresh descriptor set for one node from the shared layout of a semantic set. The caller owns the set and must free it with DescriptorManager::FreeDescriptorSet. |
-| `VkDescriptorSetLayout GetDescriptorSetLayout(ResourceBindingSemantic bindingSemantic) const` | The descriptor set layout for a semantic set index. |
-| `void BindResourceToDescriptorSet(VkDescriptorSet descriptorSet, VkDescriptorType descriptorType, const IRenderResource *pResource, uint32_t bindingIndex, const std::optional< BufferRange > &bufferRange=std::nullopt)` | Write a resource into a specific descriptor set. descriptorSet Target set (per node). descriptorType Type resolved via GetBindingType. pResource Buffer or image to bind. bindingIndex Binding within the set. bufferRange Byte range of a buffer to bind, or empty for the whole buffer. Already validated by RenderGraphBuilder::ResolveBufferRange at Build. |
-| `static VkDescriptorType GetBindingType(ResourceBindingSemantic bindingSemantic, uint32_t bindingIndex)` | The descriptor type a semantic binding expects, or VK_DESCRIPTOR_TYPE_MAX_ENUM. |
-| `static ResourceBindingSemantic GetSemantic(uint32_t setIndex)` | The semantic set corresponding to a raw descriptor set index (0/1/2). |
-
-### `const std::vector< std::vector< VkDescriptorSetLayoutBinding > > bindingsPerSet`
-
-Static descriptor bindings of the three built-in semantic sets.
-
-
 ## `RenderGraphExecutionPlan.h`
 
 ### `uint32_t Muyo::RenderGraph::GetQueueFamilyForQueueType(QueueType queueType, const RenderGraphQueueFamilies &families)`
@@ -575,21 +523,8 @@ A ResourceUse after the graph has resolved it to concrete barrier state.
 | `VkImageLayout imageLayout` | Image layout (images only). |
 | `VkFormat format` | Optional format (validation / pipeline creation). |
 | `VkExtent3D extent` | Optional extent (validation / trace dispatch). |
-| `ResourceBindingSemantic bindingSemantic` | Built-in set. |
-| `std::optional< DescriptorBinding > descriptorBinding` | Explicit set/binding. |
+| `std::optional< DescriptorBinding > descriptorBinding` | Descriptor location. |
 | `std::optional< BufferRange > bufferRange` | Byte range of a buffer resource to bind, carried through from the declaration. |
-
-### `enum ResourceBindingSemantic`
-
-Built-in descriptor set the graph writes a resource into for graphics nodes.
-
-| Value | Description |
-| --- | --- |
-| `PER_VIEW` | Set 0: per-frame view/camera data. |
-| `PER_OBJ` | Set 1: per-object data. |
-| `MATERIAL` | Set 2: materials and the bindless texture array. |
-| `COUNT` | Number of semantic sets; not a valid value. |
-| `NONE` | Not bound to a built-in semantic set. |
 
 ### `enum ResourceIOType`
 
@@ -649,8 +584,7 @@ A node's declaration that it uses a resource (the interface passed to RenderGrap
 | `ResourceIOType io` | Read / write / read-write. |
 | `ResourceUsage usage` | Semantic role. |
 | `ResourceKind kind` | Concrete resource kind. |
-| `ResourceBindingSemantic bindingSemantic` | Built-in set for graphics nodes. |
-| `std::optional< DescriptorBinding > descriptorBinding` | Optional explicit descriptor location. Only used when bindingSemantic == NONE. |
+| `std::optional< DescriptorBinding > descriptorBinding` | Descriptor location (set + binding), when the resource is bound into a descriptor set. The shader reflection supplies the layout and the descriptor type; this names the slot. |
 | `std::optional< BufferRange > bufferRange` | Optional byte range of a buffer resource to bind. Absent binds the whole buffer. |
 
 ### `uint64_t ResourceVersion`
