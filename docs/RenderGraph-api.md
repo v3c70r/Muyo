@@ -818,6 +818,8 @@ One transient's demand on memory, in the terms the planner can reason about.
 | `uint32_t memoryTypeBits` | Memory type bits the resource allows, from the same call. A block's are the intersection of its members'. |
 | `std::size_t firstUse` | Execution-order index of the first node that uses this resource. |
 | `std::size_t lastUse` | Execution-order index of the last node that uses this resource. Equal to firstUse for a resource touched by one node. |
+| `uint64_t sharingDomain` | Queue-family "domain" two requests must match to share a slot (see PlanTransientMemory). |
+| `bool canShareSlot` | False when a resource's uses span more than one queue family. Its slot is then exclusively its own: its uses can overlap another resource's on either family, so no other resource may reuse the bytes - including another spanning resource, which is why this is not folded into the domain. |
 
 ### `struct Muyo::RenderGraph::TransientMemorySlot`
 

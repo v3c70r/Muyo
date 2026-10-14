@@ -882,6 +882,53 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never liv
     builder.Execute();
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async and a graphics transient never share an offset",
+                 "[RenderGraphBuilder][AsyncCompute]")
+{
+    // #106. Two same-class transients, one written on the async compute queue and one on the graphics
+    // queue, with disjoint live ranges. Within one queue family the graph's barriers order the hand-over;
+    // across families nothing does, because the executor waits only on a shared handle and these are two.
+    // The planner must refuse the offset then - and is correct to allow it when the device has a single
+    // family, where there is no cross-queue path at all.
+    RenderGraphBuilder builder(GetRenderDevice());
+    for (const char* name : {"AsyncTarget", "GraphicsTarget"})
+    {
+        builder.AddResource(name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                    .extent = {WIDTH, HEIGHT},
+                                                    .usage = VK_IMAGE_USAGE_STORAGE_BIT});
+    }
+
+    const auto addWriter = [&builder](const char* nodeName, const char* handle, bool bAsync)
+    {
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = nodeName,
+            .queueType = QueueType::COMPUTE,
+            .async = bAsync,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle(handle),
+                                         .io = ResourceIOType::READ_WRITE,
+                                         .usage = ResourceUsage::STORAGE_IMAGE,
+                                         .kind = ResourceKind::IMAGE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"testFillColor.comp.slang"},
+            .execute = [](RenderGraphNodeContext&) {}});
+    };
+    addWriter("AsyncWriter", "AsyncTarget", true);
+    addWriter("GraphicsWriter", "GraphicsTarget", false);
+    builder.AddDependency("AsyncWriter", "GraphicsWriter");
+    builder.Build();
+
+    // The axis this case needs is the queue topology, so it states the device it ran on and asserts what
+    // that topology permits rather than a fixed number.
+    const bool bDedicatedComputeFamily =
+        GetRenderDevice()->GetComputeQueueFamily() != GetRenderDevice()->GetGraphicsQueueFamily();
+    const TransientMemoryPlan& plan = builder.GetTransientMemoryPlan();
+    INFO("queue families: graphics=" << GetRenderDevice()->GetGraphicsQueueFamily() << " compute="
+                                     << GetRenderDevice()->GetComputeQueueFamily() << "; slots=" << plan.SlotCount());
+    // One family: same domain, so the saving is real and correct. Two families: no ordering exists across
+    // them, so separate offsets are the only safe answer.
+    REQUIRE(plan.SlotCount() == (bDedicatedComputeFamily ? 2u : 1u));
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only that byte range",
                  "[RenderGraphBuilder]")
 {

@@ -259,6 +259,49 @@ TEST_CASE("TransientMemoryPlanner: a resource that allows no memory type is name
                       Catch::Matchers::ContainsSubstring("'NoType'"));
 }
 
+TEST_CASE("TransientMemoryPlanner: transients on different queue-family domains never share an offset",
+          "[TransientMemoryPlanner]")
+{
+    // The graph orders a hand-over within one queue family and not across families, so disjoint live
+    // ranges are not enough: the executor only waits on a *shared handle*, and an aliased pair is two.
+    // Same interval shape as the sharing case above, and it must still produce two offsets.
+    std::vector<TransientMemoryRequest> requests = {
+        BufferRequest("Graphics", 1024, 256, 0, 1),
+        BufferRequest("AsyncCompute", 1024, 256, 2, 3),
+    };
+    requests[0].sharingDomain = 1;  // graphics family
+    requests[1].sharingDomain = 2;  // dedicated compute family
+
+    const TransientMemoryPlan plan = PlanTransientMemory(requests);
+
+    CHECK(plan.SlotCount() == 2);
+    CHECK(plan.reservedBytes == 2048);
+    CHECK_FALSE(plan.SharesMemory());
+    CHECK(VerifyTransientMemoryPlan(plan, requests).empty());
+}
+
+TEST_CASE("TransientMemoryPlanner: a request whose uses span queue families never shares an offset",
+          "[TransientMemoryPlanner]")
+{
+    // Crossing families means the resource is live on both, so its bytes cannot be handed to anything -
+    // not even another spanning resource, whose use could overlap it on either family. That is why
+    // `canShareSlot` exists separately from the domain rather than being encoded as a unique domain.
+    std::vector<TransientMemoryRequest> requests = {
+        BufferRequest("Spanning", 1024, 256, 0, 1),
+        BufferRequest("AlsoSpanning", 1024, 256, 2, 3),
+        BufferRequest("Plain", 1024, 256, 4, 5),
+    };
+    requests[0].sharingDomain = 1;
+    requests[0].canShareSlot = false;
+    requests[1].sharingDomain = 1;
+    requests[1].canShareSlot = false;
+
+    const TransientMemoryPlan plan = PlanTransientMemory(requests);
+
+    CHECK(plan.SlotCount() == 3);
+    CHECK(VerifyTransientMemoryPlan(plan, requests).empty());
+}
+
 TEST_CASE("TransientMemoryPlanner: an empty graph plans nothing", "[TransientMemoryPlanner]")
 {
     const std::vector<TransientMemoryRequest> requests;
@@ -337,6 +380,23 @@ TEST_CASE("TransientMemoryPlanner: the verifier rejects a plan that broke its ow
         const std::string problem = VerifyTransientMemoryPlan(broken, twoSlots);
         INFO("verifier said: " << problem);
         CHECK_THAT(problem, Catch::Matchers::ContainsSubstring("overlap"));
+    }
+    SECTION("Two resources sharing an offset across queue families")
+    {
+        std::vector<TransientMemoryRequest> crossFamily = shared;
+        crossFamily[0].sharingDomain = 1;
+        crossFamily[1].sharingDomain = 2;
+        const std::string problem = VerifyTransientMemoryPlan(good, crossFamily);
+        INFO("verifier said: " << problem);
+        CHECK_THAT(problem, Catch::Matchers::ContainsSubstring("different queue families"));
+    }
+    SECTION("A spanning resource sharing an offset")
+    {
+        std::vector<TransientMemoryRequest> spanning = shared;
+        spanning[0].canShareSlot = false;
+        const std::string problem = VerifyTransientMemoryPlan(good, spanning);
+        INFO("verifier said: " << problem);
+        CHECK_THAT(problem, Catch::Matchers::ContainsSubstring("cannot share a slot"));
     }
 }
 }  // namespace Muyo::RenderGraph

@@ -793,6 +793,26 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
 {
     std::vector<TransientMemoryRequest> requests;
     requests.reserve(m_resourceDescRegistry.size());
+
+    // A resource may share a slot only with one whose uses run on the same queue family. Within a family
+    // the graph's own barriers order the hand-over; across families nothing does, because the executor
+    // inserts a wait only for a *shared handle* and an aliased pair is two handles. So each resource is
+    // given the family its GPU uses run on, or none for a host-written one, and one used on both families
+    // is marked as sharing with nothing.
+    std::unordered_map<ResourceHandle, uint32_t> transientFamily;
+    std::unordered_set<ResourceHandle> spansFamilies;
+    for (const std::string& nodeName : executionOrder)
+    {
+        const RenderGraphNode& node = m_renderGraphNodes.at(nodeName);
+        if (node.queueType == QueueType::CPU) continue;
+        const uint32_t family = GetQueueFamilyForType(GetQueueKey(node.queueType, node.async));
+        for (const ResolvedResourceUse& use : node.resourceUses)
+        {
+            const auto [it, inserted] = transientFamily.emplace(use.handle, family);
+            if (!inserted && it->second != family) spansFamilies.insert(use.handle);
+        }
+    }
+
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
         if (!IsAliasedTransient(desc)) continue;
@@ -842,6 +862,10 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
         request.memoryTypeBits = requirements.memoryTypeBits;
         request.firstUse = liveRange->second.firstUse;
         request.lastUse = liveRange->second.lastUse;
+        // Domain 0 is "no GPU use", so a single family is stored one-based to keep the two apart.
+        const auto familyIt = transientFamily.find(handle);
+        request.sharingDomain = (familyIt == transientFamily.end()) ? 0u : static_cast<uint64_t>(1u) + familyIt->second;
+        request.canShareSlot = spansFamilies.find(handle) == spansFamilies.end();
         requests.push_back(std::move(request));
     }
 
