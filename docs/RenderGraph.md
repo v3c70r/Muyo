@@ -20,13 +20,15 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
   `Execute(RenderGraphExecuteInfo)` submits without waiting, and the executor supports several
   in-flight slots - but the builder runs one (`inFlightCount == 1`), so a second call blocks until the
   first completes. Raising that count needs more than a slot number: descriptor sets are written at
-  record time and transient resources are single-instance, so two in-flight executions would alias
-  both.
+  `Build()` now, so the record-time write hazard is gone, but transient resources are still
+  single-instance, so two in-flight executions would alias them.
 - **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
   only feed data into the graph; a GPU-to-CPU dependency is rejected.
-- **Descriptor sets are per node today.** That is correct but costs one bindless array per
-  material-binding node. The intended content-addressed redesign is written up in
-  [DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md).
+- **Descriptor sets are derived from shader reflection, one set per node.** Graphics, compute and ray
+  tracing all take the same path: a `ResourceUse` names its `(set, binding)`, reflection supplies the
+  layout and descriptor type, and the set is written at `Build()`. Sets are still per node, so a
+  material-binding node costs a bindless array each; the content-addressed redesign that dedupes them
+  is written up in [DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md).
 - **Device floor.** The engine requires Vulkan 1.3 and enables `synchronization2` and
   `timelineSemaphore` at device creation; both are verified against `vkGetPhysicalDeviceFeatures2`
   and device creation fails with a named error if either is missing. The executor **uses** timeline
@@ -185,8 +187,8 @@ no edges are still scheduled.
 
 ## Descriptor binding
 
-Compute and ray tracing nodes bind resources by **explicit set/binding** declared on the
-`ResourceUse`:
+Every node binds resources into descriptors by **explicit set/binding** declared on the
+`ResourceUse`; the graph builds each node's set layouts from the shader reflection:
 
 ```cpp
 {.handle = "TLAS",
@@ -196,8 +198,8 @@ Compute and ray tracing nodes bind resources by **explicit set/binding** declare
  .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
 ```
 
-Graphics nodes use the three built-in semantic sets instead
-(`ResourceBindingSemantic::PER_VIEW` / `PER_OBJ` / `MATERIAL`).
+The engine's built-in sets (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) are a *consumer* convention now,
+kept in `src/RenderGraphSemanticBindings.h`, not something the library knows about.
 
 To bind part of a buffer rather than all of it, add a `bufferRange` to the use:
 

@@ -21,6 +21,7 @@
 #include "RenderGraph/RenderGraphExecutor.h"
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphResourceDesc.h"
+#include "RenderGraphSemanticBindings.h"
 #include "RenderResources/Geometry.h"
 #include "RenderResources/RenderTargetResource.h"
 #include "Scene/RayTracingSceneManager.h"
@@ -1869,12 +1870,12 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER,
-                            .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
                 ResourceUse{.handle = ResourceHandle("PerObjData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
                             .kind = ResourceKind::BUFFER,
-                            .bindingSemantic = ResourceBindingSemantic::PER_OBJ},
+                            .descriptorBinding = RenderGraphSemanticBindings::PerObj},
                 ResourceUse{.handle = ResourceHandle("GBuffer draw commands"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
@@ -2188,12 +2189,12 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER,
-                            .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
                 ResourceUse{.handle = ResourceHandle("RTParityPerObjData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
                             .kind = ResourceKind::BUFFER,
-                            .bindingSemantic = ResourceBindingSemantic::PER_OBJ},
+                            .descriptorBinding = RenderGraphSemanticBindings::PerObj},
                 ResourceUse{.handle = ResourceHandle("RTParityRasterOutput"),
                             .io = ResourceIOType::WRITE,
                             .usage = ResourceUsage::COLOR_ATTACHMENT,
@@ -2416,12 +2417,12 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER,
-                            .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
                 ResourceUse{.handle = ResourceHandle("PerObjData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
                             .kind = ResourceKind::BUFFER,
-                            .bindingSemantic = ResourceBindingSemantic::PER_OBJ},
+                            .descriptorBinding = RenderGraphSemanticBindings::PerObj},
                 ResourceUse{.handle = ResourceHandle("RTMazdaDrawCommands"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
@@ -2604,6 +2605,61 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: rejects undeclared resour
     REQUIRE_THROWS(builder.AddDependency("Gpu", "Cpu"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv,
+                 "RenderGraphBuilder: a graphics node may use a set the built-in convention does not define",
+                 "[RenderGraphBuilder]")
+{
+    // Before the reflection unification, `CompileRenderGraphNode` rejected any reflected binding with
+    // set >= 3: graphics nodes were restricted to the engine's three built-in sets. Every node now
+    // derives its layout from reflection, so an arbitrary set index is accepted. The fragment shader
+    // declares set 3 binding 0, which the old table could not express, and the build is otherwise the
+    // minimum a graphics node needs.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Color", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                   .extent = {WIDTH, HEIGHT},
+                                                   .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
+    // Persistent, so the read-only uses need no writer and the case is about the descriptor path.
+    builder.AddResource("Camera", BufferResourceDesc{.count = 1,
+                                                     .stride = sizeof(PerViewData),
+                                                     .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                     .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                     .lifetime = ResourceLifetime::Persistent});
+    builder.AddResource("Extra", BufferResourceDesc{.count = 1,
+                                                    .stride = sizeof(float) * 4,
+                                                    .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                    .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY,
+                                                    .lifetime = ResourceLifetime::Persistent});
+
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "ArbitrarySets",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("Camera"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
+                ResourceUse{.handle = ResourceHandle("Extra"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 3, .binding = 0}},
+                ResourceUse{.handle = ResourceHandle("Color"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"testWorldPos.vert.slang", "testExplicitSet.frag.slang"},
+        .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
+                    .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute = [](RenderGraphNodeContext&) {}});
+
+    // The old restriction was a Build()-time throw; accepting set 3 is the whole assertion here.
+    REQUIRE_NOTHROW(builder.Build());
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind semantic sets independently",
                  "[RenderGraphBuilder]")
 {
@@ -2693,7 +2749,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
                                          .io = ResourceIOType::READ,
                                          .usage = ResourceUsage::UNIFORM_BUFFER,
                                          .kind = ResourceKind::BUFFER,
-                                         .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                                         .descriptorBinding = RenderGraphSemanticBindings::PerView},
                              ResourceUse{.handle = ResourceHandle(target),
                                          .io = ResourceIOType::WRITE,
                                          .usage = ResourceUsage::COLOR_ATTACHMENT,
@@ -2811,7 +2867,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER,
-                            .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
                 // Read-write: blend this pass over whatever is already in the attachment.
                 ResourceUse{.handle = ResourceHandle("Overlay"),
                             .io = ResourceIOType::READ_WRITE,
@@ -2980,7 +3036,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
                                          .io = ResourceIOType::READ,
                                          .usage = ResourceUsage::UNIFORM_BUFFER,
                                          .kind = ResourceKind::BUFFER,
-                                         .bindingSemantic = ResourceBindingSemantic::PER_VIEW},
+                                         .descriptorBinding = RenderGraphSemanticBindings::PerView},
                              // Same declared usage in both nodes: only the WAW hazard differs.
                              ResourceUse{.handle = ResourceHandle("WawTarget"),
                                          .io = ResourceIOType::WRITE,

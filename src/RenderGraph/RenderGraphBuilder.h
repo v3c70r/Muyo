@@ -13,9 +13,9 @@
 
 #include "CompiledRenderGraph.h"
 #include "DependencyGraph.h"
+#include "DescriptorManager.h"
 #include "PSODesc.h"
 #include "PerObjResourceManager.h"
-#include "RenderGraphDescriptorSets.h"
 #include "RenderGraphExecutionPlan.h"
 #include "RenderGraphExecutor.h"
 #include "RenderGraphNodeContext.h"
@@ -297,7 +297,6 @@ private:
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
     VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
-    RenderGraphDescriptorSets m_descriptorSetManager;
     // Owns submission, cross-queue synchronization and waiting. The graph only records.
     RenderGraphExecutor m_executor;
 

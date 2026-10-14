@@ -79,7 +79,6 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
     : m_services(RequireServices(services))
     , m_shaderAssetManager(m_services.device->GetDevice())
     , m_vkDevice(m_services.device->GetDevice())
-    , m_descriptorSetManager(m_services.device->GetDevice(), *m_services.descriptorManager)
     , m_executor(m_services.device)
 {
     VkPhysicalDeviceProperties deviceProperties{};
@@ -267,44 +266,12 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
     {
         ShaderReflection mergedReflection = MergeShaderReflections(shaderReflections);
 
-        // Descriptor set layouts.
-        //  * Graphics nodes use the built-in semantic layouts (set 0/1/2 = PER_VIEW/PER_OBJ/MATERIAL).
-        //  * Compute and ray tracing nodes build layouts from the shader reflection so shaders can
-        //    bind arbitrary set/binding (TLAS, storage images, ...).
-        if (rgn.queueType == QueueType::COMPUTE || rgn.queueType == QueueType::RAY_TRACING)
-        {
-            BuildReflectionDescriptorSets(result, rgn, mergedReflection);
-        }
-        else if (!mergedReflection.descriptorBindings.empty())
-        {
-            // Only wire up the semantic sets the shader actually declares. The MATERIAL set carries
-            // a large bindless array, so allocating it for a shader that never samples materials
-            // would waste most of the descriptor pool.
-            uint32_t nSetCount = 1;
-            for (const auto& binding : mergedReflection.descriptorBindings)
-            {
-                if (binding.set >= ENUM_COUNT<ResourceBindingSemantic>)
-                {
-                    throw std::runtime_error(
-                        "Graphics node '" + rgn.name + "' binds descriptor set " + std::to_string(binding.set) +
-                        ", but graphics nodes only support the built-in semantic sets 0-2. Use a compute or ray "
-                        "tracing node with explicit DescriptorBindings instead.");
-                }
-                nSetCount = std::max(nSetCount, binding.set + 1);
-            }
-
-            result.descriptorSetLayouts.resize(nSetCount);
-            // One set per node (from the shared layouts) so binding different resources in
-            // different graphics nodes cannot clobber each other.
-            result.descriptorSets.resize(nSetCount);
-            for (uint32_t set = 0; set < nSetCount; ++set)
-            {
-                const auto semantic = static_cast<ResourceBindingSemantic>(set);
-                result.descriptorSetLayouts[set] = m_descriptorSetManager.GetDescriptorSetLayout(semantic);
-                result.descriptorSets[set] = m_descriptorSetManager.AllocateSemanticSet(semantic);
-            }
-            result.ownsDescriptorSets = true;
-        }
+        // Descriptor set layouts, derived from the shader reflection for *every* node. Graphics,
+        // compute and ray tracing all take the same path now: a use names its (set, binding)
+        // explicitly, reflection supplies the layout and the descriptor type, and the set is written
+        // here at Build(). The engine's PER_VIEW/PER_OBJ/MATERIAL convention is a consumer concern
+        // (RenderGraphSemanticBindings.h), not a graph one.
+        BuildReflectionDescriptorSets(result, rgn, mergedReflection);
 
         std::vector<VkPushConstantRange> pushConstantRanges;
         for (const auto& pcRange : mergedReflection.pushConstantRanges)
@@ -662,22 +629,9 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
                                      "' which is neither declared with AddResource nor imported.");
         }
         ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
-        // A range on a semantic binding is validated here, at Build: the reflection path validates its
-        // own at the descriptor write (the descriptor type comes from reflection there), and the
-        // semantic path's type comes from the semantic table, which is known now. Validating both at
-        // Build keeps a bad range from throwing mid-record, in Execute.
-        if (resolved.bufferRange.has_value() && resolved.bindingSemantic != ResourceBindingSemantic::NONE)
-        {
-            if (const auto* pBuffer = dynamic_cast<const BufferResource*>(ResolveResource(resolved.handle)))
-            {
-                const VkDescriptorType descriptorType =
-                    RenderGraphDescriptorSets::GetBindingType(resolved.bindingSemantic, 0);
-                if (descriptorType != VK_DESCRIPTOR_TYPE_MAX_ENUM)
-                {
-                    ResolveBufferRange(nodeName, resolved, *pBuffer, descriptorType);
-                }
-            }
-        }
+        // A range on a buffer bound into a descriptor is validated in
+        // `BuildReflectionDescriptorSets`, which knows the descriptor type from reflection; that runs
+        // at Build() too, so a bad range still fails there rather than mid-record in Execute.
         // Fill in allocation-time properties (format / extent) so pipeline + barrier generation can use them.
         if (const auto desc = GetResourceDesc(resourceUse.handle))
         {
@@ -1387,39 +1341,12 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 
                 if (!rgn.descriptorSetLayouts.empty())
                 {
-                    if (rgn.ownsDescriptorSetLayouts)
-                    {
-                        // Reflection-bound (compute / RT) node: its sets were written at Build().
-                        vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
-                                                static_cast<uint32_t>(rgn.descriptorSets.size()),
-                                                rgn.descriptorSets.data(), 0, nullptr);
-                    }
-                    else
-                    {
-                        // Semantic graphics node: write its resources into its own sets, then bind.
-                        for (const auto& use : rgn.resourceUses)
-                        {
-                            if (use.bindingSemantic == ResourceBindingSemantic::NONE) continue;
-                            const IRenderResource* pResource = ResolveResource(use.handle);
-                            if (pResource == nullptr) continue;
-                            const size_t nSetIndex = static_cast<size_t>(use.bindingSemantic);
-                            if (nSetIndex >= rgn.descriptorSets.size())
-                            {
-                                throw std::runtime_error("Node '" + rgn.name +
-                                                         "' declares a bindingSemantic for descriptor set " +
-                                                         std::to_string(nSetIndex) + " which its shaders do not use.");
-                            }
-                            const VkDescriptorType descriptorType =
-                                RenderGraphDescriptorSets::GetBindingType(use.bindingSemantic, 0);
-                            if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;
-                            m_descriptorSetManager.BindResourceToDescriptorSet(
-                                rgn.descriptorSets[nSetIndex], descriptorType, pResource, 0, use.bufferRange);
-                        }
-
-                        vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
-                                                static_cast<uint32_t>(rgn.descriptorSets.size()),
-                                                rgn.descriptorSets.data(), 0, nullptr);
-                    }
+                    // Every node's sets were written at Build() from the reflection-derived layout,
+                    // so recording only binds the handles. There is no per-node write here any more,
+                    // and no semantic/reflection branch.
+                    vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
+                                            static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data(),
+                                            0, nullptr);
                 }
             }
 
