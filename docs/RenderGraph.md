@@ -102,8 +102,13 @@ may occupy the same bytes, and a `Persistent` one never may.
 
 `Build()` consumes the ranges. **Transient buffers and images alike** are created unbound, their
 requirements are queried, and they are bound into one block per compatibility class at offsets the planner
-chooses - so two transients whose ranges do not overlap share an address. An image's compatibility class is
-its create info, so two images share a block only when format, extent, mips, layers and usage all match; both
+chooses - so two transients whose ranges do not overlap share an address. **They must also run on the same
+queue family.** The graph's barriers order a hand-over within one family (a barrier's first scope covers
+earlier commands on the same queue, so the new resource's first-use barrier waits on the old resource's last
+use), but nothing orders one across families: the executor waits only on a *shared handle*, and an aliased
+pair is two. A transient whose uses span families therefore shares its bytes with nothing. An image's
+compatibility class is its create info, so two images share a block only when format, extent, mips, layers and
+usage all match; both
 the graph path and the resource-manager path take the usage flags from `EffectiveImageUsageFlags`, so the two
 cannot disagree about what an image is. An image's **view is created only after it is bound** - a view of an
 image with no memory bound is a validation error (`VUID-VkImageViewCreateInfo-image-01020`) - so the order is

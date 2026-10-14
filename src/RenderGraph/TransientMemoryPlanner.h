@@ -145,6 +145,19 @@ struct TransientMemoryRequest
     /// Execution-order index of the last node that uses this resource. Equal to `firstUse` for a
     /// resource touched by one node.
     std::size_t lastUse = 0;
+    /// Queue-family "domain" two requests must match to share a *slot* (see `PlanTransientMemory`).
+    ///
+    /// Disjoint live ranges are not enough on their own: the graph orders uses within one queue family
+    /// (a pipeline barrier's first scope covers earlier commands on the same queue, so the new
+    /// resource's first-use barrier waits on the old resource's last use), but not across families -
+    /// `RenderGraphExecutor` only inserts a wait for a *shared handle*, and an aliased pair is two. A
+    /// domain is the queue family a resource's uses run on, one-based; a resource with no GPU use
+    /// (host-written only) is domain 0. Two requests never share a slot unless their domains match.
+    uint64_t sharingDomain = 0;
+    /// False when a resource's uses span more than one queue family. Its slot is then exclusively its
+    /// own: its uses can overlap another resource's on either family, so no other resource may reuse the
+    /// bytes - including another spanning resource, which is why this is not folded into the domain.
+    bool canShareSlot = true;
 };
 
 /// One offset inside a block, shared by every member whose live range does not overlap another's.
@@ -254,6 +267,9 @@ inline TransientMemoryPlan PlanTransientMemory(const std::vector<TransientMemory
         std::size_t lastUse = 0;
         VkDeviceSize size = 0;
         VkDeviceSize alignment = 1;
+        /// Domain of every member placed here, and whether a later request may join it at all.
+        uint64_t sharingDomain = 0;
+        bool reusable = true;
     };
 
     for (const auto& [classKey, members] : byClass)
@@ -269,8 +285,18 @@ inline TransientMemoryPlan PlanTransientMemory(const std::vector<TransientMemory
         std::vector<OpenSlot> openSlots;
         for (const TransientMemoryRequest* request : ordered)
         {
-            const auto slot = std::find_if(openSlots.begin(), openSlots.end(), [request](const OpenSlot& candidate)
-                                           { return candidate.lastUse < request->firstUse; });
+            // A slot is reusable only by a request of the same queue-family domain, and never by a
+            // request whose uses span families. Both halves are what keep an aliased hand-over inside one
+            // queue, where the graph's barriers order it.
+            const auto slot = request->canShareSlot
+                                  ? std::find_if(openSlots.begin(), openSlots.end(),
+                                                 [request](const OpenSlot& candidate)
+                                                 {
+                                                     return candidate.reusable &&
+                                                            candidate.sharingDomain == request->sharingDomain &&
+                                                            candidate.lastUse < request->firstUse;
+                                                 })
+                                  : openSlots.end();
             if (slot == openSlots.end())
             {
                 openSlots.push_back(OpenSlot{});
@@ -278,6 +304,8 @@ inline TransientMemoryPlan PlanTransientMemory(const std::vector<TransientMemory
                 openSlots.back().lastUse = request->lastUse;
                 openSlots.back().size = request->size;
                 openSlots.back().alignment = request->alignment;
+                openSlots.back().sharingDomain = request->sharingDomain;
+                openSlots.back().reusable = request->canShareSlot;
                 continue;
             }
             slot->members.push_back(request);
@@ -413,6 +441,11 @@ inline std::string VerifyTransientMemoryPlan(const TransientMemoryPlan& plan,
                     return "resource '" + handle + "' does not allow every memory type its block allows";
                 }
                 if (placements[handle]++ > 0) return "resource '" + handle + "' appears in more than one slot";
+                if (!request.canShareSlot && slot.members.size() > 1)
+                {
+                    return "resource '" + handle +
+                           "' spans queue families and cannot share a slot, but shares one with others";
+                }
 
                 for (const ResourceHandle& other : slot.members)
                 {
@@ -420,6 +453,11 @@ inline std::string VerifyTransientMemoryPlan(const TransientMemoryPlan& plan,
                     const auto otherIt = byHandle.find(other);
                     if (otherIt == byHandle.end()) continue;
                     const TransientMemoryRequest& otherRequest = *otherIt->second;
+                    if (request.sharingDomain != otherRequest.sharingDomain)
+                    {
+                        return "resources '" + handle + "' and '" + other +
+                               "' share a slot but run on different queue families";
+                    }
                     if (request.firstUse <= otherRequest.lastUse && otherRequest.firstUse <= request.lastUse)
                     {
                         return "resources '" + handle + "' and '" + other +
