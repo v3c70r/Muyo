@@ -14,6 +14,7 @@
 #include "CompiledRenderGraph.h"
 #include "DependencyGraph.h"
 #include "DescriptorManager.h"
+#include "DescriptorSetCache.h"
 #include "PSODesc.h"
 #include "PerObjResourceManager.h"
 #include "RenderGraphExecutionPlan.h"
@@ -163,6 +164,12 @@ public:
     ///         overlap in time. Empty before the first build.
     const TransientMemoryPlan& GetTransientMemoryPlan() const { return m_transientMemoryPlan; }
 
+    /// @return How many distinct descriptor sets the last build allocated. A graph whose nodes bind the
+    ///         same resources at the same sets shares one set across them, so this is below the number of
+    ///         descriptor-bound nodes exactly when the cache deduplicated; it is the descriptor analogue
+    ///         of `GetTransientMemoryPlan()`. Zero before the first build.
+    std::size_t GetDescriptorSetCount() const { return m_descriptorSetCache.SetCount(); }
+
     // ── Node declaration ─────────────────────────────────────────────────────
     /// Declare a node. Throws if the name is already used.
     void AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo);
@@ -299,6 +306,10 @@ private:
     VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
     // Owns submission, cross-queue synchronization and waiting. The graph only records.
     RenderGraphExecutor m_executor;
+    /// Owns every node's descriptor sets and shares one per distinct content. Declared after the
+    /// services it is constructed from; destroyed after the compiled graph, whose nodes only reference
+    /// the sets, so their teardown never frees a cache-owned handle.
+    DescriptorSetCache m_descriptorSetCache;
 
     /// Transient buffers whose memory the graph owns as aliasing blocks rather than per resource.
     ///
@@ -336,6 +347,16 @@ private:
     /// mapped.
     /// @param nodeName Node whose callback just returned, named in the error.
     void EnsureMappingsReleased(const std::string& nodeName) const;
+
+    /// Write a set's bound resources into a freshly allocated descriptor set.
+    ///
+    /// Called once per distinct content by `DescriptorSetCache::Acquire`, at `Build()`. The write infos
+    /// live in vectors alongside the writes so their addresses stay valid for the single
+    /// `vkUpdateDescriptorSets` call - declaring them per iteration and pointing at them is the
+    /// dangling-address bug that made three Release tests render nothing (see #30).
+    /// @param descriptorSet Set to write into.
+    /// @param bound         Resources and their resolved ranges/layouts, in binding order.
+    void WriteDescriptorSetBindings(VkDescriptorSet descriptorSet, const std::vector<DescriptorSetKey::Bound>& bound);
 
     ResourceDescRegistry m_resourceDescRegistry;
     std::unordered_map<ResourceHandle, const IRenderResource*> m_importedResources;

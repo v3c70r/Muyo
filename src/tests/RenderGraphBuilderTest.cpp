@@ -2660,6 +2660,63 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     REQUIRE_NOTHROW(builder.Build());
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: nodes that bind the same resources share one descriptor set",
+                 "[RenderGraphBuilder]")
+{
+    // #15 increment 2 / #16 criterion 4. Two graphics nodes binding the same camera at the same
+    // (set, binding) have identical descriptor *content*, so they must share one VkDescriptorSet - the
+    // dedup that makes the MATERIAL bindless array cost once rather than once per node. Different
+    // resources at the same slot must not share, which is what keeps the cache safe under aliasing: a
+    // set holds concrete views, so a shared set can never be handed a different image.
+    const auto buildTwoNodes = [](bool bSameCamera)
+    {
+        auto builder = std::make_unique<RenderGraphBuilder>(GetRenderDevice());
+        builder->AddResource("Color", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                        .extent = {WIDTH, HEIGHT},
+                                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
+        for (const char* name : {"CameraA", "CameraB"})
+        {
+            builder->AddResource(name, BufferResourceDesc{.count = 1,
+                                                          .stride = sizeof(PerViewData),
+                                                          .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                          .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                          .lifetime = ResourceLifetime::Persistent});
+        }
+        const auto addNode = [&builder](const char* nodeName, const char* camera)
+        {
+            builder->AddNode(RenderGraphNodeCreateInfo{
+                .nodeName = nodeName,
+                .queueType = QueueType::GRAPHICS,
+                .resourceUses =
+                    {
+                        ResourceUse{.handle = ResourceHandle(camera),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::UNIFORM_BUFFER,
+                                    .kind = ResourceKind::BUFFER,
+                                    .descriptorBinding = RenderGraphSemanticBindings::PerView},
+                        ResourceUse{.handle = ResourceHandle("Color"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                    .kind = ResourceKind::IMAGE},
+                    },
+                .shaderNames = {"testWorldPos.vert.slang", "testWorldPos.frag.slang"},
+                .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
+                            .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+                .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+                .execute = [](RenderGraphNodeContext&) {}});
+        };
+        addNode("NodeA", "CameraA");
+        addNode("NodeB", bSameCamera ? "CameraA" : "CameraB");
+        builder->Build();
+        return builder;
+    };
+
+    // Same content at the same slot: the two nodes share the one set.
+    CHECK(buildTwoNodes(true)->GetDescriptorSetCount() == 1);
+    // Different resource at the same slot: two sets, because a set names a concrete view.
+    CHECK(buildTwoNodes(false)->GetDescriptorSetCount() == 2);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind semantic sets independently",
                  "[RenderGraphBuilder]")
 {
