@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -100,12 +101,23 @@ TEST_CASE_METHOD(GraphicsTestEnv, "FrameSync: a headless swapchain presents seve
     std::vector<uint32_t> slots;
     std::vector<VkSemaphore> acquireSemaphores;
     std::vector<VkCommandBuffer> commandBuffers;
+    // The pairing invariant: each image's render-finished semaphore must be the same every time that image
+    // is acquired. Per-image keying makes it constant; a frame-indexed one varies with the slot cycle. This
+    // is deterministic, where the VUID it guards against is a race a fast device does not manifest.
+    std::map<uint32_t, VkSemaphore> imageRenderFinished;
     for (uint32_t i = 0; i < framesToRun; ++i)
     {
         const std::optional<FrameSync::Frame> frame = sync.BeginFrame();
         REQUIRE(frame.has_value());
         slots.push_back(frame->frameIndex);
         acquireSemaphores.push_back(frame->imageAvailable);
+
+        const auto [pairIt, bInserted] = imageRenderFinished.emplace(frame->imageIndex, frame->renderFinished);
+        if (!bInserted)
+        {
+            INFO("image " << frame->imageIndex << " was paired with a different render-finished semaphore");
+            CHECK(pairIt->second == frame->renderFinished);
+        }
 
         VkCommandBuffer cmd = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
         commandBuffers.push_back(cmd);
