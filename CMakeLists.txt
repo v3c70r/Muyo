@@ -394,6 +394,7 @@ add_executable(tests
     src/RenderGraph/RenderGraphExecutor.cpp
     src/tests/DebugCallbackTests.cpp
     src/tests/DeviceCapabilityTests.cpp
+    src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
     src/tests/ShaderReflectionTests.cpp
     src/tests/TransientMemoryPlannerTest.cpp
