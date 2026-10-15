@@ -53,6 +53,14 @@ public:
         const VkSurfaceKHR *pSurface = m_surface != VK_NULL_HANDLE ? &m_surface : nullptr;
         GetRenderDevice()->CreateDevice(deviceExtensions, std::vector<const char *>(), pSurface,
                                         GetTestDeviceFeatures());
+        // The loader can offer the extension while the chosen device does not support the surface (AMDVLK
+        // does not, Lavapipe does). `CreateDevice` then selects no present family; drop the surface so
+        // present-path tests report their scope instead of using an unsupported one.
+        if (m_surface != VK_NULL_HANDLE && GetRenderDevice()->GetPresentQueue() == VK_NULL_HANDLE)
+        {
+            vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), m_surface, nullptr);
+            m_surface = VK_NULL_HANDLE;
+        }
 
         // Say which device this run is on, once. A "tests passed" line does not distinguish a
         // driver from a software rasteriser, and this suite has silently run on both for the same
