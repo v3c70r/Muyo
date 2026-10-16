@@ -68,8 +68,8 @@ struct ShaderReflection
     ///
     /// The value is raw rather than typed because that is what reflection reports: a type description
     /// plus a byte size, not one of the `SpvReflectFormat` values an earlier revision assumed (there is
-    /// no `format` field on the reflect struct at all, which is why the original fill-in was left as a
-    /// TODO). Raw is also what `VkSpecializationInfo` consumes, and it is correct where a `uint32_t`
+    /// no `format` field on the reflect struct at all, which is why the original fill-in was left
+    /// unimplemented). Raw is also what `VkSpecializationInfo` consumes, and it is correct where a `uint32_t`
     /// was not: a 64-bit constant's default is 8 bytes.
     struct SpecializationConstant
     {

@@ -318,7 +318,7 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImage
     // Create attachment reference
     VkAttachmentReference attachmentRef = {};
     // check if format is depth format
-    // TODO: add more depth foramts if we start to use them
+    // TODO(P3): add more depth formats if we start to use them - deleted with src/RenderPasses/.
     attachmentRef.attachment = (uint32_t)m_vAttachmentDescriptions.size() - 1;
     if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
     {

@@ -74,7 +74,7 @@ public:
     VkDevice& GetDevice() { return m_device; }
     VkPhysicalDevice& GetPhysicalDevice() { return m_physicalDevice; }
     VkQueue& GetGraphicsQueue() { return m_graphicsQueue; }
-    VkQueue& GetImmediateQueue() { return m_graphicsQueue; }  // TODO: Handle copy queue
+    VkQueue& GetImmediateQueue() { return m_graphicsQueue; }
     VkQueue& GetPresentQueue() { return m_presentQueue; }
     VkQueue& GetComputeQueue() { return m_computeQueue; }
     // Queue family indices, needed for cross-queue resource ownership transfers.
@@ -123,8 +123,6 @@ public:
     VkCommandBuffer AllocateReusablePrimaryCommandbuffer();
     void FreeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
 
-    VkCommandBuffer AllocateSecondaryCommandBuffer();
-    void FreeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer);
 
     VkCommandBuffer AllocateImmediateCommandBuffer();
     void FreeImmediateCommandBuffer(VkCommandBuffer& commandBuffer);
@@ -200,8 +198,6 @@ private:  // Private structures
 
         std::vector<VkExtensionProperties> m_vSupportedDeviceExtensions;
         // std::vector<VkExtensionProperties> m_vEnabledDeviceExtensions;
-
-        // TODO: Handle layers
 
         HWInfo()
         {

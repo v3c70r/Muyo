@@ -65,7 +65,7 @@ const DrawLists &Scene::GatherDrawLists()
 
                 for (auto &submesh : pGeometry->getSubmeshes())
                 {
-                    // TODO: populate submesh data array
+                    // TODO(#20): populate the submesh data array as the graph path needs it.
 
                     aSubmeshDatas[nSubmeshCount++].nMaterialIndex = submesh->GetMeshIndex();
                     // submesh->GetMaterial();

@@ -107,7 +107,7 @@ private:
     VkPipelineRenderingCreateInfo mRenderingInfo = {};
 };
 
-// TODO: Finish other builders
+// TODO(#17): finish other builders.
 // Builders should contains resonable default values, so it can be
 // used without specifying default values
 // Should I use static builder or non static builder?
@@ -258,7 +258,7 @@ public:
         m_info.cullMode = uCullMode;
         return *this;
     }
-    // TODO: Add more builders if necessary
+    // TODO(#17): add more builders if necessary.
 };
 
 class MultisampleStateCIBuilder : public InfoBuilder<VkPipelineMultisampleStateCreateInfo>
@@ -274,7 +274,7 @@ public:
         m_info.alphaToCoverageEnable = VK_FALSE;
         m_info.alphaToOneEnable = VK_FALSE;
     }
-    // TODO: Create setters when necesssary
+    // TODO(#17): create setters when necessary.
 };
 
 class BlendStateCIBuilder : public InfoBuilder<VkPipelineColorBlendStateCreateInfo>

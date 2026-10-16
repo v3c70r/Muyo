@@ -344,7 +344,7 @@ int main(int argc, char **argv)
 
             // Handle resizing
             {
-                // TODO: Resizing doesn't work properly, need to investigate
+                // TODO(#20): resize is ported to helloVulkanRG; this legacy path goes with the migration.
                 VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
                 int width;
                 int height;
