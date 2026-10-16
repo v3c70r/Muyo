@@ -135,6 +135,9 @@ RenderGraph::RenderGraphExecuteInfo FrameSync::ExecuteInfo(const Frame& frame) c
     RenderGraph::RenderGraphExecuteInfo info;
     info.waitSemaphore = frame.imageAvailable;
     info.signalSemaphore = frame.renderFinished;
+    // The caller does not submit directly, so the graph must signal this frame's fence - otherwise the
+    // slot is never released and the next reuse of it blocks forever.
+    info.signalFence = frame.inFlight;
     return info;
 }
 

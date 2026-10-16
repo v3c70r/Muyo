@@ -224,6 +224,14 @@ private:
     void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
                         uint32_t queueFamily);
 
+    /// Emit the post-node transition to `PRESENT_SRC_KHR` for a node's present targets.
+    ///
+    /// Present is the one layout whose consumer is outside the graph, so its barrier cannot be emitted at
+    /// the start of a consumer the way every other use's is. This runs after the node's render pass.
+    /// @param cmdBuf       Command buffer being recorded.
+    /// @param resourceUses The node's uses; the `PRESENT` ones are transitioned.
+    void RecordPresentTransition(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses);
+
     // Emit queue-family ownership transfer barriers for resources crossing queues.
     void RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily, uint32_t dstQueueFamily,
                                      bool bAcquire, const std::vector<ResourceHandle>& handles);

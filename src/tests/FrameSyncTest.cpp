@@ -6,10 +6,14 @@
 
 #include "FrameSync.h"
 #include "GraphicsTestEnv.h"
+#include "RenderGraph/RenderGraphBuilder.h"
+#include "RenderGraph/RenderGraphNodeResource.h"
 #include "Swapchain.h"
+#include "SwapchainImageResource.h"
 #include "VkRenderDevice.h"
 
 using namespace Muyo;
+using namespace Muyo::RenderGraph;
 
 namespace
 {
@@ -160,5 +164,54 @@ TEST_CASE_METHOD(GraphicsTestEnv, "FrameSync: a headless swapchain presents seve
     CHECK(acquireSemaphores[0] != acquireSemaphores[2]);
     CHECK(acquireSemaphores[1] != acquireSemaphores[2]);
 
+    swapchain.DestroySwapchain();
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "FrameSync: the graph renders into the acquired image and presents it", "[FrameSync]")
+{
+    // The frame-loop boundary #20 needs: the graph imports the acquired swapchain image, renders to it
+    // with a PRESENT use (so the graph transitions it to PRESENT_SRC after the node), and FrameSync
+    // presents it. A graph is built per frame because the acquired image rotates and the graph fixes its
+    // imports at Build; caching one graph per image is the optimisation and belongs with #40.
+    if (!HasHeadlessSurface())
+    {
+        WARN("no VK_EXT_headless_surface here; the graph-present path is not exercised by this run");
+        return;
+    }
+
+    Swapchain swapchain;
+    VkSurfaceCapabilitiesKHR caps{};
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(GetRenderDevice()->GetPhysicalDevice(), GetHeadlessSurface(), &caps);
+    const uint32_t imageCount = caps.minImageCount > 3 ? caps.minImageCount : 3;
+    swapchain.CreateSwapchain(GetHeadlessSurface(),
+                              ChooseSurfaceFormat(GetRenderDevice()->GetPhysicalDevice(), GetHeadlessSurface()),
+                              VK_PRESENT_MODE_FIFO_KHR, imageCount, /*bOwnSurface=*/false);
+
+    FrameSync sync(GetRenderDevice(), &swapchain, 3);
+
+    const uint32_t framesToRun = 6;
+    for (uint32_t i = 0; i < framesToRun; ++i)
+    {
+        const std::optional<FrameSync::Frame> frame = sync.BeginFrame();
+        REQUIRE(frame.has_value());
+
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.ImportResource("Present", swapchain.GetImageResource(frame->imageIndex));
+        builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "Present",
+                                                  .queueType = QueueType::GRAPHICS,
+                                                  .resourceUses = {ResourceUse{.handle = ResourceHandle("Present"),
+                                                                               .io = ResourceIOType::WRITE,
+                                                                               .usage = ResourceUsage::PRESENT,
+                                                                               .kind = ResourceKind::IMAGE}},
+                                                  .attachmentClearValues = {{{.color = {0.0F, 1.0F, 0.0F, 1.0F}}}},
+                                                  .execute = [](RenderGraphNodeContext&) {}});
+        builder.Build();
+        builder.Execute(sync.ExecuteInfo(*frame));
+
+        const VkResult presentResult = sync.Present(*frame);
+        CHECK((presentResult == VK_SUCCESS || presentResult == VK_SUBOPTIMAL_KHR));
+    }
+
+    REQUIRE(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()) == VK_SUCCESS);
     swapchain.DestroySwapchain();
 }

@@ -55,7 +55,7 @@ struct UsagePolicy
 ///
 /// This is the authoritative reference for how the graph synchronises resources; a use with no
 /// entry here is rejected by `ResolvePolicy`.
-constexpr std::array<std::pair<UsageKey, UsagePolicy>, 28> K_USAGE_POLICIES = {
+constexpr std::array<std::pair<UsageKey, UsagePolicy>, 29> K_USAGE_POLICIES = {
     {// ───────────── Images ─────────────
      {{ResourceUsage::SAMPLED, ResourceIOType::READ},
       {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
@@ -78,6 +78,12 @@ constexpr std::array<std::pair<UsageKey, UsagePolicy>, 28> K_USAGE_POLICIES = {
       {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT,
        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
      {{ResourceUsage::RESOLVE_ATTACHMENT, ResourceIOType::WRITE},
+      {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+     // Rendered as a colour attachment, then transitioned to PRESENT_SRC after the node by
+     // `RecordPresentTransition`: the presentation engine is the consumer and it is not a node, so the
+     // barrier cannot be emitted at the start of a consumer the way every other layout is.
+     {{ResourceUsage::PRESENT, ResourceIOType::WRITE},
       {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
 

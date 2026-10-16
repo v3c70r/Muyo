@@ -613,6 +613,7 @@ The semantic role of a resource within a node.
 | `DEPTH_STENCIL_ATTACHMENT` | Depth/stencil render target. |
 | `INPUT_ATTACHMENT` | Input attachment read. |
 | `RESOLVE_ATTACHMENT` | Multisample resolve target. |
+| `PRESENT` | Final image an external consumer (the presentation engine) reads. |
 | `UNIFORM_BUFFER` | Uniform buffer. |
 | `STORAGE_BUFFER` | Storage buffer. |
 | `VERTEX_BUFFER` | Vertex buffer. |
@@ -708,7 +709,7 @@ Stable string name identifying a resource, node or imported object in the graph.
 
 ## `ResourceUseResolver.h`
 
-### `constexpr std::array< std::pair< UsageKey, UsagePolicy >, 28 > K_USAGE_POLICIES`
+### `constexpr std::array< std::pair< UsageKey, UsagePolicy >, 29 > K_USAGE_POLICIES`
 
 Barrier policy table: maps every supported (ResourceUsage, ResourceIOType) pair to the pipeline stages, access mask and image layout the graph uses when a node touches it.
 
