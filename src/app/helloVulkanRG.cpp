@@ -123,6 +123,14 @@ int main()
             Window::ProcessEvents();
             ImGui::Update();
 
+            // ImGui needs a display size before NewFrame. The engine's wrapper does not set one (the
+            // legacy RenderPassUI::NewFrame did), and the push constants below scale by it.
+            int framebufferWidth = 0;
+            int framebufferHeight = 0;
+            Window::GetFramebufferSize(framebufferWidth, framebufferHeight);
+            ImGui::GetIO().DisplaySize =
+                ImVec2(static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight));
+
             // Build this frame's UI draw data and upload it before the graph records.
             ImGui::NewFrame();
             ImGui::Begin("hello Vulkan (render graph)");
