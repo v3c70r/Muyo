@@ -29,6 +29,8 @@ bool DescriptorSetKey::Bound::operator<(const Bound& other) const
     if (resource != other.resource) return std::less<const IRenderResource*>{}(resource, other.resource);
     if (bufferOffset != other.bufferOffset) return bufferOffset < other.bufferOffset;
     if (bufferRange != other.bufferRange) return bufferRange < other.bufferRange;
+    // A sampler is a pointer handle; std::less gives the total order std::map needs.
+    if (sampler != other.sampler) return std::less<VkSampler>{}(sampler, other.sampler);
     return imageLayout < other.imageLayout;
 }
 

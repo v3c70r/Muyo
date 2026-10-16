@@ -112,6 +112,7 @@ One resource bound into a binding, with everything the write needs.
 | `VkDeviceSize bufferOffset` | Buffer bind offset, already resolved. |
 | `VkDeviceSize bufferRange` | Buffer bind range, already resolved. |
 | `VkImageLayout imageLayout` | Image layout the descriptor samples in. |
+| `VkSampler sampler` | Sampler for a combined image sampler, else null. |
 | `bool operator<(const Bound &other) const` | other Binding to compare against. A strict weak ordering, so the bound set can key a std::map. |
 
 
