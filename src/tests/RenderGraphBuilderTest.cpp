@@ -2717,6 +2717,93 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: nodes that bind the same 
     CHECK(buildTwoNodes(false)->GetDescriptorSetCount() == 2);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders through a graph node",
+                 "[RenderGraphBuilder]")
+{
+    // The RenderPassUI port, reduced to what the graph must express: the UI shaders, a combined image
+    // sampler for the font texture, push constants, and a draw loop over ImDrawVert geometry. The
+    // geometry is synthetic rather than ImGui's (ImGui needs a frame), but the node is the one the pass
+    // would use. Rendering offscreen lets the result be read back headlessly.
+    uint32_t whitePixel = 0xFFFFFFFFu;
+    TextureResource* pFont = GetRenderResourceManager()->GetTexture("ui_font_texture", &whitePixel, 1, 1);
+    REQUIRE(pFont != nullptr);
+
+    const std::vector<ImDrawVert> vertices = {
+        ImDrawVert{{-1.0F, -1.0F}, {0.0F, 0.0F}, IM_COL32(255, 255, 255, 255)},
+        ImDrawVert{{1.0F, -1.0F}, {1.0F, 0.0F}, IM_COL32(255, 255, 255, 255)},
+        ImDrawVert{{0.0F, 1.0F}, {0.5F, 1.0F}, IM_COL32(255, 255, 255, 255)},
+    };
+    const std::vector<ImDrawIdx> indices = {0, 1, 2};
+    auto* pVertices = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertexBuffer", vertices, false);
+    auto* pIndices = GetRenderResourceManager()->GetIndexBuffer("UIIndexBuffer", indices, false);
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource(
+        "UITarget", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                      .extent = {WIDTH, HEIGHT},
+                                      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.ImportResource("Font", pFont);
+    builder.ImportResource("UIVertices", pVertices);
+    builder.ImportResource("UIIndices", pIndices);
+
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "UI",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("Font"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::SAMPLED,
+                            .kind = ResourceKind::IMAGE,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                ResourceUse{.handle = ResourceHandle("UIVertices"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("UIIndices"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("UITarget"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"ui.vert.slang", "ui.frag"},
+        .psoDesc = {.vertexType = VertexType::UI,
+                    .rasterState = {.cullMode = CullMode::NONE},
+                    .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute = [](RenderGraphNodeContext& ctx)
+        {
+            struct PushConstBlock
+            {
+                glm::vec2 scale;
+                glm::vec2 translate;
+            };
+            const PushConstBlock pushConstants{glm::vec2(1.0F, 1.0F), glm::vec2(0.0F, 0.0F)};
+            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
+                               sizeof(pushConstants), &pushConstants);
+
+            const auto* pVB = ctx.GetResource<BufferResource>("UIVertices");
+            const auto* pIB = ctx.GetResource<BufferResource>("UIIndices");
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = pVB->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, pIB->buffer(), 0, VK_INDEX_TYPE_UINT16);
+            vkCmdDrawIndexed(ctx.commandBuffer, 3, 1, 0, 0, 0);
+        }});
+
+    builder.Build();
+    builder.Execute();
+
+    const auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("UITarget"));
+    REQUIRE(pTarget != nullptr);
+    // The white texture times the white vertex colours fills the triangle; a null sampler or a missing
+    // descriptor would instead be a validation error or a black readback.
+    REQUIRE(CountNonBlackPixels(pTarget) > 0);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind semantic sets independently",
                  "[RenderGraphBuilder]")
 {
