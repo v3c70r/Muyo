@@ -8,6 +8,7 @@
 #include <fstream>
 #include <ios>
 #include <iostream>
+#include <stdexcept>
 
 #include "PipelineStateBuilder.h"
 #include "VkMemoryAllocator.h"
@@ -118,7 +119,13 @@ VkPipelineCache DeserializeCacheData(std::filesystem::path filePath)
     std::ifstream inFile(filePath, std::ios::binary);
     size_t fileSize = 0;
     inFile.read(reinterpret_cast<char*>(&fileSize), sizeof(size_t));
-    assert(fileSize != 0);
+    // The size prefix is file input: an empty or truncated cache must fail in Release, not allocate a
+    // zero-byte buffer and read into it - the assert this replaces was compiled out under NDEBUG.
+    if (fileSize == 0)
+    {
+        throw std::runtime_error("PSOCompiler: " + filePath.string() +
+                                 " has no size prefix (missing, empty or truncated cache).");
+    }
     uint8_t* buffer = new uint8_t[fileSize];
     inFile.read(reinterpret_cast<char*>(buffer), fileSize);
 

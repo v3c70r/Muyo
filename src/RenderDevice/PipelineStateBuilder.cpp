@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cassert>
+#include <stdexcept>
 
 #include "Debug.h"
 
@@ -189,7 +190,11 @@ RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkSh
         }
         else
         {
-            assert(false && "Unsupported RT stage");
+            // Any hit / intersection groups are not built yet; a shader stage that reaches here is
+            // input to the builder, so fail loudly in Release rather than silently keeping the
+            // default-initialised group.
+            throw std::runtime_error("PipelineStateBuilder: unsupported ray-tracing shader stage " +
+                                     std::to_string(static_cast<int>(shaderStage)));
         }
         m_vRTShaderGroupInfos.push_back(info);
     }

@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <functional>
+#include <stdexcept>
 
 #include "Geometry.h"
 #include "LightSceneNode.h"
@@ -47,7 +48,12 @@ const DrawLists &Scene::GatherDrawLists()
             [&](const std::unique_ptr<SceneNode> &pNode, const glm::mat4 &mCurrentTrans, DrawLists &drawLists)
         {
             glm::mat4 mWorldMatrix = mCurrentTrans * pNode->GetMatrix();
-            assert(IsMat4Valid(mWorldMatrix));
+            // Node transforms are asset data: a malformed scene must fail in Release too, not just
+            // under an assert that NDEBUG removes.
+            if (!IsMat4Valid(mWorldMatrix))
+            {
+                throw std::runtime_error("Scene: node '" + pNode->GetName() + "' has a non-finite world matrix.");
+            }
             uint32_t nSubmeshCount = 0;
             std::array<PerSubmeshData, MAX_NUM_SUBMESHES> aSubmeshDatas;
             if (GeometrySceneNode *pGeometryNode = dynamic_cast<GeometrySceneNode *>(pNode.get()))
