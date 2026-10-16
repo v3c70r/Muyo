@@ -111,9 +111,11 @@ std::optional<FrameSync::Frame> FrameSync::BeginFrame()
         throw std::runtime_error("FrameSync: the acquired image index " + std::to_string(imageIndex) +
                                  " is out of range for " + std::to_string(m_imagesInFlight.size()) + " images.");
     }
-    // The image may still be rendering in an earlier frame. Waiting on that frame's fence is what makes
-    // it safe to touch, and it is why the fence is tracked per image rather than per frame.
-    if (m_imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+    // The image may still be rendering in an earlier frame, and waiting on that frame's fence is what
+    // makes it safe to touch. Unless the stored fence is *this* slot's: it was just waited on and reset
+    // above, so the image's last use by this slot is already complete, and waiting on the reset fence
+    // would deadlock. That happens as soon as the swapchain hands back an image the slot recently used.
+    if (m_imagesInFlight[imageIndex] != VK_NULL_HANDLE && m_imagesInFlight[imageIndex] != slotFence)
     {
         VK_ASSERT(
             vkWaitForFences(vkDevice, 1, &m_imagesInFlight[imageIndex], VK_TRUE, std::numeric_limits<uint64_t>::max()));

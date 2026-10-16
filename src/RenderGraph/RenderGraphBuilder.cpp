@@ -114,6 +114,12 @@ std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::ResolveBufferRange(con
 
 RenderGraphBuilder::~RenderGraphBuilder()
 {
+    // Before destroying anything the GPU may still be using. `Execute(RenderGraphExecuteInfo)` submits
+    // without waiting, so a builder destroyed right after a non-blocking Execute would free its pipelines
+    // and descriptor sets while its command buffers are still pending
+    // (`VUID-vkDestroyPipeline-pipeline-00765`). The executor's own destructor waits, but it runs after
+    // this body, which is too late.
+    m_executor.WaitIdle();
     m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
     // After the compiled graph, because its descriptors and pipelines name these buffers, and before the
     // device goes away, because the blocks hold memory this class owns.

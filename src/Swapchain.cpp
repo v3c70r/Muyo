@@ -21,7 +21,8 @@ Swapchain::~Swapchain()
     }
 }
 void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceFormatKHR& surfaceFormat,
-                                const VkPresentModeKHR& presentMode, uint32_t numBuffers, bool bOwnSurface)
+                                const VkPresentModeKHR& presentMode, uint32_t numBuffers, bool bOwnSurface,
+                                VkExtent2D requestedExtent)
 {
     if (m_surface == VK_NULL_HANDLE)
     {
@@ -37,8 +38,13 @@ void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceForm
     if (m_swapchainExtent.width == std::numeric_limits<uint32_t>::max() ||
         m_swapchainExtent.height == std::numeric_limits<uint32_t>::max())
     {
-        m_swapchainExtent = {std::clamp(1280u, caps.minImageExtent.width, caps.maxImageExtent.width),
-                             std::clamp(720u, caps.minImageExtent.height, caps.maxImageExtent.height)};
+        // The surface lets the application choose its size. Wayland reports the sentinel where X11
+        // reports the window size, so the fallback must be the caller's window size - a fixed default
+        // would not match the render area the passes were created for.
+        const VkExtent2D requested =
+            requestedExtent.width > 0 && requestedExtent.height > 0 ? requestedExtent : VkExtent2D{1280, 720};
+        m_swapchainExtent = {std::clamp(requested.width, caps.minImageExtent.width, caps.maxImageExtent.width),
+                             std::clamp(requested.height, caps.minImageExtent.height, caps.maxImageExtent.height)};
     }
     if (m_swapchainExtent.width == 0 || m_swapchainExtent.height == 0)
     {
@@ -53,11 +59,12 @@ void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceForm
     {
         throw std::runtime_error("Swapchain: the surface reports no supported image count.");
     }
+    // A request below the minimum is a caller saying "at least this many", so clamp up - the Vulkan
+    // convention for minImageCount. Above-maximum stays a throw below: exceeding a cap is a real mistake,
+    // and silently shrinking a caller's request would hide it.
     if (numBuffers < caps.minImageCount)
     {
-        throw std::runtime_error("Swapchain: " + std::to_string(numBuffers) +
-                                 " images requested, but the surface needs at least " +
-                                 std::to_string(caps.minImageCount) + ".");
+        numBuffers = caps.minImageCount;
     }
     if (caps.maxImageCount != 0 && numBuffers > caps.maxImageCount)
     {

@@ -288,6 +288,10 @@ file(GLOB main_SRC
     "src/app/helloVulkan.cpp"
     )
 
+file(GLOB rgMain_SRC
+    "src/app/helloVulkanRG.cpp"
+    )
+
 file(GLOB PSOCompiler_SRC
     "src/app/PSOCompiler.cpp"
     )
@@ -295,6 +299,12 @@ file(GLOB PSOCompiler_SRC
 if (MUYO_TOP_LEVEL)
 add_executable(helloVulkan ${main_SRC})
 target_link_libraries(helloVulkan PUBLIC muyo)
+
+# The render graph's first consumer: the same frame through the graph. It links both `muyo` (the
+# engine's resources, device and managers) and `muyo_rg`.
+add_executable(helloVulkanRG ${rgMain_SRC})
+target_link_libraries(helloVulkanRG PUBLIC muyo muyo_rg)
+target_compile_definitions(helloVulkanRG PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
 
 
 add_executable(PSOCompiler ${PSOCompiler_SRC})
@@ -357,6 +367,7 @@ add_custom_target(
 
 if (MUYO_TOP_LEVEL)
 add_dependencies(helloVulkan Shaders)
+add_dependencies(helloVulkanRG Shaders)
 
 # Copy over asset
 add_custom_command(
