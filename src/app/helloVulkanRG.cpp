@@ -146,13 +146,27 @@ int main()
             Window::ProcessEvents();
             ImGui::Update();
 
-            // ImGui scales its NDC coordinates by the display size, and the draw target is the swapchain
-            // image, so the size must be the swapchain extent. The window framebuffer size is normally the
-            // same, but a clamped extent (or compositor rounding) would scale the UI wrongly - and after a
-            // resize the two are only equal once the swapchain has been recreated.
-            const VkExtent2D uiExtent = swapchain.GetSwapchainExtent();
+            // ImGui needs a display size before NewFrame. The engine's wrapper does not set one (the
+            // legacy RenderPassUI::NewFrame did), and the push constants below scale by it. The window
+            // framebuffer size is the size the UI is laid out for.
+            int framebufferWidth = 0;
+            int framebufferHeight = 0;
+            Window::GetFramebufferSize(framebufferWidth, framebufferHeight);
             ImGui::GetIO().DisplaySize =
-                ImVec2(static_cast<float>(uiExtent.width), static_cast<float>(uiExtent.height));
+                ImVec2(static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight));
+
+            // A platform can resize the surface without the swapchain reporting out-of-date (Wayland may
+            // return SUCCESS or SUBOPTIMAL), so compare the window size to the swapchain and recreate when
+            // they differ. Otherwise the render area and scissor - both derived from the acquired image's
+            // extent - stay at the old size while the UI is laid out for the new one, which crops it.
+            const VkExtent2D framebufferExtent{static_cast<uint32_t>(framebufferWidth),
+                                               static_cast<uint32_t>(framebufferHeight)};
+            if (framebufferWidth > 0 && framebufferHeight > 0 &&
+                (framebufferExtent.width != swapchain.GetSwapchainExtent().width ||
+                 framebufferExtent.height != swapchain.GetSwapchainExtent().height))
+            {
+                recreateSwapchain();
+            }
 
             // Build this frame's UI draw data and upload it before the graph records.
             ImGui::NewFrame();
