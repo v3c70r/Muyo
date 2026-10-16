@@ -272,6 +272,11 @@ int main()
         swapchain.DestroySwapchain();
     }
 
+    // GLFW creates the VkSurfaceKHR but does not own it, and the swapchain was told not to own it, so the
+    // app destroys it - before the instance, or validation reports it as a child object left behind
+    // (VUID-vkDestroyInstance-instance-00629).
+    vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), surface, nullptr);
+
     ImGui::Shutdown();
     ImGui::DestroyContext();
     GetSamplerManager()->destroySamplers();
