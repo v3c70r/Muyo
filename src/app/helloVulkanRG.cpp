@@ -113,9 +113,15 @@ int main()
 
     {
         Swapchain swapchain;
-        // The window owns the surface, so the swapchain must not destroy it.
-        swapchain.CreateSwapchain(surface, ChooseSurfaceFormat(GetRenderDevice()->GetPhysicalDevice(), surface),
-                                  VK_PRESENT_MODE_FIFO_KHR, kImagesInFlight, /*bOwnSurface=*/false);
+        // The window owns the surface, so the swapchain must not destroy it. Wayland lets the app choose
+        // the extent, so pass the window's framebuffer size.
+        int initialWidth = 0;
+        int initialHeight = 0;
+        Window::GetFramebufferSize(initialWidth, initialHeight);
+        swapchain.CreateSwapchain(
+            surface, ChooseSurfaceFormat(GetRenderDevice()->GetPhysicalDevice(), surface), VK_PRESENT_MODE_FIFO_KHR,
+            kImagesInFlight, /*bOwnSurface=*/false,
+            VkExtent2D{static_cast<uint32_t>(initialWidth), static_cast<uint32_t>(initialHeight)});
         FrameSync frameSync(GetRenderDevice(), &swapchain, kImagesInFlight);
 
         while (!Window::ShouldQuit())
@@ -164,9 +170,13 @@ int main()
                 vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
                 const VkSurfaceKHR reclaimed = swapchain.GetSurface();
                 swapchain.DestroySwapchain();
-                swapchain.CreateSwapchain(reclaimed,
-                                          ChooseSurfaceFormat(GetRenderDevice()->GetPhysicalDevice(), reclaimed),
-                                          VK_PRESENT_MODE_FIFO_KHR, kImagesInFlight, /*bOwnSurface=*/false);
+                int resizedWidth = 0;
+                int resizedHeight = 0;
+                Window::GetFramebufferSize(resizedWidth, resizedHeight);
+                swapchain.CreateSwapchain(
+                    reclaimed, ChooseSurfaceFormat(GetRenderDevice()->GetPhysicalDevice(), reclaimed),
+                    VK_PRESENT_MODE_FIFO_KHR, kImagesInFlight, /*bOwnSurface=*/false,
+                    VkExtent2D{static_cast<uint32_t>(resizedWidth), static_cast<uint32_t>(resizedHeight)});
                 frameSync.OnSwapchainRecreated();
                 continue;
             }

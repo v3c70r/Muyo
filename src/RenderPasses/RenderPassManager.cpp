@@ -32,7 +32,8 @@ void RenderPassManager::CreateSwapchain(const VkSurfaceKHR &swapchainSurface)
 {
     assert(m_pSwapchain == nullptr);
     m_pSwapchain = std::make_unique<Swapchain>();
-    m_pSwapchain->CreateSwapchain(swapchainSurface, SWAPCHAIN_FORMAT, PRESENT_MODE, NUM_BUFFERS);
+    m_pSwapchain->CreateSwapchain(swapchainSurface, SWAPCHAIN_FORMAT, PRESENT_MODE, NUM_BUFFERS, /*bOwnSurface=*/true,
+                                  VkExtent2D{m_uWidth, m_uHeight});
 }
 
 void RenderPassManager::BeginFrame()

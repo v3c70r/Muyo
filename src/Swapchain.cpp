@@ -21,7 +21,8 @@ Swapchain::~Swapchain()
     }
 }
 void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceFormatKHR& surfaceFormat,
-                                const VkPresentModeKHR& presentMode, uint32_t numBuffers, bool bOwnSurface)
+                                const VkPresentModeKHR& presentMode, uint32_t numBuffers, bool bOwnSurface,
+                                VkExtent2D requestedExtent)
 {
     if (m_surface == VK_NULL_HANDLE)
     {
@@ -37,8 +38,13 @@ void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceForm
     if (m_swapchainExtent.width == std::numeric_limits<uint32_t>::max() ||
         m_swapchainExtent.height == std::numeric_limits<uint32_t>::max())
     {
-        m_swapchainExtent = {std::clamp(1280u, caps.minImageExtent.width, caps.maxImageExtent.width),
-                             std::clamp(720u, caps.minImageExtent.height, caps.maxImageExtent.height)};
+        // The surface lets the application choose its size. Wayland reports the sentinel where X11
+        // reports the window size, so the fallback must be the caller's window size - a fixed default
+        // would not match the render area the passes were created for.
+        const VkExtent2D requested =
+            requestedExtent.width > 0 && requestedExtent.height > 0 ? requestedExtent : VkExtent2D{1280, 720};
+        m_swapchainExtent = {std::clamp(requested.width, caps.minImageExtent.width, caps.maxImageExtent.width),
+                             std::clamp(requested.height, caps.minImageExtent.height, caps.maxImageExtent.height)};
     }
     if (m_swapchainExtent.width == 0 || m_swapchainExtent.height == 0)
     {

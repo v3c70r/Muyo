@@ -22,8 +22,12 @@ public:
     /// @param bOwnSurface   True when this object destroys `surface` on teardown. False when the caller
     ///                      owns it (a device created with the same surface, for instance), which is what
     ///                      lets one host hand a single surface to both.
+    /// @param requestedExtent Window size to use when the surface lets the application choose, as Wayland
+    ///                      does (it reports `0xFFFFFFFF` where X11 reports the window size). Ignored when
+    ///                      the surface reports a fixed extent. {0,0} falls back to 1280x720.
     void CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceFormatKHR& surfaceFormat,
-                         const VkPresentModeKHR& presentMode, uint32_t numBuffers = 2, bool bOwnSurface = true);
+                         const VkPresentModeKHR& presentMode, uint32_t numBuffers = 2, bool bOwnSurface = true,
+                         VkExtent2D requestedExtent = {0, 0});
 
     void DestroySwapchain();
     VkExtent2D GetSwapchainExtent() const { return m_swapchainExtent; }
