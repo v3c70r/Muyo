@@ -18,7 +18,8 @@ public:
     /// @param surface       Surface to present to. Stored as-is.
     /// @param surfaceFormat Preferred format; the surface may report another.
     /// @param presentMode   Preferred present mode.
-    /// @param numBuffers    Images to request. Must be within the surface's reported range.
+    /// @param numBuffers    Images to request, clamped up to the surface's minimum. Above the surface's
+    ///                      maximum is an error rather than a silent shrink.
     /// @param bOwnSurface   True when this object destroys `surface` on teardown. False when the caller
     ///                      owns it (a device created with the same surface, for instance), which is what
     ///                      lets one host hand a single surface to both.

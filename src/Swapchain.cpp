@@ -59,11 +59,12 @@ void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceForm
     {
         throw std::runtime_error("Swapchain: the surface reports no supported image count.");
     }
+    // A request below the minimum is a caller saying "at least this many", so clamp up - the Vulkan
+    // convention for minImageCount. Above-maximum stays a throw below: exceeding a cap is a real mistake,
+    // and silently shrinking a caller's request would hide it.
     if (numBuffers < caps.minImageCount)
     {
-        throw std::runtime_error("Swapchain: " + std::to_string(numBuffers) +
-                                 " images requested, but the surface needs at least " +
-                                 std::to_string(caps.minImageCount) + ".");
+        numBuffers = caps.minImageCount;
     }
     if (caps.maxImageCount != 0 && numBuffers > caps.maxImageCount)
     {
