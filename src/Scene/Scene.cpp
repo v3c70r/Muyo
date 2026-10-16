@@ -103,10 +103,6 @@ const DrawLists &Scene::GatherDrawLists()
                 perObjData.vAABBMax[2] = aabb.vMax.z;
                 pNode->SetPerObjId(static_cast<int>(GetPerObjResourceManager()->AppendPerObjData(perObjData)));
             }
-            else
-            {
-                assert("TODO: update node date");
-            }
 
             for (const auto &pChild : pNode->GetChildren())
             {
