@@ -37,6 +37,7 @@ struct DescriptorSetKey
         VkDeviceSize bufferOffset = 0;                          ///< Buffer bind offset, already resolved.
         VkDeviceSize bufferRange = 0;                           ///< Buffer bind range, already resolved.
         VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;  ///< Image layout the descriptor samples in.
+        VkSampler sampler = VK_NULL_HANDLE;                     ///< Sampler for a combined image sampler, else null.
 
         /// @param other Binding to compare against.
         /// @return A strict weak ordering, so the bound set can key a `std::map`.

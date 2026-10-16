@@ -477,6 +477,20 @@ void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& 
                 b.imageLayout = (descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                                     ? VK_IMAGE_LAYOUT_GENERAL
                                     : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                if (descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                {
+                    // A combined image sampler needs a sampler, which a plain ImageResource does not carry.
+                    // Only a TextureResource has one, and a combined binding to anything else is a
+                    // declaration error rather than a descriptor written with a null sampler.
+                    const auto* pTexture = dynamic_cast<const TextureResource*>(pImage);
+                    if (pTexture == nullptr)
+                    {
+                        throw std::runtime_error("Node '" + logicalNode.name + "' binds image '" + use.handle +
+                                                 "' to a combined image sampler, but the resource carries no "
+                                                 "sampler. Import a TextureResource, or bind a sampled image instead.");
+                    }
+                    b.sampler = pTexture->getSamper();
+                }
             }
             else if (dynamic_cast<const AccelerationStructure*>(pResource) == nullptr)
             {
@@ -537,6 +551,7 @@ void RenderGraphBuilder::WriteDescriptorSetBindings(VkDescriptorSet descriptorSe
         {
             imageInfos[i].imageView = pImage->getView();
             imageInfos[i].imageLayout = b.imageLayout;
+            imageInfos[i].sampler = b.sampler;
             write.pImageInfo = &imageInfos[i];
         }
     }
