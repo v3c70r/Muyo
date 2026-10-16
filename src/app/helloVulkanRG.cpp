@@ -76,7 +76,7 @@ VkSurfaceFormatKHR ChooseSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfac
 
 int main()
 {
-    if (!Window::Initialize("hello Vulkan (render graph)", kWidth, kHeight)) return -1;
+    if (!Window::Initialize("hello Vulkan (render graph)", kWidth, kHeight, /*bResizable=*/true)) return -1;
 
     GetRenderDevice()->Initialize(InstanceExtensions(), {});
     VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
@@ -124,6 +124,23 @@ int main()
             VkExtent2D{static_cast<uint32_t>(initialWidth), static_cast<uint32_t>(initialHeight)});
         FrameSync frameSync(GetRenderDevice(), &swapchain, kImagesInFlight);
 
+        // Drain, recreate the swapchain at the window's new size, and rebuild the per-image tracking. Used
+        // both when an acquire reports out-of-date and when present does, which is how a resize is picked
+        // up between frames.
+        const auto recreateSwapchain = [&]()
+        {
+            vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
+            const VkSurfaceKHR reclaimed = swapchain.GetSurface();
+            swapchain.DestroySwapchain();
+            int width = 0;
+            int height = 0;
+            Window::GetFramebufferSize(width, height);
+            swapchain.CreateSwapchain(reclaimed, ChooseSurfaceFormat(GetRenderDevice()->GetPhysicalDevice(), reclaimed),
+                                      VK_PRESENT_MODE_FIFO_KHR, kImagesInFlight, /*bOwnSurface=*/false,
+                                      VkExtent2D{static_cast<uint32_t>(width), static_cast<uint32_t>(height)});
+            frameSync.OnSwapchainRecreated();
+        };
+
         while (!Window::ShouldQuit())
         {
             Window::ProcessEvents();
@@ -166,18 +183,8 @@ int main()
             const std::optional<FrameSync::Frame> frame = frameSync.BeginFrame();
             if (!frame.has_value())
             {
-                // Out of date (a resize): recreate the swapchain and rebuild the per-image tracking.
-                vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
-                const VkSurfaceKHR reclaimed = swapchain.GetSurface();
-                swapchain.DestroySwapchain();
-                int resizedWidth = 0;
-                int resizedHeight = 0;
-                Window::GetFramebufferSize(resizedWidth, resizedHeight);
-                swapchain.CreateSwapchain(
-                    reclaimed, ChooseSurfaceFormat(GetRenderDevice()->GetPhysicalDevice(), reclaimed),
-                    VK_PRESENT_MODE_FIFO_KHR, kImagesInFlight, /*bOwnSurface=*/false,
-                    VkExtent2D{static_cast<uint32_t>(resizedWidth), static_cast<uint32_t>(resizedHeight)});
-                frameSync.OnSwapchainRecreated();
+                // Out of date (a resize).
+                recreateSwapchain();
                 continue;
             }
 
@@ -265,7 +272,11 @@ int main()
                 }});
             builder.Build();
             builder.Execute(frameSync.ExecuteInfo(*frame));
-            frameSync.Present(*frame);
+            const VkResult presentResult = frameSync.Present(*frame);
+            if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
+            {
+                recreateSwapchain();
+            }
         }
 
         vkDeviceWaitIdle(GetRenderDevice()->GetDevice());
