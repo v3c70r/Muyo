@@ -128,11 +128,13 @@ void Swapchain::CreateSwapchain(const VkSurfaceKHR& surface, const VkSurfaceForm
     // Get swap chain images;
     uint32_t imageCount = 0;
     VK_ASSERT(vkGetSwapchainImagesKHR(GetRenderDevice()->GetDevice(), m_swapchain, &imageCount, nullptr));
-    if (imageCount > m_swapchainResourceNames.size())
+    // Names are generated from the count the driver returned, not a fixed list: `minImageCount` is a
+    // minimum, so it may hand back more than requested.
+    m_swapchainResourceNames.clear();
+    m_swapchainResourceNames.reserve(imageCount);
+    for (uint32_t i = 0; i < imageCount; ++i)
     {
-        throw std::runtime_error("Swapchain: the surface returned " + std::to_string(imageCount) +
-                                 " images, more than the " + std::to_string(m_swapchainResourceNames.size()) +
-                                 " resource names available.");
+        m_swapchainResourceNames.push_back("swapchainImage" + std::to_string(i));
     }
     m_swapchainImages.resize(imageCount);
     VK_ASSERT(

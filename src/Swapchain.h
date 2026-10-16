@@ -52,11 +52,8 @@ public:
     SwapchainImageResource* GetImageResource(uint32_t index) const { return m_swapchainImageResources.at(index); }
     VkSwapchainKHR& GetSwapChain() { return m_swapchain; }
 
-    std::vector<std::string> GetSwapchainResourceNames() const
-    {
-        return std::vector<std::string>(m_swapchainResourceNames.begin(),
-                                        m_swapchainResourceNames.begin() + m_swapchainImageViews.size());
-    }
+    /// @return The names the swapchain image resources are registered under, one per image.
+    std::vector<std::string> GetSwapchainResourceNames() const { return m_swapchainResourceNames; }
 
 private:
     struct SwapchainSupportDetails
@@ -74,10 +71,10 @@ private:
     VkSurfaceFormatKHR m_swapchainFormat = {};
 
     std::vector<SwapchainImageResource*> m_swapchainImageResources;
-    const std::array<std::string, 4> m_swapchainResourceNames = {"swapchainImage0_",
-                                                                 "swapchainImage1_"
-                                                                 "swapchainImage2_"
-                                                                 "swapchainImage3_"};
+    /// One name per image, generated from the count the driver *actually* returned. A fixed list of four
+    /// both mis-named images 1-3 (missing commas concatenated them into one string) and indexed past its
+    /// end under NDEBUG when a driver returned more images than requested (`minImageCount` is a minimum).
+    std::vector<std::string> m_swapchainResourceNames;
 
     std::vector<VkImage> m_swapchainImages;
     std::vector<VkImageView> m_swapchainImageViews;  // todo: remove this
