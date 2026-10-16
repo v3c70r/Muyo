@@ -214,7 +214,14 @@ int main()
                 .shaderNames = {"ui.vert.slang", "ui.frag"},
                 .psoDesc = {.vertexType = VertexType::UI,
                             .rasterState = {.cullMode = CullMode::NONE},
-                            .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+                            // Alpha blending, matching RenderPassUI: the font texture carries glyph
+                            // coverage in its alpha, so an opaque write renders white blocks.
+                            .blendState = {.attachmentCount = 1,
+                                           .attachments = {{{.blendEnable = true,
+                                                             .srcColor = BlendFactor::SRC_ALPHA,
+                                                             .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA,
+                                                             .srcAlpha = BlendFactor::ONE,
+                                                             .dstAlpha = BlendFactor::ZERO}}}}},
                 .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
                 .execute = [pUIVertices, pUIIndices](RenderGraphNodeContext& ctx)
                 {
