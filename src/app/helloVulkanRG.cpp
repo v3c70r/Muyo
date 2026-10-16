@@ -146,13 +146,13 @@ int main()
             Window::ProcessEvents();
             ImGui::Update();
 
-            // ImGui needs a display size before NewFrame. The engine's wrapper does not set one (the
-            // legacy RenderPassUI::NewFrame did), and the push constants below scale by it.
-            int framebufferWidth = 0;
-            int framebufferHeight = 0;
-            Window::GetFramebufferSize(framebufferWidth, framebufferHeight);
+            // ImGui scales its NDC coordinates by the display size, and the draw target is the swapchain
+            // image, so the size must be the swapchain extent. The window framebuffer size is normally the
+            // same, but a clamped extent (or compositor rounding) would scale the UI wrongly - and after a
+            // resize the two are only equal once the swapchain has been recreated.
+            const VkExtent2D uiExtent = swapchain.GetSwapchainExtent();
             ImGui::GetIO().DisplaySize =
-                ImVec2(static_cast<float>(framebufferWidth), static_cast<float>(framebufferHeight));
+                ImVec2(static_cast<float>(uiExtent.width), static_cast<float>(uiExtent.height));
 
             // Build this frame's UI draw data and upload it before the graph records.
             ImGui::NewFrame();
