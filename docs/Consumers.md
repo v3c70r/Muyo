@@ -41,7 +41,7 @@ tracking issue and, where it blocks a consumer, is marked.
 | Completion is expressible as a timeline value and chainable across executions | muyo-llm | holds | — |
 | Long-lived *imported* resources (weights, a KV cache) survive across executions | muyo-llm | holds | — |
 | A node can bind a byte range of a buffer, so one arena serves many tensors | muyo-llm | holds | — |
-| Graph-managed transients have a defined lifetime and aliasing policy | muyo-llm | **gap** | #16 |
+| Graph-managed transients have a defined lifetime and aliasing policy | muyo-llm | holds | — |
 | Device, allocator and descriptor allocation are injected, not global | muyo-llm | holds | — |
 | A stated public surface (what is API and what is detail) | all | **gap** | #53 |
 | Specialization constants are applied at pipeline creation | muyo-llm | holds | — |
