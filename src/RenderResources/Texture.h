@@ -47,7 +47,6 @@ public:
         CreateImageInternal(memoryUsage);
     }
 
-    // TODO: Move this barrier out of the function
     static void sTransitionImageLayout(VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
                                        uint32_t nMipCount = 1, uint32_t nLayerCount = 1)
     {

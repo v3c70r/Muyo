@@ -11,7 +11,6 @@
 #include "Geometry.h"
 #include "LightSceneNode.h"
 #include "Material.h"
-#include "MeshProcessor.h"
 #include "MeshResourceManager.h"
 #include "RenderResourceManager.h"
 #include "SceneImporter.h"
@@ -65,7 +64,7 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
                         if (light.type == "point")
                         {
-                            // TODO: Figure out how to get radius from gltf
+                            // TODO(#20): derive the point-light radius from the glTF light's `range`.
                             pSceneNode = new PointLightNode(lightColor, (float)light.intensity);
                         }
                         else if (light.type == "spot")
@@ -340,7 +339,6 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
         size_t nMeshIndex = GetMeshResourceManager()->AppendMesh(vVertices, vIndices);
         vSubmeshes.emplace_back(std::make_unique<Submesh>(nMeshIndex));
 
-        // MeshProcessor::ProcessSubmesh(*(vSubmeshes.back()));
 
         //  =========Material
         //

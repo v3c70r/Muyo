@@ -169,7 +169,7 @@ ShaderReflection FetchShaderReflection(const SpirvCode& spirvCode)
     }
 
     // Input attachments
-    // TODO(qgu): Handle input attachments as part of the descriptor set when we need to handle subpasses
+    // Input attachments are not planned: the graph renders with dynamic rendering, not subpasses.
     //{
     //    uint32_t inputAttachmentCount = 0;
     //    SpvReflectResult result = spvReflectEnumerateInputVariables(&module, &inputAttachmentCount, nullptr);
@@ -193,7 +193,7 @@ ShaderReflection FetchShaderReflection(const SpirvCode& spirvCode)
     //    }
     //}
 
-    // TODO(qgu): Revisit it when we need to handle decorations
+    // Resource decorations are not planned: the graph does not use them.
     // Resource decorations (readonly, writeonly, coherent, volatile)
     //{
     //    uint32_t resourceCount = 0;

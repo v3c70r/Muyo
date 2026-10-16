@@ -156,7 +156,8 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     }
 
     // Allocate an arcball camera
-    // TODO: Allocate camera as needed if we ever support mulit render targets
+    // TODO(P3): allocate camera as needed if we ever support multiple render targets - deleted with
+    // src/RenderPasses/.
     const float far = 100.0F;
     m_pCamera = std::make_unique<Arcball>(
         glm::perspective(glm::radians(80.0f), static_cast<float>(m_uWidth) / static_cast<float>(m_uHeight), 0.1F, far),
@@ -171,7 +172,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
 
 void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
 {
-    // TODO(qgu): Implement resize function
+    // TODO(P3): implement resize function - deleted with src/RenderPasses/; helloVulkanRG owns resize.
     // if (m_uWidth != uWidth || m_uHeight != uHeight)
     //{
     //    m_uWidth = uWidth;

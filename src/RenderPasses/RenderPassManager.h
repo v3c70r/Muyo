@@ -21,7 +21,7 @@ enum RenderPassNames
     // Order matters
     RENDERPASS_IBL,
 
-    // TODO(qgu): merge ibl passes with a manager
+    // TODO(P3): merge ibl passes with a manager - deleted with src/RenderPasses/.
     RENDERPASS_CUBEMAP_GENERATION,
     RENDERPASS_MESH_SHADER,
 

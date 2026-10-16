@@ -65,7 +65,7 @@ const DrawLists &Scene::GatherDrawLists()
 
                 for (auto &submesh : pGeometry->getSubmeshes())
                 {
-                    // TODO: populate submesh data array
+                    // TODO(#20): populate the submesh data array as the graph path needs it.
 
                     aSubmeshDatas[nSubmeshCount++].nMaterialIndex = submesh->GetMeshIndex();
                     // submesh->GetMaterial();
@@ -102,10 +102,6 @@ const DrawLists &Scene::GatherDrawLists()
                 perObjData.vAABBMax[1] = aabb.vMax.y;
                 perObjData.vAABBMax[2] = aabb.vMax.z;
                 pNode->SetPerObjId(static_cast<int>(GetPerObjResourceManager()->AppendPerObjData(perObjData)));
-            }
-            else
-            {
-                assert("TODO: update node date");
             }
 
             for (const auto &pChild : pNode->GetChildren())

@@ -724,16 +724,6 @@ void VkRenderDevice::FreeImmediateCommandBuffer(VkCommandBuffer& commandBuffer)
     FreePrimaryCommandbuffer(commandBuffer, IMMEDIATE_CMD_POOL);
 }
 
-VkCommandBuffer VkRenderDevice::AllocateSecondaryCommandBuffer()
-{
-    // TODO: Implement this
-    return VkCommandBuffer();
-}
-void VkRenderDevice::FreeSecondaryCommandBuffer(VkCommandBuffer& commandBuffer)
-{
-    vkFreeCommandBuffers(m_device, m_aCommandPools[MAIN_CMD_POOL], 1, &commandBuffer);
-}
-
 // Helper functions
 VkSampler VkRenderDevice::CreateSampler()
 {

@@ -60,8 +60,6 @@ public:
         return &s_EventSystem;
     }
 
-    // TODO This is not ideal, if we can directly pass GlobalEvent as template
-    // then we can avoid ET
     template <EventType ET, typename T>
     std::shared_ptr<T> globalEvent()
     {
@@ -72,8 +70,6 @@ public:
         m_Events[ET] = event;
         return event;
     }
-
-    // TODO destructor
 
 private:
     std::map<EventType, std::shared_ptr<EventBase>> m_Events;

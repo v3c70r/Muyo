@@ -79,7 +79,7 @@ private:
     const std::array<std::string, RENDERPASS_COUNT> m_aRenderPassNames = {
         "Load cubemap", "Compute irradiance cubemap", "Compute prefiltered cubmap", "Compute specular brdf lut"};
 
-    // TODO: Move this to render pass parameters
+    // TODO(P3): move this to render pass parameters - deleted with src/RenderPasses/.
     std::vector<VkRenderPass> m_vRenderPasses;
 };
 
