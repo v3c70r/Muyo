@@ -54,6 +54,7 @@ enum class ResourceUsage : uint8_t
     DEPTH_STENCIL_ATTACHMENT,  ///< Depth/stencil render target.
     INPUT_ATTACHMENT,          ///< Input attachment read.
     RESOLVE_ATTACHMENT,        ///< Multisample resolve target.
+    PRESENT,                   ///< Final image an external consumer (the presentation engine) reads.
 
     // Buffers
     UNIFORM_BUFFER,       ///< Uniform buffer.

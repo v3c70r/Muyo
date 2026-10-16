@@ -42,6 +42,9 @@ public:
     uint32_t GetImageCount() const { return static_cast<uint32_t>(m_swapchainImages.size()); }
     VkImage GetImage(uint32_t index) const { return m_swapchainImages.at(index); }
     VkImageView GetImageView(uint32_t index) const { return m_swapchainImageViews.at(index); }
+    /// @param index Acquired image index.
+    /// @return The `ImageResource` wrapping that swapchain image, for a graph to import. Not owned.
+    SwapchainImageResource* GetImageResource(uint32_t index) const { return m_swapchainImageResources.at(index); }
     VkSwapchainKHR& GetSwapChain() { return m_swapchain; }
 
     std::vector<std::string> GetSwapchainResourceNames() const

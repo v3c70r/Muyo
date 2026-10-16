@@ -35,6 +35,9 @@ public:
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_image), GetVkObjectType(), sName.c_str());
     }
     VkFormat GetImageFormat() const { return m_imageInfo.format; }
+    /// @return The image's extent, for a consumer that must know the render area (an imported render
+    ///         target has no ResourceDesc to read it from).
+    VkExtent2D GetImageExtent() const { return {m_imageInfo.extent.width, m_imageInfo.extent.height}; }
 
 protected:
     void CreateImageInternal(const VmaMemoryUsage& memoryUsage)

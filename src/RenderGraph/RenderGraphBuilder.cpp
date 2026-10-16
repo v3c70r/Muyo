@@ -293,10 +293,21 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         VkFormat depthAttachmentFormat = VK_FORMAT_UNDEFINED;
         for (const auto& resourceUse : rgn.resourceUses)
         {
-            if (resourceUse.usage == ResourceUsage::COLOR_ATTACHMENT)
+            if (resourceUse.usage == ResourceUsage::COLOR_ATTACHMENT || resourceUse.usage == ResourceUsage::PRESENT)
             {
-                colorAttachmentFormats.push_back(
-                    resourceUse.format != VK_FORMAT_UNDEFINED ? resourceUse.format : VK_FORMAT_R16G16B16A16_SFLOAT);
+                // An imported image has no ResourceDesc, so its format comes from the resource. Without
+                // this the render pass would be created for the default format and disagree with the
+                // image it renders to (the swapchain's format for a present target).
+                VkFormat format = resourceUse.format;
+                if (format == VK_FORMAT_UNDEFINED)
+                {
+                    if (const auto* pImage = dynamic_cast<const ImageResource*>(ResolveResource(resourceUse.handle)))
+                    {
+                        format = pImage->GetImageFormat();
+                    }
+                }
+                colorAttachmentFormats.push_back(format != VK_FORMAT_UNDEFINED ? format
+                                                                               : VK_FORMAT_R16G16B16A16_SFLOAT);
             }
             else if (resourceUse.usage == ResourceUsage::DEPTH_STENCIL_ATTACHMENT)
             {
@@ -697,6 +708,17 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
                 resolved.extent = {imageDesc->extent.width, imageDesc->extent.height, 1};
             }
         }
+        else if (resourceUse.kind == ResourceKind::IMAGE)
+        {
+            // An imported image has no ResourceDesc, so its format and extent come from the resource
+            // itself. Without them the render pass and the render area would be built from zeros.
+            if (const auto* pImage = dynamic_cast<const ImageResource*>(ResolveResource(resourceUse.handle)))
+            {
+                resolved.format = pImage->GetImageFormat();
+                const VkExtent2D extent = pImage->GetImageExtent();
+                resolved.extent = {extent.width, extent.height, 1};
+            }
+        }
         rgn.resourceUses.push_back(std::move(resolved));
     }
     rgn.psoDesc = nodeCreateInfo.psoDesc;
@@ -1016,7 +1038,8 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
     uint32_t clearIndex = 0;
     for (const auto& use : rgn.resourceUses)
     {
-        if (use.usage != ResourceUsage::COLOR_ATTACHMENT && use.usage != ResourceUsage::DEPTH_STENCIL_ATTACHMENT)
+        if (use.usage != ResourceUsage::COLOR_ATTACHMENT && use.usage != ResourceUsage::DEPTH_STENCIL_ATTACHMENT &&
+            use.usage != ResourceUsage::PRESENT)
         {
             continue;
         }
@@ -1049,7 +1072,7 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
             attachment.clearValue = clearValue;
             alreadyWritten.insert(use.handle);
         }
-        else if (use.usage == ResourceUsage::COLOR_ATTACHMENT)
+        else if (use.usage == ResourceUsage::COLOR_ATTACHMENT || use.usage == ResourceUsage::PRESENT)
         {
             ++clearIndex;
         }
@@ -1089,6 +1112,38 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
     vkCmdSetScissor(cmdBuf, 0, 1, &scissor);
 
     return true;
+}
+
+void RenderGraphBuilder::RecordPresentTransition(VkCommandBuffer cmdBuf,
+                                                 const std::vector<ResolvedResourceUse>& resourceUses)
+{
+    std::vector<VkImageMemoryBarrier2> barriers;
+    for (const auto& use : resourceUses)
+    {
+        if (use.usage != ResourceUsage::PRESENT || use.kind != ResourceKind::IMAGE) continue;
+        const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
+        if (image == nullptr) continue;
+
+        VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        // Present does not read through a pipeline, so it has no stage or access of its own.
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
+        barrier.dstAccessMask = 0;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image->getImage();
+        barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
+        barriers.push_back(barrier);
+    }
+    if (barriers.empty()) return;
+
+    VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
+    dependencyInfo.pImageMemoryBarriers = barriers.data();
+    vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
 void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
@@ -1426,6 +1481,11 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             {
                 vkCmdEndRendering(cmdBuf);
             }
+
+            // 5b. A present target leaves the node in COLOR_ATTACHMENT_OPTIMAL; the transition to
+            // PRESENT_SRC is after the render pass, because the presentation engine - its consumer - is
+            // not a node, so no consumer's barrier can do it.
+            RecordPresentTransition(cmdBuf, rgn.resourceUses);
 
             // 6. Mapping lifetime: the callback's host mapping must not outlive the node. Checked after
             // the render pass is closed, so the throw (a programmer error) cannot leave one open.
