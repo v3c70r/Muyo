@@ -18,6 +18,39 @@
 
 namespace Muyo
 {
+namespace
+{
+/// glTF data is input: a malformed asset must fail in Release too, naming the file and what was wrong.
+/// The asserts these replace were compiled out under NDEBUG, leaving the parse to read past a buffer
+/// or to build the wrong vertex layout silently.
+[[noreturn]] void ThrowGltf(const std::filesystem::path &sceneFile, const std::string &message)
+{
+    throw std::runtime_error("GLTFImporter: '" + sceneFile.string() + "': " + message);
+}
+
+void RequireGltf(bool condition, const std::filesystem::path &sceneFile, const std::string &message)
+{
+    if (!condition)
+    {
+        ThrowGltf(sceneFile, message);
+    }
+}
+
+/// Validate the layout this importer requires for one vertex attribute: the component type, the stride
+/// it hard-codes, and that the buffer covers the accessor's range. All four are asset data.
+void RequireGltfAccessor(const tinygltf::Accessor &accessor, const tinygltf::BufferView &bufferView,
+                         const tinygltf::Buffer &buffer, const char *attribute, const char *typeName, int expectedType,
+                         size_t byteStride, const std::filesystem::path &sceneFile)
+{
+    RequireGltf(accessor.type == expectedType, sceneFile, std::string(attribute) + " accessor type is not " + typeName);
+    RequireGltf(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT, sceneFile,
+                std::string(attribute) + " accessor component type is not FLOAT");
+    RequireGltf(bufferView.byteStride == byteStride || bufferView.byteStride == 0, sceneFile,
+                std::string(attribute) + " bufferView stride is not " + std::to_string(byteStride));
+    RequireGltf(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + byteStride * accessor.count,
+                sceneFile, std::string(attribute) + " buffer is shorter than the accessor range");
+}
+}  // namespace
 
 std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
 {
@@ -86,7 +119,7 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         }
                         else
                         {
-                            assert(false);
+                            ThrowGltf(m_sceneFile, "unsupported light type '" + light.type + "'");
                         }
 
                         CopyGLTFNode(*pSceneNode, gltfNode);
@@ -96,7 +129,6 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         pSceneNode = new SceneNode;
                         CopyGLTFNode(*pSceneNode, gltfNode);
                     }
-                    assert(pSceneNode != nullptr);
 
                     // recursively copy children
                     for (int nNodeIdx : gltfNode.children)
@@ -179,7 +211,10 @@ void GLTFImporter::CopyGLTFNode(SceneNode &sceneNode, const tinygltf::Node &gltf
         glm::mat4 mR = glm::mat4_cast(qR);
         mMat = mMat * mR;
         mMat = glm::scale(mMat, vS);
-        assert(Scene::IsMat4Valid(mMat));
+        if (!Scene::IsMat4Valid(mMat))
+        {
+            ThrowGltf(m_sceneFile, "node '" + gltfNode.name + "' has a non-finite transform");
+        }
         sceneNode.SetMatrix(mMat);
     }
 }
@@ -209,6 +244,12 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             const auto &bufferView = model.bufferViews[accessor.bufferView];
             const auto &buffer = model.buffers[bufferView.buffer];
 
+            // Checked before the min/max read: a non-VEC3 accessor has fewer than three components,
+            // so indexing [0..2] would read past the vector.
+            RequireGltfAccessor(accessor, bufferView, buffer, "POSITION", "VEC3", TINYGLTF_TYPE_VEC3, 12, m_sceneFile);
+            RequireGltf(accessor.minValues.size() >= 3 && accessor.maxValues.size() >= 3, m_sceneFile,
+                        "POSITION accessor has no three-component min/max");
+
             // Update min max value for this node
             auto minValue = accessor.minValues;
             auto maxValue = accessor.maxValues;
@@ -221,14 +262,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             vAABBMax.y = std::max(vAABBMax.y, (float)maxValue[1]);
             vAABBMax.z = std::max(vAABBMax.z, (float)maxValue[2]);
 
-            assert(accessor.type == TINYGLTF_TYPE_VEC3);
-            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-            // confirm we use the standard format
-
             // Hard code the buffer stride
             size_t nByteStride = 12;
-            assert(bufferView.byteStride == 12 || bufferView.byteStride == 0);
-            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + nByteStride * accessor.count);
 
             vPositions.resize(accessor.count);
             memcpy(vPositions.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset,
@@ -241,12 +276,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             const auto &bufferView = model.bufferViews[accessor.bufferView];
             const auto &buffer = model.buffers[bufferView.buffer];
 
-            assert(accessor.type == TINYGLTF_TYPE_VEC3);
-            assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-            // confirm we use the standard format
+            RequireGltfAccessor(accessor, bufferView, buffer, "NORMAL", "VEC3", TINYGLTF_TYPE_VEC3, 12, m_sceneFile);
             size_t nByteStride = 12;
-            assert(bufferView.byteStride == 12 || bufferView.byteStride == 0);
-            assert(buffer.data.size() >= bufferView.byteOffset + accessor.byteOffset + nByteStride * accessor.count);
 
             vNormals.resize(accessor.count);
             memcpy(vNormals.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset,
@@ -261,14 +292,9 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
                 const auto &bufferView = model.bufferViews[accessor.bufferView];
                 const auto &buffer = model.buffers[bufferView.buffer];
 
-                assert(accessor.type == TINYGLTF_TYPE_VEC2);
-                assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-
-                // confirm we use the standard format
+                RequireGltfAccessor(accessor, bufferView, buffer, "TEXCOORD_0", "VEC2", TINYGLTF_TYPE_VEC2, 8,
+                                    m_sceneFile);
                 size_t nByteStride = 8;
-                assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
-                assert(buffer.data.size() >=
-                       bufferView.byteOffset + accessor.byteOffset + nByteStride * accessor.count);
                 vUV0s.resize(accessor.count);
                 memcpy(vUV0s.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset,
                        accessor.count * nByteStride);
@@ -288,14 +314,9 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
                 const auto &bufferView = model.bufferViews[accessor.bufferView];
                 const auto &buffer = model.buffers[bufferView.buffer];
 
-                assert(accessor.type == TINYGLTF_TYPE_VEC2);
-                assert(accessor.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
-
-                // confirm we use the standard format
+                RequireGltfAccessor(accessor, bufferView, buffer, "TEXCOORD_1", "VEC2", TINYGLTF_TYPE_VEC2, 8,
+                                    m_sceneFile);
                 size_t nByteStride = 8;
-                assert(bufferView.byteStride == 8 || bufferView.byteStride == 0);
-                assert(buffer.data.size() >=
-                       bufferView.byteOffset + accessor.byteOffset + nByteStride * accessor.count);
                 vUV1s.resize(accessor.count);
                 memcpy(vUV1s.data(), buffer.data.data() + bufferView.byteOffset + accessor.byteOffset,
                        accessor.count * nByteStride);
@@ -307,8 +328,8 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             }
         }
 
-        assert(vUV0s.size() == vPositions.size());
-        assert(vNormals.size() == vPositions.size());
+        RequireGltf(vUV0s.size() == vPositions.size(), m_sceneFile, "TEXCOORD_0 count does not match POSITION count");
+        RequireGltf(vNormals.size() == vPositions.size(), m_sceneFile, "NORMAL count does not match POSITION count");
         std::vector<Vertex> vVertices(vUV0s.size());
         for (size_t i = 0; i < vVertices.size(); i++)
         {
@@ -347,7 +368,7 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             }
             else
             {
-                assert(false && "Unsupported type");
+                ThrowGltf(m_sceneFile, "unsupported index component type " + std::to_string(accessor.componentType));
             }
         }
 
@@ -502,10 +523,12 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
             }
 
             material.AllocateDescriptorSet();
-            assert(material.GetDescriptorSet() != VK_NULL_HANDLE);
+            RequireGltf(material.GetDescriptorSet() != VK_NULL_HANDLE, m_sceneFile,
+                        "material descriptor set was not allocated");
             if (gltfMaterial.alphaMode != "OPAQUE")
             {
-                assert(gltfMaterial.alphaMode == "BLEND" && "Unsupported alpha mode");
+                RequireGltf(gltfMaterial.alphaMode == "BLEND", m_sceneFile,
+                            "unsupported alpha mode '" + gltfMaterial.alphaMode + "'");
                 material.SetTransparent();
             }
             if (gltfMaterial.doubleSided)
