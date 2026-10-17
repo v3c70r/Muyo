@@ -1150,6 +1150,36 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: reading a transient nothi
                                            Catch::Matchers::ContainsSubstring("Persistent"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a descriptor binding the shader does not declare fails at Build",
+                 "[RenderGraphBuilder]")
+{
+    // #55. A use whose descriptorBinding matches no reflected binding used to be skipped silently while the
+    // set was built, leaving a descriptor that was never written and surfacing at dispatch as a validation
+    // error naming a handle. It is a declaration error and has to name the node and the binding at Build.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Out", BufferResourceDesc{.count = 4,
+                                                  .stride = sizeof(uint32_t),
+                                                  .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                  .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                  .lifetime = ResourceLifetime::Persistent});
+
+    // copyBuffer.comp.slang declares gInput at set 0 binding 0 and gOutput at binding 0 set 1; binding at
+    // set 0 binding 7 is a mistake, not a descriptor to write.
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "WrongBinding",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("Out"),
+                                     .io = ResourceIOType::READ,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 7}}},
+        .shaderNames = {"copyBuffer.comp.slang"},
+        .execute = [](RenderGraphNodeContext&) {}});
+
+    CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("WrongBinding") &&
+                                           Catch::Matchers::ContainsSubstring("binding 7"));
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
                  "[RenderGraphBuilder]")
 {
