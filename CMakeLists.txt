@@ -399,10 +399,6 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Catch2)
 add_executable(tests 
-    src/ShaderReflectionFetcher.cpp
-    src/RenderGraph/RenderGraphBuilder.cpp
-    src/RenderGraph/CompiledRenderGraph.cpp
-    src/RenderGraph/RenderGraphExecutor.cpp
     src/tests/DebugCallbackTests.cpp
     src/tests/DeviceCapabilityTests.cpp
     src/tests/FrameSyncTest.cpp
@@ -413,7 +409,11 @@ add_executable(tests
 )
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
 target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/RenderDoc)
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain SPIRV-Reflect muyo muyo_rg)
+# `muyo` and `muyo_rg` already provide every source this binary needs, and `muyo` links
+# `SPIRV-Reflect`, so the duplicated source list and the explicit `SPIRV-Reflect` are gone: they
+# were compiling a second copy of the fetcher and the graph, and the redundant link line was
+# covering for it rather than the libraries (#76).
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo muyo_rg)
 include(Catch)
 catch_discover_tests(tests)
 
