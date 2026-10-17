@@ -1511,8 +1511,32 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an image role must fit it
     }
     SECTION("a storage image on a format without storage support is rejected")
     {
+        // Query for a format this device cannot store to rather than hardcoding one: `D32_SFLOAT` has
+        // `STORAGE_IMAGE_BIT` on NVIDIA and not on llvmpipe, so a fixed choice asserts the author's device
+        // (AGENTS.md section 4 - the review caught exactly that). `REQUIRE` keeps the test honest on a
+        // device where no candidate qualifies, instead of silently passing on a different check.
+        const VkFormat candidates[] = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM,
+                                       VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_FORMAT_B8G8R8A8_UNORM};
+        VkFormat noStorageFormat = VK_FORMAT_UNDEFINED;
+        for (VkFormat format : candidates)
+        {
+            VkFormatProperties formatProperties{};
+            vkGetPhysicalDeviceFormatProperties(GetRenderDevice()->GetPhysicalDevice(), format, &formatProperties);
+            if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) == 0)
+            {
+                noStorageFormat = format;
+                break;
+            }
+        }
+
+        VkPhysicalDeviceProperties deviceProperties{};
+        vkGetPhysicalDeviceProperties(GetRenderDevice()->GetPhysicalDevice(), &deviceProperties);
+        INFO("device: " << deviceProperties.deviceName);
+        INFO("no-storage format chosen: " << static_cast<int>(noStorageFormat));
+        REQUIRE(noStorageFormat != VK_FORMAT_UNDEFINED);
+
         RenderGraphBuilder builder(GetRenderDevice());
-        builder.AddResource("NoStorage", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+        builder.AddResource("NoStorage", ImageResourceDesc{.format = noStorageFormat,
                                                            .extent = {16, 16},
                                                            .usage = VK_IMAGE_USAGE_STORAGE_BIT,
                                                            .lifetime = ResourceLifetime::Persistent});
