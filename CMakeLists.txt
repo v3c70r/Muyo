@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10.0)
-# The language level is declared before project() so compiler detection and every target - including
-# the third-party subdirectories - see the same standard, and so CMAKE_CXX_FLAGS does not have to
+# The language level is a directory default declared before project(), so every later-created target -
+# including the third-party subdirectories - inherits C++20, and CMAKE_CXX_FLAGS does not have to
 # carry it. CMAKE_CXX_EXTENSIONS OFF maps to the strict flag, as before (#68).
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -158,6 +158,10 @@ if (UNIX)
     # whatever a toolchain file or `-DCMAKE_CXX_FLAGS` provided, which is why
     # `scripts/sanity.sh warnings` was not actually applying its own flags (#36).
     # `-pthread` also goes on the link line, where it used to reach via CMAKE_CXX_FLAGS.
+    # Targets created before this point (the third-party libraries above) no longer inherit these
+    # warnings or -pthread: none of them creates threads, and scoping warnings to this project's
+    # targets is the direction #36 asks for. Their language level is still C++20 from
+    # CMAKE_CXX_STANDARD above, so meshoptimizer moves from the default gnu++17 to C++20.
     add_compile_options(-Wall -Wno-missing-braces -pthread)
     add_link_options(-pthread)
     # -g is left to the per-configuration defaults: Debug carries it via CMAKE_CXX_FLAGS_DEBUG, and
