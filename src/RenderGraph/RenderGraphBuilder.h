@@ -139,7 +139,12 @@ public:
 
     // ── Resource declaration (data) ──────────────────────────────────────────
     /// Declare a graph-owned resource. It is allocated at `Build()` from `desc`.
+    /// @param handle Name the graph and the nodes use for it.
+    /// @param desc   Allocation: buffer size, or image format/extent/usage, plus its lifetime.
     /// @return `*this` for chaining.
+    /// @throws std::runtime_error if `desc` cannot describe an allocation - a zero `count`/`stride`, a
+    ///         zero extent, `VK_FORMAT_UNDEFINED`, zero mips/layers, or `usage == 0` - or if it asks for
+    ///         `ResourceLifetime::Imported`; use `ImportResource` for a resource the graph does not own.
     RenderGraphBuilder& AddResource(const ResourceHandle& handle, ResourceDesc desc);
     /// Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated
     /// or freed by the graph.
@@ -174,7 +179,12 @@ public:
     std::size_t GetDescriptorSetCount() const { return m_descriptorSetCache.SetCount(); }
 
     // ── Node declaration ─────────────────────────────────────────────────────
-    /// Declare a node. Throws if the name is already used.
+    /// Declare a node.
+    /// @throws std::runtime_error if the name is already used; a resource use names something neither
+    ///         declared with `AddResource` nor imported; a use's `kind` or `usage` does not agree with the
+    ///         resource it names (a sampled-only image bound as `STORAGE_IMAGE`, an image role on a
+    ///         buffer); a node's shader count does not match its queue type; a non-CPU node has no
+    ///         `execute` callback; or its attachments resolve to different extents.
     void AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo);
     /// Add an ordering edge: `toNode` runs after `fromNode`. Throws if either node is unknown or
     /// if the edge would create a cycle.
@@ -183,6 +193,11 @@ public:
     // ── Build / Execute ──────────────────────────────────────────────────────
     /// Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation
     /// and barrier planning. Call after all resources and nodes are declared.
+    /// @throws std::runtime_error for a declaration error, naming the node and resource: a dependency
+    ///         cycle; a transient read with no writer; a `descriptorBinding` the shader does not declare,
+    ///         a binding whose reflected type does not fit the resource, or two uses at one binding; and
+    ///         anything `CompileRenderGraphNode` rejects (shader load, specialization ids, buffer range).
+    ///         `docs/RenderGraph.md` has the failure index.
     void Build();
     /// Run every node once in execution order, inserting barriers between nodes and synchronising
     /// cross-queue handovers.

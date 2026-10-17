@@ -257,6 +257,41 @@ binding table; `Execute()` issues `vkCmdTraceRaysKHR` over the extent of the nod
 `STORAGE_IMAGE`. Provide the raygen/miss/closest-hit shaders via `rtShaderNames` and bind the TLAS
 with an explicit `DescriptorBinding`.
 
+## Failure index
+
+Every declaration error is reported at the call that declared it or at `Build()`, before any GPU work, and
+**each message names the graph entity** — the node, the resource, the binding — rather than a Vulkan
+handle. Find the bracketed part of the message in this table to see its cause and fix.
+
+`Build()` validates in this order: cycle → transient lifetimes → descriptor bindings → allocation. A test
+for a later check therefore has to satisfy the earlier ones (usually by declaring the resources
+`Persistent`).
+
+| Message contains | Cause | Fix |
+| --- | --- | --- |
+| `AddResource('X') declares a buffer with count 0` / `stride 0` | R1 | Give the buffer a non-zero `count` and `stride`. |
+| `... declares an image with a zero extent` | R2 | Give the image a non-zero `extent`. |
+| `... declares an image with VK_FORMAT_UNDEFINED` | R2 | Choose a real `format`. |
+| `... declares an image with 0 mips and … layers` | R2 | `mips` and `layers` are at least 1. |
+| `... declares usage 0` | R3 | Set the Vulkan usage flags the resource needs. |
+| `... declares lifetime Imported, but AddResource …` | lifetime | Use `ImportResource` for a resource the graph does not own. |
+| `Node 'N' uses resource 'R' which is neither declared … nor imported` | use | Declare it with `AddResource` or `ImportResource`. |
+| `Node 'N' uses resource 'R' as a buffer, but the resource is an image` | U1 | Fix `ResourceUse::kind`. |
+| `Node 'N' uses image 'R' as STORAGE_IMAGE, but it was declared without VK_IMAGE_USAGE_STORAGE_BIT` | U2 | Add the flag the role needs to the declaration. |
+| `... which is not a buffer usage` | U2 | The role is image-only (or buffer-only); use a role that matches the kind. |
+| `Node 'N' binds resource 'R' at set S, binding B, but its shader declares no descriptor there` | binding | Fix the `descriptorBinding`, or the shader; the message lists what it declares. |
+| `... which the shader declares as descriptor type T, but the graph binds …` | binding type | Bind a resource of the type the shader reflects. |
+| `... binds more than one resource at set S, binding B` | duplicate | One resource per binding. |
+| `Node 'N' reads transient resource 'R' with nothing writing it first` | lifetime | Add the writer, or declare the resource `Persistent`. |
+| `Node 'N' … is a GPU node with no execute callback` | shape | Give the node an `execute` callback. |
+| `Graphics node 'N' declares K shader(s)` / `Compute node 'N' declares K shader(s)` | shape | A graphics node takes vertex + fragment, a compute node exactly one. A node with no shader is allowed. |
+| `Node 'N' attaches 'A' at WxH and 'B' at WxH` | extent | One framebuffer needs one extent. |
+| `Render graph contains a cycle` | dependency | Remove the edge that closes the cycle. |
+
+An `async` compute node on a device without a dedicated compute family is **not** an error: it still gets
+its own compute segment, but on the graphics family, so it is serialised rather than concurrent. `Build()`
+warns once, and `VkRenderDevice::IsComputeQueueDedicated()` is the query an app uses to choose.
+
 ## Documentation
 
 - **API reference** — `RenderGraph-api.md` (same directory), generated from the Doxygen comments
