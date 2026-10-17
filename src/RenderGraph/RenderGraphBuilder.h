@@ -50,9 +50,12 @@ struct RenderGraphNodeCreateInfo
 {
     std::string nodeName;                       ///< Unique node name (used by AddDependency).
     QueueType queueType = QueueType::GRAPHICS;  ///< Queue the node runs on.
-    /// Opt-in: only when set (and queueType == COMPUTE) may the node be scheduled on the dedicated
-    /// async compute queue and run concurrently with the graphics queue. Without it the node is
-    /// recorded on the graphics queue, so no cross-queue synchronization is generated for it.
+    /// Opt-in: only when set (and queueType == COMPUTE) may the node run concurrently with the graphics
+    /// queue. Without it the node is recorded on the graphics queue, so no cross-queue work is generated.
+    ///
+    /// On a device without a dedicated compute family the node still gets its own compute segment, but on
+    /// the graphics family, so it is **serialised rather than concurrent**. `Build()` warns once, and
+    /// `RenderDevice::IsComputeQueueDedicated()` is the query an author uses to choose per device.
     bool async = false;
     std::vector<ResourceUse> resourceUses;  ///< Resources the node reads/writes.
     std::vector<std::string> shaderNames;   ///< Shader names for graphics (vert+frag) or compute.
@@ -207,6 +210,11 @@ public:
 
     /// @return The node names in dependency (topological) order.
     std::vector<std::string> GetExecutionOrder() const;
+
+    /// @return The plan the last `Build()` produced: queue segments and cross-queue transfers. Derived,
+    ///         read-only state, empty before the first `Build()`. It is what tells a caller whether an
+    ///         `async` node actually got a cross-queue handover or was serialised on one family.
+    const RenderGraphExecutionPlan& GetExecutionPlan() const { return m_compiledGraph.GetExecutionPlan(); }
 
 private:
     struct RenderGraphNode

@@ -360,6 +360,7 @@ Declares and runs a render graph.
 | `void Execute()` | Run every node once in execution order, inserting barriers between nodes and synchronising cross-queue handovers. |
 | `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU. Note this does not enable overlap: the builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the first completes. Overlap is an executor-API concern, see issue #11. info External semaphores to wait on before, and signal after, this execution. |
 | `std::vector< std::string > GetExecutionOrder() const` | The node names in dependency (topological) order. |
+| `const RenderGraphExecutionPlan & GetExecutionPlan() const` | The plan the last Build() produced: queue segments and cross-queue transfers. Derived, read-only state, empty before the first Build(). It is what tells a caller whether an async node actually got a cross-queue handover or was serialised on one family. |
 
 ### `struct Muyo::RenderGraph::RenderGraphNodeCreateInfo`
 
@@ -369,7 +370,7 @@ User-facing declaration of a single render graph node (pass).
 | --- | --- |
 | `std::string nodeName` | Unique node name (used by AddDependency). |
 | `QueueType queueType` | Queue the node runs on. |
-| `bool async` | Opt-in: only when set (and queueType == COMPUTE) may the node be scheduled on the dedicated async compute queue and run concurrently with the graphics queue. Without it the node is recorded on the graphics queue, so no cross-queue synchronization is generated for it. |
+| `bool async` | Opt-in: only when set (and queueType == COMPUTE) may the node run concurrently with the graphics queue. Without it the node is recorded on the graphics queue, so no cross-queue work is generated. |
 | `std::vector< ResourceUse > resourceUses` | Resources the node reads/writes. |
 | `std::vector< std::string > shaderNames` | Shader names for graphics (vert+frag) or compute. |
 | `std::vector< SpecializationValue > specializationConstants` | Values for this node's shader specialization constants, by constant_id. |

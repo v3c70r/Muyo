@@ -1180,6 +1180,292 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a descriptor binding the 
                                            Catch::Matchers::ContainsSubstring("binding 7"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async node keeps its own compute segment on any topology",
+                 "[RenderGraphBuilder]")
+{
+    // #133. `async` is a request, not a guarantee: it is accepted on every device. Without a dedicated
+    // compute family the node still gets its own compute segment, but on the graphics family, so the plan
+    // serialises it. `GetExecutionPlan()` exposes that shape and `IsComputeQueueDedicated()` is the query an
+    // app uses to choose. Build() warns once when the request cannot be honoured.
+    RenderGraphBuilder builder(GetRenderDevice());
+    const auto makeNode = [](const char* name, bool bAsync)
+    {
+        return RenderGraphNodeCreateInfo{.nodeName = name,
+                                         .queueType = QueueType::COMPUTE,
+                                         .async = bAsync,
+                                         .shaderNames = {"copyBuffer.comp.slang"},
+                                         .execute = [](RenderGraphNodeContext&) {}};
+    };
+    builder.AddNode(makeNode("Async", true));
+    builder.AddNode(makeNode("Sync", false));
+
+    CHECK_NOTHROW(builder.Build());
+    const RenderGraphExecutionPlan& plan = builder.GetExecutionPlan();
+    INFO("dedicated compute family: " << GetRenderDevice()->IsComputeQueueDedicated()
+                                      << " (segments=" << plan.GetSegmentCount() << ")");
+
+    // One segment per queue key: the async node gets a compute segment whether or not a dedicated family
+    // exists, and the non-async node resolves to graphics. Nothing is handed between them here, so the
+    // transfer count is zero on every topology.
+    CHECK(plan.GetSegmentCount() == 2);
+    CHECK(plan.GetTransferCount() == 0);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node's shape and its attachment extents are checked",
+                 "[RenderGraphBuilder]")
+{
+    // #132. A wrong shader count compiles a pipeline with a stage missing, which fails far away at draw;
+    // the attachments of one node render to one framebuffer, so their extents have to agree.
+    SECTION("attachments with different extents are rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Colour", ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                        .extent = {16, 16},
+                                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
+        builder.AddResource("Depth", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                       .extent = {32, 32},
+                                                       .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
+        CHECK_THROWS_WITH(builder.AddNode(RenderGraphNodeCreateInfo{
+                              .nodeName = "Mismatched",
+                              .queueType = QueueType::GRAPHICS,
+                              .resourceUses = {ResourceUse{.handle = ResourceHandle("Colour"),
+                                                           .io = ResourceIOType::WRITE,
+                                                           .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                                           .kind = ResourceKind::IMAGE},
+                                               ResourceUse{.handle = ResourceHandle("Depth"),
+                                                           .io = ResourceIOType::WRITE,
+                                                           .usage = ResourceUsage::DEPTH_STENCIL_ATTACHMENT,
+                                                           .kind = ResourceKind::IMAGE}},
+                              .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
+                              .execute = [](RenderGraphNodeContext&) {}}),
+                          Catch::Matchers::ContainsSubstring("'Mismatched'") &&
+                              Catch::Matchers::ContainsSubstring("16x16") &&
+                              Catch::Matchers::ContainsSubstring("32x32"));
+    }
+    SECTION("a graphics node with one shader is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        CHECK_THROWS_WITH(builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "HalfPipeline",
+                                                                    .queueType = QueueType::GRAPHICS,
+                                                                    .shaderNames = {"forward.vert.slang"},
+                                                                    .execute = [](RenderGraphNodeContext&) {}}),
+                          Catch::Matchers::ContainsSubstring("'HalfPipeline'") &&
+                              Catch::Matchers::ContainsSubstring("vertex and a fragment"));
+    }
+    SECTION("a compute node with two shaders is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        CHECK_THROWS_WITH(
+            builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "TooMany",
+                                                      .queueType = QueueType::COMPUTE,
+                                                      .shaderNames = {"copyBuffer.comp.slang", "copyBuffer.comp.slang"},
+                                                      .execute = [](RenderGraphNodeContext&) {}}),
+            Catch::Matchers::ContainsSubstring("'TooMany'") && Catch::Matchers::ContainsSubstring("exactly one"));
+    }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a binding's type and occupancy are checked at Build",
+                 "[RenderGraphBuilder]")
+{
+    // #131. The descriptor type comes from reflection when the write is built, so a resource whose kind
+    // does not fit it would be written as the shader's type and only show at draw; two uses at one binding
+    // would double-write it. Both are declaration errors and are rejected at Build.
+    const auto image = ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                         .extent = {16, 16},
+                                         .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
+                                         .lifetime = ResourceLifetime::Persistent};
+
+    SECTION("a resource whose kind does not fit the reflected type is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image);
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = "WrongType",
+            .queueType = QueueType::COMPUTE,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("Image"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::SAMPLED,
+                                         .kind = ResourceKind::IMAGE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"copyBuffer.comp.slang"},
+            .execute = [](RenderGraphNodeContext&) {}});
+
+        // copyBuffer's gInput at set 0 binding 0 is a ByteAddressBuffer, i.e. a storage buffer.
+        CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'WrongType'") &&
+                                               Catch::Matchers::ContainsSubstring("binds image"));
+    }
+    SECTION("two uses at one binding are rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        const auto storageBuffer = BufferResourceDesc{.count = 4,
+                                                      .stride = 4,
+                                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                      .lifetime = ResourceLifetime::Persistent};
+        builder.AddResource("First", storageBuffer);
+        builder.AddResource("Second", storageBuffer);
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = "DoubleBind",
+            .queueType = QueueType::COMPUTE,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("First"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::STORAGE_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                             ResourceUse{.handle = ResourceHandle("Second"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::STORAGE_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"copyBuffer.comp.slang"},
+            .execute = [](RenderGraphNodeContext&) {}});
+
+        CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'DoubleBind'") &&
+                                               Catch::Matchers::ContainsSubstring("binding 0") &&
+                                               Catch::Matchers::ContainsSubstring("one resource"));
+    }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a use's kind and usage must agree with its resource",
+                 "[RenderGraphBuilder]")
+{
+    // #128. A use selects a barrier policy; it also promises an allocation. A sampled-only image bound as
+    // STORAGE_IMAGE, or a BUFFER use on an image handle, used to reach the driver as an invalid usage. It
+    // is a declaration error, rejected at AddNode with both the node and the resource named.
+    const auto image = [](VkImageUsageFlags usage)
+    { return ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {16, 16}, .usage = usage}; };
+    const auto buffer = [](VkBufferUsageFlags usage)
+    {
+        return BufferResourceDesc{
+            .count = 4, .stride = 4, .usage = usage, .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU};
+    };
+    const auto node = [](const char* name, ResourceUse use)
+    {
+        return RenderGraphNodeCreateInfo{.nodeName = name,
+                                         .queueType = QueueType::COMPUTE,
+                                         .resourceUses = {use},
+                                         .shaderNames = {"copyBuffer.comp.slang"},
+                                         .execute = [](RenderGraphNodeContext&) {}};
+    };
+
+    SECTION("a declared image missing the role's allocation bit is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image(VK_IMAGE_USAGE_SAMPLED_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("BadUsage", ResourceUse{.handle = ResourceHandle("Image"),
+                                                                       .io = ResourceIOType::READ_WRITE,
+                                                                       .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                       .kind = ResourceKind::IMAGE})),
+                          Catch::Matchers::ContainsSubstring("'BadUsage'") &&
+                              Catch::Matchers::ContainsSubstring("'Image'") &&
+                              Catch::Matchers::ContainsSubstring("VK_IMAGE_USAGE_STORAGE_BIT"));
+    }
+    SECTION("a declared buffer missing the role's allocation bit is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Buffer", buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("BadBufferUsage", ResourceUse{.handle = ResourceHandle("Buffer"),
+                                                                             .io = ResourceIOType::READ,
+                                                                             .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                             .kind = ResourceKind::BUFFER})),
+                          Catch::Matchers::ContainsSubstring("'BadBufferUsage'") &&
+                              Catch::Matchers::ContainsSubstring("VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT"));
+    }
+    SECTION("an image carrying the bit is accepted")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT));
+        CHECK_NOTHROW(builder.AddNode(node("GoodUsage", ResourceUse{.handle = ResourceHandle("Image"),
+                                                                    .io = ResourceIOType::READ_WRITE,
+                                                                    .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                    .kind = ResourceKind::IMAGE})));
+    }
+    SECTION("an image role on a buffer is rejected even though the kind matches")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Buffer", buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("ImageRoleOnBuffer", ResourceUse{.handle = ResourceHandle("Buffer"),
+                                                                                .io = ResourceIOType::READ,
+                                                                                .usage = ResourceUsage::SAMPLED,
+                                                                                .kind = ResourceKind::BUFFER})),
+                          Catch::Matchers::ContainsSubstring("'ImageRoleOnBuffer'") &&
+                              Catch::Matchers::ContainsSubstring("not a buffer usage"));
+    }
+    SECTION("a kind that does not match the resource is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image(VK_IMAGE_USAGE_SAMPLED_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("WrongKind", ResourceUse{.handle = ResourceHandle("Image"),
+                                                                        .io = ResourceIOType::READ,
+                                                                        .usage = ResourceUsage::TRANSFER_SOURCE,
+                                                                        .kind = ResourceKind::BUFFER})),
+                          Catch::Matchers::ContainsSubstring("'WrongKind'") &&
+                              Catch::Matchers::ContainsSubstring("as a buffer") &&
+                              Catch::Matchers::ContainsSubstring("an image"));
+    }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an invalid resource declaration is rejected at AddResource",
+                 "[RenderGraphBuilder]")
+{
+    // #127. A desc is input: a zero size, an undefined format or a zero usage set cannot become a valid
+    // allocation, so it is rejected where it was declared rather than inside the allocator or at a driver
+    // VUID that names a handle.
+    RenderGraphBuilder builder(GetRenderDevice());
+    const auto buffer = [](uint64_t count, uint64_t stride, VkBufferUsageFlags usage)
+    {
+        return BufferResourceDesc{
+            .count = count, .stride = stride, .usage = usage, .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU};
+    };
+    const auto image = [](VkFormat format, VkExtent2D extent, uint32_t mips, uint32_t layers, VkImageUsageFlags usage)
+    { return ImageResourceDesc{.format = format, .extent = extent, .mips = mips, .layers = layers, .usage = usage}; };
+
+    SECTION("buffer count 0")
+    {
+        CHECK_THROWS_WITH(builder.AddResource("B", buffer(0, 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)),
+                          Catch::Matchers::ContainsSubstring("'B'") && Catch::Matchers::ContainsSubstring("count 0"));
+    }
+    SECTION("buffer stride 0")
+    {
+        CHECK_THROWS_WITH(builder.AddResource("B", buffer(4, 0, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)),
+                          Catch::Matchers::ContainsSubstring("'B'") && Catch::Matchers::ContainsSubstring("stride 0"));
+    }
+    SECTION("image zero extent")
+    {
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {0, 16}, 1, 1, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("zero extent"));
+    }
+    SECTION("image undefined format")
+    {
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_UNDEFINED, {16, 16}, 1, 1, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("VK_FORMAT_UNDEFINED"));
+    }
+    SECTION("image zero mips or layers")
+    {
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 0, 1, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("mips"));
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 1, 0, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("layers"));
+    }
+    SECTION("zero usage")
+    {
+        CHECK_THROWS_WITH(builder.AddResource("B", buffer(4, 4, 0)),
+                          Catch::Matchers::ContainsSubstring("'B'") && Catch::Matchers::ContainsSubstring("usage 0"));
+        CHECK_THROWS_WITH(builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 1, 1, 0)),
+                          Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("usage 0"));
+    }
+    SECTION("a valid declaration is accepted")
+    {
+        CHECK_NOTHROW(builder.AddResource("B", buffer(4, 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)));
+        CHECK_NOTHROW(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 1, 1, VK_IMAGE_USAGE_SAMPLED_BIT)));
+    }
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
                  "[RenderGraphBuilder]")
 {
