@@ -1,8 +1,8 @@
 // Slang compute shader (Vulkan: storage buffers at set=0 bindings 0,1)
 // Copies gPC.byteCount bytes from gInput -> gOutput.
 
-[[vk::binding(0, 0)]] ByteAddressBuffer    gInput;   // set 0, binding 0
-[[vk::binding(0, 1)]] RWByteAddressBuffer  gOutput;  // set 1, binding 0
+[[vk::binding(0, 0)]] ByteAddressBuffer    gInput;   // binding 0, set 0
+[[vk::binding(0, 1)]] RWByteAddressBuffer  gOutput;  // binding 0, set 1
 
 // Push constants block (Vulkan)
 [[vk::push_constant]] ConstantBuffer<uint> byteCount;

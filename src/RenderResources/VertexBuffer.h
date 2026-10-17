@@ -36,8 +36,7 @@ public:
         : VertexBuffer(bStagedUpoload)
     {
         size_t nSizeInByte = vVertexData.size() * sizeof(VertexType);
-        GetMemoryAllocator()->AllocateBuffer(nSizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
-                                             "VertexBuffer");
+        AllocateOwnedBuffer(nSizeInByte, "VertexBuffer");
         SetData(vVertexData.data(), nSizeInByte);
     }
 };
@@ -63,8 +62,7 @@ public:
     IndexBuffer(const std::vector<IndexType>& vIndexData, bool bStagedUpoload = true) : IndexBuffer(bStagedUpoload)
     {
         size_t nSizeInByte = vIndexData.size() * sizeof(IndexType);
-        GetMemoryAllocator()->AllocateBuffer(nSizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
-                                             "IndexBuffer");
+        AllocateOwnedBuffer(nSizeInByte, "IndexBuffer");
         SetData(vIndexData.data(), nSizeInByte);
     }
 };

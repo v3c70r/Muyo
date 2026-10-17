@@ -1016,6 +1016,96 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
     readback.Unmap();
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffer after Build keeps its descriptor",
+                 "[RenderGraphBuilder]")
+{
+    // #13. Descriptor sets are written at Build(), so a SetData that reallocated between Build() and
+    // Execute() left the bound VkBuffer freed while the descriptor still named it - a stale handle read
+    // as freed memory. A buffer now keeps its allocation and only reallocates past its capacity, so a
+    // grow inside it leaves the handle the descriptor names untouched.
+    const std::array<uint32_t, 4> initial{1, 2, 3, 4};
+    BufferResource source(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    source.SetData(initial.data(), sizeof(initial));
+    const VkBuffer bufferBefore = source.buffer();
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.ImportResource("Source", &source);
+    builder.AddResource(
+        "Copied", BufferResourceDesc{.count = 4,
+                                     .stride = sizeof(uint32_t),
+                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+
+    uint32_t nByteCount = 4 * sizeof(uint32_t);
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "CopiesSource",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("Source"),
+                                     .io = ResourceIOType::READ,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                         ResourceUse{.handle = ResourceHandle("Copied"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER,
+                                     .descriptorBinding = DescriptorBinding{.set = 1, .binding = 0}}},
+        .shaderNames = {"copyBuffer.comp.slang"},
+        .execute = [&nByteCount](RenderGraphNodeContext& ctx)
+        {
+            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
+                               sizeof(nByteCount), &nByteCount);
+            vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+        }});
+
+    // Build writes the descriptor set against source's current handle.
+    builder.Build();
+
+    // Grow after the descriptor was written, within the allocation. The handle must not change, or the
+    // descriptor written above would name a destroyed buffer.
+    const std::array<uint32_t, 8> grown{11, 22, 33, 44, 55, 66, 77, 88};
+    INFO("capacity before the grow = " << source.GetCapacity() << " bytes, request = " << sizeof(grown));
+    source.SetData(grown.data(), sizeof(grown));
+    CHECK(source.buffer() == bufferBefore);
+
+    builder.Execute();
+
+    const auto* pCopied = dynamic_cast<const BufferResource*>(builder.ResolveResource("Copied"));
+    REQUIRE(pCopied != nullptr);
+
+    BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 4 * sizeof(uint32_t));
+    GetRenderDevice()->ExecuteImmediateCommand(
+        [&](VkCommandBuffer cmdBuf)
+        {
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            barrier.srcAccessMask = VK_ACCESS_2_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.buffer = pCopied->buffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+            dependency.bufferMemoryBarrierCount = 1;
+            dependency.pBufferMemoryBarriers = &barrier;
+            vkCmdPipelineBarrier2(cmdBuf, &dependency);
+
+            VkBufferCopy region{};
+            region.size = 4 * sizeof(uint32_t);
+            vkCmdCopyBuffer(cmdBuf, pCopied->buffer(), readback.buffer(), 1, &region);
+        });
+
+    const uint32_t* pValues = static_cast<const uint32_t*>(readback.Map());
+    INFO("copied values: " << pValues[0] << ", " << pValues[1] << ", " << pValues[2] << ", " << pValues[3]);
+    for (uint32_t i = 0; i < 4; ++i)
+    {
+        CHECK(pValues[i] == grown[i]);
+    }
+    readback.Unmap();
+}
+
 TEST_CASE("RenderGraphBuilder: a missing service is named and never dereferenced", "[RenderGraphBuilder]")
 {
     // #53. The graph takes its device, resource allocator and descriptor allocator by construction, and a

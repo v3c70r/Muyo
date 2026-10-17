@@ -2,6 +2,7 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
+#include <algorithm>
 #include <cassert>
 
 #include "Debug.h"
@@ -100,7 +101,7 @@ public:
     BufferResource(VkBufferUsageFlags bufferUsage, VmaMemoryUsage memoryUsage, size_t sizeInByte)
         : BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage), m_nSize(static_cast<uint32_t>(sizeInByte))
     {
-        GetMemoryAllocator()->AllocateBuffer(sizeInByte, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+        AllocateOwnedBuffer(sizeInByte);
     }
     virtual VkBuffer buffer() const { return m_buffer; }
     virtual ~BufferResource() { GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation); }
@@ -119,14 +120,19 @@ public:
     /// @param size  Byte count, which must not exceed the storage the resource has.
     virtual void SetData(const void* pData, size_t size)
     {
-        if (m_buffer != VK_NULL_HANDLE && size > m_nSize)
+        // A `VkBuffer` is fixed-size, so growing used to free and re-create it - leaving every descriptor
+        // set and device address that named it pointing at the old handle (#13). Allocate with headroom
+        // and reuse the handle while the request fits; only a request past the capacity reallocates, and
+        // that is the case a caller has to re-bind for.
+        if (m_buffer == VK_NULL_HANDLE || size > m_nCapacity)
         {
-            GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
-            m_buffer = VK_NULL_HANDLE;
-        }
-        if (m_buffer == VK_NULL_HANDLE)
-        {
-            GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+            const size_t nNewCapacity = RoundUpCapacity(std::max(size, static_cast<size_t>(m_nCapacity) * 2));
+            if (m_buffer != VK_NULL_HANDLE)
+            {
+                GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation);
+                m_buffer = VK_NULL_HANDLE;
+            }
+            AllocateOwnedBuffer(nNewCapacity);
         }
         m_nSize = (uint32_t)size;
 
@@ -200,11 +206,41 @@ public:
     virtual void Unmap() { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
 
     uint32_t GetSize() const { return m_nSize; }
+    /// @return The bytes actually allocated, which is at least `GetSize()`: a buffer grown by `SetData`
+    ///         keeps its allocation, so a repeat upload of the same order never re-creates the handle.
+    uint32_t GetCapacity() const { return m_nCapacity; }
 
 protected:
+    /// Allocate this resource's own storage and record its capacity, so a later `SetData` reuses the
+    /// handle instead of freeing the buffer a descriptor set or device address already names (#13).
+    /// @param size Bytes to allocate.
+    void AllocateOwnedBuffer(size_t size)
+    {
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
+        m_nCapacity = static_cast<uint32_t>(size);
+    }
+    /// @param size     Bytes to allocate.
+    /// @param name     Debug name and VMA user data.
+    /// @param poolType Pool to allocate from: SBT and BVH need their own alignment and cannot be shared.
+    void AllocateOwnedBuffer(size_t size, const std::string& name, PoolType poolType = PoolType::Default)
+    {
+        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, name, poolType);
+        m_nCapacity = static_cast<uint32_t>(size);
+    }
+
+    /// @param size Requested capacity in bytes.
+    /// @return The same size rounded up to a small alignment, so consecutive uploads of the same order
+    ///         reuse the allocation instead of re-creating it. Over-allocation is at most 255 bytes.
+    static uint32_t RoundUpCapacity(size_t size)
+    {
+        constexpr size_t nAlignment = 256;
+        return static_cast<uint32_t>((size + nAlignment - 1) & ~(nAlignment - 1));
+    }
+
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
     uint32_t m_nSize = 0;
+    uint32_t m_nCapacity = 0;
     const VkBufferUsageFlags BUFFER_USAGE = 0x0;
     const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_UNKNOWN;
 };
@@ -219,8 +255,7 @@ public:
                              VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                          VMA_MEMORY_USAGE_GPU_ONLY)
     {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
-                                             "AccelerationStrucutre", PoolType::BVH);
+        AllocateOwnedBuffer(size, "AccelerationStrucutre", PoolType::BVH);
     }
 
     AccelerationStructureBuffer(const void* pData, uint32_t size)
@@ -230,8 +265,7 @@ public:
                              VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                          VMA_MEMORY_USAGE_GPU_ONLY)
     {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
-                                             "AccelerationStrucutre", PoolType::BVH);
+        AllocateOwnedBuffer(size, "AccelerationStrucutre", PoolType::BVH);
         SetData(pData, size);
     }
 };
@@ -283,8 +317,7 @@ public:
         : BufferResource(VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT_EXT,
                          VMA_MEMORY_USAGE_CPU_TO_GPU)
     {
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, "SBT",
-                                             PoolType::SBT);
+        AllocateOwnedBuffer(size, "SBT", PoolType::SBT);
     }
 };
 
@@ -298,8 +331,7 @@ public:
 
     {
         uint32_t nSize = sizeof(T) * nNumStructs;
-        GetMemoryAllocator()->AllocateBuffer(nSize, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
-                                             "Storage Buffer");
+        AllocateOwnedBuffer(nSize, "Storage Buffer");
         SetData(static_cast<const void*>(buffer), nSize);
         m_nNumStructs = nNumStructs;
     }

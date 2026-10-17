@@ -19,8 +19,7 @@ public:
         , m_nDrawCommandCount(drawCommandCount)
     {
         m_nSize = sizeof(T) * drawCommandCount;
-        GetMemoryAllocator()->AllocateBuffer(m_nSize, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
-                                             "DrawCommandBuffer");
+        AllocateOwnedBuffer(m_nSize, "DrawCommandBuffer");
         SetData((void*)drawCommands, m_nSize);
     }
 
