@@ -22,7 +22,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     allocatorInfo.device = pDevice->GetDevice();
     allocatorInfo.instance = pDevice->GetInstance();
     allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-    vmaCreateAllocator(&allocatorInfo, &m_allocator);
+    VK_ASSERT(vmaCreateAllocator(&allocatorInfo, &m_allocator));
 
 #ifdef FEATURE_RAY_TRACING
     // Initialize SBT pool
@@ -90,7 +90,7 @@ void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize, VkBufferUsageFlags nB
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = nMemoryUsageFlags;
 
-    vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
+    VK_ASSERT(vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr));
 }
 
 void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize, VkBufferUsageFlags nBufferUsageFlags,
@@ -119,7 +119,7 @@ void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize, VkBufferUsageFlags nB
             break;
     }
 
-    vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr);
+    VK_ASSERT(vmaCreateBuffer(m_allocator, &bufferInfo, &allocInfo, &buffer, &allocation, nullptr));
 }
 
 void VkMemoryAllocator::FreeBuffer(VkBuffer& buffer, VmaAllocation& allocation)
@@ -129,7 +129,7 @@ void VkMemoryAllocator::FreeBuffer(VkBuffer& buffer, VmaAllocation& allocation)
 
 void VkMemoryAllocator::MapBuffer(VmaAllocation& allocation, void** ppData)
 {
-    vmaMapMemory(m_allocator, allocation, ppData);
+    VK_ASSERT(vmaMapMemory(m_allocator, allocation, ppData));
 }
 
 void VkMemoryAllocator::UnmapBuffer(VmaAllocation& allocation) { vmaUnmapMemory(m_allocator, allocation); }
@@ -140,16 +140,12 @@ void VkMemoryAllocator::AllocateImage(const VkImageCreateInfo* pImageInfo, VmaMe
     VmaAllocationCreateInfo allocInfo = {};
     allocInfo.usage = nMemoryUsageFlags;
 
-    vmaCreateImage(m_allocator, pImageInfo, &allocInfo, &image, &allocation, nullptr);
+    VK_ASSERT(vmaCreateImage(m_allocator, pImageInfo, &allocInfo, &image, &allocation, nullptr));
 }
 void VkMemoryAllocator::FreeImage(VkImage& image, VmaAllocation& allocation)
 {
     vmaDestroyImage(m_allocator, image, allocation);
 }
-
-// The aliasing path below checks its VkResults, unlike the calls above it, which date from before the
-// project adopted the rule that a Vulkan result is never ignored. New code follows the rule; the older
-// calls are a separate cleanup rather than something to copy.
 
 VmaAllocation VkMemoryAllocator::AllocateAliasingBlock(const VkMemoryRequirements& requirements,
                                                        VmaMemoryUsage nMemoryUsage)
