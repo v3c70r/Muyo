@@ -635,6 +635,58 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     pSBT->Unmap();
 }
 
+namespace
+{
+/// @param usage A use's semantic role.
+/// @return True when the role makes the image an attachment of the node's framebuffer.
+bool IsAttachmentUsage(ResourceUsage usage)
+{
+    return usage == ResourceUsage::COLOR_ATTACHMENT || usage == ResourceUsage::DEPTH_STENCIL_ATTACHMENT ||
+           usage == ResourceUsage::RESOLVE_ATTACHMENT || usage == ResourceUsage::INPUT_ATTACHMENT;
+}
+
+/// Check a node's shader/execute shape against its queue type (#132).
+///
+/// A wrong count here compiles a pipeline with a stage missing, which fails much later at draw with a
+/// descriptor or push-constant mismatch far from the cause.
+/// @param nodeName Node name, for the message.
+/// @param info     Its declaration.
+void ValidateNodeShape(const std::string& nodeName, const RenderGraphNodeCreateInfo& info)
+{
+    if (info.queueType != QueueType::CPU && !info.execute)
+    {
+        throw std::runtime_error("Node '" + nodeName +
+                                 "' is a GPU node with no execute callback, so it would record nothing.");
+    }
+    switch (info.queueType)
+    {
+        case QueueType::GRAPHICS:
+            // A node with no shader is a no-op used for mapping or dependency tests; when it declares a
+            // graphics pipeline it has to have exactly the vertex and fragment stages.
+            if (!info.shaderNames.empty() && info.shaderNames.size() != 2)
+            {
+                throw std::runtime_error(
+                    "Graphics node '" + nodeName + "' declares " + std::to_string(info.shaderNames.size()) +
+                    " shader(s); a graphics pipeline needs exactly a vertex and a fragment stage.");
+            }
+            break;
+        case QueueType::COMPUTE:
+            if (!info.shaderNames.empty() && info.shaderNames.size() != 1)
+            {
+                throw std::runtime_error("Compute node '" + nodeName + "' declares " +
+                                         std::to_string(info.shaderNames.size()) +
+                                         " shader(s); a compute pipeline takes exactly one.");
+            }
+            break;
+        case QueueType::RAY_TRACING:
+        case QueueType::COPY:
+        case QueueType::CPU:
+        case QueueType::COUNT:
+            break;
+    }
+}
+}  // namespace
+
 void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
 {
     const std::string& nodeName = nodeCreateInfo.nodeName;
@@ -644,6 +696,8 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
         throw std::runtime_error("Node with name '" + nodeCreateInfo.nodeName +
                                  "' already exists in the render graph.");
     }
+
+    ValidateNodeShape(nodeName, nodeCreateInfo);
 
     m_renderGraphNodes[nodeName] = {.name = nodeName};
     m_dependencyGraph.AddNode(nodeName);
@@ -727,6 +781,29 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
         }
         rgn.resourceUses.push_back(std::move(resolved));
     }
+
+    // One framebuffer per node, so every attachment has to resolve to the same extent (#132). Two
+    // different sizes are a declaration error; the render pass would be built from one of them and the
+    // other attachment would be the wrong size for it.
+    const ResolvedResourceUse* pFirstAttachment = nullptr;
+    for (const ResolvedResourceUse& use : rgn.resourceUses)
+    {
+        if (!IsAttachmentUsage(use.usage)) continue;
+        if (pFirstAttachment == nullptr)
+        {
+            pFirstAttachment = &use;
+            continue;
+        }
+        if (use.extent.width != pFirstAttachment->extent.width || use.extent.height != pFirstAttachment->extent.height)
+        {
+            throw std::runtime_error(
+                "Node '" + nodeName + "' attaches '" + use.handle + "' at " + std::to_string(use.extent.width) + "x" +
+                std::to_string(use.extent.height) + " and '" + pFirstAttachment->handle + "' at " +
+                std::to_string(pFirstAttachment->extent.width) + "x" + std::to_string(pFirstAttachment->extent.height) +
+                "; one framebuffer needs one extent.");
+        }
+    }
+
     rgn.psoDesc = nodeCreateInfo.psoDesc;
     rgn.execute = nodeCreateInfo.execute;
 }
