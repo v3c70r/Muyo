@@ -1,10 +1,10 @@
 #pragma once
-#include <string>
 #include <vulkan/vulkan.h>
 
 #include <array>
 #include <cstring>  // strcmp
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Debug.h"
