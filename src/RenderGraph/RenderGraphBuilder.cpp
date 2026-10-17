@@ -936,6 +936,56 @@ void ValidateUseAgainstResource(const std::string& nodeName, const ResourceUse& 
 }
 }  // namespace
 
+/// Check that an image role fits the image's format (#143).
+///
+/// Extents are checked separately; this is the format half. A depth role on a colour format (and the
+/// reverse) is a declaration error the driver would otherwise report, and a storage image on a format the
+/// device cannot store to is the same class.
+/// @param nodeName       Node declaring the use, for the message.
+/// @param use            The use.
+/// @param physicalDevice Device whose format support decides the storage check.
+void ValidateImageRoleFormat(const std::string& nodeName, const ResolvedResourceUse& use,
+                             VkPhysicalDevice physicalDevice)
+{
+    if (use.kind != ResourceKind::IMAGE) return;
+
+    const bool bDepthFormat = IsDepthFormat(use.format);
+    const std::string sFormat = std::to_string(static_cast<int>(use.format));
+    switch (use.usage)
+    {
+        case ResourceUsage::DEPTH_STENCIL_ATTACHMENT:
+            if (!bDepthFormat)
+            {
+                throw std::runtime_error("Node '" + nodeName + "' uses image '" + use.handle +
+                                         "' as a depth/stencil attachment, but format " + sFormat +
+                                         " is a colour format.");
+            }
+            break;
+        case ResourceUsage::COLOR_ATTACHMENT:
+        case ResourceUsage::RESOLVE_ATTACHMENT:
+            if (bDepthFormat)
+            {
+                throw std::runtime_error("Node '" + nodeName + "' uses image '" + use.handle +
+                                         "' as a colour attachment, but format " + sFormat + " is a depth format.");
+            }
+            break;
+        case ResourceUsage::STORAGE_IMAGE:
+        {
+            VkFormatProperties formatProperties{};
+            vkGetPhysicalDeviceFormatProperties(physicalDevice, use.format, &formatProperties);
+            if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) == 0)
+            {
+                throw std::runtime_error("Node '" + nodeName + "' uses image '" + use.handle +
+                                         "' as a storage image, but format " + sFormat +
+                                         " has no storage support on this device.");
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
 {
     const std::string& nodeName = nodeCreateInfo.nodeName;
@@ -1077,6 +1127,11 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
                 std::to_string(pFirstAttachment->extent.width) + "x" + std::to_string(pFirstAttachment->extent.height) +
                 "; one framebuffer needs one extent.");
         }
+    }
+
+    for (const ResolvedResourceUse& use : rgn.resourceUses)
+    {
+        ValidateImageRoleFormat(nodeName, use, m_services.device->GetPhysicalDevice());
     }
 
     rgn.psoDesc = nodeCreateInfo.psoDesc;
