@@ -1201,9 +1201,8 @@ void RenderGraphBuilder::ValidateDescriptorBindings(const std::vector<std::strin
             {
                 throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
                                          std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
-                                         ", which the shader declares as " +
-                                         NameOfDescriptorType(reflected->type) + ", but the graph binds " +
-                                         NameOfKind(use.kind) + " there.");
+                                         ", which the shader declares as " + NameOfDescriptorType(reflected->type) +
+                                         ", but the graph binds " + NameOfKind(use.kind) + " there.");
             }
         }
     }
