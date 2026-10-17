@@ -1069,6 +1069,69 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
     }
 }
 
+namespace
+{
+/// @param type A reflected descriptor type.
+/// @return The resource kind that can satisfy it, or nothing for types the graph does not bind directly
+///         (a standalone sampler, an inline uniform block).
+std::optional<ResourceKind> KindForDescriptorType(VkDescriptorType type)
+{
+    switch (type)
+    {
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            return ResourceKind::BUFFER;
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            return ResourceKind::IMAGE;
+        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+            return ResourceKind::ACCELERATION_STRUCTURE;
+        default:
+            return std::nullopt;
+    }
+}
+
+/// @param type A reflected descriptor type.
+/// @return Its symbolic Vulkan name, so a message matches the header rather than a number the reader has
+///         to look up.
+const char* NameOfDescriptorType(VkDescriptorType type)
+{
+    switch (type)
+    {
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            return "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE";
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE";
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            return "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER";
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            return "VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT";
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER";
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER";
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+            return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC";
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC";
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER";
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER";
+        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+            return "VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR";
+        default:
+            return "an unsupported VkDescriptorType";
+    }
+}
+}  // namespace
+
 void RenderGraphBuilder::ValidateDescriptorBindings(const std::vector<std::string>& executionOrder)
 {
     for (const std::string& nodeName : executionOrder)
@@ -1093,29 +1156,54 @@ void RenderGraphBuilder::ValidateDescriptorBindings(const std::vector<std::strin
         collectReflections(node.rtShaders);
         const ShaderReflection merged = MergeShaderReflections(reflections);
 
+        std::vector<std::pair<uint32_t, uint32_t>> boundSlots;
         for (const ResolvedResourceUse& use : node.resourceUses)
         {
             if (!use.descriptorBinding.has_value()) continue;
             const uint32_t nSet = use.descriptorBinding->set;
             const uint32_t nBinding = use.descriptorBinding->binding;
 
-            const bool bDeclared = std::any_of(merged.descriptorBindings.begin(), merged.descriptorBindings.end(),
-                                               [nSet, nBinding](const ShaderReflection::DescriptorBinding& reflected)
-                                               { return reflected.set == nSet && reflected.binding == nBinding; });
-            if (bDeclared) continue;
-
-            // Name the binding and list what the shader does declare: the whole value of the check is
-            // telling the author which line is wrong, without a history search or a debugger.
-            std::string declared;
-            for (const auto& reflected : merged.descriptorBindings)
+            // One use per binding: two uses would each pass the existence check and write the same
+            // descriptor, with the later write winning silently.
+            if (std::find(boundSlots.begin(), boundSlots.end(), std::make_pair(nSet, nBinding)) != boundSlots.end())
             {
-                if (!declared.empty()) declared += ", ";
-                declared += "set " + std::to_string(reflected.set) + " binding " + std::to_string(reflected.binding);
+                throw std::runtime_error("Node '" + nodeName + "' binds more than one resource at set " +
+                                         std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
+                                         "; a binding holds one resource.");
             }
-            throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
-                                     std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
-                                     ", but its shader declares no descriptor there. Declared bindings: " +
-                                     (declared.empty() ? std::string("none") : declared) + ".");
+            boundSlots.emplace_back(nSet, nBinding);
+
+            const auto reflected = std::find_if(merged.descriptorBindings.begin(), merged.descriptorBindings.end(),
+                                                [nSet, nBinding](const ShaderReflection::DescriptorBinding& b)
+                                                { return b.set == nSet && b.binding == nBinding; });
+            if (reflected == merged.descriptorBindings.end())
+            {
+                // Name the binding and list what the shader does declare: the whole value of the check is
+                // telling the author which line is wrong, without a history search or a debugger.
+                std::string declared;
+                for (const auto& candidate : merged.descriptorBindings)
+                {
+                    if (!declared.empty()) declared += ", ";
+                    declared +=
+                        "set " + std::to_string(candidate.set) + " binding " + std::to_string(candidate.binding);
+                }
+                throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
+                                         std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
+                                         ", but its shader declares no descriptor there. Declared bindings: " +
+                                         (declared.empty() ? std::string("none") : declared) + ".");
+            }
+
+            // The write takes its type from reflection, so a resource whose kind does not fit that type would
+            // be written as the shader's type - a mismatch that only shows at draw. Checked here, where both
+            // the declaration and the reflection are known.
+            const std::optional<ResourceKind> requiredKind = KindForDescriptorType(reflected->type);
+            if (requiredKind.has_value() && use.kind != *requiredKind)
+            {
+                throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
+                                         std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
+                                         ", which the shader declares as " + NameOfDescriptorType(reflected->type) +
+                                         ", but the graph binds " + NameOfKind(use.kind) + " there.");
+            }
         }
     }
 }
