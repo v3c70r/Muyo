@@ -1,6 +1,8 @@
 #include "RenderGraphBuilder.h"
 
 #include <algorithm>
+#include <iostream>
+#include <mutex>
 #include <set>
 #include <stdexcept>
 #include <unordered_map>
@@ -643,6 +645,28 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     {
         throw std::runtime_error("Node with name '" + nodeCreateInfo.nodeName +
                                  "' already exists in the render graph.");
+    }
+
+    // `async` is accepted on every device, but only a dedicated compute family makes it concurrent. On a
+    // single family the node still gets its own compute segment, on the graphics family, so the timeline
+    // serialises it. Warn once per process - a frame loop rebuilds every frame, so per-build would be
+    // noise - and let an author choose from the same query this message names.
+    if (nodeCreateInfo.async && !m_services.device->IsComputeQueueDedicated())
+    {
+        static std::once_flag s_asyncDegradedWarning;
+        std::call_once(s_asyncDegradedWarning,
+                       [&nodeName, this]
+                       {
+                           std::cerr << "[WARNING]: node '" << nodeName
+                                     << "' asks for async compute, but this device has no dedicated compute "
+                                        "family (graphics family "
+                                     << m_services.device->GetGraphicsQueueFamily()
+                                     << " is also the compute family). The node still gets its own compute "
+                                        "segment, but on that family, so it is serialised rather than "
+                                        "concurrent. Query RenderDevice::IsComputeQueueDedicated() to choose "
+                                        "async per device."
+                                     << std::endl;
+                       });
     }
 
     m_renderGraphNodes[nodeName] = {.name = nodeName};
