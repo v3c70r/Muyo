@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.10.0)
+# The language level is a directory default declared before project(), so every later-created target -
+# including the third-party subdirectories - inherits C++20, and CMAKE_CXX_FLAGS does not have to
+# carry it. CMAKE_CXX_EXTENSIONS OFF maps to the strict flag, as before (#68).
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 project(Muyo)
 
 # Root of this project, correct whether it is the top-level build or a subdirectory.
@@ -148,21 +154,30 @@ endif()
 
 set(SANITIZE_CONDITION "$<CONFIG:Sanitize>")
 if (UNIX)
-    # The hardcoded -std=c++20 stays, because CMAKE_CXX_FLAGS applies to every target in this
-    # directory at generate time and moving it would change what the third-party targets compile as.
-    # The language level is additionally declared as a target interface requirement, which is what
-    # crosses a project boundary - a consumer previously compiled this project's headers as C++17 and
-    # failed on std::source_location (#68). CMAKE_CXX_EXTENSIONS OFF keeps the feature mapping to the
-    # same strict flag, so nothing about this build changes.
-    set (CMAKE_CXX_EXTENSIONS OFF)
-    set (CMAKE_CXX_FLAGS "-std=c++20 -Wall -pthread -Wno-missing-braces -g")
-    set (CMAKE_CXX_DEBUG_FLAGS ${CMAKE_CXX_FLAGS} "")
-    set (CMAKE_CXX_RELEASE_FLAGS ${CMAKE_CXX_FLAGS} "-O3")
+    # Compile options, not a replacement for CMAKE_CXX_FLAGS: assigning that variable discards
+    # whatever a toolchain file or `-DCMAKE_CXX_FLAGS` provided, which is why
+    # `scripts/sanity.sh warnings` was not actually applying its own flags (#36).
+    # `-pthread` also goes on the link line, where it used to reach via CMAKE_CXX_FLAGS.
+    # Targets created before this point (the third-party libraries above) no longer inherit these
+    # warnings or -pthread: none of them creates threads, and scoping warnings to this project's
+    # targets is the direction #36 asks for. Their language level is still C++20 from
+    # CMAKE_CXX_STANDARD above, so meshoptimizer moves from the default gnu++17 to C++20.
+    add_compile_options(-Wall -Wno-missing-braces -pthread)
+    add_link_options(-pthread)
+    # -g is left to the per-configuration defaults: Debug carries it via CMAKE_CXX_FLAGS_DEBUG, and
+    # the old shared string pushed it into Release too. The dead CMAKE_CXX_DEBUG_FLAGS /
+    # CMAKE_CXX_RELEASE_FLAGS assignments are gone - the real variables are CMAKE_CXX_FLAGS_<CONFIG>,
+    # so neither ever did anything.
     set(SANITIZE_FLAGS
       "$<${SANITIZE_CONDITION}:-fsanitize=address,undefined>"
       "$<${SANITIZE_CONDITION}:-fno-omit-frame-pointer>"
+      # Sanitizer reports need line information, so -g is kept for Sanitize even though Release no
+      # longer gets it from the shared flags.
+      "$<${SANITIZE_CONDITION}:-g>"
     )
 elseif(MSVC)
+    # Left as-is: the Windows path is not covered by this repository's CI, so this PR does not change
+    # an untested toolchain. It appends rather than assigning, so it was never the fragile form.
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")
     set(SANITIZE_FLAGS "$<${SANITIZE_CONDITION}:/fsanitize=address,undefined,thread,memory>")
     add_compile_options("$<${SANITIZE_CONDITION}:/Zi>")
