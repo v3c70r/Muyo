@@ -43,6 +43,61 @@ uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment) { return (nSize + nAlignme
 
 namespace Muyo::RenderGraph
 {
+namespace
+{
+/// Reject a declaration that cannot describe a valid allocation (#127).
+///
+/// A desc is input from the author: a zero size, an undefined format or a zero usage flag set cannot be
+/// turned into a valid resource, and letting it through moves the failure to the allocator or to a driver
+/// VUID that names a handle. Rejected here, at the declaration line.
+/// @param handle Resource being declared, so the message names it.
+/// @param desc   Its declaration.
+void ValidateResourceDesc(const std::string& handle, const ResourceDesc& desc)
+{
+    std::visit(
+        [&](const auto& d)
+        {
+            using T = std::decay_t<decltype(d)>;
+            if constexpr (std::is_same_v<T, BufferResourceDesc>)
+            {
+                if (d.count == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares a buffer with count 0.");
+                }
+                if (d.stride == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares a buffer with stride 0.");
+                }
+            }
+            else
+            {
+                if (d.extent.width == 0 || d.extent.height == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares an image with a zero extent (" +
+                                             std::to_string(d.extent.width) + "x" + std::to_string(d.extent.height) +
+                                             ").");
+                }
+                if (d.format == VK_FORMAT_UNDEFINED)
+                {
+                    throw std::runtime_error("AddResource('" + handle +
+                                             "') declares an image with VK_FORMAT_UNDEFINED.");
+                }
+                if (d.mips == 0 || d.layers == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares an image with " +
+                                             std::to_string(d.mips) + " mips and " + std::to_string(d.layers) +
+                                             " layers; both must be at least 1.");
+                }
+            }
+            if (d.usage == 0)
+            {
+                throw std::runtime_error("AddResource('" + handle +
+                                         "') declares usage 0, so no operation would be valid for it.");
+            }
+        },
+        desc);
+}
+}  // namespace
 
 namespace
 {
@@ -138,6 +193,7 @@ RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle
                                  "') declares lifetime Imported, but AddResource is the call that makes the "
                                  "graph allocate a resource. Use ImportResource for one the graph does not own.");
     }
+    ValidateResourceDesc(handle, desc);
     m_resourceDescRegistry[handle] = std::move(desc);
     return *this;
 }
