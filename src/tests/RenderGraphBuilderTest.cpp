@@ -1180,6 +1180,37 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a descriptor binding the 
                                            Catch::Matchers::ContainsSubstring("binding 7"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async node keeps its own compute segment on any topology",
+                 "[RenderGraphBuilder]")
+{
+    // #133. `async` is a request, not a guarantee: it is accepted on every device. Without a dedicated
+    // compute family the node still gets its own compute segment, but on the graphics family, so the plan
+    // serialises it. `GetExecutionPlan()` exposes that shape and `IsComputeQueueDedicated()` is the query an
+    // app uses to choose. Build() warns once when the request cannot be honoured.
+    RenderGraphBuilder builder(GetRenderDevice());
+    const auto makeNode = [](const char* name, bool bAsync)
+    {
+        return RenderGraphNodeCreateInfo{.nodeName = name,
+                                         .queueType = QueueType::COMPUTE,
+                                         .async = bAsync,
+                                         .shaderNames = {"copyBuffer.comp.slang"},
+                                         .execute = [](RenderGraphNodeContext&) {}};
+    };
+    builder.AddNode(makeNode("Async", true));
+    builder.AddNode(makeNode("Sync", false));
+
+    CHECK_NOTHROW(builder.Build());
+    const RenderGraphExecutionPlan& plan = builder.GetExecutionPlan();
+    INFO("dedicated compute family: " << GetRenderDevice()->IsComputeQueueDedicated()
+                                      << " (segments=" << plan.GetSegmentCount() << ")");
+
+    // One segment per queue key: the async node gets a compute segment whether or not a dedicated family
+    // exists, and the non-async node resolves to graphics. Nothing is handed between them here, so the
+    // transfer count is zero on every topology.
+    CHECK(plan.GetSegmentCount() == 2);
+    CHECK(plan.GetTransferCount() == 0);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node's shape and its attachment extents are checked",
                  "[RenderGraphBuilder]")
 {
