@@ -4,6 +4,7 @@
 #include <array>
 #include <cstring>  // strcmp
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Debug.h"
@@ -241,6 +242,9 @@ private:  // Members
     VkQueue m_presentQueue = VK_NULL_HANDLE;
     VkQueue m_computeQueue = VK_NULL_HANDLE;
     VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+    /// Name of the device this process first picked. A re-created instance re-finds it by name, so a
+    /// re-initialisation cannot silently move to a different device mid-process (#141).
+    std::string m_pinnedPhysicalDeviceName;
 
     std::array<VkCommandPool, NUM_CMD_POOLS> m_aCommandPools;
 
