@@ -11,3 +11,11 @@ leak:nptl/pthread_once.c
 # remaining count is visible rather than silent.
 leak:loader_open_layer_file
 leak:loader_platform_open_library
+
+# The driver module's own registration path, which is the leak that survives the loader frames on some
+# machines: the NVIDIA driver reaches libdbus (`dbus_bus_register`) through `dlopen`, and AMDVLK allocates
+# inside its own module. Module-scoped rather than `leak:*`, so a project leak has no such frame and is
+# still reported. A driver built without symbols still reports as `<unknown module>` and cannot be matched;
+# the acceptance is "no project frames in the report", not "a clean exit on every machine".
+leak:libdbus-1.so
+leak:amdvlk64.so
