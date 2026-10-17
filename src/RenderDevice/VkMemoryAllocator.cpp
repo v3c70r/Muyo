@@ -1,4 +1,5 @@
 #include <cassert>
+#include <stdexcept>
 #include <string>
 
 #define VMA_IMPLEMENTATION
@@ -11,7 +12,11 @@ namespace Muyo
 VkMemoryAllocator::VkMemoryAllocator() {}
 void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 {
-    assert(pDevice && "Device is not yet initialized");
+    // A null device is fatal, and a plain assert is compiled out in Release.
+    if (pDevice == nullptr)
+    {
+        throw std::runtime_error("VkMemoryAllocator::Initalize: the render device is null.");
+    }
     VmaAllocatorCreateInfo allocatorInfo = {};
     allocatorInfo.physicalDevice = pDevice->GetPhysicalDevice();
     allocatorInfo.device = pDevice->GetDevice();

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <stdexcept>
 
 #include "ShaderAsset.h"
 #include "VkRenderDevice.h"
@@ -15,7 +16,13 @@ ShaderReflection FetchShaderReflection(const SpirvCode& spirvCode)
     SpvReflectShaderModule module;
     SpvReflectResult result =
         spvReflectCreateShaderModule(sizeof(uint32_t) * spirvCode.size(), spirvCode.data(), &module);
-    assert(result == SPV_REFLECT_RESULT_SUCCESS);
+    // A library result, not an invariant: a shader the reflection library cannot parse must fail in
+    // Release too, naming the result rather than proceeding with a half-filled module.
+    if (result != SPV_REFLECT_RESULT_SUCCESS)
+    {
+        throw std::runtime_error("ShaderReflection: spvReflectCreateShaderModule failed with SpvReflectResult " +
+                                 std::to_string(static_cast<int>(result)));
+    }
 
     ShaderReflection reflection;
     // Extract ShaderReflection structure

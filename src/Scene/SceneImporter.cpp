@@ -7,6 +7,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <sstream>  // std::stringstream
+#include <stdexcept>
 
 #include "Geometry.h"
 #include "LightSceneNode.h"
@@ -28,7 +29,13 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
         tinygltf::Model model;
         std::string err, warn;
         bool ret = loader.LoadASCIIFromFile(&model, &err, &warn, sSceneFile.c_str());
-        assert(ret);
+        // The loader's result is a file/library outcome, not an invariant: report the file and the
+        // loader's own message rather than aborting on a bare assert (or proceeding empty in Release).
+        if (!ret)
+        {
+            throw std::runtime_error("GLTFImporter: failed to load '" + sSceneFile + "'" +
+                                     (err.empty() ? std::string() : ": " + err));
+        }
 
         res.resize(model.scenes.size());
         for (size_t i = 0; i < model.scenes.size(); i++)
@@ -109,6 +116,15 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                 pSceneRoot->AppendChild(pSceneNode);
             }
         }
+    }
+    else
+    {
+        // A missing scene file is input, and it used to fall through this `if` into an empty scene
+        // list - which surfaced far away as `SetData(nullptr)` inside the per-object upload, looking
+        // like a render bug. Name the file and the working-directory requirement here instead.
+        throw std::runtime_error("GLTFImporter: scene file '" + sSceneFile +
+                                 "' does not exist. Tests load 'assets/...' relative to the working "
+                                 "directory; run from the build directory with `assets/` linked.");
     }
     return res;
 }

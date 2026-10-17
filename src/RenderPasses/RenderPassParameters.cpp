@@ -1,5 +1,6 @@
 #include "RenderPassParameters.h"
 
+#include <stdexcept>
 #include <string>
 
 #include "DescriptorManager.h"
@@ -122,7 +123,10 @@ void RenderPassParameters::AddDescriptorWrite(const IRenderResource* pResource, 
     }
     else
     {
-        assert(false && u8"Unhandled descriptor type");
+        // A descriptor type the pass does not handle is input to AddBinding; a silent no-op in
+        // Release leaves the descriptor unwritten and surfaces as an unrelated draw-time VUID.
+        throw std::runtime_error("RenderPassParameters::AddBinding: unhandled descriptor type " +
+                                 std::to_string(static_cast<int>(type)));
     }
 
     m_vWriteDescSet[nDescSetIdx].push_back(write);
@@ -287,7 +291,8 @@ bool RenderPassParameters::UpdateDescriptorSet(const std::vector<const IRenderRe
         }
         else
         {
-            assert(false && u8"Unhandled descriptor type");
+            throw std::runtime_error("RenderPassParameters: unhandled descriptor type " +
+                                     std::to_string(static_cast<int>(writeDescSet.descriptorType)));
         }
     }
     if (bShouldExeUpdate)
