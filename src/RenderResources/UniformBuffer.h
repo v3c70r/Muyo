@@ -26,8 +26,7 @@ public:
 
     {
         const size_t size = sizeof(T);
-        GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation,
-                                             "Uniform Buffer");
+        AllocateOwnedBuffer(size, "Uniform Buffer");
         m_nSize = size;
     }
     void SetData(const T& buffer) { BufferResource::SetData(&buffer, sizeof(T)); }
