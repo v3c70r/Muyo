@@ -1180,6 +1180,59 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a descriptor binding the 
                                            Catch::Matchers::ContainsSubstring("binding 7"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node's shape and its attachment extents are checked",
+                 "[RenderGraphBuilder]")
+{
+    // #132. A wrong shader count compiles a pipeline with a stage missing, which fails far away at draw;
+    // the attachments of one node render to one framebuffer, so their extents have to agree.
+    SECTION("attachments with different extents are rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Colour", ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                        .extent = {16, 16},
+                                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
+        builder.AddResource("Depth", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                       .extent = {32, 32},
+                                                       .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT});
+        CHECK_THROWS_WITH(builder.AddNode(RenderGraphNodeCreateInfo{
+                              .nodeName = "Mismatched",
+                              .queueType = QueueType::GRAPHICS,
+                              .resourceUses = {ResourceUse{.handle = ResourceHandle("Colour"),
+                                                           .io = ResourceIOType::WRITE,
+                                                           .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                                           .kind = ResourceKind::IMAGE},
+                                               ResourceUse{.handle = ResourceHandle("Depth"),
+                                                           .io = ResourceIOType::WRITE,
+                                                           .usage = ResourceUsage::DEPTH_STENCIL_ATTACHMENT,
+                                                           .kind = ResourceKind::IMAGE}},
+                              .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
+                              .execute = [](RenderGraphNodeContext&) {}}),
+                          Catch::Matchers::ContainsSubstring("'Mismatched'") &&
+                              Catch::Matchers::ContainsSubstring("16x16") &&
+                              Catch::Matchers::ContainsSubstring("32x32"));
+    }
+    SECTION("a graphics node with one shader is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        CHECK_THROWS_WITH(builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "HalfPipeline",
+                                                                    .queueType = QueueType::GRAPHICS,
+                                                                    .shaderNames = {"forward.vert.slang"},
+                                                                    .execute = [](RenderGraphNodeContext&) {}}),
+                          Catch::Matchers::ContainsSubstring("'HalfPipeline'") &&
+                              Catch::Matchers::ContainsSubstring("vertex and a fragment"));
+    }
+    SECTION("a compute node with two shaders is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        CHECK_THROWS_WITH(
+            builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "TooMany",
+                                                      .queueType = QueueType::COMPUTE,
+                                                      .shaderNames = {"copyBuffer.comp.slang", "copyBuffer.comp.slang"},
+                                                      .execute = [](RenderGraphNodeContext&) {}}),
+            Catch::Matchers::ContainsSubstring("'TooMany'") && Catch::Matchers::ContainsSubstring("exactly one"));
+    }
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a binding's type and occupancy are checked at Build",
                  "[RenderGraphBuilder]")
 {
