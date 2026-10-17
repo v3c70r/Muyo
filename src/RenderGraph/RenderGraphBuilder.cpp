@@ -846,7 +846,7 @@ std::optional<ResourceKind> KindForDescriptorType(VkDescriptorType type)
 
 /// @param kind A resource kind.
 /// @return Its lower-case name, for messages.
-const char* NameOfKind(ResourceKind kind)
+const char* KindName(ResourceKind kind)
 {
     switch (kind)
     {
@@ -934,7 +934,7 @@ void RenderGraphBuilder::ValidateDescriptorBindings(const std::vector<std::strin
                                          std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
                                          ", which the shader declares as descriptor type " +
                                          std::to_string(static_cast<int>(reflected->type)) + ", but the graph binds " +
-                                         NameOfKind(use.kind) + " there.");
+                                         KindName(use.kind) + " there.");
             }
         }
     }
