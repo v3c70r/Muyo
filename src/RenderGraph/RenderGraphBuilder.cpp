@@ -43,6 +43,61 @@ uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment) { return (nSize + nAlignme
 
 namespace Muyo::RenderGraph
 {
+namespace
+{
+/// Reject a declaration that cannot describe a valid allocation (#127).
+///
+/// A desc is input from the author: a zero size, an undefined format or a zero usage flag set cannot be
+/// turned into a valid resource, and letting it through moves the failure to the allocator or to a driver
+/// VUID that names a handle. Rejected here, at the declaration line.
+/// @param handle Resource being declared, so the message names it.
+/// @param desc   Its declaration.
+void ValidateResourceDesc(const std::string& handle, const ResourceDesc& desc)
+{
+    std::visit(
+        [&](const auto& d)
+        {
+            using T = std::decay_t<decltype(d)>;
+            if constexpr (std::is_same_v<T, BufferResourceDesc>)
+            {
+                if (d.count == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares a buffer with count 0.");
+                }
+                if (d.stride == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares a buffer with stride 0.");
+                }
+            }
+            else
+            {
+                if (d.extent.width == 0 || d.extent.height == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares an image with a zero extent (" +
+                                             std::to_string(d.extent.width) + "x" + std::to_string(d.extent.height) +
+                                             ").");
+                }
+                if (d.format == VK_FORMAT_UNDEFINED)
+                {
+                    throw std::runtime_error("AddResource('" + handle +
+                                             "') declares an image with VK_FORMAT_UNDEFINED.");
+                }
+                if (d.mips == 0 || d.layers == 0)
+                {
+                    throw std::runtime_error("AddResource('" + handle + "') declares an image with " +
+                                             std::to_string(d.mips) + " mips and " + std::to_string(d.layers) +
+                                             " layers; both must be at least 1.");
+                }
+            }
+            if (d.usage == 0)
+            {
+                throw std::runtime_error("AddResource('" + handle +
+                                         "') declares usage 0, so no operation would be valid for it.");
+            }
+        },
+        desc);
+}
+}  // namespace
 
 namespace
 {
@@ -138,6 +193,7 @@ RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle
                                  "') declares lifetime Imported, but AddResource is the call that makes the "
                                  "graph allocate a resource. Use ImportResource for one the graph does not own.");
     }
+    ValidateResourceDesc(handle, desc);
     m_resourceDescRegistry[handle] = std::move(desc);
     return *this;
 }
@@ -635,6 +691,199 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     pSBT->Unmap();
 }
 
+namespace
+{
+/// The allocation usage a semantic role requires, and the kinds that admit it.
+///
+/// A role selects a barrier policy, but it also promises something about the allocation: `STORAGE_IMAGE`
+/// needs the image created with `STORAGE_BIT`, `UNIFORM_BUFFER` needs `UNIFORM_BUFFER_BIT`. Declaring the
+/// role without the bit reaches the driver as an invalid usage for the resource, so the pair is checked
+/// against the declaration here (#128).
+struct UsageAllocationRequirement
+{
+    bool bBuffer = false;               ///< The role is valid for a buffer.
+    bool bImage = false;                ///< The role is valid for an image.
+    const char* bufferFlagName = "";    ///< Symbolic name of the buffer bit, for messages.
+    VkBufferUsageFlags bufferFlag = 0;  ///< Bit a buffer must carry.
+    const char* imageFlagName = "";     ///< Symbolic name of the image bit, for messages.
+    VkImageUsageFlags imageFlag = 0;    ///< Bit an image must carry.
+};
+
+/// @param usage The role a node declares.
+/// @return What it requires of an allocation, or nothing when the role carries no allocation flag
+///         (payloads, push constants) and therefore has nothing to check.
+std::optional<UsageAllocationRequirement> GetUsageAllocationRequirement(ResourceUsage usage)
+{
+    switch (usage)
+    {
+        case ResourceUsage::SAMPLED:
+            return UsageAllocationRequirement{
+                .bImage = true, .imageFlagName = "VK_IMAGE_USAGE_SAMPLED_BIT", .imageFlag = VK_IMAGE_USAGE_SAMPLED_BIT};
+        case ResourceUsage::STORAGE_IMAGE:
+            return UsageAllocationRequirement{
+                .bImage = true, .imageFlagName = "VK_IMAGE_USAGE_STORAGE_BIT", .imageFlag = VK_IMAGE_USAGE_STORAGE_BIT};
+        case ResourceUsage::COLOR_ATTACHMENT:
+            return UsageAllocationRequirement{.bImage = true,
+                                              .imageFlagName = "VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT",
+                                              .imageFlag = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
+        case ResourceUsage::DEPTH_STENCIL_ATTACHMENT:
+            return UsageAllocationRequirement{.bImage = true,
+                                              .imageFlagName = "VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT",
+                                              .imageFlag = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT};
+        case ResourceUsage::INPUT_ATTACHMENT:
+            return UsageAllocationRequirement{.bImage = true,
+                                              .imageFlagName = "VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT",
+                                              .imageFlag = VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT};
+        case ResourceUsage::RESOLVE_ATTACHMENT:
+        case ResourceUsage::PRESENT:
+            return UsageAllocationRequirement{.bImage = true,
+                                              .imageFlagName = "VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT",
+                                              .imageFlag = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT};
+        case ResourceUsage::UNIFORM_BUFFER:
+            return UsageAllocationRequirement{.bBuffer = true,
+                                              .bufferFlagName = "VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT",
+                                              .bufferFlag = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT};
+        case ResourceUsage::STORAGE_BUFFER:
+            return UsageAllocationRequirement{.bBuffer = true,
+                                              .bufferFlagName = "VK_BUFFER_USAGE_STORAGE_BUFFER_BIT",
+                                              .bufferFlag = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT};
+        case ResourceUsage::VERTEX_BUFFER:
+            return UsageAllocationRequirement{.bBuffer = true,
+                                              .bufferFlagName = "VK_BUFFER_USAGE_VERTEX_BUFFER_BIT",
+                                              .bufferFlag = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT};
+        case ResourceUsage::INDEX_BUFFER:
+            return UsageAllocationRequirement{.bBuffer = true,
+                                              .bufferFlagName = "VK_BUFFER_USAGE_INDEX_BUFFER_BIT",
+                                              .bufferFlag = VK_BUFFER_USAGE_INDEX_BUFFER_BIT};
+        case ResourceUsage::INDIRECT_BUFFER:
+        case ResourceUsage::DRAW_COMMAND_BUFFER:
+            return UsageAllocationRequirement{.bBuffer = true,
+                                              .bufferFlagName = "VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT",
+                                              .bufferFlag = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT};
+        case ResourceUsage::TRANSFER_SOURCE:
+            return UsageAllocationRequirement{.bBuffer = true,
+                                              .bImage = true,
+                                              .bufferFlagName = "VK_BUFFER_USAGE_TRANSFER_SRC_BIT",
+                                              .bufferFlag = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                              .imageFlagName = "VK_IMAGE_USAGE_TRANSFER_SRC_BIT",
+                                              .imageFlag = VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
+        case ResourceUsage::TRANSFER_DEST:
+            return UsageAllocationRequirement{.bBuffer = true,
+                                              .bImage = true,
+                                              .bufferFlagName = "VK_BUFFER_USAGE_TRANSFER_DST_BIT",
+                                              .bufferFlag = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                              .imageFlagName = "VK_IMAGE_USAGE_TRANSFER_DST_BIT",
+                                              .imageFlag = VK_IMAGE_USAGE_TRANSFER_DST_BIT};
+        case ResourceUsage::ACCEL_STRUCTURE:
+        case ResourceUsage::TASK_PAYLOAD:
+        case ResourceUsage::MESH_PAYLOAD:
+        case ResourceUsage::WORKGRAPH_NODE:
+        case ResourceUsage::PUSH_CONSTANTS:
+            return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+/// @param kind A resource kind.
+/// @return Its lower-case name, for messages.
+const char* NameOfKind(ResourceKind kind)
+{
+    switch (kind)
+    {
+        case ResourceKind::BUFFER:
+            return "buffer";
+        case ResourceKind::IMAGE:
+            return "image";
+        case ResourceKind::ACCELERATION_STRUCTURE:
+            return "acceleration structure";
+        case ResourceKind::SAMPLER:
+            return "sampler";
+    }
+    return "(unknown kind)";
+}
+
+/// @param kind A resource kind.
+/// @return The indefinite article that reads correctly before `NameOfKind(kind)`.
+const char* ArticleForKind(ResourceKind kind)
+{
+    return (kind == ResourceKind::IMAGE || kind == ResourceKind::ACCELERATION_STRUCTURE) ? "an " : "a ";
+}
+
+/// @param resource An imported resource.
+/// @return The kind a use has to declare for it.
+ResourceKind KindOfResource(const IRenderResource* resource)
+{
+    if (dynamic_cast<const BufferResource*>(resource) != nullptr) return ResourceKind::BUFFER;
+    if (dynamic_cast<const ImageResource*>(resource) != nullptr) return ResourceKind::IMAGE;
+    if (dynamic_cast<const AccelerationStructure*>(resource) != nullptr) return ResourceKind::ACCELERATION_STRUCTURE;
+    throw std::runtime_error("The imported resource is neither a buffer, an image nor an acceleration structure.");
+}
+
+/// Check a use against the resource it names (#128).
+///
+/// @param nodeName Node declaring the use, for the message.
+/// @param use      The use.
+/// @param desc     The declared resource's description, or nothing when the resource is imported.
+/// @param imported The imported resource, or null when the resource is declared.
+void ValidateUseAgainstResource(const std::string& nodeName, const ResourceUse& use,
+                                const std::optional<ResourceDesc>& desc, const IRenderResource* imported)
+{
+    ResourceKind resourceKind = ResourceKind::BUFFER;
+    if (desc.has_value())
+    {
+        resourceKind = std::holds_alternative<BufferResourceDesc>(*desc) ? ResourceKind::BUFFER : ResourceKind::IMAGE;
+    }
+    else if (imported != nullptr)
+    {
+        resourceKind = KindOfResource(imported);
+    }
+
+    // U1: the kind a use declares must be the kind the resource actually is.
+    if (use.kind != resourceKind)
+    {
+        throw std::runtime_error("Node '" + nodeName + "' uses resource '" + use.handle + "' as " +
+                                 ArticleForKind(use.kind) + NameOfKind(use.kind) + ", but the resource is " +
+                                 ArticleForKind(resourceKind) + NameOfKind(resourceKind) + ".");
+    }
+
+    // U2: the role must admit that kind, and a declared resource must carry the allocation bit it implies.
+    const std::optional<UsageAllocationRequirement> requirement = GetUsageAllocationRequirement(use.usage);
+    if (!requirement.has_value()) return;
+
+    const bool bAdmitsKind = resourceKind == ResourceKind::BUFFER ? requirement->bBuffer : requirement->bImage;
+    if (!bAdmitsKind)
+    {
+        throw std::runtime_error("Node '" + nodeName + "' uses " + NameOfKind(resourceKind) + " '" + use.handle +
+                                 "' with usage " + NameOf(use.usage) + ", which is not a " + NameOfKind(resourceKind) +
+                                 " usage.");
+    }
+
+    // An imported resource carries no desc, so its usage flags are the caller's promise; the kind checks
+    // above are what the graph can verify for it.
+    if (!desc.has_value()) return;
+
+    if (resourceKind == ResourceKind::BUFFER)
+    {
+        const auto& bufferDesc = std::get<BufferResourceDesc>(*desc);
+        if ((bufferDesc.usage & requirement->bufferFlag) == 0)
+        {
+            throw std::runtime_error("Node '" + nodeName + "' uses buffer '" + use.handle + "' as " +
+                                     NameOf(use.usage) + ", but it was declared without " +
+                                     requirement->bufferFlagName + ".");
+        }
+    }
+    else
+    {
+        const auto& imageDesc = std::get<ImageResourceDesc>(*desc);
+        if ((imageDesc.usage & requirement->imageFlag) == 0)
+        {
+            throw std::runtime_error("Node '" + nodeName + "' uses image '" + use.handle + "' as " + NameOf(use.usage) +
+                                     ", but it was declared without " + requirement->imageFlagName + ".");
+        }
+    }
+}
+}  // namespace
+
 void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
 {
     const std::string& nodeName = nodeCreateInfo.nodeName;
@@ -701,6 +950,10 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
             throw std::runtime_error("Node '" + nodeName + "' uses resource '" + resourceUse.handle +
                                      "' which is neither declared with AddResource nor imported.");
         }
+        const std::optional<ResourceDesc> resourceDesc = GetResourceDesc(resourceUse.handle);
+        const IRenderResource* pImportedResource =
+            resourceDesc.has_value() ? nullptr : m_importedResources.at(resourceUse.handle);
+        ValidateUseAgainstResource(nodeName, resourceUse, resourceDesc, pImportedResource);
         ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
         // A range on a buffer bound into a descriptor is validated in
         // `BuildReflectionDescriptorSets`, which knows the descriptor type from reflection; that runs
@@ -844,22 +1097,38 @@ std::optional<ResourceKind> KindForDescriptorType(VkDescriptorType type)
     }
 }
 
-/// @param kind A resource kind.
-/// @return Its lower-case name, for messages.
-const char* KindName(ResourceKind kind)
+/// @param type A reflected descriptor type.
+/// @return Its symbolic Vulkan name, so a message matches the header rather than a number the reader has
+///         to look up.
+const char* NameOfDescriptorType(VkDescriptorType type)
 {
-    switch (kind)
+    switch (type)
     {
-        case ResourceKind::BUFFER:
-            return "buffer";
-        case ResourceKind::IMAGE:
-            return "image";
-        case ResourceKind::ACCELERATION_STRUCTURE:
-            return "acceleration structure";
-        case ResourceKind::SAMPLER:
-            return "sampler";
+        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            return "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE";
+        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE";
+        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+            return "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER";
+        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
+            return "VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT";
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER";
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER";
+        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+            return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC";
+        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC";
+        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER";
+        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+            return "VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER";
+        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+            return "VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR";
+        default:
+            return "an unsupported VkDescriptorType";
     }
-    return "(unknown kind)";
 }
 }  // namespace
 
@@ -932,9 +1201,9 @@ void RenderGraphBuilder::ValidateDescriptorBindings(const std::vector<std::strin
             {
                 throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
                                          std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
-                                         ", which the shader declares as descriptor type " +
-                                         std::to_string(static_cast<int>(reflected->type)) + ", but the graph binds " +
-                                         KindName(use.kind) + " there.");
+                                         ", which the shader declares as " +
+                                         NameOfDescriptorType(reflected->type) + ", but the graph binds " +
+                                         NameOfKind(use.kind) + " there.");
             }
         }
     }

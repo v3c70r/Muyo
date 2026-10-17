@@ -1242,6 +1242,146 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a binding's type and occu
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a use's kind and usage must agree with its resource",
+                 "[RenderGraphBuilder]")
+{
+    // #128. A use selects a barrier policy; it also promises an allocation. A sampled-only image bound as
+    // STORAGE_IMAGE, or a BUFFER use on an image handle, used to reach the driver as an invalid usage. It
+    // is a declaration error, rejected at AddNode with both the node and the resource named.
+    const auto image = [](VkImageUsageFlags usage)
+    { return ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {16, 16}, .usage = usage}; };
+    const auto buffer = [](VkBufferUsageFlags usage)
+    {
+        return BufferResourceDesc{
+            .count = 4, .stride = 4, .usage = usage, .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU};
+    };
+    const auto node = [](const char* name, ResourceUse use)
+    {
+        return RenderGraphNodeCreateInfo{.nodeName = name,
+                                         .queueType = QueueType::COMPUTE,
+                                         .resourceUses = {use},
+                                         .shaderNames = {"copyBuffer.comp.slang"},
+                                         .execute = [](RenderGraphNodeContext&) {}};
+    };
+
+    SECTION("a declared image missing the role's allocation bit is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image(VK_IMAGE_USAGE_SAMPLED_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("BadUsage", ResourceUse{.handle = ResourceHandle("Image"),
+                                                                       .io = ResourceIOType::READ_WRITE,
+                                                                       .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                       .kind = ResourceKind::IMAGE})),
+                          Catch::Matchers::ContainsSubstring("'BadUsage'") &&
+                              Catch::Matchers::ContainsSubstring("'Image'") &&
+                              Catch::Matchers::ContainsSubstring("VK_IMAGE_USAGE_STORAGE_BIT"));
+    }
+    SECTION("a declared buffer missing the role's allocation bit is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Buffer", buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("BadBufferUsage", ResourceUse{.handle = ResourceHandle("Buffer"),
+                                                                             .io = ResourceIOType::READ,
+                                                                             .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                             .kind = ResourceKind::BUFFER})),
+                          Catch::Matchers::ContainsSubstring("'BadBufferUsage'") &&
+                              Catch::Matchers::ContainsSubstring("VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT"));
+    }
+    SECTION("an image carrying the bit is accepted")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image(VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT));
+        CHECK_NOTHROW(builder.AddNode(node("GoodUsage", ResourceUse{.handle = ResourceHandle("Image"),
+                                                                    .io = ResourceIOType::READ_WRITE,
+                                                                    .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                    .kind = ResourceKind::IMAGE})));
+    }
+    SECTION("an image role on a buffer is rejected even though the kind matches")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Buffer", buffer(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("ImageRoleOnBuffer", ResourceUse{.handle = ResourceHandle("Buffer"),
+                                                                                .io = ResourceIOType::READ,
+                                                                                .usage = ResourceUsage::SAMPLED,
+                                                                                .kind = ResourceKind::BUFFER})),
+                          Catch::Matchers::ContainsSubstring("'ImageRoleOnBuffer'") &&
+                              Catch::Matchers::ContainsSubstring("not a buffer usage"));
+    }
+    SECTION("a kind that does not match the resource is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image(VK_IMAGE_USAGE_SAMPLED_BIT));
+        CHECK_THROWS_WITH(builder.AddNode(node("WrongKind", ResourceUse{.handle = ResourceHandle("Image"),
+                                                                        .io = ResourceIOType::READ,
+                                                                        .usage = ResourceUsage::TRANSFER_SOURCE,
+                                                                        .kind = ResourceKind::BUFFER})),
+                          Catch::Matchers::ContainsSubstring("'WrongKind'") &&
+                              Catch::Matchers::ContainsSubstring("as a buffer") &&
+                              Catch::Matchers::ContainsSubstring("an image"));
+    }
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an invalid resource declaration is rejected at AddResource",
+                 "[RenderGraphBuilder]")
+{
+    // #127. A desc is input: a zero size, an undefined format or a zero usage set cannot become a valid
+    // allocation, so it is rejected where it was declared rather than inside the allocator or at a driver
+    // VUID that names a handle.
+    RenderGraphBuilder builder(GetRenderDevice());
+    const auto buffer = [](uint64_t count, uint64_t stride, VkBufferUsageFlags usage)
+    {
+        return BufferResourceDesc{
+            .count = count, .stride = stride, .usage = usage, .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU};
+    };
+    const auto image = [](VkFormat format, VkExtent2D extent, uint32_t mips, uint32_t layers, VkImageUsageFlags usage)
+    { return ImageResourceDesc{.format = format, .extent = extent, .mips = mips, .layers = layers, .usage = usage}; };
+
+    SECTION("buffer count 0")
+    {
+        CHECK_THROWS_WITH(builder.AddResource("B", buffer(0, 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)),
+                          Catch::Matchers::ContainsSubstring("'B'") && Catch::Matchers::ContainsSubstring("count 0"));
+    }
+    SECTION("buffer stride 0")
+    {
+        CHECK_THROWS_WITH(builder.AddResource("B", buffer(4, 0, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)),
+                          Catch::Matchers::ContainsSubstring("'B'") && Catch::Matchers::ContainsSubstring("stride 0"));
+    }
+    SECTION("image zero extent")
+    {
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {0, 16}, 1, 1, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("zero extent"));
+    }
+    SECTION("image undefined format")
+    {
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_UNDEFINED, {16, 16}, 1, 1, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("VK_FORMAT_UNDEFINED"));
+    }
+    SECTION("image zero mips or layers")
+    {
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 0, 1, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("mips"));
+        CHECK_THROWS_WITH(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 1, 0, VK_IMAGE_USAGE_SAMPLED_BIT)),
+            Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("layers"));
+    }
+    SECTION("zero usage")
+    {
+        CHECK_THROWS_WITH(builder.AddResource("B", buffer(4, 4, 0)),
+                          Catch::Matchers::ContainsSubstring("'B'") && Catch::Matchers::ContainsSubstring("usage 0"));
+        CHECK_THROWS_WITH(builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 1, 1, 0)),
+                          Catch::Matchers::ContainsSubstring("'I'") && Catch::Matchers::ContainsSubstring("usage 0"));
+    }
+    SECTION("a valid declaration is accepted")
+    {
+        CHECK_NOTHROW(builder.AddResource("B", buffer(4, 4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)));
+        CHECK_NOTHROW(
+            builder.AddResource("I", image(VK_FORMAT_R8G8B8A8_UNORM, {16, 16}, 1, 1, VK_IMAGE_USAGE_SAMPLED_BIT)));
+    }
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
                  "[RenderGraphBuilder]")
 {
