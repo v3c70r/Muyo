@@ -279,6 +279,12 @@ private:
     // produce - which is what declaring either of them means.
     void ValidateTransientLifetimes(const std::vector<std::string>& executionOrder);
 
+    // Reject a use whose `descriptorBinding` the node's shaders do not declare. Without it the binding is
+    // skipped when the set is built, leaving an unwritten descriptor that only surfaces at draw time as a
+    // validation error naming a handle (#55). Runs before any allocation: reflection is loaded in AddNode,
+    // so this needs no device.
+    void ValidateDescriptorBindings(const std::vector<std::string>& executionOrder);
+
     // Live ranges from the last `Build()`, keyed by handle. Nothing reads this until aliasing lands;
     // it is kept because re-deriving it later would mean re-walking the order for a fact this pass
     // already computed.

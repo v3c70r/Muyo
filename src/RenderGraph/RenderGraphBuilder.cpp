@@ -816,6 +816,57 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
     }
 }
 
+void RenderGraphBuilder::ValidateDescriptorBindings(const std::vector<std::string>& executionOrder)
+{
+    for (const std::string& nodeName : executionOrder)
+    {
+        const RenderGraphNode& node = m_renderGraphNodes.at(nodeName);
+
+        // Merge the node's reflected bindings. AddNode already loaded the shader assets, so this needs no
+        // device and can run before any resource exists.
+        std::vector<ShaderReflection> reflections;
+        const auto collectReflections = [&](const auto& shaderKeys)
+        {
+            for (const ShaderKey& shaderKey : shaderKeys)
+            {
+                if (!shaderKey.IsValid()) continue;
+                if (const auto* pAsset = m_shaderAssetManager.GetShaderAsset(shaderKey))
+                {
+                    reflections.push_back(pAsset->shaderReflection);
+                }
+            }
+        };
+        collectReflections(node.shaders);
+        collectReflections(node.rtShaders);
+        const ShaderReflection merged = MergeShaderReflections(reflections);
+
+        for (const ResolvedResourceUse& use : node.resourceUses)
+        {
+            if (!use.descriptorBinding.has_value()) continue;
+            const uint32_t nSet = use.descriptorBinding->set;
+            const uint32_t nBinding = use.descriptorBinding->binding;
+
+            const bool bDeclared = std::any_of(merged.descriptorBindings.begin(), merged.descriptorBindings.end(),
+                                               [nSet, nBinding](const ShaderReflection::DescriptorBinding& reflected)
+                                               { return reflected.set == nSet && reflected.binding == nBinding; });
+            if (bDeclared) continue;
+
+            // Name the binding and list what the shader does declare: the whole value of the check is
+            // telling the author which line is wrong, without a history search or a debugger.
+            std::string declared;
+            for (const auto& reflected : merged.descriptorBindings)
+            {
+                if (!declared.empty()) declared += ", ";
+                declared += "set " + std::to_string(reflected.set) + " binding " + std::to_string(reflected.binding);
+            }
+            throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
+                                     std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
+                                     ", but its shader declares no descriptor there. Declared bindings: " +
+                                     (declared.empty() ? std::string("none") : declared) + ".");
+        }
+    }
+}
+
 void RenderGraphBuilder::DestroyAliasedTransients()
 {
     // Resources first, then their memory: a block cannot be released while a resource is still bound to
@@ -968,6 +1019,7 @@ void RenderGraphBuilder::Build()
     // Before allocating anything: a declaration error should not cost an allocation, and this needs only
     // the order and the declarations.
     ValidateTransientLifetimes(executionOrder);
+    ValidateDescriptorBindings(executionOrder);
 
     // Allocate all graph-owned resources before compiling nodes. A buffer transient is skipped here and
     // created unbound below instead: its memory belongs to a block, and the manager's path would give it
