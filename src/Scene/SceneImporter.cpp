@@ -6,6 +6,7 @@
 #include <functional>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <memory>
 #include <sstream>  // std::stringstream
 #include <stdexcept>
 
@@ -82,14 +83,16 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                 std::function<void(SceneNode **, const tinygltf::Node &)> ConstructTreeFromGLTF =
                     [&](SceneNode **ppSceneNode, const tinygltf::Node &gltfNode)
                 {
-                    // Copy current node
-                    SceneNode *pSceneNode = nullptr;
+                    // Copy current node. Owned until it is attached or the recursion succeeds: a
+                    // malformed asset throws from ConstructGeometryNode, and with a raw `new` that
+                    // exception unwound past the only pointer to the node (found by the sanitizer).
+                    std::unique_ptr<SceneNode> pSceneNode;
                     static const std::string LIGHT_EXT_NAME = "KHR_lights_punctual";
 
                     if (gltfNode.mesh != -1)
                     {
                         const tinygltf::Mesh mesh = model.meshes[gltfNode.mesh];
-                        pSceneNode = new GeometrySceneNode;
+                        pSceneNode = std::make_unique<GeometrySceneNode>();
                         CopyGLTFNode(*pSceneNode, gltfNode);
                         ConstructGeometryNode(static_cast<GeometrySceneNode &>(*pSceneNode), mesh, model);
                     }
@@ -105,17 +108,17 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         if (light.type == "point")
                         {
                             // TODO(#20): derive the point-light radius from the glTF light's `range`.
-                            pSceneNode = new PointLightNode(lightColor, (float)light.intensity);
+                            pSceneNode = std::make_unique<PointLightNode>(lightColor, (float)light.intensity);
                         }
                         else if (light.type == "spot")
                         {
-                            pSceneNode =
-                                new SpotLightNode(lightColor, (float)light.intensity, (float)light.spot.innerConeAngle,
-                                                  (float)light.spot.outerConeAngle);
+                            pSceneNode = std::make_unique<SpotLightNode>(lightColor, (float)light.intensity,
+                                                                         (float)light.spot.innerConeAngle,
+                                                                         (float)light.spot.outerConeAngle);
                         }
                         else if (light.type == "directional")
                         {
-                            pSceneNode = new DirectionalLightNode(lightColor, (float)light.intensity);
+                            pSceneNode = std::make_unique<DirectionalLightNode>(lightColor, (float)light.intensity);
                         }
                         else
                         {
@@ -126,7 +129,7 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                     }
                     else
                     {
-                        pSceneNode = new SceneNode;
+                        pSceneNode = std::make_unique<SceneNode>();
                         CopyGLTFNode(*pSceneNode, gltfNode);
                     }
 
@@ -138,7 +141,7 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         ConstructTreeFromGLTF(&(pChild), node);
                         pSceneNode->AppendChild(pChild);
                     }
-                    *ppSceneNode = pSceneNode;
+                    *ppSceneNode = pSceneNode.release();
                 };
 
                 SceneNode *pSceneNode = nullptr;
