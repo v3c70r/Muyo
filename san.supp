@@ -3,3 +3,11 @@
 # pthread_once initialization frame (glibc)
 leak:^__pthread_once_slow$
 leak:nptl/pthread_once.c
+
+# Vulkan loader: loading a layer or a driver `dlopen`s it, and that library's own static initialisers
+# allocate process-lifetime state the loader never frees. The allocation therefore sits under the loader's
+# open path and has no project frame - which is the discriminator: a leak that reaches project code has no
+# loader frame and is still reported (#103). `print_suppressions=1` names each suppressed hit, so the
+# remaining count is visible rather than silent.
+leak:loader_open_layer_file
+leak:loader_platform_open_library
