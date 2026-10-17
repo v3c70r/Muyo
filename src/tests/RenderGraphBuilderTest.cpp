@@ -1180,6 +1180,68 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a descriptor binding the 
                                            Catch::Matchers::ContainsSubstring("binding 7"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a binding's type and occupancy are checked at Build",
+                 "[RenderGraphBuilder]")
+{
+    // #131. The descriptor type comes from reflection when the write is built, so a resource whose kind
+    // does not fit it would be written as the shader's type and only show at draw; two uses at one binding
+    // would double-write it. Both are declaration errors and are rejected at Build.
+    const auto image = ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                         .extent = {16, 16},
+                                         .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
+                                         .lifetime = ResourceLifetime::Persistent};
+
+    SECTION("a resource whose kind does not fit the reflected type is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Image", image);
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = "WrongType",
+            .queueType = QueueType::COMPUTE,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("Image"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::SAMPLED,
+                                         .kind = ResourceKind::IMAGE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"copyBuffer.comp.slang"},
+            .execute = [](RenderGraphNodeContext&) {}});
+
+        // copyBuffer's gInput at set 0 binding 0 is a ByteAddressBuffer, i.e. a storage buffer.
+        CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'WrongType'") &&
+                                               Catch::Matchers::ContainsSubstring("binds image"));
+    }
+    SECTION("two uses at one binding are rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        const auto storageBuffer = BufferResourceDesc{.count = 4,
+                                                      .stride = 4,
+                                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                      .lifetime = ResourceLifetime::Persistent};
+        builder.AddResource("First", storageBuffer);
+        builder.AddResource("Second", storageBuffer);
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = "DoubleBind",
+            .queueType = QueueType::COMPUTE,
+            .resourceUses = {ResourceUse{.handle = ResourceHandle("First"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::STORAGE_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                             ResourceUse{.handle = ResourceHandle("Second"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::STORAGE_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+            .shaderNames = {"copyBuffer.comp.slang"},
+            .execute = [](RenderGraphNodeContext&) {}});
+
+        CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'DoubleBind'") &&
+                                               Catch::Matchers::ContainsSubstring("binding 0") &&
+                                               Catch::Matchers::ContainsSubstring("one resource"));
+    }
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
                  "[RenderGraphBuilder]")
 {
