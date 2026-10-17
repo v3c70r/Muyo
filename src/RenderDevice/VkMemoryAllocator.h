@@ -15,21 +15,29 @@ enum class PoolType
 };
 
 // Wrap allocator
+//
+// Every method that allocates or maps a resource checks its VMA/Vulkan `VkResult` with `VK_ASSERT` and
+// aborts on failure, so there is no error code to inspect: an out-of-memory is a hard stop rather than a
+// null handle used a few lines later. The destroy/free methods return `void` and need no check.
 class VkMemoryAllocator
 {
 public:
     void Initalize(VkRenderDevice *pDevice);
     void Unintialize();
     VkMemoryAllocator();
+    /// @note Aborts via `VK_ASSERT` if the allocation fails (for example out of device memory).
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags, VmaMemoryUsage nMemoryUsageFlags,
                         VkBuffer &buffer, VmaAllocation &allocation);
+    /// @note Aborts via `VK_ASSERT` if the allocation fails (for example out of device memory).
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags, VmaMemoryUsage nMemoryUsageFlags,
                         VkBuffer &buffer, VmaAllocation &allocation, std::string bufferName,
                         PoolType ePoolType = PoolType::Default);
     void FreeBuffer(VkBuffer &buffer, VmaAllocation &allocation);
+    /// @note Aborts via `VK_ASSERT` if the mapping fails.
     void MapBuffer(VmaAllocation &allocation, void **ppData);
     void UnmapBuffer(VmaAllocation &allocation);
 
+    /// @note Aborts via `VK_ASSERT` if the allocation fails (for example out of device memory).
     void AllocateImage(const VkImageCreateInfo *pImageInfo, VmaMemoryUsage nMemoryUsageFlags, VkImage &image,
                        VmaAllocation &allocation);
     void FreeImage(VkImage &image, VmaAllocation &allocation);
