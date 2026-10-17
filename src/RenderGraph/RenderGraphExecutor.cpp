@@ -173,15 +173,27 @@ RenderGraphExecutor::ExecutionSlot RenderGraphExecutor::AcquireSlot(const Render
         slot.bSubmitted = false;
     }
 
-    ReleaseSlotObjects(slot);
-
+    // Reuse the slot's buffers when the segment shape is unchanged. The pools carry
+    // VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT and the recorder begins every buffer with a
+    // one-time-submit flag, so re-beginning resets it; the buffers are already owned per slot, and
+    // reallocating them per execution is exactly the churn the slots exist to make safe (#39). Only a
+    // different segment count or queue shape needs the allocate/free pair.
     const size_t nSegments = plan.GetSegmentCount();
-    slot.commandBuffers.resize(nSegments);
-    slot.segmentQueues.resize(nSegments);
-    for (size_t s = 0; s < nSegments; ++s)
+    bool bSameShape = slot.commandBuffers.size() == nSegments;
+    for (size_t s = 0; bSameShape && s < nSegments; ++s)
     {
-        slot.segmentQueues[s] = plan.segments[s].queueType;
-        slot.commandBuffers[s] = AllocateCommandBufferForType(plan.segments[s].queueType);
+        bSameShape = slot.segmentQueues[s] == plan.segments[s].queueType;
+    }
+    if (!bSameShape)
+    {
+        ReleaseSlotObjects(slot);
+        slot.commandBuffers.resize(nSegments);
+        slot.segmentQueues.resize(nSegments);
+        for (size_t s = 0; s < nSegments; ++s)
+        {
+            slot.segmentQueues[s] = plan.segments[s].queueType;
+            slot.commandBuffers[s] = AllocateCommandBufferForType(plan.segments[s].queueType);
+        }
     }
 
     return ExecutionSlot{index, slot.commandBuffers};
