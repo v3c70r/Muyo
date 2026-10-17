@@ -99,7 +99,7 @@ public:
     {
     }
     BufferResource(VkBufferUsageFlags bufferUsage, VmaMemoryUsage memoryUsage, size_t sizeInByte)
-        : BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage), m_nSize(static_cast<uint32_t>(sizeInByte))
+        : BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage), m_nSize(sizeInByte)
     {
         AllocateOwnedBuffer(sizeInByte);
     }
@@ -134,7 +134,7 @@ public:
             }
             AllocateOwnedBuffer(nNewCapacity);
         }
-        m_nSize = (uint32_t)size;
+        m_nSize = size;
 
         if (BUFFER_USAGE & VK_BUFFER_USAGE_TRANSFER_DST_BIT)
         {
@@ -205,10 +205,10 @@ public:
     /// aliased resource, before the block it shares is freed.
     virtual void Unmap() { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
 
-    uint32_t GetSize() const { return m_nSize; }
+    size_t GetSize() const { return m_nSize; }
     /// @return The bytes actually allocated, which is at least `GetSize()`: a buffer grown by `SetData`
     ///         keeps its allocation, so a repeat upload of the same order never re-creates the handle.
-    uint32_t GetCapacity() const { return m_nCapacity; }
+    size_t GetCapacity() const { return m_nCapacity; }
 
 protected:
     /// Allocate this resource's own storage and record its capacity, so a later `SetData` reuses the
@@ -217,7 +217,7 @@ protected:
     void AllocateOwnedBuffer(size_t size)
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation);
-        m_nCapacity = static_cast<uint32_t>(size);
+        m_nCapacity = size;
     }
     /// @param size     Bytes to allocate.
     /// @param name     Debug name and VMA user data.
@@ -225,22 +225,22 @@ protected:
     void AllocateOwnedBuffer(size_t size, const std::string& name, PoolType poolType = PoolType::Default)
     {
         GetMemoryAllocator()->AllocateBuffer(size, BUFFER_USAGE, MEMORY_USAGE, m_buffer, m_allocation, name, poolType);
-        m_nCapacity = static_cast<uint32_t>(size);
+        m_nCapacity = size;
     }
 
     /// @param size Requested capacity in bytes.
     /// @return The same size rounded up to a small alignment, so consecutive uploads of the same order
     ///         reuse the allocation instead of re-creating it. Over-allocation is at most 255 bytes.
-    static uint32_t RoundUpCapacity(size_t size)
+    static size_t RoundUpCapacity(size_t size)
     {
         constexpr size_t nAlignment = 256;
-        return static_cast<uint32_t>((size + nAlignment - 1) & ~(nAlignment - 1));
+        return (size + nAlignment - 1) & ~(nAlignment - 1);
     }
 
     VkBuffer m_buffer = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;
-    uint32_t m_nSize = 0;
-    uint32_t m_nCapacity = 0;
+    size_t m_nSize = 0;
+    size_t m_nCapacity = 0;
     const VkBufferUsageFlags BUFFER_USAGE = 0x0;
     const VmaMemoryUsage MEMORY_USAGE = VMA_MEMORY_USAGE_UNKNOWN;
 };
