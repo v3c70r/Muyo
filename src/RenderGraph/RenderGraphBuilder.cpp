@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "Debug.h"
 #include "PipelineStateBuilder.h"
 #include "RenderGraph/ResourceUseResolver.h"
 #include "ShaderReflectionFetcher.h"
@@ -1496,6 +1497,12 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             context.pipeline = rgn.pipeline;
             context.pipelineLayout = rgn.pipelineLayout;
             context.bindingPoint = rgn.bindingPoint;
+
+            // Bracket the node so a tool (RenderDoc, GPU-assisted validation, a frame capture) attributes
+            // the commands and anything it reports to this node rather than to the segment's command
+            // buffer, which several nodes share (#134). Resources carry their names already: every
+            // RenderResourceManager allocation calls SetDebugName with the handle.
+            ScopedMarker<VkCommandBuffer> nodeMarker(cmdBuf, std::string(rgn.name));
 
             // 1. Barrier batch: transition all resources used by this node.
             RecordBarriers(cmdBuf, rgn.resourceUses, queueFamily);
