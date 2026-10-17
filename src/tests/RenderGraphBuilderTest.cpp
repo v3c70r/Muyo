@@ -1219,9 +1219,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a use's kind and usage mu
         RenderGraphBuilder builder(GetRenderDevice());
         builder.AddResource("Buffer", buffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT));
         CHECK_THROWS_WITH(builder.AddNode(node("BadBufferUsage", ResourceUse{.handle = ResourceHandle("Buffer"),
-                                                                              .io = ResourceIOType::READ,
-                                                                              .usage = ResourceUsage::UNIFORM_BUFFER,
-                                                                              .kind = ResourceKind::BUFFER})),
+                                                                             .io = ResourceIOType::READ,
+                                                                             .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                             .kind = ResourceKind::BUFFER})),
                           Catch::Matchers::ContainsSubstring("'BadBufferUsage'") &&
                               Catch::Matchers::ContainsSubstring("VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT"));
     }
