@@ -1466,6 +1466,63 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an invalid resource decla
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an image role must fit its format", "[RenderGraphBuilder]")
+{
+    // #143. Extents are checked separately (#132); this is the format half. A depth role on a colour
+    // format and the reverse are declaration errors, and so is a storage image on a format the device
+    // cannot store to.
+    const auto attachmentNode = [](const char* name, const char* handle, ResourceUsage usage)
+    {
+        return RenderGraphNodeCreateInfo{
+            .nodeName = name,
+            .queueType = QueueType::GRAPHICS,
+            .resourceUses = {ResourceUse{
+                .handle = ResourceHandle(handle),
+                .io = usage == ResourceUsage::STORAGE_IMAGE ? ResourceIOType::READ_WRITE : ResourceIOType::WRITE,
+                .usage = usage,
+                .kind = ResourceKind::IMAGE}},
+            .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
+            .execute = [](RenderGraphNodeContext&) {}};
+    };
+
+    SECTION("a depth attachment on a colour format is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Colour", ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                        .extent = {16, 16},
+                                                        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                        .lifetime = ResourceLifetime::Persistent});
+        CHECK_THROWS_WITH(
+            builder.AddNode(attachmentNode("DepthOnColour", "Colour", ResourceUsage::DEPTH_STENCIL_ATTACHMENT)),
+            Catch::Matchers::ContainsSubstring("'DepthOnColour'") && Catch::Matchers::ContainsSubstring("'Colour'") &&
+                Catch::Matchers::ContainsSubstring("is a colour format"));
+    }
+    SECTION("a colour attachment on a depth format is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Depth", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                       .extent = {16, 16},
+                                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                       .lifetime = ResourceLifetime::Persistent});
+        CHECK_THROWS_WITH(builder.AddNode(attachmentNode("ColourOnDepth", "Depth", ResourceUsage::COLOR_ATTACHMENT)),
+                          Catch::Matchers::ContainsSubstring("'ColourOnDepth'") &&
+                              Catch::Matchers::ContainsSubstring("'Depth'") &&
+                              Catch::Matchers::ContainsSubstring("is a depth format"));
+    }
+    SECTION("a storage image on a format without storage support is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("NoStorage", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                           .extent = {16, 16},
+                                                           .usage = VK_IMAGE_USAGE_STORAGE_BIT,
+                                                           .lifetime = ResourceLifetime::Persistent});
+        CHECK_THROWS_WITH(builder.AddNode(attachmentNode("StorageOnDepth", "NoStorage", ResourceUsage::STORAGE_IMAGE)),
+                          Catch::Matchers::ContainsSubstring("'StorageOnDepth'") &&
+                              Catch::Matchers::ContainsSubstring("'NoStorage'") &&
+                              Catch::Matchers::ContainsSubstring("no storage support"));
+    }
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
                  "[RenderGraphBuilder]")
 {
