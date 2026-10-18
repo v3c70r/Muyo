@@ -1466,6 +1466,87 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an invalid resource decla
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an image role must fit its format", "[RenderGraphBuilder]")
+{
+    // #143. Extents are checked separately (#132); this is the format half. A depth role on a colour
+    // format and the reverse are declaration errors, and so is a storage image on a format the device
+    // cannot store to.
+    const auto attachmentNode = [](const char* name, const char* handle, ResourceUsage usage)
+    {
+        return RenderGraphNodeCreateInfo{
+            .nodeName = name,
+            .queueType = QueueType::GRAPHICS,
+            .resourceUses = {ResourceUse{
+                .handle = ResourceHandle(handle),
+                .io = usage == ResourceUsage::STORAGE_IMAGE ? ResourceIOType::READ_WRITE : ResourceIOType::WRITE,
+                .usage = usage,
+                .kind = ResourceKind::IMAGE}},
+            .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
+            .execute = [](RenderGraphNodeContext&) {}};
+    };
+
+    SECTION("a depth attachment on a colour format is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Colour", ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                        .extent = {16, 16},
+                                                        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                                                        .lifetime = ResourceLifetime::Persistent});
+        CHECK_THROWS_WITH(
+            builder.AddNode(attachmentNode("DepthOnColour", "Colour", ResourceUsage::DEPTH_STENCIL_ATTACHMENT)),
+            Catch::Matchers::ContainsSubstring("'DepthOnColour'") && Catch::Matchers::ContainsSubstring("'Colour'") &&
+                Catch::Matchers::ContainsSubstring("is a colour format"));
+    }
+    SECTION("a colour attachment on a depth format is rejected")
+    {
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("Depth", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                       .extent = {16, 16},
+                                                       .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                                                       .lifetime = ResourceLifetime::Persistent});
+        CHECK_THROWS_WITH(builder.AddNode(attachmentNode("ColourOnDepth", "Depth", ResourceUsage::COLOR_ATTACHMENT)),
+                          Catch::Matchers::ContainsSubstring("'ColourOnDepth'") &&
+                              Catch::Matchers::ContainsSubstring("'Depth'") &&
+                              Catch::Matchers::ContainsSubstring("is a depth format"));
+    }
+    SECTION("a storage image on a format without storage support is rejected")
+    {
+        // Query for a format this device cannot store to rather than hardcoding one: `D32_SFLOAT` has
+        // `STORAGE_IMAGE_BIT` on NVIDIA and not on llvmpipe, so a fixed choice asserts the author's device
+        // (AGENTS.md section 4 - the review caught exactly that). `REQUIRE` keeps the test honest on a
+        // device where no candidate qualifies, instead of silently passing on a different check.
+        const VkFormat candidates[] = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D16_UNORM,
+                                       VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_FORMAT_B8G8R8A8_UNORM};
+        VkFormat noStorageFormat = VK_FORMAT_UNDEFINED;
+        for (VkFormat format : candidates)
+        {
+            VkFormatProperties formatProperties{};
+            vkGetPhysicalDeviceFormatProperties(GetRenderDevice()->GetPhysicalDevice(), format, &formatProperties);
+            if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) == 0)
+            {
+                noStorageFormat = format;
+                break;
+            }
+        }
+
+        VkPhysicalDeviceProperties deviceProperties{};
+        vkGetPhysicalDeviceProperties(GetRenderDevice()->GetPhysicalDevice(), &deviceProperties);
+        INFO("device: " << deviceProperties.deviceName);
+        INFO("no-storage format chosen: " << static_cast<int>(noStorageFormat));
+        REQUIRE(noStorageFormat != VK_FORMAT_UNDEFINED);
+
+        RenderGraphBuilder builder(GetRenderDevice());
+        builder.AddResource("NoStorage", ImageResourceDesc{.format = noStorageFormat,
+                                                           .extent = {16, 16},
+                                                           .usage = VK_IMAGE_USAGE_STORAGE_BIT,
+                                                           .lifetime = ResourceLifetime::Persistent});
+        CHECK_THROWS_WITH(builder.AddNode(attachmentNode("StorageOnDepth", "NoStorage", ResourceUsage::STORAGE_IMAGE)),
+                          Catch::Matchers::ContainsSubstring("'StorageOnDepth'") &&
+                              Catch::Matchers::ContainsSubstring("'NoStorage'") &&
+                              Catch::Matchers::ContainsSubstring("no storage support"));
+    }
+}
+
 TEST_CASE("BufferResource: capacity arithmetic does not truncate at 4 GiB", "[RenderGraphBuilder]")
 {
     // #124. `RoundUpCapacity` returned `uint32_t`, so a 4 GiB request rounded to 256 while `SetData`
