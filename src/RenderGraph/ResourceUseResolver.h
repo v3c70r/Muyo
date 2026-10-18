@@ -55,101 +55,108 @@ struct UsagePolicy
 ///
 /// This is the authoritative reference for how the graph synchronises resources; a use with no
 /// entry here is rejected by `ResolvePolicy`.
-constexpr std::array<std::pair<UsageKey, UsagePolicy>, 29> K_USAGE_POLICIES = {
-    {// ───────────── Images ─────────────
-     {{ResourceUsage::SAMPLED, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-           VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR,
-       VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
-     {{ResourceUsage::STORAGE_IMAGE, ResourceIOType::READ_WRITE},
-      {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-       VK_IMAGE_LAYOUT_GENERAL}},
-     {{ResourceUsage::COLOR_ATTACHMENT, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-     {{ResourceUsage::COLOR_ATTACHMENT, ResourceIOType::READ_WRITE},
-      {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-       VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-     {{ResourceUsage::DEPTH_STENCIL_ATTACHMENT, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-       VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
-     {{ResourceUsage::INPUT_ATTACHMENT, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT,
-       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
-     {{ResourceUsage::RESOLVE_ATTACHMENT, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
-     // Rendered as a colour attachment, then transitioned to PRESENT_SRC after the node by
-     // `RecordPresentTransition`: the presentation engine is the consumer and it is not a node, so the
-     // barrier cannot be emitted at the start of a consumer the way every other layout is.
-     {{ResourceUsage::PRESENT, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+inline constexpr std::pair<UsageKey, UsagePolicy> K_USAGE_POLICIES[] = {
+    // ───────────── Images ─────────────
+    // Every stage that can sample, not only the ones this engine's shaders happen to use: sampling from a
+    // mesh, vertex, geometry or tessellation stage is legal Vulkan, and a read ordered only at the fragment
+    // stage is ordered against nothing when it happens earlier. The stages the device does not enable are
+    // removed by `VkRenderDevice::EnabledPipelineStages`, so naming them here cannot emit an illegal bit.
+    {{ResourceUsage::SAMPLED, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
+          VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT |
+          VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT | VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT |
+          VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+          VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR,
+      VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
+    {{ResourceUsage::STORAGE_IMAGE, ResourceIOType::READ_WRITE},
+     {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+      VK_IMAGE_LAYOUT_GENERAL}},
+    {{ResourceUsage::COLOR_ATTACHMENT, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+    {{ResourceUsage::COLOR_ATTACHMENT, ResourceIOType::READ_WRITE},
+     {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+    {{ResourceUsage::DEPTH_STENCIL_ATTACHMENT, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+      VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL}},
+    {{ResourceUsage::INPUT_ATTACHMENT, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT,
+      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}},
+    {{ResourceUsage::RESOLVE_ATTACHMENT, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
+    // Rendered as a colour attachment, then transitioned to PRESENT_SRC after the node by
+    // `RecordPresentTransition`: the presentation engine is the consumer and it is not a node, so the
+    // barrier cannot be emitted at the start of a consumer the way every other layout is.
+    {{ResourceUsage::PRESENT, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}},
 
-     // ───────────── Buffers ─────────────
-     {{ResourceUsage::UNIFORM_BUFFER, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_UNIFORM_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::UNIFORM_BUFFER, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::STORAGE_BUFFER, ResourceIOType::READ_WRITE},
-      {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-       VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::STORAGE_BUFFER, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::STORAGE_BUFFER, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::VERTEX_BUFFER, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::VERTEX_BUFFER, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::INDEX_BUFFER, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, VK_ACCESS_2_INDEX_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::INDEX_BUFFER, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::INDIRECT_BUFFER, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::INDIRECT_BUFFER, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     // ───────────── Draw Command / Indirect Buffers ─────────────
-     // The Read case
-     {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     // GPU Write case (e.g., a Compute shader generating draw calls)
-     {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::WRITE},
-      {VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     // GPU read-write case (e.g., an atomic draw/command counter also read by the same pass)
-     {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::READ_WRITE},
-      {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-       VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-       VK_IMAGE_LAYOUT_UNDEFINED}},
-     // Transfer/CPU Write case (e.g., vkCmdCopyBuffer or Host mapping)
-     {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::TRANSFER_WRITE},
-      {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
-     // ───────────── Transfer / clear ─────────────
-     // The transfer stage rather than ALL_COMMANDS: a copy or an upload is only ordered against other
-     // transfer work and against whatever reads the result, so saying so lets the graph overlap it with a
-     // running shader phase instead of stalling both.
-     {{ResourceUsage::TRANSFER_SOURCE, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}},
-     // TRANSFER_WRITE and not WRITE: for a buffer, WRITE means a *host* write in this table - that is how a
-     // mapped upload declares itself - so a copy destination has to say it is a transfer. A clear needs
-     // the same access, which is why one role covers it.
-     {{ResourceUsage::TRANSFER_DEST, ResourceIOType::TRANSFER_WRITE},
-      {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}},
-     // ───────────── Ray Tracing / Mesh / Work Graph ─────────────
-     {{ResourceUsage::ACCEL_STRUCTURE, ResourceIOType::READ},
-      {VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
-       VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::TASK_PAYLOAD, ResourceIOType::READ_WRITE},
-      {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-       VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::MESH_PAYLOAD, ResourceIOType::READ_WRITE},
-      {VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-       VK_IMAGE_LAYOUT_UNDEFINED}},
-     {{ResourceUsage::WORKGRAPH_NODE, ResourceIOType::READ_WRITE},
-      {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
-       VK_IMAGE_LAYOUT_UNDEFINED}}}};
+    // ───────────── Buffers ─────────────
+    {{ResourceUsage::UNIFORM_BUFFER, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_UNIFORM_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::UNIFORM_BUFFER, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::STORAGE_BUFFER, ResourceIOType::READ_WRITE},
+     {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+      VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::STORAGE_BUFFER, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::STORAGE_BUFFER, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::VERTEX_BUFFER, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::VERTEX_BUFFER, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::INDEX_BUFFER, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT, VK_ACCESS_2_INDEX_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::INDEX_BUFFER, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::INDIRECT_BUFFER, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::INDIRECT_BUFFER, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_HOST_BIT, VK_ACCESS_2_HOST_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    // ───────────── Draw Command / Indirect Buffers ─────────────
+    // The Read case
+    {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT, VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    // GPU Write case (e.g., a Compute shader generating draw calls)
+    {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    // GPU read-write case (e.g., an atomic draw/command counter also read by the same pass)
+    {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::READ_WRITE},
+     {VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+      VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+      VK_IMAGE_LAYOUT_UNDEFINED}},
+    // Transfer/CPU Write case (e.g., vkCmdCopyBuffer or Host mapping)
+    {{ResourceUsage::DRAW_COMMAND_BUFFER, ResourceIOType::TRANSFER_WRITE},
+     {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED}},
+    // ───────────── Transfer / clear ─────────────
+    // The transfer stage rather than ALL_COMMANDS: a copy or an upload is only ordered against other
+    // transfer work and against whatever reads the result, so saying so lets the graph overlap it with a
+    // running shader phase instead of stalling both.
+    {{ResourceUsage::TRANSFER_SOURCE, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}},
+    // TRANSFER_WRITE and not WRITE: for a buffer, WRITE means a *host* write in this table - that is how a
+    // mapped upload declares itself - so a copy destination has to say it is a transfer. A clear needs
+    // the same access, which is why one role covers it.
+    {{ResourceUsage::TRANSFER_DEST, ResourceIOType::TRANSFER_WRITE},
+     {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}},
+    // ───────────── Ray Tracing / Mesh / Work Graph ─────────────
+    {{ResourceUsage::ACCEL_STRUCTURE, ResourceIOType::READ},
+     {VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
+      VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::TASK_PAYLOAD, ResourceIOType::READ_WRITE},
+     {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+      VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::MESH_PAYLOAD, ResourceIOType::READ_WRITE},
+     {VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+      VK_IMAGE_LAYOUT_UNDEFINED}},
+    {{ResourceUsage::WORKGRAPH_NODE, ResourceIOType::READ_WRITE},
+     {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
+      VK_IMAGE_LAYOUT_UNDEFINED}}};
 
 /// Looks up the `UsagePolicy` for a key.
 ///
@@ -169,9 +176,17 @@ constexpr std::optional<UsagePolicy> ResolvePolicy(UsageKey key)
 /// Fills in the barrier stages/access and (for images) the target layout from
 /// `K_USAGE_POLICIES`, and copies the binding information through.
 ///
-/// @param use The declared resource use.
+/// One table entry is corrected here rather than in the table: a buffer's `WRITE` profile is
+/// `HOST`/`HOST_WRITE`, because that is how a CPU node declares the upload it performs. A **GPU** node
+/// that declares `WRITE` on a buffer means a shader writes it, so the host profile would put `HOST` in
+/// the barrier's destination stage - a stage no GPU command is in, which orders the write against
+/// nothing. The queue type is the only thing that distinguishes the two declarations, which is why it
+/// is a parameter.
+///
+/// @param use       The declared resource use.
+/// @param queueType Queue type of the node declaring it; `CPU` keeps the host-write profile.
 /// @return The resolved use consumed by the graph's barrier and binding logic.
-ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
+inline ResolvedResourceUse ResolveResourceUse(const ResourceUse& use, QueueType queueType)
 {
     // Special handling
     if (use.usage == ResourceUsage::PUSH_CONSTANTS)
@@ -201,6 +216,18 @@ ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
     resolved.access = policy->access;
     resolved.descriptorBinding = use.descriptorBinding;
     resolved.bufferRange = use.bufferRange;
+
+    // A GPU write goes through a shader; see the parameter's documentation. `ALL_COMMANDS` because the
+    // table cannot know which shader stage writes a storage buffer, and the access mask is exact.
+    if (queueType != QueueType::CPU && resolved.stages == VK_PIPELINE_STAGE_2_HOST_BIT)
+    {
+        resolved.stages = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        resolved.access = VK_ACCESS_2_SHADER_WRITE_BIT;
+        if (use.io == ResourceIOType::READ_WRITE)
+        {
+            resolved.access |= VK_ACCESS_2_SHADER_READ_BIT;
+        }
+    }
 
     if (use.kind == ResourceKind::IMAGE)
     {

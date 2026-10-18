@@ -58,6 +58,21 @@ public:
 #endif
     }
 
+    /// Pipeline stages this device's enabled features make legal in a barrier mask.
+    ///
+    /// A stage bit whose feature is not enabled may not appear in a mask at all: the ray tracing stage is
+    /// `VUID-VkImageMemoryBarrier2-dstStageMask-07946`, and the geometry, tessellation and mesh shader bits
+    /// are the same rule with a different feature. The render graph derives its barrier masks from a table of
+    /// "every stage that could touch this resource" and filters the result through this.
+    ///
+    /// The value comes from the create-info chain the caller passed, **not** from a compile-time guess about
+    /// what this engine uses: `helloVulkan` enables the mesh shader feature while the render-graph app passes
+    /// no feature structures at all, so a constant would be wrong for one of them - and wrong in the
+    /// dangerous direction, reporting a stage unusable on a device that enabled it.
+    ///
+    /// @return The stage bits a barrier mask may name on this device.
+    VkPipelineStageFlags2 EnabledPipelineStages() const { return m_enabledStages; }
+
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers);
 
     virtual void Unintialize();
@@ -224,6 +239,10 @@ private:  // Private structures
     };
 
 private:  // helper functions to create render device
+    /// Walk the create-info feature chain and record which pipeline stages it enables.
+    ///
+    /// @param pFeatureChain The `VkPhysicalDeviceFeatures2` chain `CreateDevice` assembled, or null.
+    void RecordEnabledStages(const void* pFeatureChain);
     void PickPhysicalDevice();
     VkCommandBuffer AllocatePrimaryCommandbuffer(CommandPools pool);
     void FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);
@@ -260,6 +279,8 @@ private:  // Members
     /// not start requiring it (AGENTS.md section 3: verify, never enable blindly).
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR m_cooperativeMatrixFeatures{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
+    /// Stage bits the assembled feature chain enables; see `EnabledPipelineStages()`.
+    VkPipelineStageFlags2 m_enabledStages = ~static_cast<VkPipelineStageFlags2>(0);
 
 protected:
     VkInstance m_instance = VK_NULL_HANDLE;
