@@ -181,9 +181,9 @@ no edges are still scheduled.
 - **Dependencies and ordering** — `AddDependency(from, to)` declares edges; cycles are rejected.
 - **Barriers** — image layouts, access masks and pipeline stages are derived from each resource's
   `ResourceUsage` (see `K_USAGE_POLICIES` in `ResourceUseResolver.h`). Two details matter when
-  declaring a use: `WRITE` on a buffer means a **host** write from a `CPU` node and a **shader** write
-  from a GPU node (the queue type is what distinguishes them), and a stage the device does not enable
-  is filtered out of the mask rather than emitted.
+  declaring a use: `WRITE` is a **shader** store and `HOST_WRITE` is a write through a mapping — a `CPU`
+  node must use the latter, and a host write is rejected on device-only memory — and a stage the device
+  does not enable is filtered out of the mask rather than emitted.
 - **Dynamic rendering** — graphics nodes are wrapped in `vkCmdBeginRendering`/`vkCmdEndRendering`
   automatically; the first writer of an attachment clears it.
 - **Pipelines and descriptors** — built from the declared shaders, PSO and resource uses.

@@ -36,9 +36,17 @@ enum class ResourceKind : uint8_t
 enum class ResourceIOType : uint8_t
 {
     READ,            ///< Read-only access.
-    WRITE,           ///< Write-only access.
+    WRITE,           ///< Written by a shader (a storage buffer store, an attachment write).
     READ_WRITE,      ///< Read and write (e.g. an atomic counter).
     TRANSFER_WRITE,  ///< Written by a transfer operation (e.g. `vkCmdCopyBuffer`).
+    /// Written by the **host** through a mapping, e.g. `BufferResource::SetData` or `Map()`/`memcpy`.
+    ///
+    /// Distinct from `WRITE` because the barrier has to be: a host write's source scope is
+    /// `HOST`/`HOST_WRITE`, and a shader write's is the shader stages. Declaring one as the other leaves the
+    /// barrier ordering a write that never happened - and the graph cannot infer it from the node's queue
+    /// type, because a GPU node that maps a buffer is a documented pattern (`EnsureMappingsReleased` guards
+    /// it). See #152.
+    HOST_WRITE,
 };
 
 /// The semantic role of a resource within a node.
@@ -89,6 +97,14 @@ enum class ResourceUsage : uint8_t
 /// Monotonic version counter used to track resource writes across nodes.
 using ResourceVersion = uint64_t;
 
+/// @param io An IO type.
+/// @return Whether the access writes the resource.
+///
+/// One place instead of five: every check that asks "is this a write" has to answer the same way, and adding
+/// `HOST_WRITE` (#152) is the demonstration - the transient-lifetime validation counted writes by listing the
+/// enumerators, so a host write stopped being a write the moment a new one appeared.
+constexpr bool IsWrite(ResourceIOType io) { return io != ResourceIOType::READ; }
+
 /// @return The name of an IO type, for diagnostics.
 ///
 /// A switch with no default on purpose: adding a value becomes a warning here rather than a message
@@ -105,6 +121,8 @@ constexpr const char* NameOf(ResourceIOType io)
             return "READ_WRITE";
         case ResourceIOType::TRANSFER_WRITE:
             return "TRANSFER_WRITE";
+        case ResourceIOType::HOST_WRITE:
+            return "HOST_WRITE";
     }
     return "(unknown IO type)";
 }
