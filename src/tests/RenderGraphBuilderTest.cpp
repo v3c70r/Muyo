@@ -1714,6 +1714,42 @@ TEST_CASE("RenderGraphBuilder: a GPU write is a shader write; a CPU write is a h
     CHECK(host.access == VK_ACCESS_2_HOST_WRITE_BIT);
 }
 
+TEST_CASE("RenderGraphBuilder: an acceleration-structure build is ordered against the trace", "[RenderGraphBuilder]")
+{
+    // #14. A build writes the structure at the acceleration-structure-build stage; a trace reads it at the
+    // ray tracing stage. An acceleration structure has no barrier type of its own - the pair is ordered by a
+    // memory barrier naming the AS access bits - so the masks are the whole of the dependency. This runs in
+    // the non-ray-tracing build too, because the derivation needs no device.
+    const ResourceUse build{.handle = ResourceHandle("TLAS"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE};
+    const ResourceUse trace{.handle = ResourceHandle("TLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE};
+
+    const ResolvedResourceUse buildUse = ResolveResourceUse(build, QueueType::RAY_TRACING);
+    const ResolvedResourceUse traceUse = ResolveResourceUse(trace, QueueType::RAY_TRACING);
+    CHECK(buildUse.stages == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    CHECK(buildUse.access == VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+    CHECK(traceUse.access == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+
+    BarrierPriorState state;
+    const BarrierMasks first = DeriveBarrierMasks(state, buildUse, 0);
+    CHECK(first.bNeeded);
+    CHECK(first.dstStage == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    CHECK(first.dstAccess == VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+
+    state = RecordAccess(state, buildUse);
+    const BarrierMasks afterBuild = DeriveBarrierMasks(state, traceUse, 0);
+    CHECK(afterBuild.bNeeded);
+    CHECK(afterBuild.srcStage == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    CHECK(afterBuild.srcAccess == VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+    CHECK(afterBuild.dstStage == VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    CHECK(afterBuild.dstAccess == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+}
+
 TEST_CASE("RenderGraphBuilder: a use the device cannot enable is reported, not silently emptied",
           "[RenderGraphBuilder]")
 {
@@ -2990,6 +3026,146 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     REQUIRE(fCoverage > 0.999F);
     REQUIRE(fMatch > 0.999F);
 }
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and a later node traces it",
+                 "[RenderGraphBuilder][RayTracing]")
+{
+    // #14. The build is recorded *inside* a node and the trace in a later one, with no user barrier
+    // anywhere in the test. What has to hold by itself is the graph's build -> trace dependency: the build
+    // writes the structure at the acceleration-structure-build stage and the trace reads it at the ray
+    // tracing stage, which is the pair `K_USAGE_POLICIES` carries.
+    //
+    // The structure is the one built from the shared quad mesh, and the rebuild uses the same instance
+    // buffer the scene manager filled, so the graph rebuilds the same TLAS rather than leaving a different
+    // one behind for the cases declared after this one.
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+    const glm::mat4 model = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 5.0F));
+
+    RayTracingSceneManager rtSceneManager;
+    AccelerationStructure* pTLAS = rtSceneManager.BuildSceneFromMeshes({{&quadMesh, model}});
+    REQUIRE(pTLAS != nullptr);
+
+    auto* pInstanceBuffer = GetRenderResourceManager()->GetAccelerationStructureBuffer("AS instance buffer", 0);
+    REQUIRE(pInstanceBuffer != nullptr);
+
+    VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
+    instancesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    instancesData.arrayOfPointers = VK_FALSE;
+    instancesData.data.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(pInstanceBuffer->buffer());
+
+    VkAccelerationStructureGeometryKHR geometry{};
+    geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    geometry.geometry.instances = instancesData;
+
+    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    buildInfo.geometryCount = 1;
+    buildInfo.pGeometries = &geometry;
+    buildInfo.dstAccelerationStructure = pTLAS->GetAccelerationStructure();
+
+    uint32_t nInstanceCount = 1;
+    VkAccelerationStructureBuildSizesInfoKHR sizes{};
+    sizes.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
+                                                   VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
+                                                   &nInstanceCount, &sizes);
+    // Outlives Execute(): the build command reads it on the GPU.
+    AccelerationStructureBuffer scratchBuffer(sizes.buildScratchSize);
+    buildInfo.scratchData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(scratchBuffer.buffer());
+
+    VkAccelerationStructureBuildRangeInfoKHR range{nInstanceCount, 0, 0, 0};
+    const VkAccelerationStructureBuildRangeInfoKHR* pRange = &range;
+
+    const glm::mat4 proj =
+        glm::perspective(glm::radians(60.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+    const glm::mat4 view =
+        glm::lookAt(glm::vec3(0.0F, 0.0F, 10.0F), glm::vec3(0.0F, 0.0F, 5.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+    Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("ASBuildCamera", BufferResourceDesc{.count = 1,
+                                                            .stride = sizeof(PerViewData),
+                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("ASBuildOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.ImportResource("ASBuildTLAS", pTLAS);
+
+    builder.AddNode({.nodeName = "ASBuildCameraPrep",
+                     .queueType = QueueType::CPU,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("ASBuildCamera"),
+                                                  .io = ResourceIOType::WRITE,
+                                                  .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                  .kind = ResourceKind::BUFFER}},
+                     .execute = [&camera](RenderGraphNodeContext& ctx)
+                     {
+                         PerViewData perView;
+                         perView.mProj = camera.GetProjMat();
+                         perView.mView = camera.GetViewMat();
+                         perView.mProjInv = glm::inverse(perView.mProj);
+                         perView.mViewInv = glm::inverse(perView.mView);
+                         perView.vScreenExtent = {WIDTH, HEIGHT};
+                         auto* pCamera = ctx.GetResource<BufferResource>("ASBuildCamera");
+                         REQUIRE(pCamera != nullptr);
+                         pCamera->SetData(&perView, sizeof(perView));
+                     }});
+
+    // The build: a GPU node with no shaders, declared as the structure's writer.
+    builder.AddNode({.nodeName = "ASBuildTLASBuild",
+                     .queueType = QueueType::COMPUTE,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("ASBuildTLAS"),
+                                                  .io = ResourceIOType::WRITE,
+                                                  .usage = ResourceUsage::ACCEL_STRUCTURE,
+                                                  .kind = ResourceKind::ACCELERATION_STRUCTURE}},
+                     .execute = [&buildInfo, &pRange](RenderGraphNodeContext& ctx)
+                     { VkExt::vkCmdBuildAccelerationStructuresKHR(ctx.commandBuffer, 1, &buildInfo, &pRange); }});
+
+    builder.AddNode({.nodeName = "ASBuildTrace",
+                     .queueType = QueueType::RAY_TRACING,
+                     .resourceUses =
+                         {
+                             ResourceUse{.handle = ResourceHandle("ASBuildCamera"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::UNIFORM_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                             ResourceUse{.handle = ResourceHandle("ASBuildTLAS"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::ACCEL_STRUCTURE,
+                                         .kind = ResourceKind::ACCELERATION_STRUCTURE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                             ResourceUse{.handle = ResourceHandle("ASBuildOutput"),
+                                         .io = ResourceIOType::READ_WRITE,
+                                         .usage = ResourceUsage::STORAGE_IMAGE,
+                                         .kind = ResourceKind::IMAGE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                         },
+                     .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
+                     .execute = [](RenderGraphNodeContext&) {}});
+
+    builder.AddDependency("ASBuildTLASBuild", "ASBuildTrace");
+    builder.Build();
+
+    CHECK(builder.GetExecutionOrder().size() == 3);
+    builder.Execute();
+
+    // The trace ran against the structure this execution built: the quad covers the centre of the frame,
+    // so at least one pixel is the hit colour rather than the clear value.
+    auto* pOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("ASBuildOutput"));
+    REQUIRE(pOutput != nullptr);
+    const std::vector<glm::vec4> pixels = ReadTargetFloats(
+        pOutput, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    const bool bAnyHit = std::any_of(pixels.begin(), pixels.end(),
+                                     [](const glm::vec4& p) { return p.x != 0.0F || p.y != 0.0F || p.z != 0.0F; });
+    CHECK(bAnyHit);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing matches rasterization (Mazda scene)",
                  "[RenderGraphBuilder][RayTracing]")
 {

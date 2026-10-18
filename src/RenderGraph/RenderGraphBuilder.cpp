@@ -1705,6 +1705,14 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
     std::vector<VkImageMemoryBarrier2> imageBarriers;
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
 
+    // Acceleration structures have no dedicated barrier type: a build's write and a trace's read are
+    // ordered by a global memory barrier whose masks name the AS access bits. It is not addressed to a
+    // resource, so one barrier per batch carries the union - a weaker dependency than per-resource
+    // barriers would be, but a memory barrier is already device-wide and merging changes nothing it
+    // orders.
+    bool bMemoryBarrier = false;
+    VkMemoryBarrier2 memoryBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+
     // The stage masks come from the uses themselves, via the usage table: an attachment write is ordered
     // at COLOR_ATTACHMENT_OUTPUT and a vertex-buffer read at VERTEX_INPUT, rather than both at
     // ALL_COMMANDS. `DeriveBarrierMasks` owns that derivation and the three cases where the previous
@@ -1736,6 +1744,16 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
                     imageBarriers.push_back(barrier);
                 }
             }
+            else if (use.kind == ResourceKind::ACCELERATION_STRUCTURE)
+            {
+                // No handle to address: the barrier is a memory barrier, and the access masks name the AS
+                // bits rather than a range.
+                memoryBarrier.srcStageMask |= masks.srcStage;
+                memoryBarrier.srcAccessMask |= masks.srcAccess;
+                memoryBarrier.dstStageMask |= masks.dstStage;
+                memoryBarrier.dstAccessMask |= masks.dstAccess;
+                bMemoryBarrier = true;
+            }
             else if (use.kind == ResourceKind::BUFFER)
             {
                 const auto* buffer = dynamic_cast<const BufferResource*>(ResolveResource(use.handle));
@@ -1759,9 +1777,11 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         prior = RecordAccess(prior, use, SupportedStages());
     }
 
-    if (imageBarriers.empty() && bufferBarriers.empty()) return;
+    if (imageBarriers.empty() && bufferBarriers.empty() && !bMemoryBarrier) return;
 
     VkDependencyInfo dependencyInfo = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+    dependencyInfo.memoryBarrierCount = bMemoryBarrier ? 1 : 0;
+    dependencyInfo.pMemoryBarriers = bMemoryBarrier ? &memoryBarrier : nullptr;
     dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(bufferBarriers.size());
     dependencyInfo.pBufferMemoryBarriers = bufferBarriers.empty() ? nullptr : bufferBarriers.data();
     dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(imageBarriers.size());
