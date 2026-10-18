@@ -19,3 +19,4 @@ leak:loader_platform_open_library
 # the acceptance is "no project frames in the report", not "a clean exit on every machine".
 leak:libdbus-1.so
 leak:amdvlk64.so
+leak:libdrm.so.2
