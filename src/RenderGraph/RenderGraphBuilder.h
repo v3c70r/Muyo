@@ -17,6 +17,7 @@
 #include "DescriptorSetCache.h"
 #include "PSODesc.h"
 #include "PerObjResourceManager.h"
+#include "RenderGraphBarrier.h"
 #include "RenderGraphExecutionPlan.h"
 #include "RenderGraphExecutor.h"
 #include "RenderGraphNodeContext.h"
@@ -247,6 +248,11 @@ private:
     void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
                         uint32_t queueFamily);
 
+    // Stage bits the device enables. `ResourceUseResolver`'s table names a union of every stage that can
+    // touch a resource; a stage whose feature the device does not enable may not appear in a barrier mask
+    // at all (VUID-VkImageMemoryBarrier2-dstStageMask-07946), so the barrier masks are filtered by this.
+    VkPipelineStageFlags2 SupportedStages() const;
+
     /// Emit the post-node transition to `PRESENT_SRC_KHR` for a node's present targets.
     ///
     /// Present is the one layout whose consumer is outside the graph, so its barrier cannot be emitted at
@@ -313,21 +319,9 @@ private:
     // already computed.
     std::unordered_map<ResourceHandle, TransientLiveRange> m_transientLiveRanges;
 
-    // Tracked resource access state for barrier generation between nodes.
-    struct ResourceAccessState
-    {
-        bool seen = false;
-        VkAccessFlags2 lastAccess = 0;
-        VkImageLayout lastLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        ResourceIOType lastIo = ResourceIOType::READ;    // previous access direction (WAW/WAR hazards)
-        bool writtenByCpu = false;                       // last writer was a CPU node; needs host flush
-        uint32_t queueFamily = VK_QUEUE_FAMILY_IGNORED;  // queue family that currently owns the resource
-        // Set before recording a queue segment when the resource is handed over from another queue
-        // family; consumed by RecordBarriers to emit an acquire barrier instead of a normal one.
-        int32_t pendingAcquireFamily = -1;
-    };
-
-    std::unordered_map<ResourceHandle, ResourceAccessState> m_resourceAccessStates;
+    // Tracked resource access state for barrier generation between nodes. The derivation lives in
+    // RenderGraphBarrier.h, as a free function, so the masks can be tested without a device.
+    std::unordered_map<ResourceHandle, BarrierPriorState> m_resourceAccessStates;
 
     std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
     CompiledRenderGraph m_compiledGraph;

@@ -169,9 +169,17 @@ constexpr std::optional<UsagePolicy> ResolvePolicy(UsageKey key)
 /// Fills in the barrier stages/access and (for images) the target layout from
 /// `K_USAGE_POLICIES`, and copies the binding information through.
 ///
-/// @param use The declared resource use.
+/// One table entry is corrected here rather than in the table: a buffer's `WRITE` profile is
+/// `HOST`/`HOST_WRITE`, because that is how a CPU node declares the upload it performs. A **GPU** node
+/// that declares `WRITE` on a buffer means a shader writes it, so the host profile would put `HOST` in
+/// the barrier's destination stage - a stage no GPU command is in, which orders the write against
+/// nothing. The queue type is the only thing that distinguishes the two declarations, which is why it
+/// is a parameter.
+///
+/// @param use       The declared resource use.
+/// @param queueType Queue type of the node declaring it; `CPU` keeps the host-write profile.
 /// @return The resolved use consumed by the graph's barrier and binding logic.
-ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
+inline ResolvedResourceUse ResolveResourceUse(const ResourceUse& use, QueueType queueType)
 {
     // Special handling
     if (use.usage == ResourceUsage::PUSH_CONSTANTS)
@@ -201,6 +209,18 @@ ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
     resolved.access = policy->access;
     resolved.descriptorBinding = use.descriptorBinding;
     resolved.bufferRange = use.bufferRange;
+
+    // A GPU write goes through a shader; see the parameter's documentation. `ALL_COMMANDS` because the
+    // table cannot know which shader stage writes a storage buffer, and the access mask is exact.
+    if (queueType != QueueType::CPU && resolved.stages == VK_PIPELINE_STAGE_2_HOST_BIT)
+    {
+        resolved.stages = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        resolved.access = VK_ACCESS_2_SHADER_WRITE_BIT;
+        if (use.io == ResourceIOType::READ_WRITE)
+        {
+            resolved.access |= VK_ACCESS_2_SHADER_READ_BIT;
+        }
+    }
 
     if (use.kind == ResourceKind::IMAGE)
     {

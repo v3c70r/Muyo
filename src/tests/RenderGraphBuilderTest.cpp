@@ -17,10 +17,12 @@
 #include "PerObjResourceManager.h"
 #include "RenderGraph/CompiledRenderGraph.h"
 #include "RenderGraph/DrawCommands.h"
+#include "RenderGraph/RenderGraphBarrier.h"
 #include "RenderGraph/RenderGraphBuilder.h"
 #include "RenderGraph/RenderGraphExecutor.h"
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphResourceDesc.h"
+#include "RenderGraph/ResourceUseResolver.h"
 #include "RenderGraphSemanticBindings.h"
 #include "RenderResources/Geometry.h"
 #include "RenderResources/RenderTargetResource.h"
@@ -1559,6 +1561,138 @@ TEST_CASE("BufferResource: capacity arithmetic does not truncate at 4 GiB", "[Re
     const size_t nFourGiB = size_t{1} << 32;
     CHECK(CapacityProbe::RoundUpCapacity(nFourGiB) == nFourGiB);
     CHECK(CapacityProbe::RoundUpCapacity(nFourGiB + 1) == nFourGiB + 256);
+}
+
+TEST_CASE("RenderGraphBuilder: barrier masks come from the uses, not ALL_COMMANDS", "[RenderGraphBuilder]")
+{
+    // #12. The masks are the product of the two uses: a colour-attachment write becomes visible at
+    // COLOR_ATTACHMENT_OUTPUT, and the sampled read that follows it waits at the stages that can sample.
+    // A run cannot tell the difference - `ALL_COMMANDS` on both sides validates too, and did for a year -
+    // so the derivation is checked directly, without a device.
+    const ResourceUse write{.handle = ResourceHandle("Target"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE};
+    const ResourceUse read{.handle = ResourceHandle("Target"),
+                           .io = ResourceIOType::READ,
+                           .usage = ResourceUsage::SAMPLED,
+                           .kind = ResourceKind::IMAGE};
+    const auto sampledStages = static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                                                                  VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+
+    const ResolvedResourceUse writeUse = ResolveResourceUse(write, QueueType::GRAPHICS);
+    BarrierPriorState state;
+    const BarrierMasks first = DeriveBarrierMasks(state, writeUse, 0);
+    CHECK(first.bNeeded);                                          // the layout transition alone requires a barrier
+    CHECK(first.srcStage == VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT);  // nothing to wait for yet
+    CHECK(first.srcAccess == 0);
+    CHECK(first.dstStage == VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+    CHECK(first.dstAccess == VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    CHECK(first.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED);
+    CHECK(first.newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+    state = RecordAccess(state, writeUse);
+    const BarrierMasks second = DeriveBarrierMasks(state, ResolveResourceUse(read, QueueType::GRAPHICS), 0);
+    CHECK(second.bNeeded);
+    CHECK(second.srcStage == VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+    CHECK(second.srcAccess == VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    CHECK(second.dstStage == sampledStages);
+    CHECK(second.dstAccess == VK_ACCESS_2_SHADER_READ_BIT);
+    CHECK(second.oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    CHECK(second.newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    // The same derivation, on a device that does not enable ray tracing: the stage bit must be gone,
+    // because a mask naming it is rejected even when nothing would ever reach it.
+    const auto noRayTracing = ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    const BarrierMasks filtered =
+        DeriveBarrierMasks(state, ResolveResourceUse(read, QueueType::GRAPHICS), 0, noRayTracing);
+    CHECK(filtered.dstStage == static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT));
+}
+
+TEST_CASE("RenderGraphBuilder: barrier hazards and the host-write source", "[RenderGraphBuilder]")
+{
+    // #12. What is left once the masks come from the uses: whether a barrier is needed at all, and the
+    // two cases where the previous stages are not the source scope.
+    const ResourceUse read{.handle = ResourceHandle("Texture"),
+                           .io = ResourceIOType::READ,
+                           .usage = ResourceUsage::SAMPLED,
+                           .kind = ResourceKind::IMAGE};
+    const ResourceUse write{.handle = ResourceHandle("Target"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE};
+    const ResourceUse vertex{.handle = ResourceHandle("Vertices"),
+                             .io = ResourceIOType::READ,
+                             .usage = ResourceUsage::VERTEX_BUFFER,
+                             .kind = ResourceKind::BUFFER};
+
+    // Read after read, same masks: nothing to order.
+    const ResolvedResourceUse readUse = ResolveResourceUse(read, QueueType::GRAPHICS);
+    CHECK_FALSE(DeriveBarrierMasks(RecordAccess(BarrierPriorState{}, readUse), readUse, 0).bNeeded);
+
+    // Write after write, *identical* masks: a WAW hazard remains, so the barrier is still required.
+    const ResolvedResourceUse writeUse = ResolveResourceUse(write, QueueType::GRAPHICS);
+    CHECK(DeriveBarrierMasks(RecordAccess(BarrierPriorState{}, writeUse), writeUse, 0).bNeeded);
+
+    // A CPU node wrote it: the source is the host, and the consumer waits at its own stage.
+    BarrierPriorState hostWritten;
+    hostWritten.bWrittenByHost = true;
+    const BarrierMasks afterHost = DeriveBarrierMasks(hostWritten, ResolveResourceUse(vertex, QueueType::GRAPHICS), 0);
+    CHECK(afterHost.bNeeded);
+    CHECK(afterHost.srcStage == VK_PIPELINE_STAGE_2_HOST_BIT);
+    CHECK(afterHost.srcAccess == VK_ACCESS_2_HOST_WRITE_BIT);
+    CHECK(afterHost.dstStage == VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
+    CHECK(afterHost.dstAccess == VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT);
+
+    // A pending handover: the window is a queue-family acquire, not a normal barrier.
+    BarrierPriorState pending;
+    pending.pendingAcquireFamily = 1;
+    const BarrierMasks acquired = DeriveBarrierMasks(pending, readUse, 0);
+    CHECK(acquired.bNeeded);
+    CHECK(acquired.srcQueueFamily == 1);
+    CHECK(acquired.dstQueueFamily == 0);
+    CHECK(acquired.srcStage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);  // the producer's stages are unknown
+    CHECK(acquired.dstStage == static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                                                                  VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                                                                  VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR));
+}
+
+TEST_CASE("RenderGraphBuilder: a GPU write is a shader write; a CPU write is a host write", "[RenderGraphBuilder]")
+{
+    // #12. One table entry, two meanings: `WRITE` on a storage buffer is a host upload from a CPU node and
+    // a shader store from a GPU node. The queue type is the only thing that distinguishes them, and
+    // getting it wrong put HOST in the destination stage of a GPU write, which orders it against nothing.
+    const ResourceUse write{.handle = ResourceHandle("Out"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER};
+
+    const ResolvedResourceUse gpu = ResolveResourceUse(write, QueueType::COMPUTE);
+    CHECK(gpu.stages == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+    CHECK(gpu.access == VK_ACCESS_2_SHADER_WRITE_BIT);
+
+    const ResolvedResourceUse host = ResolveResourceUse(write, QueueType::CPU);
+    CHECK(host.stages == VK_PIPELINE_STAGE_2_HOST_BIT);
+    CHECK(host.access == VK_ACCESS_2_HOST_WRITE_BIT);
+}
+
+TEST_CASE("RenderGraphBuilder: a use the device cannot enable is reported, not silently emptied",
+          "[RenderGraphBuilder]")
+{
+    // #12. An acceleration-structure read has exactly one stage, so filtering it out of a build without
+    // ray tracing leaves an empty stage mask with a non-empty access mask - which is not a valid barrier
+    // and not a silent no-op either. The error names the resource.
+    const ResourceUse use{.handle = ResourceHandle("TLAS"),
+                          .io = ResourceIOType::READ,
+                          .usage = ResourceUsage::ACCEL_STRUCTURE,
+                          .kind = ResourceKind::ACCELERATION_STRUCTURE};
+    const ResolvedResourceUse resolved = ResolveResourceUse(use, QueueType::RAY_TRACING);
+    const auto noRayTracing = ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    CHECK_THROWS_WITH(
+        DeriveBarrierMasks(BarrierPriorState{}, resolved, 0, noRayTracing),
+        Catch::Matchers::ContainsSubstring("'TLAS'") && Catch::Matchers::ContainsSubstring("does not enable"));
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",

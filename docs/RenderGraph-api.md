@@ -333,6 +333,47 @@ Which vertex layout a graphics node's pipeline expects.
 | `UI` | ImGui's ImDrawVert used by the UI pass. |
 
 
+## `RenderGraphBarrier.h`
+
+### `struct Muyo::RenderGraph::BarrierMasks`
+
+The masks, layouts and queue-family indices one barrier between two uses needs.
+
+| Member | Description |
+| --- | --- |
+| `VkPipelineStageFlags2 srcStage` | Stage scope to wait on. |
+| `VkPipelineStageFlags2 dstStage` | Stage scope to block until done. |
+| `VkAccessFlags2 srcAccess` | Access scope to make visible. |
+| `VkAccessFlags2 dstAccess` | Access scope the consumer declares. |
+| `VkImageLayout oldLayout` | Layout the resource is in. |
+| `VkImageLayout newLayout` | Layout the consumer needs. |
+| `bool bNeeded` | Whether a barrier has to be recorded at all. |
+| `uint32_t srcQueueFamily` | Producer family for an ownership acquire. |
+| `uint32_t dstQueueFamily` | Consumer family for an ownership acquire. |
+
+### `struct Muyo::RenderGraph::BarrierPriorState`
+
+What the graph has recorded about a resource's most recent access.
+
+| Member | Description |
+| --- | --- |
+| `bool bSeen` | A GPU use of this resource has been recorded in this execution. |
+| `VkAccessFlags2 lastAccess` | Access mask of that use; the barrier's source scope. |
+| `VkPipelineStageFlags2 lastStages` | Its stages; the source stage scope. |
+| `VkImageLayout lastLayout` | The layout it left the resource in. |
+| `ResourceIOType lastIo` | Its direction, for the WAR/WAW test. |
+| `bool bWrittenByHost` | The last writer was a CPU node, so the write needs flushing. |
+| `int32_t pendingAcquireFamily` | Producer queue family when an ownership handover is pending. |
+
+### `BarrierMasks Muyo::RenderGraph::DeriveBarrierMasks(const BarrierPriorState &prior, const ResolvedResourceUse &use, uint32_t queueFamily, VkPipelineStageFlags2 supportedStages=~VkPipelineStageFlags2{0})`
+
+Derive the barrier between a resource's last recorded access and the next use.
+
+### `BarrierPriorState Muyo::RenderGraph::RecordAccess(BarrierPriorState prior, const ResolvedResourceUse &use)`
+
+Record a use as the resource's new prior state.
+
+
 ## `RenderGraphBuilder.h`
 
 ### `constexpr int MAX_SHADER_STAGES`
@@ -718,7 +759,7 @@ Barrier policy table: maps every supported (ResourceUsage, ResourceIOType) pair 
 
 Looks up the UsagePolicy for a key.
 
-### `ResolvedResourceUse Muyo::RenderGraph::ResolveResourceUse(const ResourceUse &use)`
+### `ResolvedResourceUse Muyo::RenderGraph::ResolveResourceUse(const ResourceUse &use, QueueType queueType)`
 
 Resolve a node's ResourceUse into a ResolvedResourceUse.
 

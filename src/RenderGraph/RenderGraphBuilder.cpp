@@ -1080,7 +1080,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
         const IRenderResource* pImportedResource =
             resourceDesc.has_value() ? nullptr : m_importedResources.at(resourceUse.handle);
         ValidateUseAgainstResource(nodeName, resourceUse, resourceDesc, pImportedResource);
-        ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
+        ResolvedResourceUse resolved = ResolveResourceUse(resourceUse, nodeCreateInfo.queueType);
         // A range on a buffer bound into a descriptor is validated in
         // `BuildReflectionDescriptorSets`, which knows the descriptor type from reflection; that runs
         // at Build() too, so a bad range still fails there rather than mid-record in Execute.
@@ -1705,96 +1705,58 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
     std::vector<VkImageMemoryBarrier2> imageBarriers;
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
 
-    // Conservative stage masks: use ALL_COMMANDS so any prior stage is flushed and any later stage is blocked.
-    // HOST must be included explicitly on *both* sides: ALL_COMMANDS does not imply it, and a barrier whose
-    // srcAccess or dstAccess is HOST_WRITE needs HOST in the matching stage mask
-    // (VUID-VkBufferMemoryBarrier2-dstAccessMask-03917 / -srcAccessMask-03916). The source side had it and
-    // the destination side did not, which went unnoticed until a GPU node wrote a STORAGE_BUFFER - the
-    // resolver's {STORAGE_BUFFER, WRITE} profile is HOST_WRITE, so the first such node emitted a barrier
-    // this rejected. The *semantic* fix, giving a GPU writer a SHADER_WRITE destination instead of a host
-    // profile, is #12's subject and deliberately not here.
-    const VkPipelineStageFlags2 srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
-    const VkPipelineStageFlags2 dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT | VK_PIPELINE_STAGE_2_HOST_BIT;
-
+    // The stage masks come from the uses themselves, via the usage table: an attachment write is ordered
+    // at COLOR_ATTACHMENT_OUTPUT and a vertex-buffer read at VERTEX_INPUT, rather than both at
+    // ALL_COMMANDS. `DeriveBarrierMasks` owns that derivation and the three cases where the previous
+    // stages are not the source (first use, a host write, a queue handover); this function only turns the
+    // result into barriers.
     for (const auto& use : resourceUses)
     {
-        ResourceAccessState& state = m_resourceAccessStates[use.handle];
+        BarrierPriorState& prior = m_resourceAccessStates[use.handle];
+        const BarrierMasks masks = DeriveBarrierMasks(prior, use, queueFamily, SupportedStages());
 
-        // A pending acquire means this resource is being handed over from another queue family;
-        // the first use emits a queue-family transfer barrier instead of a normal one.
-        const bool bAcquire = state.pendingAcquireFamily >= 0;
-        const uint32_t acquireSrcFamily =
-            bAcquire ? static_cast<uint32_t>(state.pendingAcquireFamily) : VK_QUEUE_FAMILY_IGNORED;
-
-        VkAccessFlags2 srcAccess = 0;
-        VkImageLayout oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-
-        const bool fromCpu = state.writtenByCpu;
-        if (fromCpu)
+        if (masks.bNeeded)
         {
-            // CPU node wrote this resource (host-visible memory); flush before first GPU use.
-            srcAccess = VK_ACCESS_2_HOST_WRITE_BIT;
-        }
-        else if (state.seen)
-        {
-            srcAccess = state.lastAccess;
-            oldLayout = state.lastLayout;
-        }
-
-        // A barrier is also required whenever either side of the transition is a write: with the
-        // same declared usage the access mask and layout are identical, yet a WAW/WAR hazard remains.
-        const bool bHazard = state.lastIo != ResourceIOType::READ || use.io != ResourceIOType::READ;
-        const bool needsBarrier = bAcquire || fromCpu || !state.seen || (state.lastAccess != use.access) ||
-                                  (state.lastLayout != use.imageLayout) || bHazard;
-
-        if (use.kind == ResourceKind::IMAGE)
-        {
-            const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
-            if (!image) continue;
-
-            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-            barrier.srcStageMask = srcStageMask;
-            barrier.dstStageMask = dstStageMask;
-            barrier.srcAccessMask = bAcquire ? 0 : srcAccess;
-            barrier.dstAccessMask = use.access;
-            barrier.oldLayout = state.seen ? oldLayout : VK_IMAGE_LAYOUT_UNDEFINED;
-            barrier.newLayout = use.imageLayout;
-            barrier.srcQueueFamilyIndex = bAcquire ? acquireSrcFamily : VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = bAcquire ? queueFamily : VK_QUEUE_FAMILY_IGNORED;
-            barrier.image = image->getImage();
-            barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
-            if (needsBarrier)
+            if (use.kind == ResourceKind::IMAGE)
             {
-                imageBarriers.push_back(barrier);
+                const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
+                if (image != nullptr)
+                {
+                    VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+                    barrier.srcStageMask = masks.srcStage;
+                    barrier.dstStageMask = masks.dstStage;
+                    barrier.srcAccessMask = masks.srcAccess;
+                    barrier.dstAccessMask = masks.dstAccess;
+                    barrier.oldLayout = masks.oldLayout;
+                    barrier.newLayout = masks.newLayout;
+                    barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
+                    barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
+                    barrier.image = image->getImage();
+                    barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
+                    imageBarriers.push_back(barrier);
+                }
             }
-        }
-        else if (use.kind == ResourceKind::BUFFER)
-        {
-            const auto* buffer = dynamic_cast<const BufferResource*>(ResolveResource(use.handle));
-            if (!buffer) continue;
-
-            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
-            barrier.srcStageMask = srcStageMask;
-            barrier.dstStageMask = dstStageMask;
-            barrier.srcAccessMask = bAcquire ? 0 : srcAccess;
-            barrier.dstAccessMask = use.access;
-            barrier.srcQueueFamilyIndex = bAcquire ? acquireSrcFamily : VK_QUEUE_FAMILY_IGNORED;
-            barrier.dstQueueFamilyIndex = bAcquire ? queueFamily : VK_QUEUE_FAMILY_IGNORED;
-            barrier.buffer = buffer->buffer();
-            barrier.offset = 0;
-            barrier.size = VK_WHOLE_SIZE;
-            if (needsBarrier)
+            else if (use.kind == ResourceKind::BUFFER)
             {
-                bufferBarriers.push_back(barrier);
+                const auto* buffer = dynamic_cast<const BufferResource*>(ResolveResource(use.handle));
+                if (buffer != nullptr)
+                {
+                    VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+                    barrier.srcStageMask = masks.srcStage;
+                    barrier.dstStageMask = masks.dstStage;
+                    barrier.srcAccessMask = masks.srcAccess;
+                    barrier.dstAccessMask = masks.dstAccess;
+                    barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
+                    barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
+                    barrier.buffer = buffer->buffer();
+                    barrier.offset = 0;
+                    barrier.size = VK_WHOLE_SIZE;
+                    bufferBarriers.push_back(barrier);
+                }
             }
         }
 
-        state.seen = true;
-        state.lastAccess = use.access;
-        state.lastLayout = use.imageLayout;
-        state.lastIo = use.io;
-        state.queueFamily = queueFamily;
-        state.pendingAcquireFamily = -1;
+        prior = RecordAccess(prior, use);
     }
 
     if (imageBarriers.empty() && bufferBarriers.empty()) return;
@@ -1827,15 +1789,18 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     std::vector<VkBufferMemoryBarrier2> bufferBarriers;
     for (const auto& handle : handles)
     {
-        ResourceAccessState& state = m_resourceAccessStates[handle];
+        BarrierPriorState& state = m_resourceAccessStates[handle];
         const IRenderResource* pResource = ResolveResource(handle);
         if (pResource == nullptr) continue;
 
         if (const auto* image = dynamic_cast<const ImageResource*>(pResource))
         {
             VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            // Release: the producer's own stages are the source, and the destination scope is empty
+            // because the acquire barrier on the consumer side names it. `ALL_COMMANDS` on both sides
+            // would make the handover wait for work neither side has.
+            barrier.srcStageMask = state.lastStages;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
             barrier.srcAccessMask = state.lastAccess;
             barrier.dstAccessMask = 0;
             barrier.oldLayout = state.lastLayout;
@@ -1849,8 +1814,11 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
         else if (const auto* buffer = dynamic_cast<const BufferResource*>(pResource))
         {
             VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
-            barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            // Release: the producer's own stages are the source, and the destination scope is empty
+            // because the acquire barrier on the consumer side names it. `ALL_COMMANDS` on both sides
+            // would make the handover wait for work neither side has.
+            barrier.srcStageMask = state.lastStages;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
             barrier.srcAccessMask = state.lastAccess;
             barrier.dstAccessMask = 0;
             barrier.srcQueueFamilyIndex = srcQueueFamily;
@@ -1871,6 +1839,16 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     dependencyInfo.pImageMemoryBarriers = imageBarriers.empty() ? nullptr : imageBarriers.data();
 
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
+}
+
+VkPipelineStageFlags2 RenderGraphBuilder::SupportedStages() const
+{
+    VkPipelineStageFlags2 stages = ~VkPipelineStageFlags2{0};
+    if (m_services.device != nullptr && !m_services.device->IsRayTracingSupported())
+    {
+        stages &= ~VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+    }
+    return stages;
 }
 
 uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
@@ -1942,9 +1920,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         {
             if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
             {
-                ResourceAccessState& state = m_resourceAccessStates[use.handle];
-                state.writtenByCpu = true;
-                state.seen = false;
+                BarrierPriorState& state = m_resourceAccessStates[use.handle];
+                state.bWrittenByHost = true;
+                state.bSeen = false;
             }
         }
     }
