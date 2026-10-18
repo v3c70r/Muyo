@@ -912,6 +912,10 @@ void ValidateUseAgainstResource(const std::string& nodeName, const ResourceUse& 
         }
         if (desc.has_value())
         {
+            // A two-value allowlist on purpose. The VMA `AUTO*` modes resolve at allocation time, and this check
+            // runs before anything is allocated - so it cannot know whether VMA would pick host-visible memory.
+            // A buffer whose host visibility the barrier will rely on should say `CPU_TO_GPU`, which puts the
+            // property in the declaration rather than in the allocator's choice.
             const auto& bufferDesc = std::get<BufferResourceDesc>(*desc);
             if (bufferDesc.memoryProperties != VMA_MEMORY_USAGE_CPU_TO_GPU &&
                 bufferDesc.memoryProperties != VMA_MEMORY_USAGE_CPU_ONLY)
@@ -922,8 +926,18 @@ void ValidateUseAgainstResource(const std::string& nodeName, const ResourceUse& 
             }
         }
     }
-    else if (queueType == QueueType::CPU && use.io == ResourceIOType::WRITE && resourceKind == ResourceKind::BUFFER)
+    else if (queueType == QueueType::CPU && use.io == ResourceIOType::WRITE)
     {
+        // Both kinds, because the argument is the same for both and stronger for an image: a CPU node has no
+        // command buffer, and this engine has no host image write at all - so a CPU node's `WRITE` of an image
+        // can only mean nothing, while it still marks the resource written for the lifetime check (#155).
+        if (resourceKind == ResourceKind::IMAGE)
+        {
+            throw std::runtime_error("Node '" + nodeName + "' is a CPU node and declares WRITE of image '" +
+                                     use.handle +
+                                     "'. This engine has no host image write: write a staging buffer and copy "
+                                     "from it with TRANSFER_DEST.");
+        }
         throw std::runtime_error("Node '" + nodeName + "' is a CPU node and declares WRITE of buffer '" + use.handle +
                                  "'. A CPU node writes through the host, so declare HOST_WRITE: WRITE means a "
                                  "shader store, and the host write would be in no barrier's source scope.");

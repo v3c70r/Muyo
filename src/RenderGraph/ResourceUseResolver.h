@@ -162,9 +162,9 @@ inline constexpr std::pair<UsageKey, UsagePolicy> K_USAGE_POLICIES[] = {
     // running shader phase instead of stalling both.
     {{ResourceUsage::TRANSFER_SOURCE, ResourceIOType::READ},
      {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL}},
-    // TRANSFER_WRITE and not WRITE: for a buffer, WRITE means a *host* write in this table - that is how a
-    // mapped upload declares itself - so a copy destination has to say it is a transfer. A clear needs
-    // the same access, which is why one role covers it.
+    // TRANSFER_WRITE and not WRITE: `WRITE` is a shader store in this table and `HOST_WRITE` is a host
+    // write, so a copy destination has to say it is a transfer. A clear needs the same access, which is
+    // why one role covers it.
     {{ResourceUsage::TRANSFER_DEST, ResourceIOType::TRANSFER_WRITE},
      {VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL}},
     // ───────────── Ray Tracing / Mesh / Work Graph ─────────────

@@ -1730,6 +1730,14 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a host write is declared,
                       Catch::Matchers::ContainsSubstring("'ImageHostWriter'") &&
                           Catch::Matchers::ContainsSubstring("no host write to an image"));
 
+    // The same argument for an image, which cannot be written by a CPU node at all (#155 review N1).
+    CHECK_THROWS_WITH(builder.AddNode({.nodeName = "CpuImageWriter",
+                                       .queueType = QueueType::CPU,
+                                       .resourceUses = {use("Target", ResourceIOType::WRITE, ResourceUsage::SAMPLED,
+                                                            ResourceKind::IMAGE)}}),
+                      Catch::Matchers::ContainsSubstring("'CpuImageWriter'") &&
+                          Catch::Matchers::ContainsSubstring("no host image write"));
+
     // A host write needs host-visible storage; the allocation is where that has to be true.
     CHECK_THROWS_WITH(builder.AddNode({.nodeName = "GpuMemoryHostWriter",
                                        .queueType = QueueType::GRAPHICS,
