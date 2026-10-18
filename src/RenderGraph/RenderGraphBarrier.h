@@ -138,14 +138,21 @@ inline BarrierMasks DeriveBarrierMasks(const BarrierPriorState& prior, const Res
 
 /// Record a use as the resource's new prior state.
 ///
-/// @param prior The state to update.
-/// @param use   The use just recorded.
+/// The stages are stored **filtered**, with the same set the barrier used. Storing the raw table stages would
+/// put a bit the device does not enable into the next barrier's source scope - a release barrier that names
+/// `RAY_TRACING_SHADER` on a build without ray tracing, which is the VUID class the filter exists to prevent.
+///
+/// @param prior           The state to update.
+/// @param use             The use just recorded.
+/// @param supportedStages Stage bits this device enables; the default keeps everything, for tests and for
+///                        callers that have no device.
 /// @return The state the next barrier for this resource is derived from.
-inline BarrierPriorState RecordAccess(BarrierPriorState prior, const ResolvedResourceUse& use)
+inline BarrierPriorState RecordAccess(BarrierPriorState prior, const ResolvedResourceUse& use,
+                                      VkPipelineStageFlags2 supportedStages = ~VkPipelineStageFlags2{0})
 {
     prior.bSeen = true;
     prior.lastAccess = use.access;
-    prior.lastStages = use.stages;
+    prior.lastStages = use.stages & supportedStages;
     prior.lastLayout = use.imageLayout;
     prior.lastIo = use.io;
     prior.bWrittenByHost = false;

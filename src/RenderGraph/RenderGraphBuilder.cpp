@@ -1756,7 +1756,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             }
         }
 
-        prior = RecordAccess(prior, use);
+        prior = RecordAccess(prior, use, SupportedStages());
     }
 
     if (imageBarriers.empty() && bufferBarriers.empty()) return;
@@ -1841,7 +1841,10 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-VkPipelineStageFlags2 RenderGraphBuilder::SupportedStages() const { return VkRenderDevice::EnabledPipelineStages(); }
+VkPipelineStageFlags2 RenderGraphBuilder::SupportedStages() const
+{
+    return m_services.device != nullptr ? m_services.device->EnabledPipelineStages() : ~VkPipelineStageFlags2{0};
+}
 
 uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
 {

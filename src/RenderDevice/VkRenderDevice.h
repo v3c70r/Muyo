@@ -61,26 +61,17 @@ public:
     /// Pipeline stages this device's enabled features make legal in a barrier mask.
     ///
     /// A stage bit whose feature is not enabled may not appear in a mask at all: the ray tracing stage is
-    /// `VUID-VkImageMemoryBarrier2-dstStageMask-07946`, and geometry, tessellation and mesh shader work is
-    /// not enabled by `CreateDevice`, so their bits are equally unusable. The render graph derives its
-    /// barrier masks from a table of "every stage that could touch this resource" and therefore has to
-    /// filter the result through this, which is why the set lives here rather than in the graph: it is a
-    /// property of what the device created, and it has to change when that does.
+    /// `VUID-VkImageMemoryBarrier2-dstStageMask-07946`, and the geometry, tessellation and mesh shader bits
+    /// are the same rule with a different feature. The render graph derives its barrier masks from a table of
+    /// "every stage that could touch this resource" and filters the result through this.
+    ///
+    /// The value comes from the create-info chain the caller passed, **not** from a compile-time guess about
+    /// what this engine uses: `helloVulkan` enables the mesh shader feature while the render-graph app passes
+    /// no feature structures at all, so a constant would be wrong for one of them - and wrong in the
+    /// dangerous direction, reporting a stage unusable on a device that enabled it.
     ///
     /// @return The stage bits a barrier mask may name on this device.
-    static constexpr VkPipelineStageFlags2 EnabledPipelineStages()
-    {
-        VkPipelineStageFlags2 stages = ~static_cast<VkPipelineStageFlags2>(0);
-        stages &= ~static_cast<VkPipelineStageFlags2>(
-            VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
-            VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT | VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT);
-#ifndef FEATURE_RAY_TRACING
-        stages &= ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
-                                                      VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
-#endif
-        return stages;
-    }
+    VkPipelineStageFlags2 EnabledPipelineStages() const { return m_enabledStages; }
 
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers);
 
@@ -248,6 +239,10 @@ private:  // Private structures
     };
 
 private:  // helper functions to create render device
+    /// Walk the create-info feature chain and record which pipeline stages it enables.
+    ///
+    /// @param pFeatureChain The `VkPhysicalDeviceFeatures2` chain `CreateDevice` assembled, or null.
+    void RecordEnabledStages(const void* pFeatureChain);
     void PickPhysicalDevice();
     VkCommandBuffer AllocatePrimaryCommandbuffer(CommandPools pool);
     void FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);
@@ -284,6 +279,8 @@ private:  // Members
     /// not start requiring it (AGENTS.md section 3: verify, never enable blindly).
     VkPhysicalDeviceCooperativeMatrixFeaturesKHR m_cooperativeMatrixFeatures{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
+    /// Stage bits the assembled feature chain enables; see `EnabledPipelineStages()`.
+    VkPipelineStageFlags2 m_enabledStages = ~static_cast<VkPipelineStageFlags2>(0);
 
 protected:
     VkInstance m_instance = VK_NULL_HANDLE;

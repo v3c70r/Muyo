@@ -247,6 +247,73 @@ void VkRenderDevice::PickPhysicalDevice()
     m_pinnedPhysicalDeviceName = selectedProperties.deviceName;
 }
 
+namespace
+{
+/// Enough of a feature struct to walk a `pNext` chain: every Vulkan feature struct starts this way.
+struct FeatureChainHeader
+{
+    VkStructureType sType;
+    void* pNext;
+};
+}  // namespace
+
+void VkRenderDevice::RecordEnabledStages(const void* pFeatureChain)
+{
+    // Everything the engine always requests is legal; the feature-gated bits are removed here and added back
+    // below only when the caller's own chain enables the feature.
+    VkPipelineStageFlags2 stages = ~static_cast<VkPipelineStageFlags2>(0);
+    stages &= ~static_cast<VkPipelineStageFlags2>(
+        VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
+        VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT | VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+        VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT | VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
+        VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+
+    for (const auto* pHeader = static_cast<const FeatureChainHeader*>(pFeatureChain); pHeader != nullptr;
+         pHeader = static_cast<const FeatureChainHeader*>(pHeader->pNext))
+    {
+        switch (pHeader->sType)
+        {
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
+            {
+                const auto& core = *reinterpret_cast<const VkPhysicalDeviceFeatures2*>(pHeader);
+                if (core.features.geometryShader == VK_TRUE) stages |= VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT;
+                if (core.features.tessellationShader == VK_TRUE)
+                {
+                    stages |= VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
+                              VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT;
+                }
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT:
+            {
+                const auto& mesh = *reinterpret_cast<const VkPhysicalDeviceMeshShaderFeaturesEXT*>(pHeader);
+                if (mesh.taskShader == VK_TRUE) stages |= VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT;
+                if (mesh.meshShader == VK_TRUE) stages |= VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR:
+            {
+                const auto& rt = *reinterpret_cast<const VkPhysicalDeviceRayTracingPipelineFeaturesKHR*>(pHeader);
+                if (rt.rayTracingPipeline == VK_TRUE) stages |= VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR:
+            {
+                const auto& as = *reinterpret_cast<const VkPhysicalDeviceAccelerationStructureFeaturesKHR*>(pHeader);
+                if (as.accelerationStructure == VK_TRUE)
+                {
+                    stages |= VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    m_enabledStages = stages;
+}
+
 void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensions,
                                   const std::vector<const char*>& layers,
                                   const VkSurfaceKHR* pSurface,  // surface for compatibility check
@@ -597,6 +664,10 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
 
     createInfo.pQueueCreateInfos = vQueueCreateInfos.data();
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(vQueueCreateInfos.size());
+
+    // Recorded from the chain that is about to be handed to `vkCreateDevice`, so a barrier mask can be
+    // filtered by what this device really enables rather than by what this file assumes.
+    RecordEnabledStages(&features2);
 
     createInfo.pEnabledFeatures = nullptr;
     createInfo.pNext = &features2;

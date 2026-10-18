@@ -369,7 +369,7 @@ What the graph has recorded about a resource's most recent access.
 
 Derive the barrier between a resource's last recorded access and the next use.
 
-### `BarrierPriorState Muyo::RenderGraph::RecordAccess(BarrierPriorState prior, const ResolvedResourceUse &use)`
+### `BarrierPriorState Muyo::RenderGraph::RecordAccess(BarrierPriorState prior, const ResolvedResourceUse &use, VkPipelineStageFlags2 supportedStages=~VkPipelineStageFlags2{0})`
 
 Record a use as the resource's new prior state.
 

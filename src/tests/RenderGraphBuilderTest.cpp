@@ -1614,6 +1614,14 @@ TEST_CASE("RenderGraphBuilder: barrier masks come from the uses, not ALL_COMMAND
         DeriveBarrierMasks(state, ResolveResourceUse(read, QueueType::GRAPHICS), 0, noRayTracing);
     CHECK(filtered.dstStage ==
           (sampledStages & ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR)));
+
+    // Review N3. The *stored* stages are filtered too: `RecordQueueTransferBarriers` emits them as a release
+    // barrier's source scope, so storing the raw table stages would leak a disabled bit into that mask - the
+    // VUID class the filter exists to prevent, one call site away from where it is applied.
+    const BarrierPriorState stored =
+        RecordAccess(BarrierPriorState{}, ResolveResourceUse(read, QueueType::GRAPHICS), noRayTracing);
+    CHECK((stored.lastStages & VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR) == 0);
+    CHECK((stored.lastStages & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
 }
 
 TEST_CASE("RenderGraphBuilder: barrier hazards and the host-write source", "[RenderGraphBuilder]")
@@ -1661,6 +1669,30 @@ TEST_CASE("RenderGraphBuilder: barrier hazards and the host-write source", "[Ren
     CHECK(acquired.srcStage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);  // the producer's stages are unknown
     CHECK((acquired.dstStage & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
     CHECK((acquired.dstStage & VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT) != 0);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the stage filter reflects what the device enabled",
+                 "[RenderGraphBuilder]")
+{
+    // Review N2. The set is a property of the create-info chain, not of the build: `helloVulkan` enables the
+    // mesh shader feature and the render-graph app passes no feature structures, so a compile-time constant
+    // would report a stage unusable on a device that enabled it. The fixture creates the RG-shaped device.
+    const VkPipelineStageFlags2 enabled = GetRenderDevice()->EnabledPipelineStages();
+    CHECK((enabled & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
+    CHECK((enabled & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) != 0);
+    CHECK((enabled & VK_PIPELINE_STAGE_2_TRANSFER_BIT) != 0);
+    // None of these is in the chain this fixture passes.
+    CHECK((enabled & VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT) == 0);
+    CHECK((enabled & VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT) == 0);
+    CHECK((enabled & VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT) == 0);
+    CHECK((enabled & VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT) == 0);
+#ifdef FEATURE_RAY_TRACING
+    CHECK((enabled & VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR) != 0);
+    CHECK((enabled & VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR) != 0);
+#else
+    CHECK((enabled & VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR) == 0);
+    CHECK((enabled & VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR) == 0);
+#endif
 }
 
 TEST_CASE("RenderGraphBuilder: a GPU write is a shader write; a CPU write is a host write", "[RenderGraphBuilder]")
@@ -1715,23 +1747,6 @@ TEST_CASE("RenderGraphBuilder: a use the device cannot enable is reported, not s
     CHECK_THROWS_WITH(
         DeriveBarrierMasks(BarrierPriorState{}, built, 0, noBuildStage),
         Catch::Matchers::ContainsSubstring("'TLASBuild'") && Catch::Matchers::ContainsSubstring("does not enable"));
-
-    // And the value the graph actually filters with: a device test would only prove it for one build, so
-    // this asserts the device layer's own set. Geometry, tessellation and mesh shader work is not enabled
-    // by `CreateDevice`, and the ray tracing stages depend on the build.
-    const VkPipelineStageFlags2 enabled = VkRenderDevice::EnabledPipelineStages();
-    CHECK((enabled & VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT) == 0);
-    CHECK((enabled & VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT) == 0);
-    CHECK((enabled & VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT) == 0);
-    CHECK((enabled & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
-    CHECK((enabled & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) != 0);
-#ifdef FEATURE_RAY_TRACING
-    CHECK((enabled & VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR) != 0);
-    CHECK((enabled & VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR) != 0);
-#else
-    CHECK((enabled & VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR) == 0);
-    CHECK((enabled & VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR) == 0);
-#endif
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
