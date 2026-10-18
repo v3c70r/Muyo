@@ -148,6 +148,12 @@ inline constexpr std::pair<UsageKey, UsagePolicy> K_USAGE_POLICIES[] = {
     {{ResourceUsage::ACCEL_STRUCTURE, ResourceIOType::READ},
      {VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
       VK_IMAGE_LAYOUT_UNDEFINED}},
+    // A build writes the structure, and the write is ordered against the build stage rather than the shader
+    // stage - `vkCmdBuildAccelerationStructuresKHR` is not shader work. This pair is what makes the graph emit
+    // the build -> trace barrier a node would otherwise have to record by hand (#14).
+    {{ResourceUsage::ACCEL_STRUCTURE, ResourceIOType::WRITE},
+     {VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+      VK_IMAGE_LAYOUT_UNDEFINED}},
     {{ResourceUsage::TASK_PAYLOAD, ResourceIOType::READ_WRITE},
      {VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT, VK_ACCESS_2_SHADER_READ_BIT | VK_ACCESS_2_SHADER_WRITE_BIT,
       VK_IMAGE_LAYOUT_UNDEFINED}},
