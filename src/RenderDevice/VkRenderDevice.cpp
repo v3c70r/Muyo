@@ -212,7 +212,39 @@ void VkRenderDevice::PickPhysicalDevice()
     // assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
+
+    // Pin by name across instance re-creations. Enumeration order is not guaranteed, and a caller that
+    // re-creates the instance - the test host does, once per fixture - would otherwise silently move to a
+    // different device mid-process: a suite that starts on a real GPU and finishes on llvmpipe reports one
+    // device while running two (#141).
+    if (!m_pinnedPhysicalDeviceName.empty())
+    {
+        for (VkPhysicalDevice device : devices)
+        {
+            VkPhysicalDeviceProperties deviceProperties{};
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+            if (m_pinnedPhysicalDeviceName == deviceProperties.deviceName)
+            {
+                m_physicalDevice = device;
+                return;
+            }
+        }
+
+        // The pinned device is gone. Fall back, but say so loudly: the run is no longer single-device, and
+        // a silent pick here is exactly the failure this pin exists to make visible.
+        VkPhysicalDeviceProperties fallbackProperties{};
+        vkGetPhysicalDeviceProperties(devices[0], &fallbackProperties);
+        std::cerr << "[WARNING]: this process started on '" << m_pinnedPhysicalDeviceName
+                  << "', which is no longer enumerated; falling back to '" << fallbackProperties.deviceName
+                  << "'. Fixtures from here on run on the new device, so per-device claims cover only the "
+                     "part of the run before this point."
+                  << std::endl;
+    }
+
     m_physicalDevice = devices[0];
+    VkPhysicalDeviceProperties selectedProperties{};
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &selectedProperties);
+    m_pinnedPhysicalDeviceName = selectedProperties.deviceName;
 }
 
 void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensions,

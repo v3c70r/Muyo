@@ -519,11 +519,10 @@ void GLTFImporter::ConstructGeometryNode(GeometrySceneNode &geomNode, const tiny
                 .LoadTexture(Material::TEX_AO, sOcclusionTexPath, sOcclusionTexName)
                 .LoadTexture(Material::TEX_EMISSIVE, sEmissiveTexPath, sEmissiveTexName);
 
-            {
-                // Populate PBRmaterial
-                memcpy(&pbrMaterial, &pbrMaterial, sizeof(pbrMaterial));
-                material.FillPbrTextureIndices(pbrMaterial.textureIds);
-            }
+            // `pbrMaterial` is fully initialised by the braced initialiser above, so this only needs to
+            // hand its texture ids to the material. The `memcpy(&pbrMaterial, &pbrMaterial, ...)` that used
+            // to sit here was a self-copy - a no-op that warned `-Wrestrict` in every configuration (#121).
+            material.FillPbrTextureIndices(pbrMaterial.textureIds);
 
             material.AllocateDescriptorSet();
             RequireGltf(material.GetDescriptorSet() != VK_NULL_HANDLE, m_sceneFile,

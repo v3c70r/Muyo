@@ -3,3 +3,20 @@
 # pthread_once initialization frame (glibc)
 leak:^__pthread_once_slow$
 leak:nptl/pthread_once.c
+
+# Vulkan loader: loading a layer or a driver `dlopen`s it, and that library's own static initialisers
+# allocate process-lifetime state the loader never frees. The allocation therefore sits under the loader's
+# open path and has no project frame - which is the discriminator: a leak that reaches project code has no
+# loader frame and is still reported (#103). `print_suppressions=1` names each suppressed hit, so the
+# remaining count is visible rather than silent.
+leak:loader_open_layer_file
+leak:loader_platform_open_library
+
+# The driver module's own registration path, which is the leak that survives the loader frames on some
+# machines: the NVIDIA driver reaches libdbus (`dbus_bus_register`) through `dlopen`, and AMDVLK allocates
+# inside its own module. Module-scoped rather than `leak:*`, so a project leak has no such frame and is
+# still reported. A driver built without symbols still reports as `<unknown module>` and cannot be matched;
+# the acceptance is "no project frames in the report", not "a clean exit on every machine".
+leak:libdbus-1.so
+leak:amdvlk64.so
+leak:libdrm.so.2

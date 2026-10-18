@@ -1547,6 +1547,20 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an image role must fit it
     }
 }
 
+TEST_CASE("BufferResource: capacity arithmetic does not truncate at 4 GiB", "[RenderGraphBuilder]")
+{
+    // #124. `RoundUpCapacity` returned `uint32_t`, so a 4 GiB request rounded to 256 while `SetData`
+    // memcpy'd the full size into the undersized allocation. Capacity is `size_t` end to end now, so the
+    // arithmetic keeps the request. A device is not needed: this is the pure helper.
+    struct CapacityProbe : BufferResource
+    {
+        using BufferResource::RoundUpCapacity;
+    };
+    const size_t nFourGiB = size_t{1} << 32;
+    CHECK(CapacityProbe::RoundUpCapacity(nFourGiB) == nFourGiB);
+    CHECK(CapacityProbe::RoundUpCapacity(nFourGiB + 1) == nFourGiB + 256);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
                  "[RenderGraphBuilder]")
 {
