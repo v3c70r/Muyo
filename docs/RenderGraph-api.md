@@ -751,7 +751,7 @@ Stable string name identifying a resource, node or imported object in the graph.
 
 ## `ResourceUseResolver.h`
 
-### `constexpr std::array< std::pair< UsageKey, UsagePolicy >, 29 > K_USAGE_POLICIES`
+### `constexpr std::pair< UsageKey, UsagePolicy > K_USAGE_POLICIES`
 
 Barrier policy table: maps every supported (ResourceUsage, ResourceIOType) pair to the pipeline stages, access mask and image layout the graph uses when a node touches it.
 

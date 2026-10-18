@@ -1841,15 +1841,7 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-VkPipelineStageFlags2 RenderGraphBuilder::SupportedStages() const
-{
-    VkPipelineStageFlags2 stages = ~VkPipelineStageFlags2{0};
-    if (m_services.device != nullptr && !m_services.device->IsRayTracingSupported())
-    {
-        stages &= ~VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR;
-    }
-    return stages;
-}
+VkPipelineStageFlags2 RenderGraphBuilder::SupportedStages() const { return VkRenderDevice::EnabledPipelineStages(); }
 
 uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
 {

@@ -58,6 +58,30 @@ public:
 #endif
     }
 
+    /// Pipeline stages this device's enabled features make legal in a barrier mask.
+    ///
+    /// A stage bit whose feature is not enabled may not appear in a mask at all: the ray tracing stage is
+    /// `VUID-VkImageMemoryBarrier2-dstStageMask-07946`, and geometry, tessellation and mesh shader work is
+    /// not enabled by `CreateDevice`, so their bits are equally unusable. The render graph derives its
+    /// barrier masks from a table of "every stage that could touch this resource" and therefore has to
+    /// filter the result through this, which is why the set lives here rather than in the graph: it is a
+    /// property of what the device created, and it has to change when that does.
+    ///
+    /// @return The stage bits a barrier mask may name on this device.
+    static constexpr VkPipelineStageFlags2 EnabledPipelineStages()
+    {
+        VkPipelineStageFlags2 stages = ~static_cast<VkPipelineStageFlags2>(0);
+        stages &= ~static_cast<VkPipelineStageFlags2>(
+            VK_PIPELINE_STAGE_2_GEOMETRY_SHADER_BIT | VK_PIPELINE_STAGE_2_TESSELLATION_CONTROL_SHADER_BIT |
+            VK_PIPELINE_STAGE_2_TESSELLATION_EVALUATION_SHADER_BIT | VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+            VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT);
+#ifndef FEATURE_RAY_TRACING
+        stages &= ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR |
+                                                      VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+#endif
+        return stages;
+    }
+
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers);
 
     virtual void Unintialize();
