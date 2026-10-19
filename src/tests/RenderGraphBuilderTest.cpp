@@ -2835,6 +2835,55 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     }
 }
 
+TEST_CASE("RenderGraphBuilder: a pending handover routes an acceleration structure to the buffer path",
+          "[RenderGraphBuilder]")
+{
+    // #158. After #156 the *emission* was asserted; the decision to reach it was not, and falsifying that
+    // decision left the whole suite green. `DeriveUseBarriers` now owns it, so the routing can be asserted here
+    // - with a pending handover the use becomes a buffer barrier carrying both indices and no memory barrier,
+    // and without one it stays the device-wide memory barrier.
+    const auto kFakeBuffer = reinterpret_cast<VkBuffer>(static_cast<uintptr_t>(0x1));
+    const ResourceUse trace{.handle = ResourceHandle("TLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE};
+    const ResolvedResourceUse use = ResolveResourceUse(trace);
+
+    BarrierPriorState pending;
+    pending.pendingAcquireFamily = 1;
+    const BarrierMasks acquire = DeriveBarrierMasks(pending, use, 0);
+    const UseBarriers routed = DeriveUseBarriers(use, acquire, VK_NULL_HANDLE, kFakeBuffer, VK_IMAGE_ASPECT_COLOR_BIT);
+    CHECK(routed.barriers.images.empty());
+    REQUIRE(routed.barriers.buffers.size() == 1);
+    CHECK(routed.barriers.buffers[0].srcQueueFamilyIndex == 1);
+    CHECK(routed.barriers.buffers[0].dstQueueFamilyIndex == 0);
+    CHECK(routed.barriers.buffers[0].dstStageMask == VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    CHECK_FALSE(routed.memory.has_value());  // a memory barrier here would be the family-less acquire #153 was
+
+    BarrierPriorState inFamily;
+    inFamily.bSeen = true;
+    inFamily.lastStages = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+    inFamily.lastAccess = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+    const BarrierMasks local = DeriveBarrierMasks(inFamily, use, 0);
+    const UseBarriers same = DeriveUseBarriers(use, local, VK_NULL_HANDLE, kFakeBuffer, VK_IMAGE_ASPECT_COLOR_BIT);
+    CHECK(same.barriers.buffers.empty());
+    REQUIRE(same.memory.has_value());
+    CHECK(same.memory->srcStageMask == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    CHECK(same.memory->dstAccessMask == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+
+    // The other kinds route to their own lists, so this is a router and not an AS special case.
+    const ResourceUse readImage{.handle = ResourceHandle("Texture"),
+                                .io = ResourceIOType::READ,
+                                .usage = ResourceUsage::SAMPLED,
+                                .kind = ResourceKind::IMAGE};
+    const ResolvedResourceUse imageUse = ResolveResourceUse(readImage);
+    const UseBarriers imageBarriers = DeriveUseBarriers(imageUse, DeriveBarrierMasks(BarrierPriorState{}, imageUse, 0),
+                                                        VK_NULL_HANDLE, VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT);
+    CHECK(imageBarriers.barriers.buffers.empty());
+    CHECK(imageBarriers.barriers.images.size() == 1);
+    CHECK_FALSE(imageBarriers.memory.has_value());
+}
+
 TEST_CASE("RenderGraphBuilder: a queue handover is recorded for every kind that can cross a family",
           "[RenderGraphBuilder]")
 {

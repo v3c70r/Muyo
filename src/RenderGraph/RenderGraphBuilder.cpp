@@ -1769,68 +1769,49 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
 
         if (masks.bNeeded)
         {
-            if (use.kind == ResourceKind::IMAGE)
+            // Resolve the handle the kind needs, then let `DeriveUseBarriers` decide *which* barrier this use
+            // takes - that decision is what #158 is about, and it is only observable now because it lives there.
+            const IRenderResource* pResource = ResolveResource(use.handle);
+            if (pResource == nullptr)
             {
-                const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
-                if (image != nullptr)
-                {
-                    VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-                    barrier.srcStageMask = masks.srcStage;
-                    barrier.dstStageMask = masks.dstStage;
-                    barrier.srcAccessMask = masks.srcAccess;
-                    barrier.dstAccessMask = masks.dstAccess;
-                    barrier.oldLayout = masks.oldLayout;
-                    barrier.newLayout = masks.newLayout;
-                    barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
-                    barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
-                    barrier.image = image->getImage();
-                    barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
-                    imageBarriers.push_back(barrier);
-                }
+                // Master dropped the barrier here, which leaves a race; recording one with a null handle would
+                // be an invalid barrier, which is UB. Neither is a barrier, so a handle that does not resolve is
+                // reported - unreachable for a graph that built, since every use was checked at `AddNode`.
+                throw std::runtime_error(
+                    "Barrier for '" + use.handle +
+                    "' is needed but the resource does not resolve, so no barrier can address it.");
             }
-            else if (use.kind == ResourceKind::ACCELERATION_STRUCTURE)
+            VkImage image = VK_NULL_HANDLE;
+            VkBuffer buffer = VK_NULL_HANDLE;
+            VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+            if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
             {
-                if (masks.srcQueueFamily != VK_QUEUE_FAMILY_IGNORED)
-                {
-                    // An ownership acquire has to carry the two family indices, and a memory barrier has no
-                    // field for them: the structure's memory is its backing buffer's, so the acquire is a
-                    // buffer barrier on that buffer (#153).
-                    const auto* pAccel = dynamic_cast<const AccelerationStructure*>(ResolveResource(use.handle));
-                    QueueTransferBarriers transferBarriers;
-                    AppendAcquireTransfer(transferBarriers, use.handle, use.kind, VK_NULL_HANDLE,
-                                          pAccel != nullptr ? pAccel->GetBackingBuffer() : VK_NULL_HANDLE,
-                                          VK_IMAGE_ASPECT_COLOR_BIT, masks);
-                    bufferBarriers.insert(bufferBarriers.end(), transferBarriers.buffers.begin(),
-                                          transferBarriers.buffers.end());
-                }
-                else
-                {
-                    // No handle to address: the barrier is a memory barrier, and the access masks name the AS
-                    // bits rather than a range.
-                    memoryBarrier.srcStageMask |= masks.srcStage;
-                    memoryBarrier.srcAccessMask |= masks.srcAccess;
-                    memoryBarrier.dstStageMask |= masks.dstStage;
-                    memoryBarrier.dstAccessMask |= masks.dstAccess;
-                    bMemoryBarrier = true;
-                }
+                image = pImage->getImage();
+                aspect = AspectForFormat(pImage->GetImageFormat());
             }
-            else if (use.kind == ResourceKind::BUFFER)
+            else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
             {
-                const auto* buffer = dynamic_cast<const BufferResource*>(ResolveResource(use.handle));
-                if (buffer != nullptr)
-                {
-                    VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
-                    barrier.srcStageMask = masks.srcStage;
-                    barrier.dstStageMask = masks.dstStage;
-                    barrier.srcAccessMask = masks.srcAccess;
-                    barrier.dstAccessMask = masks.dstAccess;
-                    barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
-                    barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
-                    barrier.buffer = buffer->buffer();
-                    barrier.offset = 0;
-                    barrier.size = VK_WHOLE_SIZE;
-                    bufferBarriers.push_back(barrier);
-                }
+                buffer = pAccel->GetBackingBuffer();
+            }
+            else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
+            {
+                buffer = pBuffer->buffer();
+            }
+
+            const UseBarriers useBarriers = DeriveUseBarriers(use, masks, image, buffer, aspect);
+            imageBarriers.insert(imageBarriers.end(), useBarriers.barriers.images.begin(),
+                                 useBarriers.barriers.images.end());
+            bufferBarriers.insert(bufferBarriers.end(), useBarriers.barriers.buffers.begin(),
+                                  useBarriers.barriers.buffers.end());
+            if (useBarriers.memory.has_value())
+            {
+                // One memory barrier per batch carries the union of the in-family AS uses; a memory barrier is
+                // device-wide already, so merging changes nothing it orders.
+                memoryBarrier.srcStageMask |= useBarriers.memory->srcStageMask;
+                memoryBarrier.srcAccessMask |= useBarriers.memory->srcAccessMask;
+                memoryBarrier.dstStageMask |= useBarriers.memory->dstStageMask;
+                memoryBarrier.dstAccessMask |= useBarriers.memory->dstAccessMask;
+                bMemoryBarrier = true;
             }
         }
 

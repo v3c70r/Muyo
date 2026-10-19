@@ -377,6 +377,10 @@ What the graph has recorded about a resource's most recent access.
 
 Derive the barrier between a resource's last recorded access and the next use.
 
+### `UseBarriers Muyo::RenderGraph::DeriveUseBarriers(const ResolvedResourceUse &use, const BarrierMasks &masks, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect)`
+
+Build the barrier(s) a use needs, including which kind of barrier it takes.
+
 ### `struct Muyo::RenderGraph::QueueTransferBarriers`
 
 The barrier lists one queue-family handover contributes to.
@@ -389,6 +393,15 @@ The barrier lists one queue-family handover contributes to.
 ### `BarrierPriorState Muyo::RenderGraph::RecordAccess(BarrierPriorState prior, const ResolvedResourceUse &use, VkPipelineStageFlags2 supportedStages=~VkPipelineStageFlags2{0})`
 
 Record a use as the resource's new prior state.
+
+### `struct Muyo::RenderGraph::UseBarriers`
+
+The barrier(s) one use needs: image and buffer lists, plus the device-wide memory barrier an in-family acceleration-structure use takes.
+
+| Member | Description |
+| --- | --- |
+| `QueueTransferBarriers barriers` | Image and buffer barrier lists. |
+| `std::optional< VkMemoryBarrier2 > memory` | Set for an in-family acceleration-structure use. |
 
 
 ## `RenderGraphBuilder.h`
