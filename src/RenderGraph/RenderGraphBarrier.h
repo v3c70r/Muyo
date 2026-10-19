@@ -1,6 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -284,6 +285,94 @@ inline void AppendAcquireTransfer(QueueTransferBarriers& out, const std::string&
 
     throw std::runtime_error("A queue handover is pending for '" + handle + "', but a " + std::string(NameOf(kind)) +
                              " has no barrier to express it.");
+}
+
+/// The barrier(s) one use needs: image and buffer lists, plus the device-wide memory barrier an in-family
+/// acceleration-structure use takes.
+struct UseBarriers
+{
+    QueueTransferBarriers barriers;          ///< Image and buffer barrier lists.
+    std::optional<VkMemoryBarrier2> memory;  ///< Set for an in-family acceleration-structure use.
+};
+
+/// Build the barrier(s) a use needs, **including which kind of barrier it takes**.
+///
+/// The routing is the point. An acceleration structure with a queue handover pending has to be a buffer barrier
+/// on its backing buffer - a memory barrier has no field for the family indices - while an in-family use is the
+/// device-wide memory barrier. That decision used to live inline in `RecordBarriers`, where no test could observe
+/// it: the emission was asserted after #156 and the routing was not, and falsifying it left the suite green
+/// (#158).
+///
+/// Free and device-free like `DeriveBarrierMasks`, so both the choice and the barrier it produces can be
+/// asserted without a device. The handles are only copied into the barrier, never dereferenced.
+///
+/// @param use    The resolved use; its kind selects the barrier.
+/// @param masks  The masks `DeriveBarrierMasks` produced for it.
+/// @param image  The image handle, when `use.kind` is `IMAGE`.
+/// @param buffer The buffer handle, or an acceleration structure's backing buffer.
+/// @param aspect Image aspect mask, when `use.kind` is `IMAGE`.
+/// @return The barriers; every list empty for a kind that has none.
+inline UseBarriers DeriveUseBarriers(const ResolvedResourceUse& use, const BarrierMasks& masks, VkImage image,
+                                     VkBuffer buffer, VkImageAspectFlags aspect)
+{
+    UseBarriers out;
+
+    switch (use.kind)
+    {
+        case ResourceKind::IMAGE:
+        {
+            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            barrier.srcStageMask = masks.srcStage;
+            barrier.dstStageMask = masks.dstStage;
+            barrier.srcAccessMask = masks.srcAccess;
+            barrier.dstAccessMask = masks.dstAccess;
+            barrier.oldLayout = masks.oldLayout;
+            barrier.newLayout = masks.newLayout;
+            barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
+            barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
+            barrier.image = image;
+            barrier.subresourceRange = {aspect, 0, 1, 0, 1};
+            out.barriers.images.push_back(barrier);
+            return out;
+        }
+        case ResourceKind::BUFFER:
+        {
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = masks.srcStage;
+            barrier.dstStageMask = masks.dstStage;
+            barrier.srcAccessMask = masks.srcAccess;
+            barrier.dstAccessMask = masks.dstAccess;
+            barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
+            barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
+            barrier.buffer = buffer;
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            out.barriers.buffers.push_back(barrier);
+            return out;
+        }
+        case ResourceKind::ACCELERATION_STRUCTURE:
+        {
+            if (masks.srcQueueFamily != VK_QUEUE_FAMILY_IGNORED)
+            {
+                // A handover needs the two family indices, which only a buffer barrier can carry.
+                AppendAcquireTransfer(out.barriers, use.handle, use.kind, VK_NULL_HANDLE, buffer,
+                                      VK_IMAGE_ASPECT_COLOR_BIT, masks);
+                return out;
+            }
+
+            // No handle to address in-family: the barrier is a memory barrier and the masks name the AS bits.
+            VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+            barrier.srcStageMask = masks.srcStage;
+            barrier.srcAccessMask = masks.srcAccess;
+            barrier.dstStageMask = masks.dstStage;
+            barrier.dstAccessMask = masks.dstAccess;
+            out.memory = barrier;
+            return out;
+        }
+        case ResourceKind::SAMPLER:
+            return out;
+    }
+    return out;
 }
 
 /// Record a use as the resource's new prior state.
