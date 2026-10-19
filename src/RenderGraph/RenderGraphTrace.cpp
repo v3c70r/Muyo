@@ -266,7 +266,7 @@ std::string RenderSegments(const RenderGraphTrace& trace)
                                             barrierSink += R"({"resource":)";
                                             AppendJsonString(barrierSink, barrier.resource);
                                             barrierSink += ",\"kind\":";
-                                            AppendJsonString(barrierSink, barrier.kind);
+                                            AppendJsonString(barrierSink, NameOf(barrier.kind));
                                             barrierSink += ",\"src_stage\":";
                                             AppendJsonString(barrierSink, barrier.srcStage);
                                             barrierSink += ",\"dst_stage\":";
@@ -315,7 +315,7 @@ std::string RenderWaits(const RenderGraphTrace& trace)
                         AppendJsonString(sink, NameOf(wait.queue));
                         sink += ",\"value\":" + std::to_string(wait.value);
                         sink += ",\"reason\":";
-                        AppendJsonString(sink, wait.reason);
+                        AppendJsonString(sink, NameOf(wait.reason));
                         sink += '}';
                     });
     return out;
@@ -412,6 +412,32 @@ const char* NameOf(TraceEdgeKind kind)
             return "transfer";
         case TraceEdgeKind::QueueOrder:
             return "queue-order";
+    }
+    return "?";
+}
+
+const char* NameOf(TraceBarrierKind kind)
+{
+    switch (kind)
+    {
+        case TraceBarrierKind::Image:
+            return "image";
+        case TraceBarrierKind::Buffer:
+            return "buffer";
+        case TraceBarrierKind::Memory:
+            return "memory";
+    }
+    return "?";
+}
+
+const char* NameOf(TraceWaitReason reason)
+{
+    switch (reason)
+    {
+        case TraceWaitReason::Timeline:
+            return "timeline";
+        case TraceWaitReason::Caller:
+            return "caller";
     }
     return "?";
 }
@@ -581,7 +607,7 @@ std::string ToText(const RenderGraphTrace& trace)
         for (const TraceBarrier& barrier : segment.barriers)
         {
             out += "      " + (barrier.resource.empty() ? std::string("<device-wide>") : barrier.resource);
-            out += "  " + std::string(barrier.kind);
+            out += "  " + std::string(NameOf(barrier.kind));
             out += "  " + barrier.srcStage + "/" + barrier.dstStage;
             out += "  " + barrier.srcAccess + "->" + barrier.dstAccess;
             if (barrier.srcFamily != VK_QUEUE_FAMILY_IGNORED || barrier.dstFamily != VK_QUEUE_FAMILY_IGNORED)
@@ -600,7 +626,7 @@ std::string ToText(const RenderGraphTrace& trace)
     for (const TraceWait& wait : trace.waits)
     {
         out += std::string("  wait    ") + LaneName(wait.queue) + " v" + std::to_string(wait.value) + " in s" +
-               std::to_string(wait.segment) + " (" + wait.reason + ")\n";
+               std::to_string(wait.segment) + " (" + NameOf(wait.reason) + ")\n";
     }
     return out;
 }

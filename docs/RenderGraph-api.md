@@ -447,6 +447,19 @@ Produced by DeriveBarrierMasks; consumed by RenderGraphBuilder::RecordBarriers, 
 | `uint32_t srcQueueFamily` | Producer family for an ownership acquire. |
 | `uint32_t dstQueueFamily` | Consumer family for an ownership acquire. |
 
+### `class Muyo::RenderGraph::BarrierObserver`
+
+Receives each use's barriers as they are derived, with the resource name they belong to.
+
+The batch keeps no names - a VkImageMemoryBarrier2 addresses a handle, not a name - so anything that needs to say which resource a barrier is for (a trace, a diagnostic) has to be told where the decision is made, rather than reconstructing it afterwards from the batch order. That reconstruction is exactly the fragile step #160 removed from barrier assembly, and there is no reason to reintroduce it one layer up.
+
+A pointer rather than a std::function so that "no observer" costs one null check per use and no allocation, which matters because this runs per node per execution.
+
+| Member | Description |
+| --- | --- |
+| `virtual ~BarrierObserver()=default` | Required for correct destruction through the interface pointer. |
+| `virtual void OnUseBarriers(const ResourceHandle &handle, const UseBarriers &barriers)=0` | Parameters: `handle` - Resource the barriers address; `barriers` - The barriers derived for that use, already resolved |
+
 ### `struct Muyo::RenderGraph::BarrierPriorState`
 
 What the graph has recorded about a resource's most recent access.
@@ -473,7 +486,7 @@ What a use needs to address its resource. The graph resolves the handle; a test 
 | `VkBuffer buffer` | Set for a buffer, or an AS's backing buffer. |
 | `VkImageAspectFlags aspect` | Set for an image use. |
 
-### `BarrierBatch Muyo::RenderGraph::DeriveBarrierBatch(const std::vector< ResolvedResourceUse > &uses, std::unordered_map< ResourceHandle, BarrierPriorState > &states, uint32_t queueFamily, VkPipelineStageFlags2 supportedStages, ResolveTarget resolveTarget)`
+### `BarrierBatch Muyo::RenderGraph::DeriveBarrierBatch(const std::vector< ResolvedResourceUse > &uses, std::unordered_map< ResourceHandle, BarrierPriorState > &states, uint32_t queueFamily, VkPipelineStageFlags2 supportedStages, ResolveTarget resolveTarget, BarrierObserver *pObserver=nullptr)`
 
 Build the barriers a node's uses need, and advance the recorded access state.
 
@@ -487,6 +500,7 @@ This is the whole of RecordBarriers except resolving the handles and calling vkC
 | `queueFamily` | Queue family the node is being recorded on. |
 | `supportedStages` | Stage bits this device enables. |
 | `resolveTarget` | Maps a handle to the handles its barrier addresses. |
+| `pObserver` | Optional observer told about each use's barriers, with the resource name they belong to. |
 
 **Returns** — The barriers, with one memory barrier carrying the union of the in-family AS uses.
 
@@ -601,6 +615,7 @@ Build() is idempotent for a fixed declaration: it topologically sorts the nodes,
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
 | `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. Throws: `std::runtime_error` - for a declaration error, naming the node and resource: a dependency cycle; a transient read with no writer; a descriptorBinding the shader does not declare, a binding whose reflected type does not fit the resource, or two uses at one binding; and anything CompileRenderGraphNode rejects (shader load, specialization ids, buffer range). docs/RenderGraph.md has the failure index |
 | `void Execute()` | Run every node once in execution order, inserting barriers between nodes and synchronising cross-queue handovers. |
+| `void SetTraceSink(std::function< void(RenderGraphTrace)> sink)` | Receive a trace of every execution from now on. Parameters: `sink` - Called after each execution completes submission, with that execution's record |
 | `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU. Note this does not enable overlap: the builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the first completes. Overlap is an executor-API concern, see issue #11. Parameters: `info` - External semaphores to wait on before, and signal after, this execution |
 | `std::vector< std::string > GetExecutionOrder() const` | Returns: The node names in dependency (topological) order. |
 | `const RenderGraphExecutionPlan & GetExecutionPlan() const` | Returns: The plan the last Build() produced: queue segments and cross-queue transfers. Derived, read-only state, empty before the first Build(). It is what tells a caller whether an async node actually got a cross-queue handover or was serialised on one family. |
@@ -771,7 +786,7 @@ The executor owns the command buffers, because they cannot be recycled while an 
 | `RenderGraphExecutor(const RenderGraphExecutor &)=delete` | Owns raw Vulkan handles and frees them on destruction, so copying would double-destroy. |
 | `RenderGraphExecutor & operator=(const RenderGraphExecutor &)=delete` | Deleted for the same reason as the copy constructor. |
 | `ExecutionSlot AcquireSlot(const RenderGraphExecutionPlan &plan)` | Acquire a slot to record into, blocking while every slot is still in flight. Parameters: `plan` - Plan this execution will use; its segments size and type the command buffers Returns: The slot to record into. |
-| `void Submit(const RenderGraphExecutionPlan &plan, const ExecutionSlot &slot, const RenderGraphExecuteInfo &info)` | Submit a slot acquired from AcquireSlot(). Parameters: `plan` - Plan the slot was recorded from; `slot` - Slot returned by AcquireSlot(); `info` - External synchronization; both semaphores are optional |
+| `void Submit(const RenderGraphExecutionPlan &plan, const ExecutionSlot &slot, const RenderGraphExecuteInfo &info, SubmissionObserver *pObserver=nullptr)` | Submit a slot acquired from AcquireSlot(). Parameters: `plan` - Plan the slot was recorded from; `slot` - Slot returned by AcquireSlot(); `info` - External synchronization; both semaphores are optional; `pObserver` - Optional observer of the timeline values this submission actually uses |
 | `void WaitIdle()` | Block until every submitted execution has completed. Safe to call at any time. |
 | `VkQueue GetQueueForType(QueueType type) const` | Parameters: `type` - A resolved queue key (see GetQueueKey) Returns: The queue that key submits to. |
 
@@ -1068,6 +1083,22 @@ The same name used in AddResource / ImportResource is how nodes refer to it in t
 
 **Returns** — The name used in serialised traces, e.g. transfer.
 
+### `const char * Muyo::RenderGraph::NameOf(TraceBarrierKind kind)`
+
+| Parameter | Description |
+| --- | --- |
+| `kind` | Barrier kind to name. |
+
+**Returns** — image, buffer or memory.
+
+### `const char * Muyo::RenderGraph::NameOf(TraceWaitReason reason)`
+
+| Parameter | Description |
+| --- | --- |
+| `reason` | Wait reason to name. |
+
+**Returns** — timeline or caller.
+
 ### `const char * Muyo::RenderGraph::NameOf(QueueType type)`
 
 | Parameter | Description |
@@ -1118,6 +1149,20 @@ structural: nodes, segments, transfers, dependency edges and barriers; temporal:
 | `std::vector< TraceSegment > segments` | GPU segments, in execution order. |
 | `std::vector< TraceSignal > signals` | Timeline values signalled, filled at submit. |
 | `std::vector< TraceWait > waits` | Waits, filled at submit. |
+
+### `class Muyo::RenderGraph::SubmissionObserver`
+
+Receives what one execution actually submitted, as it is submitted.
+
+The timeline values are handed out by the executor, not derivable from the plan: a plan says "segment 1 waits on segment 0", and only the executor knows that the wait is on value 7 of the graphics timeline. That is the fact a trace exists to record, so it is reported where the values are chosen rather than recomputed by a consumer from counters it cannot see.
+
+Lives here rather than beside the executor because it describes trace facts, and because the executor needs the trace types anyway - the other direction would be a cycle.
+
+| Member | Description |
+| --- | --- |
+| `virtual ~SubmissionObserver()=default` | Required for correct destruction through the interface pointer. |
+| `virtual void OnSegmentSignalled(std::size_t segment, QueueType queue, uint64_t value)=0` | Parameters: `segment` - Index into the plan's segments; `queue` - Queue the segment submits to; `value` - Timeline value this segment signals on its queue |
+| `virtual void OnSegmentWait(std::size_t segment, QueueType queue, uint64_t value, TraceWaitReason reason)=0` | Parameters: `segment` - Index of the segment that waits; `queue` - Queue the waited value belongs to; `value` - Timeline value waited for; `reason` - Timeline for a graph handover, Caller for the external wait gating segment 0 |
 
 ### `std::string Muyo::RenderGraph::ToDot(const TraceGraph &graph)`
 
@@ -1180,13 +1225,25 @@ Stages and accesses are stored as names, not bitmasks: a reviewer or a model rea
 | Member | Description |
 | --- | --- |
 | `ResourceHandle resource` | Resource the barrier addresses; empty for a device-wide memory barrier. |
-| `const char * kind` | image, buffer or memory. |
+| `TraceBarrierKind kind` | Which kind of barrier this is. |
 | `std::string srcStage` | Source stage mask, rendered by NameOfPipelineStages. |
 | `std::string dstStage` | Destination stage mask. |
 | `std::string srcAccess` | Source access mask, rendered by NameOfAccesses. |
 | `std::string dstAccess` | Destination access mask. |
 | `uint32_t srcFamily` | Source family for a handover, IGNORED otherwise. |
 | `uint32_t dstFamily` | Destination family for a handover, IGNORED otherwise. |
+
+### `enum TraceBarrierKind`
+
+Which kind of barrier a recorded barrier is.
+
+An enum rather than a const char* because the first version used a bare pointer, and comparing it with == against a literal silently compared two const char* values from different translation units - which is exactly the kind of quiet false negative this record exists to prevent.
+
+| Value | Description |
+| --- | --- |
+| `Image` | VkImageMemoryBarrier2. |
+| `Buffer` | VkBufferMemoryBarrier2, including an acceleration structure's backing buffer. |
+| `Memory` | Device-wide VkMemoryBarrier2; addressed to no single resource. |
 
 ### `struct Muyo::RenderGraph::TraceEdge`
 
@@ -1305,6 +1362,25 @@ Device-free: the plan carries segments and transfers, and the views carry names 
 
 **Returns** — The structural trace, with every temporal field still invalid.
 
+### `class Muyo::RenderGraph::TraceRecorder`
+
+Collects a trace while one execution runs.
+
+Three contributions, each taken where its information exists rather than reconstructed afterwards: Begin from the plan (device-free), OnUseBarriers where a use's barriers are derived (the only place the resource name and the barrier are in scope together), and OnSegmentSignalled/OnSegmentWait where the executor hands out timeline values (the only place those values exist at all).
+
+Not thread-safe, by design: it records one execution, and an execution records from one thread. Two executions in flight get two recorders.
+
+| Member | Description |
+| --- | --- |
+| `void Begin(const RenderGraphExecutionPlan &plan, std::span< const TraceNodeView > nodes, const TraceScope &scope)` | Start recording an execution. Parameters: `plan` - Plan about to run; `nodes` - Compiled nodes the plan indexes; `scope` - Device and topology producing this trace |
+| `void BeginSegment(std::size_t segment)` | Parameters: `segment` - Segment whose recordings follow; barriers reported until the next call belong to it |
+| `void OnUseBarriers(const ResourceHandle &handle, const UseBarriers &barriers) override` | Parameters: `handle` - Resource the barriers address; `barriers` - The barriers derived for that use |
+| `void OnSegmentSignalled(std::size_t segment, QueueType queue, uint64_t value) override` | Parameters: `segment` - Segment whose completion is signalled; `queue` - Queue carrying the value; `value` - Timeline value signalled |
+| `void OnSegmentWait(std::size_t segment, QueueType queue, uint64_t value, TraceWaitReason reason) override` | Parameters: `segment` - Segment that waits; `queue` - Queue carrying the waited value; `value` - Timeline value waited for; `reason` - timeline or caller |
+| `uint64_t & Execution()` | Returns: The execution counter this recorder will label the trace with. |
+| `const RenderGraphTrace & GetTrace() const` | Returns: What has been recorded so far. |
+| `RenderGraphTrace && TakeTrace()` | Returns: What has been recorded so far, for a sink that moves it. |
+
 ### `struct Muyo::RenderGraph::TraceScope`
 
 What produced a trace and what it can therefore be compared against.
@@ -1378,7 +1454,16 @@ What a segment waits for, and why.
 | `std::size_t segment` | Segment that waits. |
 | `QueueType queue` | Queue the waited value belongs to. |
 | `uint64_t value` | Timeline value waited for. |
-| `const char * reason` | What demanded the wait: timeline, caller, slot. |
+| `TraceWaitReason reason` | What demanded the wait. |
+
+### `enum TraceWaitReason`
+
+Why a segment waits.
+
+| Value | Description |
+| --- | --- |
+| `Timeline` | A graph handover: the segment waits on another segment's timeline value. |
+| `Caller` | An external wait gating the first segment (image acquired, frame pacing). |
 
 
 ## `ResourceUseResolver.h`

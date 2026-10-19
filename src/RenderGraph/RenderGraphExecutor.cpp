@@ -200,7 +200,7 @@ RenderGraphExecutor::ExecutionSlot RenderGraphExecutor::AcquireSlot(const Render
 }
 
 void RenderGraphExecutor::Submit(const RenderGraphExecutionPlan& plan, const ExecutionSlot& executionSlot,
-                                 const RenderGraphExecuteInfo& info)
+                                 const RenderGraphExecuteInfo& info, SubmissionObserver* pObserver)
 {
     assert(executionSlot.index < m_slots.size());
     InFlightSlot& slot = m_slots[executionSlot.index];
@@ -285,6 +285,12 @@ void RenderGraphExecutor::Submit(const RenderGraphExecutionPlan& plan, const Exe
         if (s == 0 && info.waitSemaphore != VK_NULL_HANDLE)
         {
             waitInfos.push_back(MakeSemaphoreSubmitInfo(info.waitSemaphore, info.waitValue));
+            if (pObserver != nullptr)
+            {
+                // Queue type is the caller's, not the graph's: this value comes from outside and says nothing
+                // about a graph timeline, which is why the reason is recorded alongside it.
+                pObserver->OnSegmentWait(s, segments[s].queueType, info.waitValue, TraceWaitReason::Caller);
+            }
         }
         for (const auto& transfer : transfers)
         {
@@ -302,11 +308,23 @@ void RenderGraphExecutor::Submit(const RenderGraphExecutionPlan& plan, const Exe
                     break;
                 }
             }
-            if (!bAlreadyWaited) waitInfos.push_back(producerInfo);
+            if (!bAlreadyWaited)
+            {
+                waitInfos.push_back(producerInfo);
+                if (pObserver != nullptr)
+                {
+                    pObserver->OnSegmentWait(s, segments[transfer.producer].queueType, segmentValues[transfer.producer],
+                                             TraceWaitReason::Timeline);
+                }
+            }
         }
 
         // This segment's own completion value.
         signalInfos.push_back(MakeSemaphoreSubmitInfo(segmentTimelines[s], segmentValues[s]));
+        if (pObserver != nullptr)
+        {
+            pObserver->OnSegmentSignalled(s, segments[s].queueType, segmentValues[s]);
+        }
         // Without a join the last segment *is* the whole execution, so it carries the outward signal
         // too. (A single submit can signal a timeline value and a binary semaphore together, which is
         // what makes this possible at all.)

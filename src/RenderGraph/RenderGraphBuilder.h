@@ -23,6 +23,7 @@
 #include "RenderGraphNodeContext.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderGraphResourceDesc.h"
+#include "RenderGraphTrace.h"
 #include "ShaderAsset.h"
 #include "TransientMemoryPlanner.h"
 #include "TransientResources.h"
@@ -203,6 +204,16 @@ public:
     /// Run every node once in execution order, inserting barriers between nodes and synchronising
     /// cross-queue handovers.
     void Execute();
+    /// Receive a trace of every execution from now on.
+    ///
+    /// The sink's presence *is* the switch: there is no separate enabled flag to get out of step with it. The trace
+    /// is handed over by value, so a sink that keeps history owns it, and a sink that formats it can drop it.
+    ///
+    /// Cost when unset is one null check per node and per submit; when set, the plan half is strings the compiled
+    /// graph already owns.
+    /// @param sink Called after each execution completes submission, with that execution's record.
+    void SetTraceSink(std::function<void(RenderGraphTrace)> sink) { m_traceSink = std::move(sink); }
+
     /// Record and submit without waiting for the GPU. Note this does **not** enable overlap: the
     /// builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the
     /// first completes. Overlap is an executor-API concern, see issue #11.
@@ -245,8 +256,17 @@ private:
     void BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
                                  const std::vector<VkShaderModule>& shaderModules);
 
+    /// Device and topology, as a trace records them. Read once per traced execution, never from the graph itself.
+    /// @return The scope a trace produced now should carry.
+    TraceScope BuildTraceScope() const;
+
+    /// Record a node's barriers into its segment's command buffer.
+    /// @param cmdBuf       Command buffer the node's barriers are emitted into.
+    /// @param resourceUses The node's uses, in declaration order.
+    /// @param queueFamily  Family the node is recorded on; decides whether a handover is needed.
+    /// @param pObserver    Optional observer told about each use's barriers, with the resource it belongs to.
     void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
-                        uint32_t queueFamily);
+                        uint32_t queueFamily, BarrierObserver* pObserver = nullptr);
 
     // Stage bits the device enables. `ResourceUseResolver`'s table names a union of every stage that can
     // touch a resource; a stage whose feature the device does not enable may not appear in a barrier mask
@@ -337,6 +357,8 @@ private:
     VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
     // Owns submission, cross-queue synchronization and waiting. The graph only records.
     RenderGraphExecutor m_executor;
+    uint64_t m_nextExecution = 0;                       ///< Execution counter a trace is labelled with.
+    std::function<void(RenderGraphTrace)> m_traceSink;  ///< Set by SetTraceSink; empty means no trace is recorded.
     /// Owns every node's descriptor sets and shares one per distinct content. Declared after the
     /// services it is constructed from; destroyed after the compiled graph, whose nodes only reference
     /// the sets, so their teardown never frees a cache-owned handle.

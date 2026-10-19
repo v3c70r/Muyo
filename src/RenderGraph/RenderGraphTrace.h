@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "RenderGraphBarrier.h"
 #include "RenderGraphExecutionPlan.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderGraphResourceHandle.h"
@@ -65,6 +66,25 @@ struct TraceNode
     std::vector<ResourceHandle> writes;         ///< Resources the node writes, in declaration order.
 };
 
+/// Which kind of barrier a recorded barrier is.
+///
+/// An enum rather than a `const char*` because the first version used a bare pointer, and comparing it with `==`
+/// against a literal silently compared two `const char*` values from different translation units - which is exactly
+/// the kind of quiet false negative this record exists to prevent.
+enum class TraceBarrierKind : uint8_t
+{
+    Image,   ///< `VkImageMemoryBarrier2`.
+    Buffer,  ///< `VkBufferMemoryBarrier2`, including an acceleration structure's backing buffer.
+    Memory,  ///< Device-wide `VkMemoryBarrier2`; addressed to no single resource.
+};
+
+/// Why a segment waits.
+enum class TraceWaitReason : uint8_t
+{
+    Timeline,  ///< A graph handover: the segment waits on another segment's timeline value.
+    Caller,    ///< An external wait gating the first segment (image acquired, frame pacing).
+};
+
 /// Why one segment must run after another.
 enum class TraceEdgeKind : uint8_t
 {
@@ -91,14 +111,14 @@ struct TraceEdge
 /// barrier is re-derivable from the uses.
 struct TraceBarrier
 {
-    ResourceHandle resource;     ///< Resource the barrier addresses; empty for a device-wide memory barrier.
-    const char* kind = "image";  ///< `image`, `buffer` or `memory`.
-    std::string srcStage;        ///< Source stage mask, rendered by `NameOfPipelineStages`.
-    std::string dstStage;        ///< Destination stage mask.
-    std::string srcAccess;       ///< Source access mask, rendered by `NameOfAccesses`.
-    std::string dstAccess;       ///< Destination access mask.
-    uint32_t srcFamily = VK_QUEUE_FAMILY_IGNORED;  ///< Source family for a handover, `IGNORED` otherwise.
-    uint32_t dstFamily = VK_QUEUE_FAMILY_IGNORED;  ///< Destination family for a handover, `IGNORED` otherwise.
+    ResourceHandle resource;  ///< Resource the barrier addresses; empty for a device-wide memory barrier.
+    TraceBarrierKind kind = TraceBarrierKind::Image;  ///< Which kind of barrier this is.
+    std::string srcStage;                             ///< Source stage mask, rendered by `NameOfPipelineStages`.
+    std::string dstStage;                             ///< Destination stage mask.
+    std::string srcAccess;                            ///< Source access mask, rendered by `NameOfAccesses`.
+    std::string dstAccess;                            ///< Destination access mask.
+    uint32_t srcFamily = VK_QUEUE_FAMILY_IGNORED;     ///< Source family for a handover, `IGNORED` otherwise.
+    uint32_t dstFamily = VK_QUEUE_FAMILY_IGNORED;     ///< Destination family for a handover, `IGNORED` otherwise.
 };
 
 /// A contiguous run of compiled nodes that executes on one queue, as recorded.
@@ -125,10 +145,10 @@ struct TraceSignal
 /// What a segment waits for, and why.
 struct TraceWait
 {
-    std::size_t segment = 0;                ///< Segment that waits.
-    QueueType queue = QueueType::GRAPHICS;  ///< Queue the waited value belongs to.
-    uint64_t value = 0;                     ///< Timeline value waited for.
-    const char* reason = "";                ///< What demanded the wait: `timeline`, `caller`, `slot`.
+    std::size_t segment = 0;                             ///< Segment that waits.
+    QueueType queue = QueueType::GRAPHICS;               ///< Queue the waited value belongs to.
+    uint64_t value = 0;                                  ///< Timeline value waited for.
+    TraceWaitReason reason = TraceWaitReason::Timeline;  ///< What demanded the wait.
 };
 
 /// One execution of a compiled graph, as data.
@@ -190,6 +210,14 @@ RenderGraphTrace TracePlan(const RenderGraphExecutionPlan& plan, std::span<const
 /// @param kind Kind to name.
 /// @return The name used in serialised traces, e.g. `transfer`.
 const char* NameOf(TraceEdgeKind kind);
+
+/// @param kind Barrier kind to name.
+/// @return `image`, `buffer` or `memory`.
+const char* NameOf(TraceBarrierKind kind);
+
+/// @param reason Wait reason to name.
+/// @return `timeline` or `caller`.
+const char* NameOf(TraceWaitReason reason);
 
 /// @param type Queue type to name.
 /// @return The name used in serialised traces, e.g. `compute`.
@@ -271,4 +299,131 @@ std::string ToDot(const TraceGraph& graph);
 /// @param graph Graph to render.
 /// @return A Mermaid document.
 std::string ToMermaid(const TraceGraph& graph);
+/// Receives what one execution actually submitted, as it is submitted.
+///
+/// The timeline values are handed out by the executor, not derivable from the plan: a plan says "segment 1 waits on
+/// segment 0", and only the executor knows that the wait is on value 7 of the graphics timeline. That is the fact a
+/// trace exists to record, so it is reported where the values are chosen rather than recomputed by a consumer from
+/// counters it cannot see.
+///
+/// Lives here rather than beside the executor because it describes trace facts, and because the executor needs the
+/// trace types anyway - the other direction would be a cycle.
+class SubmissionObserver
+{
+public:
+    /// @brief Required for correct destruction through the interface pointer.
+    virtual ~SubmissionObserver() = default;
+    /// @param segment Index into the plan's segments.
+    /// @param queue   Queue the segment submits to.
+    /// @param value   Timeline value this segment signals on its queue.
+    virtual void OnSegmentSignalled(std::size_t segment, QueueType queue, uint64_t value) = 0;
+    /// @param segment Index of the segment that waits.
+    /// @param queue   Queue the waited value belongs to.
+    /// @param value   Timeline value waited for.
+    /// @param reason  `Timeline` for a graph handover, `Caller` for the external wait gating segment 0.
+    virtual void OnSegmentWait(std::size_t segment, QueueType queue, uint64_t value, TraceWaitReason reason) = 0;
+};
+
+/// Collects a trace while one execution runs.
+///
+/// Three contributions, each taken where its information exists rather than reconstructed afterwards:
+/// `Begin` from the plan (device-free), `OnUseBarriers` where a use's barriers are derived (the only place the
+/// resource name and the barrier are in scope together), and `OnSegmentSignalled`/`OnSegmentWait` where the executor
+/// hands out timeline values (the only place those values exist at all).
+///
+/// Not thread-safe, by design: it records one execution, and an execution records from one thread. Two executions
+/// in flight get two recorders.
+class TraceRecorder : public BarrierObserver, public SubmissionObserver
+{
+public:
+    /// Start recording an execution.
+    /// @param plan  Plan about to run.
+    /// @param nodes Compiled nodes the plan indexes.
+    /// @param scope Device and topology producing this trace.
+    void Begin(const RenderGraphExecutionPlan& plan, std::span<const TraceNodeView> nodes, const TraceScope& scope)
+    {
+        m_trace = TracePlan(plan, nodes, scope);
+        m_segment = 0;
+    }
+
+    /// @param segment Segment whose recordings follow; barriers reported until the next call belong to it.
+    void BeginSegment(std::size_t segment) { m_segment = segment; }
+
+    /// @param handle   Resource the barriers address.
+    /// @param barriers The barriers derived for that use.
+    void OnUseBarriers(const ResourceHandle& handle, const UseBarriers& barriers) override
+    {
+        if (m_segment >= m_trace.segments.size())
+        {
+            return;
+        }
+        std::vector<TraceBarrier>& sink = m_trace.segments[m_segment].barriers;
+        for (const VkImageMemoryBarrier2& barrier : barriers.barriers.images)
+        {
+            sink.push_back(MakeBarrier(handle, TraceBarrierKind::Image, barrier.srcStageMask, barrier.dstStageMask,
+                                       barrier.srcAccessMask, barrier.dstAccessMask, barrier.srcQueueFamilyIndex,
+                                       barrier.dstQueueFamilyIndex));
+        }
+        for (const VkBufferMemoryBarrier2& barrier : barriers.barriers.buffers)
+        {
+            sink.push_back(MakeBarrier(handle, TraceBarrierKind::Buffer, barrier.srcStageMask, barrier.dstStageMask,
+                                       barrier.srcAccessMask, barrier.dstAccessMask, barrier.srcQueueFamilyIndex,
+                                       barrier.dstQueueFamilyIndex));
+        }
+        if (barriers.memory.has_value())
+        {
+            const VkMemoryBarrier2& barrier = *barriers.memory;
+            // No resource: a memory barrier is device-wide, and naming one resource for it would be a lie.
+            sink.push_back(MakeBarrier(ResourceHandle{}, TraceBarrierKind::Memory, barrier.srcStageMask,
+                                       barrier.dstStageMask, barrier.srcAccessMask, barrier.dstAccessMask,
+                                       VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED));
+        }
+    }
+
+    /// @param segment Segment whose completion is signalled.
+    /// @param queue   Queue carrying the value.
+    /// @param value   Timeline value signalled.
+    void OnSegmentSignalled(std::size_t segment, QueueType queue, uint64_t value) override
+    {
+        m_trace.signals.push_back(TraceSignal{.segment = segment, .queue = queue, .value = value});
+    }
+
+    /// @param segment Segment that waits.
+    /// @param queue   Queue carrying the waited value.
+    /// @param value   Timeline value waited for.
+    /// @param reason  `timeline` or `caller`.
+    void OnSegmentWait(std::size_t segment, QueueType queue, uint64_t value, TraceWaitReason reason) override
+    {
+        m_trace.waits.push_back(TraceWait{.segment = segment, .queue = queue, .value = value, .reason = reason});
+    }
+
+    /// @return The execution counter this recorder will label the trace with.
+    uint64_t& Execution() { return m_trace.execution; }
+
+    /// @return What has been recorded so far.
+    const RenderGraphTrace& GetTrace() const { return m_trace; }
+
+    /// @return What has been recorded so far, for a sink that moves it.
+    RenderGraphTrace&& TakeTrace() { return std::move(m_trace); }
+
+private:
+    static TraceBarrier MakeBarrier(const ResourceHandle& resource, TraceBarrierKind kind,
+                                    VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage,
+                                    VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess, uint32_t srcFamily,
+                                    uint32_t dstFamily)
+    {
+        return TraceBarrier{.resource = resource,
+                            .kind = kind,
+                            .srcStage = NameOfPipelineStages(srcStage),
+                            .dstStage = NameOfPipelineStages(dstStage),
+                            .srcAccess = NameOfAccesses(srcAccess),
+                            .dstAccess = NameOfAccesses(dstAccess),
+                            .srcFamily = srcFamily,
+                            .dstFamily = dstFamily};
+    }
+
+    RenderGraphTrace m_trace;   ///< The trace being filled.
+    std::size_t m_segment = 0;  ///< Segment the next barrier report belongs to.
+};
+
 }  // namespace Muyo::RenderGraph

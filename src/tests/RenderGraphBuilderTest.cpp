@@ -4594,4 +4594,153 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
     REQUIRE(CountPixelsMatching(pTarget, {0.25F, 0.25F, 0.0F}) > 0);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a CPU node's write is visible in the trace as a HOST barrier",
+                 "[RenderGraphBuilder]")
+{
+    // #155's residual, pinned. `ApplyHostWrites` made the transition assertable, but the *call site* in `Execute`
+    // could not be observed by any device-free test: deleting it left the suite green, measured in the #155 review.
+    // The trace is emitted from that same `Execute`, so what it records is what the executed path did - and a
+    // barrier whose source is HOST can only appear if the CPU write was recorded.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Parameters", BufferResourceDesc{.count = 1,
+                                                         .stride = 4,
+                                                         .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                         .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddNode({.nodeName = "Upload",
+                     .queueType = QueueType::CPU,
+                     .resourceUses = {{.handle = ResourceHandle("Parameters"),
+                                       .io = ResourceIOType::HOST_WRITE,
+                                       .usage = ResourceUsage::UNIFORM_BUFFER,
+                                       .kind = ResourceKind::BUFFER}},
+                     // A CPU node still has to do something: it runs host-side, and an empty execute is a
+                     // `bad_function_call` at execution time rather than a declaration error.
+                     .execute = [](RenderGraphNodeContext&) {}});
+    builder.AddNode({.nodeName = "Consume",
+                     .queueType = QueueType::GRAPHICS,
+                     .resourceUses = {{.handle = ResourceHandle("Parameters"),
+                                       .io = ResourceIOType::READ,
+                                       .usage = ResourceUsage::UNIFORM_BUFFER,
+                                       .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext&) {}});
+
+    // Declared rather than implied: the graph has no automatic resource edges, and `TopologicalSort` breaks ties
+    // alphabetically, so without this "Consume" sorts before "Upload" and the transient lifetime check rejects a
+    // read that precedes its writer.
+    builder.AddDependency("Upload", "Consume");
+
+    RenderGraphTrace captured;
+    bool bCaptured = false;
+    builder.SetTraceSink(
+        [&](RenderGraphTrace trace)
+        {
+            captured = std::move(trace);
+            bCaptured = true;
+        });
+
+    builder.Build();
+    // The no-argument overload waits for the execution, so the recorded trace is complete here.
+    builder.Execute();
+
+    REQUIRE(bCaptured);
+    // The CPU node is host work and belongs to no segment; the GPU node is one segment.
+    REQUIRE(captured.cpuNodes.size() == 1);
+    REQUIRE(captured.segments.size() == 1);
+
+    // Some barrier must be attributed to the buffer the CPU wrote, and its source must be HOST. Without
+    // `ApplyHostWrites` the state is unseen and the source would be NONE, which is the silent regression this
+    // case exists to catch.
+    const TraceBarrier* pBufferBarrier = nullptr;
+    for (const TraceBarrier& barrier : captured.segments[0].barriers)
+    {
+        if (barrier.resource == "Parameters")
+        {
+            pBufferBarrier = &barrier;
+            break;
+        }
+    }
+    REQUIRE(pBufferBarrier != nullptr);
+    INFO("src stage recorded: " << pBufferBarrier->srcStage);
+    CHECK(pBufferBarrier->srcStage.find("HOST") != std::string::npos);
+    CHECK(pBufferBarrier->srcAccess.find("HOST_WRITE") != std::string::npos);
+    CHECK(pBufferBarrier->kind == TraceBarrierKind::Buffer);
+    // A trace states the device and topology that produced it.
+    CHECK_FALSE(captured.scope.deviceName.empty());
+    CHECK_FALSE(captured.scope.timestamps.bKnown);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace records the segments, signals and waits it submitted",
+                 "[RenderGraphBuilder]")
+{
+    // The plan half is device-free (#165); this is the half only the executor can report - the timeline values it
+    // hands out. The topology decides how much of it exists, so the case states which branch it took.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Source", BufferResourceDesc{.count = 1,
+                                                     .stride = 4,
+                                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                     .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddNode({.nodeName = "Fill",
+                     .queueType = QueueType::COMPUTE,
+                     .async = true,
+                     .resourceUses = {{.handle = ResourceHandle("Source"),
+                                       .io = ResourceIOType::WRITE,
+                                       .usage = ResourceUsage::STORAGE_BUFFER,
+                                       .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext&) {}});
+    builder.AddNode({.nodeName = "Consume",
+                     .queueType = QueueType::GRAPHICS,
+                     .resourceUses = {{.handle = ResourceHandle("Source"),
+                                       .io = ResourceIOType::READ,
+                                       .usage = ResourceUsage::STORAGE_BUFFER,
+                                       .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext&) {}});
+
+    builder.AddDependency("Fill", "Consume");
+
+    RenderGraphTrace captured;
+    builder.SetTraceSink([&](RenderGraphTrace trace) { captured = std::move(trace); });
+
+    builder.Build();
+    // The no-argument overload waits for the execution, so the recorded trace is complete here.
+    builder.Execute();
+
+    REQUIRE(captured.segments.size() == 2);
+
+    // One value per segment, on that segment's own queue, and never the same value twice on one queue: the executor
+    // hands out increasing counters, and a repeat would mean two segments shared a completion value.
+    REQUIRE(captured.signals.size() == 2);
+    CHECK(captured.signals[0].segment == 0);
+    CHECK(captured.signals[1].segment == 1);
+    CHECK(captured.signals[0].queue == QueueType::COMPUTE);
+    CHECK(captured.signals[1].queue == QueueType::GRAPHICS);
+    // Values are **per queue** - one counter per timeline - so two segments on two queues both start at 1 and
+    // comparing them across queues is meaningless. The first version of this case asserted a global increase and
+    // was wrong; what is true is that each queue's counter is non-zero (0 could never be signalled) and that a wait
+    // names the value its producer signalled, which the branch below checks.
+    CHECK(captured.signals[0].value >= 1);
+    CHECK(captured.signals[1].value >= 1);
+
+    const bool bDedicated = GetRenderDevice()->IsComputeQueueDedicated();
+    if (bDedicated)
+    {
+        // Cross-family: the consumer must wait on the producer's value, and the plan records the handover.
+        REQUIRE(captured.segments[1].dependsOn.size() == 1);
+        CHECK(captured.segments[1].dependsOn[0].kind == TraceEdgeKind::Transfer);
+        CHECK(captured.segments[1].dependsOn[0].resource == "Source");
+        REQUIRE_FALSE(captured.waits.empty());
+        CHECK(captured.waits[0].segment == 1);
+        CHECK(captured.waits[0].queue == QueueType::COMPUTE);
+        CHECK(captured.waits[0].value == captured.signals[0].value);
+        INFO("device has a dedicated compute family: transfer edge and timeline wait were recorded");
+    }
+    else
+    {
+        // One family: both segments submit to the same queue, so program order already orders them and no
+        // handover exists. Recorded rather than skipped, because a green run on this branch proves nothing about
+        // the transfer path (AGENTS section 4).
+        CHECK(captured.segments[1].dependsOn.empty());
+        CHECK(captured.waits.empty());
+        INFO("device has ONE queue family: the cross-queue branch did not run, by construction");
+    }
+}
+
 }  // namespace Muyo::RenderGraph

@@ -439,6 +439,25 @@ struct BarrierTarget
     VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;  ///< Set for an image use.
 };
 
+/// Receives each use's barriers as they are derived, with the resource name they belong to.
+///
+/// The batch keeps no names - a `VkImageMemoryBarrier2` addresses a handle, not a name - so anything that needs to
+/// say *which resource* a barrier is for (a trace, a diagnostic) has to be told where the decision is made, rather
+/// than reconstructing it afterwards from the batch order. That reconstruction is exactly the fragile step #160
+/// removed from barrier assembly, and there is no reason to reintroduce it one layer up.
+///
+/// A pointer rather than a `std::function` so that "no observer" costs one null check per use and no allocation,
+/// which matters because this runs per node per execution.
+class BarrierObserver
+{
+public:
+    /// @brief Required for correct destruction through the interface pointer.
+    virtual ~BarrierObserver() = default;
+    /// @param handle   Resource the barriers address.
+    /// @param barriers The barriers derived for that use, already resolved.
+    virtual void OnUseBarriers(const ResourceHandle& handle, const UseBarriers& barriers) = 0;
+};
+
 /// Build the barriers a node's uses need, and advance the recorded access state.
 ///
 /// This is the whole of `RecordBarriers` except resolving the handles and calling `vkCmdPipelineBarrier2` - so
@@ -452,11 +471,13 @@ struct BarrierTarget
 /// @param queueFamily     Queue family the node is being recorded on.
 /// @param supportedStages Stage bits this device enables.
 /// @param resolveTarget   Maps a handle to the handles its barrier addresses.
+/// @param pObserver       Optional observer told about each use's barriers, with the resource name they belong to.
 /// @return The barriers, with one memory barrier carrying the union of the in-family AS uses.
 template <typename ResolveTarget>
 BarrierBatch DeriveBarrierBatch(const std::vector<ResolvedResourceUse>& uses,
                                 std::unordered_map<ResourceHandle, BarrierPriorState>& states, uint32_t queueFamily,
-                                VkPipelineStageFlags2 supportedStages, ResolveTarget resolveTarget)
+                                VkPipelineStageFlags2 supportedStages, ResolveTarget resolveTarget,
+                                BarrierObserver* pObserver = nullptr)
 {
     BarrierBatch batch;
 
@@ -469,6 +490,13 @@ BarrierBatch DeriveBarrierBatch(const std::vector<ResolvedResourceUse>& uses,
         {
             const BarrierTarget target = resolveTarget(use.handle);
             const UseBarriers useBarriers = DeriveUseBarriers(use, masks, target.image, target.buffer, target.aspect);
+
+            // Reported before being merged into the batch: the batch has no names and the memory barrier is a
+            // union, so a consumer that wants "this resource needed this barrier" has to be told here.
+            if (pObserver != nullptr)
+            {
+                pObserver->OnUseBarriers(use.handle, useBarriers);
+            }
 
             batch.images.insert(batch.images.end(), useBarriers.barriers.images.begin(),
                                 useBarriers.barriers.images.end());

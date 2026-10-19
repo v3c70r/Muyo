@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "RenderGraphExecutionPlan.h"
+#include "RenderGraphTrace.h"
 
 namespace Muyo
 {
@@ -111,10 +112,12 @@ public:
     ExecutionSlot AcquireSlot(const RenderGraphExecutionPlan& plan);
 
     /// Submit a slot acquired from AcquireSlot().
-    /// @param plan Plan the slot was recorded from.
-    /// @param slot Slot returned by AcquireSlot().
-    /// @param info External synchronization; both semaphores are optional.
-    void Submit(const RenderGraphExecutionPlan& plan, const ExecutionSlot& slot, const RenderGraphExecuteInfo& info);
+    /// @param plan      Plan the slot was recorded from.
+    /// @param slot      Slot returned by AcquireSlot().
+    /// @param info      External synchronization; both semaphores are optional.
+    /// @param pObserver Optional observer of the timeline values this submission actually uses.
+    void Submit(const RenderGraphExecutionPlan& plan, const ExecutionSlot& slot, const RenderGraphExecuteInfo& info,
+                SubmissionObserver* pObserver = nullptr);
 
     /// Block until every submitted execution has completed. Safe to call at any time.
     void WaitIdle();
