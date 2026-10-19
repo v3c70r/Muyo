@@ -168,10 +168,21 @@ jobs:
             # recovers prints `runtime error:` and still exits 0.
             echo "compiler: $(c++ --version | head -1)"
             if [ "${{ matrix.build_type }}" = "Sanitize" ]; then
-              echo "sanitize: $(cmake -LA -N ${{ matrix.dir }} 2>/dev/null | grep -c . >/dev/null; \
-                    grep -o -- '-fno-sanitize-recover=undefined' ${{ matrix.dir }}/compile_commands.json | head -1)"
-              echo "ubsan recovers: $(grep -c -- '-fno-sanitize-recover=undefined' ${{ matrix.dir }}/compile_commands.json || true) files opt out of recovery (0 expected)"
-              echo "sanitizer diagnostics in tests.err: $(grep -cE 'ERROR: (Address|Leak)Sanitizer|runtime error:' tests.err || true)"
+              # Paths are relative to this step's directory (it `cd`s into the build dir first). The
+              # first version of these lines used `${{ matrix.dir }}/compile_commands.json`, which is a
+              # doubled path, and `|| true` turned the resulting empty string into a silent blank - a
+              # check that could not fail, in the block whose purpose is to make failures attributable.
+              # It now prints a count that *proves the scoping*: every project translation unit disables
+              # UBSan recovery, and the vendored ones do not.
+              if [ -f compile_commands.json ]; then
+                entries=$(python3 -c "import json;print(len(json.load(open('compile_commands.json'))))" 2>/dev/null || true)
+                with_flag=$(python3 -c "import json;print(sum(1 for e in json.load(open('compile_commands.json')) if '-fno-sanitize-recover' in e['command']))" 2>/dev/null || true)
+                echo "compile entries: ${entries:-unknown}, UBSan recovery disabled in: ${with_flag:-unknown} (the rest are vendored targets, deliberately unscoped)"
+              else
+                echo "::error::compile_commands.json missing in the build directory - the sanitizer flag check cannot run"
+              fi
+              diagnostics=$(grep -cE 'ERROR: (Address|Leak)Sanitizer|runtime error:' tests.err 2>/dev/null || true)
+              echo "sanitizer diagnostics in tests.err: ${diagnostics:-0}"
             fi
             echo "validation VUIDs seen: $(printf '%s' "$seen" | tr '\n' ' ')"
             echo "unexpected VUIDs: $unexpected"
