@@ -4668,7 +4668,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a CPU node's write is vis
     CHECK_FALSE(captured.scope.timestamps.bKnown);
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace labels each execution, and records the caller's wait",
+// No comma in the name: a comma inside one case's name also splits a Catch2 spec, so `"*labels each execution*"`
+// was the only way to select this case, and the next session reading AGENTS section 4 would learn that the hard way.
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace labels each execution and records the caller wait",
                  "[RenderGraphBuilder]")
 {
     // #166 review C1 and N1. Two properties, one graph, because both are about facts only the builder and executor
