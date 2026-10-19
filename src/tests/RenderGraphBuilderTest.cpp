@@ -2835,6 +2835,77 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     }
 }
 
+TEST_CASE("RenderGraphBuilder: a queue handover is recorded for every kind that can cross a family",
+          "[RenderGraphBuilder]")
+{
+    // Review A2 on #153. What regressed was the *emitted* barrier - an acceleration structure was skipped
+    // entirely - and neither the validation layer nor a run can observe that here: deleting both halves leaves
+    // the suite green with 0 VUIDs. So the barrier is built by a free function and asserted directly, the same
+    // move as `DeriveBarrierMasks`. The handles are null on purpose: the mask, the indices and which list the
+    // barrier lands in are the subject, not the handle.
+    // A sentinel rather than `VK_NULL_HANDLE`: an acceleration structure's acquire refuses a null backing
+    // buffer (that is the guard this case's last assertion covers), and these handles are never dereferenced.
+    const auto kFakeBuffer = reinterpret_cast<VkBuffer>(static_cast<uintptr_t>(0x1));
+
+    BarrierPriorState prior;
+    prior.bSeen = true;
+    prior.lastStages = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+    prior.lastAccess = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+
+    QueueTransferBarriers release;
+    AppendReleaseTransfer(release, "TLAS", ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
+                          VK_IMAGE_ASPECT_COLOR_BIT, prior, 1, 0);
+    REQUIRE(release.buffers.size() == 1);
+    CHECK(release.images.empty());
+    CHECK(release.buffers[0].srcStageMask == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    CHECK(release.buffers[0].srcAccessMask == VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+    CHECK(release.buffers[0].dstStageMask == VK_PIPELINE_STAGE_2_NONE);
+    CHECK(release.buffers[0].dstAccessMask == 0);
+    CHECK(release.buffers[0].srcQueueFamilyIndex == 1);
+    CHECK(release.buffers[0].dstQueueFamilyIndex == 0);
+
+    // The acquire names the consumer's scope and carries the same pair of indices, which is the half that used
+    // to be a family-less memory barrier.
+    const ResourceUse trace{.handle = ResourceHandle("TLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE};
+    BarrierPriorState pending = prior;
+    pending.pendingAcquireFamily = 1;
+    const BarrierMasks masks = DeriveBarrierMasks(pending, ResolveResourceUse(trace), 0);
+    QueueTransferBarriers acquire;
+    AppendAcquireTransfer(acquire, "TLAS", ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
+                          VK_IMAGE_ASPECT_COLOR_BIT, masks);
+    REQUIRE(acquire.buffers.size() == 1);
+    CHECK(acquire.buffers[0].dstStageMask == VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    CHECK(acquire.buffers[0].dstAccessMask == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+    CHECK(acquire.buffers[0].srcQueueFamilyIndex == 1);
+    CHECK(acquire.buffers[0].dstQueueFamilyIndex == 0);
+
+    // An image goes to the other list and keeps its layout, since the acquire performs the transition.
+    BarrierPriorState imagePrior;
+    imagePrior.bSeen = true;
+    imagePrior.lastStages = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    imagePrior.lastAccess = VK_ACCESS_2_SHADER_READ_BIT;
+    imagePrior.lastLayout = VK_IMAGE_LAYOUT_GENERAL;
+    QueueTransferBarriers imageRelease;
+    AppendReleaseTransfer(imageRelease, "Target", ResourceKind::IMAGE, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                          VK_IMAGE_ASPECT_COLOR_BIT, imagePrior, 1, 0);
+    REQUIRE(imageRelease.images.size() == 1);
+    CHECK(imageRelease.buffers.empty());
+    CHECK(imageRelease.images[0].oldLayout == VK_IMAGE_LAYOUT_GENERAL);
+    CHECK(imageRelease.images[0].newLayout == VK_IMAGE_LAYOUT_GENERAL);
+
+    // A kind with no barrier is reported rather than skipped, and so is an acquire with nothing to address.
+    CHECK_THROWS_WITH(AppendReleaseTransfer(release, "NotTransferable", ResourceKind::SAMPLER, VK_NULL_HANDLE,
+                                            VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT, prior, 1, 0),
+                      Catch::Matchers::ContainsSubstring("no barrier to express it"));
+    QueueTransferBarriers noBuffer;
+    CHECK_THROWS_WITH(AppendAcquireTransfer(noBuffer, "TLAS", ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE,
+                                            VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT, masks),
+                      Catch::Matchers::ContainsSubstring("backing buffer"));
+}
+
 #ifdef FEATURE_RAY_TRACING
 // Copy an image back to the host and decode the R32G32B32A32_SFLOAT pixels.
 static std::vector<glm::vec4> ReadTargetFloats(const ImageResource* pTarget, VkImageLayout oldLayout,
@@ -3234,6 +3305,180 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and 
     const bool bAnyHit = std::any_of(pixels.begin(), pixels.end(),
                                      [](const glm::vec4& p) { return p.x != 0.0F || p.y != 0.0F || p.z != 0.0F; });
     CHECK(bAnyHit);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv,
+                 "RenderGraphBuilder: a TLAS built on the async compute queue reaches the graphics queue",
+                 "[RenderGraphBuilder][RayTracing]")
+{
+    // #153. The build runs on the dedicated compute queue and the trace on the graphics queue, so the structure
+    // crosses a queue-family boundary. Both halves of the handover used to be missing: `RecordQueueTransferBarriers`
+    // matched only images and buffers, and the acquire side recorded a `VkMemoryBarrier2`, which has no family
+    // fields.
+    //
+    // What this case pins is the *routing* - the plan schedules the handover, the branches take the AS path, and
+    // the guards fire if either stops doing so. It is **not** the emitted barrier: the validation layer does not
+    // model an acceleration structure's queue ownership, and deleting both halves was measured to leave this run
+    // green with 0 VUIDs. The barrier itself is asserted device-free in
+    // `a queue handover is recorded for every kind that can cross a family`.
+    if (!GetRenderDevice()->IsComputeQueueDedicated())
+    {
+        SKIP(
+            "no dedicated compute family: the async build would run on the graphics queue, so there would be no "
+            "handover to test");
+    }
+
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+    // The structure is pre-built with the quad **off screen**, so a trace that saw only that would miss. The
+    // graph's build then points the same BLAS at an on-screen transform through an instance buffer this test
+    // owns, so the hit at the end is evidence that the in-graph build ran rather than that the scene manager
+    // built something - emptying the build node's callback makes this case fail (review A3).
+    const glm::mat4 offScreen = glm::translate(glm::mat4(1.0F), glm::vec3(10000.0F, 0.0F, 5.0F));
+    const glm::mat4 onScreen = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 5.0F));
+
+    RayTracingSceneManager rtSceneManager;
+    AccelerationStructure* pTLAS = rtSceneManager.BuildSceneFromMeshes({{&quadMesh, offScreen}});
+    REQUIRE(pTLAS != nullptr);
+
+    // The BLAS the scene manager built, addressed by our own instance.
+    auto* pBLAS = GetRenderResourceManager()->GetResource<AccelerationStructure>("acStruct_mesh_0");
+    REQUIRE(pBLAS != nullptr);
+
+    VkAccelerationStructureInstanceKHR instance{};
+    const glm::mat4 instanceTransform = glm::transpose(onScreen);
+    std::memcpy(&instance.transform, &instanceTransform[0][0], sizeof(instance.transform));
+    instance.mask = 0xFF;
+    instance.instanceShaderBindingTableRecordOffset = 0;
+    instance.accelerationStructureReference = pBLAS->GetAccelerationStructureAddress();
+
+    auto* pInstanceBuffer =
+        GetRenderResourceManager()->GetAccelerationStructureBuffer("XQInstances", &instance, sizeof(instance));
+    REQUIRE(pInstanceBuffer != nullptr);
+
+    VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
+    instancesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+    instancesData.arrayOfPointers = VK_FALSE;
+    instancesData.data.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(pInstanceBuffer->buffer());
+
+    VkAccelerationStructureGeometryKHR geometry{};
+    geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+    geometry.geometry.instances = instancesData;
+
+    VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
+    buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+    buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+    buildInfo.geometryCount = 1;
+    buildInfo.pGeometries = &geometry;
+    buildInfo.dstAccelerationStructure = pTLAS->GetAccelerationStructure();
+
+    uint32_t nInstanceCount = 1;
+    VkAccelerationStructureBuildSizesInfoKHR sizes{};
+    sizes.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    VkExt::vkGetAccelerationStructureBuildSizesKHR(GetRenderDevice()->GetDevice(),
+                                                   VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
+                                                   &nInstanceCount, &sizes);
+    AccelerationStructureBuffer scratchBuffer(sizes.buildScratchSize);
+    buildInfo.scratchData.deviceAddress = GetRenderDevice()->GetBufferDeviceAddress(scratchBuffer.buffer());
+
+    VkAccelerationStructureBuildRangeInfoKHR range{nInstanceCount, 0, 0, 0};
+    const VkAccelerationStructureBuildRangeInfoKHR* pRange = &range;
+
+    const glm::mat4 proj =
+        glm::perspective(glm::radians(60.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
+    const glm::mat4 view =
+        glm::lookAt(glm::vec3(0.0F, 0.0F, 10.0F), glm::vec3(0.0F, 0.0F, 5.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+    Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(WIDTH), static_cast<float>(HEIGHT));
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("XQCamera", BufferResourceDesc{.count = 1,
+                                                       .stride = sizeof(PerViewData),
+                                                       .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                       .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("XQOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                          .extent = {WIDTH, HEIGHT},
+                                          .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.ImportResource("XQTLAS", pTLAS);
+
+    builder.AddNode({.nodeName = "XQCameraPrep",
+                     .queueType = QueueType::CPU,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("XQCamera"),
+                                                  .io = ResourceIOType::HOST_WRITE,
+                                                  .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                  .kind = ResourceKind::BUFFER}},
+                     .execute = [&camera](RenderGraphNodeContext& ctx)
+                     {
+                         PerViewData perView;
+                         perView.mProj = camera.GetProjMat();
+                         perView.mView = camera.GetViewMat();
+                         perView.mProjInv = glm::inverse(perView.mProj);
+                         perView.mViewInv = glm::inverse(perView.mView);
+                         perView.vScreenExtent = {WIDTH, HEIGHT};
+                         auto* pCamera = ctx.GetResource<BufferResource>("XQCamera");
+                         REQUIRE(pCamera != nullptr);
+                         pCamera->SetData(&perView, sizeof(perView));
+                     }});
+
+    // The build: async, so it lands on the compute queue when one is dedicated.
+    builder.AddNode({.nodeName = "XQBuild",
+                     .queueType = QueueType::COMPUTE,
+                     .async = true,
+                     .resourceUses = {ResourceUse{.handle = ResourceHandle("XQTLAS"),
+                                                  .io = ResourceIOType::WRITE,
+                                                  .usage = ResourceUsage::ACCEL_STRUCTURE,
+                                                  .kind = ResourceKind::ACCELERATION_STRUCTURE}},
+                     .execute = [&buildInfo, &pRange](RenderGraphNodeContext& ctx)
+                     { VkExt::vkCmdBuildAccelerationStructuresKHR(ctx.commandBuffer, 1, &buildInfo, &pRange); }});
+
+    builder.AddNode({.nodeName = "XQTrace",
+                     .queueType = QueueType::RAY_TRACING,
+                     .resourceUses =
+                         {
+                             ResourceUse{.handle = ResourceHandle("XQCamera"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::UNIFORM_BUFFER,
+                                         .kind = ResourceKind::BUFFER,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                             ResourceUse{.handle = ResourceHandle("XQTLAS"),
+                                         .io = ResourceIOType::READ,
+                                         .usage = ResourceUsage::ACCEL_STRUCTURE,
+                                         .kind = ResourceKind::ACCELERATION_STRUCTURE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                             ResourceUse{.handle = ResourceHandle("XQOutput"),
+                                         .io = ResourceIOType::READ_WRITE,
+                                         .usage = ResourceUsage::STORAGE_IMAGE,
+                                         .kind = ResourceKind::IMAGE,
+                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                         },
+                     .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
+                     .execute = [](RenderGraphNodeContext&) {}});
+
+    builder.AddDependency("XQBuild", "XQTrace");
+    builder.Build();
+
+    const RenderGraphExecutionPlan& plan = builder.GetExecutionPlan();
+    INFO("segments=" << plan.GetSegmentCount() << ", transfers=" << plan.GetTransferCount());
+    REQUIRE(plan.GetTransferCount() >= 1);
+    const bool bTlasHanded = std::any_of(
+        plan.transfers.begin(), plan.transfers.end(), [](const RenderGraphQueueTransfer& transfer)
+        { return transfer.handle == ResourceHandle("XQTLAS") && transfer.producerFamily != transfer.consumerFamily; });
+    CHECK(bTlasHanded);
+
+    // The run is expected to be validation-clean, but that is not what makes this case meaningful: the layer does
+    // not model an AS's queue ownership, so it would also be clean with no handover at all. The assertions above
+    // (the plan schedules it) and the guards' own throws are the teeth; see the device-free case.
+    builder.Execute();
+
+    auto* pOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("XQOutput"));
+    REQUIRE(pOutput != nullptr);
+    const std::vector<glm::vec4> pixels = ReadTargetFloats(
+        pOutput, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    CHECK(std::any_of(pixels.begin(), pixels.end(),
+                      [](const glm::vec4& p) { return p.x != 0.0F || p.y != 0.0F || p.z != 0.0F; }));
 }
 
 TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing matches rasterization (Mazda scene)",

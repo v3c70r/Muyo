@@ -298,6 +298,13 @@ public:
 
     const VkAccelerationStructureKHR& GetAccelerationStructure() const { return m_accelerationStructure; }
 
+    /// @return The buffer the structure's memory lives in.
+    ///
+    /// A `vkCmdPipelineBarrier2` has no barrier type for an acceleration structure, and its memory *is* this
+    /// buffer's - so a queue-family ownership handover is expressed as a buffer barrier on it, which is the
+    /// mechanism the specification recommends for a cross-queue transfer of a structure (#153).
+    VkBuffer GetBackingBuffer() const { return m_accelerationStructureBuffer.buffer(); }
+
     VkDeviceAddress GetAccelerationStructureAddress() const
     {
         VkAccelerationStructureDeviceAddressInfoKHR addressInfo{

@@ -3,6 +3,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "RenderGraphNodeResource.h"
 
@@ -134,6 +135,155 @@ inline BarrierMasks DeriveBarrierMasks(const BarrierPriorState& prior, const Res
                     (prior.lastLayout != use.imageLayout) || bHazard;
 
     return masks;
+}
+
+/// The barrier lists one queue-family handover contributes to.
+///
+/// A handover produces at most one barrier, but which list it belongs in depends on the resource kind, so the
+/// emitter appends rather than returns, and the caller records both lists in one `vkCmdPipelineBarrier2`.
+struct QueueTransferBarriers
+{
+    std::vector<VkImageMemoryBarrier2> images;    ///< Image handovers.
+    std::vector<VkBufferMemoryBarrier2> buffers;  ///< Buffer and acceleration-structure handovers.
+};
+
+/// Append the release half of a handover: the producer's own stages and access, an empty destination scope,
+/// and both queue-family indices.
+///
+/// The destination scope is empty because the acquire barrier on the consumer side names it; waiting on
+/// `ALL_COMMANDS` on both sides would make the handover wait for work neither side has.
+///
+/// Free and device-free so the recorded barrier can be asserted without a device - the same reason
+/// `DeriveBarrierMasks` is. Nothing here reads the handle: a test may pass `VK_NULL_HANDLE` and check the
+/// masks and indices, which are the part that regressed in #153.
+///
+/// @param out       Lists to append to.
+/// @param handle    The resource's name, for the diagnostic.
+/// @param kind      Resource kind; decides the list, and an unexpressible kind is reported.
+/// @param image     The image handle, when `kind` is `IMAGE`.
+/// @param buffer    The buffer handle, or an acceleration structure's backing buffer.
+/// @param aspect    Image aspect mask, when `kind` is `IMAGE`.
+/// @param prior     What the graph recorded for the resource.
+/// @param srcFamily Producing queue family.
+/// @param dstFamily Consuming queue family.
+/// @throws std::runtime_error if the kind has no barrier to express a handover.
+inline void AppendReleaseTransfer(QueueTransferBarriers& out, const std::string& handle, ResourceKind kind,
+                                  VkImage image, VkBuffer buffer, VkImageAspectFlags aspect,
+                                  const BarrierPriorState& prior, uint32_t srcFamily, uint32_t dstFamily)
+{
+    switch (kind)
+    {
+        case ResourceKind::IMAGE:
+        {
+            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            barrier.srcStageMask = prior.lastStages;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
+            barrier.srcAccessMask = prior.lastAccess;
+            barrier.dstAccessMask = 0;
+            barrier.oldLayout = prior.lastLayout;
+            barrier.newLayout = prior.lastLayout;
+            barrier.srcQueueFamilyIndex = srcFamily;
+            barrier.dstQueueFamilyIndex = dstFamily;
+            barrier.image = image;
+            barrier.subresourceRange = {aspect, 0, 1, 0, 1};
+            out.images.push_back(barrier);
+            return;
+        }
+        case ResourceKind::BUFFER:
+        case ResourceKind::ACCELERATION_STRUCTURE:
+        {
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = prior.lastStages;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
+            barrier.srcAccessMask = prior.lastAccess;
+            barrier.dstAccessMask = 0;
+            barrier.srcQueueFamilyIndex = srcFamily;
+            barrier.dstQueueFamilyIndex = dstFamily;
+            barrier.buffer = buffer;
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            out.buffers.push_back(barrier);
+            return;
+        }
+        case ResourceKind::SAMPLER:
+            break;
+    }
+
+    // Silently skipping a transfer is how an acceleration structure's handover went missing for two releases
+    // (#153): the chain matched images and buffers and said nothing about anything else.
+    throw std::runtime_error("Queue handover of '" + handle + "' is scheduled, but a " + std::string(NameOf(kind)) +
+                             " has no barrier to express it.");
+}
+
+/// Append the acquire half of a handover: an empty source scope, the consumer's stages and access, and both
+/// queue-family indices.
+///
+/// @param out    Lists to append to.
+/// @param handle The resource's name, for the diagnostic.
+/// @param kind   Resource kind; decides the list, and an unexpressible kind is reported.
+/// @param image  The image handle, when `kind` is `IMAGE`.
+/// @param buffer The buffer handle, or an acceleration structure's backing buffer.
+/// @param aspect Image aspect mask, when `kind` is `IMAGE`.
+/// @param masks  The masks `DeriveBarrierMasks` produced for the first use in the consumer family; its
+///               `srcQueueFamily`/`dstQueueFamily` are the indices recorded here.
+/// @throws std::runtime_error if no handover is pending, or the kind has no barrier to express one.
+inline void AppendAcquireTransfer(QueueTransferBarriers& out, const std::string& handle, ResourceKind kind,
+                                  VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierMasks& masks)
+{
+    if (masks.srcQueueFamily == VK_QUEUE_FAMILY_IGNORED)
+    {
+        throw std::runtime_error("An acquire barrier was requested for '" + handle +
+                                 "', but no handover is pending for it.");
+    }
+
+    switch (kind)
+    {
+        case ResourceKind::IMAGE:
+        {
+            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+            barrier.srcStageMask = masks.srcStage;
+            barrier.dstStageMask = masks.dstStage;
+            barrier.srcAccessMask = masks.srcAccess;
+            barrier.dstAccessMask = masks.dstAccess;
+            barrier.oldLayout = masks.oldLayout;
+            barrier.newLayout = masks.newLayout;
+            barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
+            barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
+            barrier.image = image;
+            barrier.subresourceRange = {aspect, 0, 1, 0, 1};
+            out.images.push_back(barrier);
+            return;
+        }
+        case ResourceKind::BUFFER:
+        case ResourceKind::ACCELERATION_STRUCTURE:
+        {
+            if (buffer == VK_NULL_HANDLE)
+            {
+                throw std::runtime_error(
+                    "A queue handover is pending for '" + handle +
+                    "', but it did not resolve to a structure with a backing buffer - which is the only way to "
+                    "express it. Recording a family-less memory barrier instead would consume the handover and "
+                    "perform nothing (#153).");
+            }
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = masks.srcStage;
+            barrier.dstStageMask = masks.dstStage;
+            barrier.srcAccessMask = masks.srcAccess;
+            barrier.dstAccessMask = masks.dstAccess;
+            barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
+            barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
+            barrier.buffer = buffer;
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            out.buffers.push_back(barrier);
+            return;
+        }
+        case ResourceKind::SAMPLER:
+            break;
+    }
+
+    throw std::runtime_error("A queue handover is pending for '" + handle + "', but a " + std::string(NameOf(kind)) +
+                             " has no barrier to express it.");
 }
 
 /// Record a use as the resource's new prior state.
