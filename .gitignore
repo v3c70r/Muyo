@@ -15,3 +15,8 @@ compile_commands.json
 
 # Local toolchain downloads (see docs/README.md)
 /.tools/
+
+# Python bytecode from the docs tooling (the generators are run as scripts, but a future import or
+# a local doctest run still emits it).
+__pycache__/
+*.pyc

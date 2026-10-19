@@ -10,6 +10,7 @@ Usage: gen_api_md.py <doxygen-xml-dir> <output.md>
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 import sys
@@ -91,6 +92,78 @@ def _description(member: ET.Element) -> str:
     return _summary(member.find("briefdescription"), member.find("detaileddescription"))
 
 
+def _md(text: str) -> str:
+    """Escape a table cell."""
+    return (text or "").replace("|", "\\|")
+
+
+def _sections(detailed_el: ET.Element | None):
+    """Return (prose paragraphs, parameters, return, exceptions) from a detailed description.
+
+    Doxygen puts `@param`, `@returns` and `@throws` in the **detailed** description, in `<para>` elements
+    alongside the prose. The reference used to render the brief only, so every contract those tags carry was
+    dropped - which is how `DeriveUseBarriers` came to read as unconditional while it can throw (#161).
+    """
+    if detailed_el is None:
+        return [], [], "", []
+
+    paragraphs: list[str] = []
+    params: list[tuple[str, str]] = []
+    returns = ""
+    throws: list[tuple[str, str]] = []
+
+    for para in detailed_el.findall("para"):
+        for listing in para.findall("parameterlist"):
+            items = [
+                (_text(item.find("parameternamelist/parametername")), _text(item.find("parameterdescription")))
+                for item in listing.findall("parameteritem")
+            ]
+            if listing.get("kind") in ("param", "templateparam"):
+                params.extend(items)
+            elif listing.get("kind") == "exception":
+                throws.extend(items)
+        for sect in para.findall("simplesect"):
+            if sect.get("kind") == "return":
+                returns = _text(sect)
+        # Prose that shares a `<para>` with its sections still belongs to the description. Drop the section
+        # children and read the rest, so inline markup inside the prose survives and the section item text is
+        # not pulled in twice.
+        trimmed = copy.deepcopy(para)
+        for child in list(trimmed):
+            if child.tag in ("parameterlist", "simplesect"):
+                trimmed.remove(child)
+        text = _text(trimmed)
+        if text:
+            paragraphs.append(text)
+
+    return paragraphs, params, returns, throws
+
+
+def _documented(member: ET.Element):
+    """Return (summary, body paragraphs, parameters, return, exceptions) for an entity.
+
+    A brief is the summary and every detailed paragraph is body; without a brief the first paragraph is the
+    summary, so nothing is rendered twice.
+    """
+    brief = _text(member.find("briefdescription"))
+    paragraphs, params, returns, throws = _sections(member.find("detaileddescription"))
+    if brief:
+        return brief, paragraphs, params, returns, throws
+    return (paragraphs[0] if paragraphs else ""), paragraphs[1:], params, returns, throws
+
+
+def _compact_sections(params, returns, throws) -> str:
+    """Render sections into one line, for a member that lives in a table cell."""
+    parts: list[str] = []
+    if params:
+        parts.append("Parameters: " + "; ".join(f"`{n}` - {d.rstrip('.')}" for n, d in params))
+    if returns:
+        parts.append(f"Returns: {returns}")
+    if throws:
+        parts.append("Throws: " + "; ".join(f"`{n}` - {d.rstrip('.')}" for n, d in throws))
+    return " ".join(parts)
+
+
 def _member_location_file(member: ET.Element) -> str:
     location = member.find("location")
     if location is None:
@@ -136,7 +209,7 @@ def collect(xml_dir: str):
             continue
 
         name = compounddef.findtext("compoundname") or compound.get("name") or ""
-        brief = _summary(compounddef.find("briefdescription"), compounddef.find("detaileddescription"))
+        brief, body, params, returns, throws = _documented(compounddef)
         header = _location_file(compounddef)
 
         if kind == "namespace":
@@ -149,13 +222,18 @@ def collect(xml_dir: str):
                 if section_kind == "enum":
                     for enum_value in member.findall("enumvalue"):
                         values.append((enum_value.findtext("name") or "", _description(enum_value)))
+                m_summary, m_body, m_params, m_returns, m_throws = _documented(member)
                 by_header.setdefault(member_header, []).append(
                     {
                         "sort": name + "::" + (member.findtext("name") or ""),
                         "namespace": name,
                         "kind": "function" if section_kind == "func" else section_kind,
                         "name": member.findtext("name") or "",
-                        "brief": _description(member),
+                        "brief": m_summary,
+                        "body": m_body,
+                        "params": m_params,
+                        "returns": m_returns,
+                        "throws": m_throws,
                         "signature": _signature(member),
                         "values": values,
                     }
@@ -171,6 +249,10 @@ def collect(xml_dir: str):
             "kind": kind,
             "qualified": name,
             "brief": brief,
+            "body": body,
+            "params": params,
+            "returns": returns,
+            "throws": throws,
             "members": [],
             "values": _enum_values(compounddef) if kind == "enum" else [],
         }
@@ -179,11 +261,14 @@ def collect(xml_dir: str):
             if section_kind == "enumvalue":
                 continue
             # Drop the owning class qualification so the table stays readable.
+            m_summary, _m_body, m_params, m_returns, m_throws = _documented(member)
+            compact_sections = _compact_sections(m_params, m_returns, m_throws)
             entry["members"].append(
                 {
                     "kind": member.get("kind"),
                     "name": member.findtext("name") or "",
-                    "brief": _description(member),
+                    "brief": m_summary,
+                    "compact": compact_sections,
                     "signature": _signature(member).replace(scope, ""),
                 }
             )
@@ -222,6 +307,24 @@ def render(by_header: dict[str, list[dict]]) -> str:
             if entry.get("brief"):
                 lines.append(entry["brief"])
                 lines.append("")
+            for paragraph in entry.get("body") or []:
+                lines.append(paragraph)
+                lines.append("")
+            if entry.get("params"):
+                lines.append("| Parameter | Description |")
+                lines.append("| --- | --- |")
+                for param_name, param_desc in entry["params"]:
+                    lines.append(f"| `{param_name}` | {_md(param_desc)} |")
+                lines.append("")
+            if entry.get("returns"):
+                lines.append(f"**Returns** — {entry['returns']}")
+                lines.append("")
+            if entry.get("throws"):
+                lines.append("**Throws**")
+                lines.append("")
+                for throw_name, throw_desc in entry["throws"]:
+                    lines.append(f"- `{throw_name}` — {throw_desc}")
+                lines.append("")
             if entry.get("values"):
                 lines.append("| Value | Description |")
                 lines.append("| --- | --- |")
@@ -233,7 +336,10 @@ def render(by_header: dict[str, list[dict]]) -> str:
                 lines.append("| --- | --- |")
                 for member in entry["members"]:
                     signature = member["signature"].replace("|", "\\|")
-                    lines.append(f"| `{signature}` | {member['brief'] or ''} |")
+                    cell = member["brief"] or ""
+                    if member.get("compact"):
+                        cell = (cell + " " if cell else "") + member["compact"]
+                    lines.append(f"| `{signature}` | {_md(cell)} |")
                 lines.append("")
         lines.append("")
 
