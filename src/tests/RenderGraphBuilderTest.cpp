@@ -7,6 +7,7 @@
 #include <fstream>
 #include <optional>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 #include <variant>
 
@@ -2832,6 +2833,76 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
         REQUIRE(result.nVisibleCount > 0);
         REQUIRE(result.nVisibleCount < result.nSourceCount);
         REQUIRE(result.nNonBlackPixels > 0);
+    }
+}
+
+TEST_CASE("RenderGraphBuilder: the barrier batch is assembled from the node's uses", "[RenderGraphBuilder]")
+{
+    // #160. Dropping an append from the batch used to leave the whole suite green, because nothing looked at the
+    // barriers that were about to be recorded. `DeriveBarrierBatch` owns the assembly now, so this asserts it
+    // device-free: which list each use lands in, what the masks are, and that the recorded state advanced.
+    const auto kImage = reinterpret_cast<VkImage>(static_cast<uintptr_t>(0x11));
+    const auto kBuffer = reinterpret_cast<VkBuffer>(static_cast<uintptr_t>(0x22));
+    const auto resolve = [kImage, kBuffer](const ResourceHandle&)
+    { return BarrierTarget{.image = kImage, .buffer = kBuffer, .aspect = VK_IMAGE_ASPECT_COLOR_BIT}; };
+    constexpr VkPipelineStageFlags2 kAllStages = ~static_cast<VkPipelineStageFlags2>(0);
+
+    const ResourceUse attachmentWrite{.handle = ResourceHandle("Target"),
+                                      .io = ResourceIOType::WRITE,
+                                      .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                      .kind = ResourceKind::IMAGE};
+    const ResourceUse sampledRead{.handle = ResourceHandle("Target"),
+                                  .io = ResourceIOType::READ,
+                                  .usage = ResourceUsage::SAMPLED,
+                                  .kind = ResourceKind::IMAGE};
+
+    // A node that writes the attachment and then samples it: two image barriers, the second waiting on the write.
+    {
+        std::unordered_map<ResourceHandle, BarrierPriorState> states;
+        const BarrierBatch batch = DeriveBarrierBatch(
+            {ResolveResourceUse(attachmentWrite), ResolveResourceUse(sampledRead)}, states, 0, kAllStages, resolve);
+        REQUIRE(batch.images.size() == 2);
+        CHECK(batch.buffers.empty());
+        CHECK_FALSE(batch.memory.has_value());
+        CHECK(batch.images[0].dstStageMask == VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+        CHECK(batch.images[1].srcStageMask == VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+        CHECK(batch.images[1].dstAccessMask == VK_ACCESS_2_SHADER_READ_BIT);
+        // The state advanced to the *last* use, which is what the next node's barrier is derived from.
+        CHECK(states[attachmentWrite.handle].bSeen);
+        CHECK(states[attachmentWrite.handle].lastAccess == VK_ACCESS_2_SHADER_READ_BIT);
+        CHECK((states[attachmentWrite.handle].lastStages & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
+
+        // And a resource touched once records that use.
+        std::unordered_map<ResourceHandle, BarrierPriorState> once;
+        DeriveBarrierBatch({ResolveResourceUse(attachmentWrite)}, once, 0, kAllStages, resolve);
+        CHECK(once[attachmentWrite.handle].lastStages == VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
+        CHECK(once[attachmentWrite.handle].lastAccess == VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    }
+
+    const ResourceUse tlasRead{.handle = ResourceHandle("TLAS"),
+                               .io = ResourceIOType::READ,
+                               .usage = ResourceUsage::ACCEL_STRUCTURE,
+                               .kind = ResourceKind::ACCELERATION_STRUCTURE};
+
+    // A handover pending: the buffer list, no memory barrier.
+    {
+        std::unordered_map<ResourceHandle, BarrierPriorState> states;
+        states[tlasRead.handle].pendingAcquireFamily = 1;
+        const BarrierBatch batch = DeriveBarrierBatch({ResolveResourceUse(tlasRead)}, states, 0, kAllStages, resolve);
+        REQUIRE(batch.buffers.size() == 1);
+        CHECK(batch.images.empty());
+        CHECK_FALSE(batch.memory.has_value());
+        CHECK(batch.buffers[0].srcQueueFamilyIndex == 1);
+        CHECK(batch.buffers[0].dstQueueFamilyIndex == 0);
+    }
+
+    // In family: the memory barrier, no buffer barrier.
+    {
+        std::unordered_map<ResourceHandle, BarrierPriorState> states;
+        const BarrierBatch batch = DeriveBarrierBatch({ResolveResourceUse(tlasRead)}, states, 0, kAllStages, resolve);
+        REQUIRE(batch.memory.has_value());
+        CHECK(batch.buffers.empty());
+        CHECK(batch.memory->dstAccessMask == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
     }
 }
 
