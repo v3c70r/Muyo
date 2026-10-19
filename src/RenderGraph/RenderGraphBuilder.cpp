@@ -1937,8 +1937,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         context.pipeline = VK_NULL_HANDLE;
         rgn.execute(context);
         EnsureMappingsReleased(rgn.name);
-        // The transition itself lives in `ApplyHostWrites`, which is device-free and asserted; what remains
-        // here is the one call. See #155's residual note.
+        // The transition itself lives in `ApplyHostWrites`, which is device-free and asserted. What remains here
+        // is the one call, which nothing observes: pinning it needs an execution trace (#56), not another
+        // extraction.
         ApplyHostWrites(rgn.resourceUses, m_resourceAccessStates);
     }
 
