@@ -78,59 +78,117 @@ def run(cmd: list[str]) -> int:
     return subprocess.call(cmd, cwd=REPO_ROOT)
 
 
-# Section markers `gen_api_md.py` emits, and the Doxygen element each one carries.
-_RENDERED_SECTIONS = (
-    ("| Parameter | Description |", ("parameterlist", "param")),
-    ("**Returns**", ("simplesect", "return")),
-    ("**Throws**", ("parameterlist", "exception")),
-)
+# Where each section is rendered. Entries get their own block; a class member's sections go into its table cell,
+# so the two are counted with different markers.
+_ENTRY_MARKERS = {
+    "param": "| Parameter | Description |",
+    "return": "**Returns**",
+    "exception": "**Throws**",
+}
+_CELL_MARKERS = {
+    "param": "Parameters: ",
+    "return": "Returns: ",
+    "exception": "Throws: ",
+}
+
+
+def _count_sections(detailed_el) -> dict[str, int]:
+    """Return 1 for each section kind this description carries.
+
+    One, not the number of items: a marker is emitted **once per entity** (`| Parameter | Description |` per
+    entity with parameters, `**Throws**` per entity with exceptions), so counting items would over-expect by the
+    number of parameters - which is how the first raw-XML attempt asked for 55 parameter tables where 17 are
+    rendered.
+    """
+    counts = {"param": 0, "return": 0, "exception": 0}
+    if detailed_el is None:
+        return counts
+    for listing in detailed_el.iter("parameterlist"):
+        kind = listing.get("kind")
+        if kind in ("param", "templateparam") and listing.findall("parameteritem"):
+            counts["param"] = 1
+        elif kind == "exception" and listing.findall("parameteritem"):
+            counts["exception"] = 1
+    if any(sect.get("kind") == "return" for sect in detailed_el.iter("simplesect")):
+        counts["return"] = 1
+    return counts
 
 
 def check_rendered_sections(xml_dir: str, md_path: str) -> int:
-    """Fail when the reference omits a documented section.
+    """Fail when the reference omits a section the headers document.
 
-    Counts what the generator *walks* (`gen_api_md.collect`) against what the Markdown renders: entries get their
-    own blocks, members render into their table cell. Counting the raw XML instead would double-count, because
-    Doxygen repeats a memberdef in its file compound and in its class compound.
+    The expectations come from the **raw Doxygen XML**, not from `gen_api_md.collect`. That is deliberate: the
+    first version of this check counted the generator's own parse result, so a parser that dropped a kind dropped
+    it from both sides and the check went green - the same self-cancelling failure the staleness comparison has,
+    one layer up (#161 review A1).
+
+    Two wrinkles, both load-bearing:
+
+    - Doxygen repeats every member in its `file` compound as well as its namespace/class compound, so the walk is
+      restricted to the four API compound kinds and deduplicated by memberdef id.
+    - A namespace member renders as its own entry block; a class member renders inside its table cell. The
+      expected counts are split the same way, or a correct reference would look short.
     """
-    sys.path.insert(0, DOCS_DIR)
-    import gen_api_md  # noqa: PLC0415 - the generator lives beside this script
+    entry_counts = {"param": 0, "return": 0, "exception": 0}
+    cell_counts = {"param": 0, "return": 0, "exception": 0}
+    seen: set[str] = set()
 
-    entry_markers = {
-        "| Parameter | Description |": 0,
-        "**Returns**": 0,
-        "**Throws**": 0,
-    }
-    cell_markers = {"Parameters: ": 0, "Returns: ": 0, "Throws: ": 0}
-    for entries in gen_api_md.collect(xml_dir).values():
-        for entry in entries:
-            if entry.get("params"):
-                entry_markers["| Parameter | Description |"] += 1
-            if entry.get("returns"):
-                entry_markers["**Returns**"] += 1
-            if entry.get("throws"):
-                entry_markers["**Throws**"] += 1
-            for member in entry.get("members") or []:
-                cell = member.get("compact") or ""
-                for marker in cell_markers:
-                    if marker in cell:
-                        cell_markers[marker] += 1
+    for path in sorted(glob.glob(os.path.join(xml_dir, "*.xml"))):
+        root = ET.parse(path).getroot()
+        compounddef = root.find("compounddef")
+        if compounddef is None:
+            continue
+        compound_kind = compounddef.get("kind")
+        if compound_kind not in ("namespace", "class", "struct", "enum"):
+            continue
+
+        # The compound's own description renders as an entry block.
+        compound_sections = _count_sections(compounddef.find("detaileddescription"))
+        for key, value in compound_sections.items():
+            entry_counts[key] += value
+
+        # The API surface is the public members of public sections - the same selection the generator makes, so
+        # the two agree on *which* entities exist. What this check does not share is the section *parsing*.
+        target = entry_counts if compound_kind == "namespace" else cell_counts
+        for section in compounddef.findall("sectiondef"):
+            section_kind = section.get("kind") or ""
+            if compound_kind == "namespace":
+                allowed = section_kind.startswith("public-") or section_kind in ("func", "var", "typedef", "enum")
+            else:
+                allowed = section_kind.startswith("public-")
+            if not allowed:
+                continue
+            for member in section.findall("memberdef"):
+                if member.get("prot") not in (None, "public"):
+                    continue
+                member_id = member.get("id") or ""
+                if member_id in seen:
+                    continue
+                seen.add(member_id)
+                for key, value in _count_sections(member.find("detaileddescription")).items():
+                    target[key] += value
 
     with open(md_path, encoding="utf-8") as handle:
         rendered = handle.read()
 
-    missing = [
-        (marker, count)
-        for marker, count in list(entry_markers.items()) + list(cell_markers.items())
-        if count and rendered.count(marker) < count
-    ]
+    missing = []
+    for scope, counts, markers in (
+        ("entry", entry_counts, _ENTRY_MARKERS),
+        ("member cell", cell_counts, _CELL_MARKERS),
+    ):
+        for section, expected in counts.items():
+            marker = markers[section]
+            actual = rendered.count(marker)
+            if actual < expected:
+                missing.append((scope, marker.strip("|* "), expected, actual))
+
     if not missing:
         return 0
 
-    for marker, count in missing:
+    for scope, section, expected, actual in missing:
         print(
-            f"render_graph_docs: {count} documented '{marker.strip('|* ')}' section(s), "
-            f"but the reference renders {rendered.count(marker)}."
+            f"render_graph_docs: {expected} documented '{section}' section(s) at {scope} level, "
+            f"but the reference renders {actual}."
         )
     print("render_graph_docs: the API reference is dropping documented sections (see #161).")
     return 1

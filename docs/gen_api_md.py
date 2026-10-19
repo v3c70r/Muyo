@@ -113,7 +113,6 @@ def _sections(detailed_el: ET.Element | None):
     throws: list[tuple[str, str]] = []
 
     for para in detailed_el.findall("para"):
-        structured = False
         for listing in para.findall("parameterlist"):
             items = [
                 (_text(item.find("parameternamelist/parametername")), _text(item.find("parameterdescription")))
@@ -123,11 +122,9 @@ def _sections(detailed_el: ET.Element | None):
                 params.extend(items)
             elif listing.get("kind") == "exception":
                 throws.extend(items)
-            structured = True
         for sect in para.findall("simplesect"):
             if sect.get("kind") == "return":
                 returns = _text(sect)
-            structured = True
         # Prose that shares a `<para>` with its sections still belongs to the description. Drop the section
         # children and read the rest, so inline markup inside the prose survives and the section item text is
         # not pulled in twice.
