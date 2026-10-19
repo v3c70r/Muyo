@@ -2904,6 +2904,31 @@ TEST_CASE("RenderGraphBuilder: the barrier batch is assembled from the node's us
         CHECK(batch.buffers.empty());
         CHECK(batch.memory->dstAccessMask == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
     }
+
+    // Two in-family AS uses in one node: the batch carries the **union** of their masks. This pins the *merge*,
+    // which is a different statement from pinning the append - before review N1 only the append was pinned, and
+    // replacing the ORs with a plain assignment left every suite green.
+    {
+        std::unordered_map<ResourceHandle, BarrierPriorState> states;
+        const ResourceUse buildUse{.handle = ResourceHandle("TLASBuild"),
+                                   .io = ResourceIOType::WRITE,
+                                   .usage = ResourceUsage::ACCEL_STRUCTURE,
+                                   .kind = ResourceKind::ACCELERATION_STRUCTURE};
+        const ResourceUse traceUse{.handle = ResourceHandle("TLASTrace"),
+                                   .io = ResourceIOType::READ,
+                                   .usage = ResourceUsage::ACCEL_STRUCTURE,
+                                   .kind = ResourceKind::ACCELERATION_STRUCTURE};
+        const BarrierBatch batch = DeriveBarrierBatch({ResolveResourceUse(buildUse), ResolveResourceUse(traceUse)},
+                                                      states, 0, kAllStages, resolve);
+        REQUIRE(batch.memory.has_value());
+        CHECK(batch.buffers.empty());
+        CHECK(batch.memory->dstStageMask ==
+              static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR |
+                                                 VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR));
+        CHECK(batch.memory->dstAccessMask ==
+              static_cast<VkAccessFlags2>(VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR |
+                                          VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR));
+    }
 }
 
 TEST_CASE("RenderGraphBuilder: a pending handover routes an acceleration structure to the buffer path",
