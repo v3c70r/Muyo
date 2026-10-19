@@ -235,6 +235,7 @@ add_library(muyo_rg
     "src/RenderGraph/CompiledRenderGraph.cpp"
     "src/RenderGraph/DescriptorSetCache.cpp"
     "src/RenderGraph/RenderGraphExecutor.cpp"
+    "src/RenderGraph/RenderGraphTrace.cpp"
 )
 
 #fetch VMA from Github
@@ -418,6 +419,7 @@ add_executable(tests
     src/tests/DeviceCapabilityTests.cpp
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
+    src/tests/RenderGraphTraceTest.cpp
     src/tests/SceneImporterTests.cpp
     src/tests/ShaderReflectionTests.cpp
     src/tests/TransientMemoryPlannerTest.cpp
