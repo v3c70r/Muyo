@@ -742,7 +742,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: transients that are never
         builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = nodeName,
                                                   .queueType = QueueType::CPU,
                                                   .resourceUses = {ResourceUse{.handle = ResourceHandle(handle),
-                                                                               .io = ResourceIOType::WRITE,
+                                                                               .io = ResourceIOType::HOST_WRITE,
                                                                                .usage = ResourceUsage::UNIFORM_BUFFER,
                                                                                .kind = ResourceKind::BUFFER}},
                                                   .execute = [handle, value](RenderGraphNodeContext& ctx)
@@ -793,7 +793,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transient mapping must 
         builder->AddNode(RenderGraphNodeCreateInfo{.nodeName = "LeavesItMapped",
                                                    .queueType = queueType,
                                                    .resourceUses = {ResourceUse{.handle = ResourceHandle("Leaky"),
-                                                                                .io = ResourceIOType::WRITE,
+                                                                                .io = ResourceIOType::HOST_WRITE,
                                                                                 .usage = ResourceUsage::UNIFORM_BUFFER,
                                                                                 .kind = ResourceKind::BUFFER}},
                                                    .execute = [](RenderGraphNodeContext& ctx)
@@ -1586,7 +1586,7 @@ TEST_CASE("RenderGraphBuilder: barrier masks come from the uses, not ALL_COMMAND
         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
         VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
 
-    const ResolvedResourceUse writeUse = ResolveResourceUse(write, QueueType::GRAPHICS);
+    const ResolvedResourceUse writeUse = ResolveResourceUse(write);
     BarrierPriorState state;
     const BarrierMasks first = DeriveBarrierMasks(state, writeUse, 0);
     CHECK(first.bNeeded);                                          // the layout transition alone requires a barrier
@@ -1598,7 +1598,7 @@ TEST_CASE("RenderGraphBuilder: barrier masks come from the uses, not ALL_COMMAND
     CHECK(first.newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 
     state = RecordAccess(state, writeUse);
-    const BarrierMasks second = DeriveBarrierMasks(state, ResolveResourceUse(read, QueueType::GRAPHICS), 0);
+    const BarrierMasks second = DeriveBarrierMasks(state, ResolveResourceUse(read), 0);
     CHECK(second.bNeeded);
     CHECK(second.srcStage == VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
     CHECK(second.srcAccess == VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
@@ -1610,16 +1610,14 @@ TEST_CASE("RenderGraphBuilder: barrier masks come from the uses, not ALL_COMMAND
     // The same derivation, on a device that does not enable ray tracing: the stage bit must be gone,
     // because a mask naming it is rejected even when nothing would ever reach it.
     const auto noRayTracing = ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
-    const BarrierMasks filtered =
-        DeriveBarrierMasks(state, ResolveResourceUse(read, QueueType::GRAPHICS), 0, noRayTracing);
+    const BarrierMasks filtered = DeriveBarrierMasks(state, ResolveResourceUse(read), 0, noRayTracing);
     CHECK(filtered.dstStage ==
           (sampledStages & ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR)));
 
     // Review N3. The *stored* stages are filtered too: `RecordQueueTransferBarriers` emits them as a release
     // barrier's source scope, so storing the raw table stages would leak a disabled bit into that mask - the
     // VUID class the filter exists to prevent, one call site away from where it is applied.
-    const BarrierPriorState stored =
-        RecordAccess(BarrierPriorState{}, ResolveResourceUse(read, QueueType::GRAPHICS), noRayTracing);
+    const BarrierPriorState stored = RecordAccess(BarrierPriorState{}, ResolveResourceUse(read), noRayTracing);
     CHECK((stored.lastStages & VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR) == 0);
     CHECK((stored.lastStages & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
 }
@@ -1642,17 +1640,17 @@ TEST_CASE("RenderGraphBuilder: barrier hazards and the host-write source", "[Ren
                              .kind = ResourceKind::BUFFER};
 
     // Read after read, same masks: nothing to order.
-    const ResolvedResourceUse readUse = ResolveResourceUse(read, QueueType::GRAPHICS);
+    const ResolvedResourceUse readUse = ResolveResourceUse(read);
     CHECK_FALSE(DeriveBarrierMasks(RecordAccess(BarrierPriorState{}, readUse), readUse, 0).bNeeded);
 
     // Write after write, *identical* masks: a WAW hazard remains, so the barrier is still required.
-    const ResolvedResourceUse writeUse = ResolveResourceUse(write, QueueType::GRAPHICS);
+    const ResolvedResourceUse writeUse = ResolveResourceUse(write);
     CHECK(DeriveBarrierMasks(RecordAccess(BarrierPriorState{}, writeUse), writeUse, 0).bNeeded);
 
     // A CPU node wrote it: the source is the host, and the consumer waits at its own stage.
     BarrierPriorState hostWritten;
     hostWritten.bWrittenByHost = true;
-    const BarrierMasks afterHost = DeriveBarrierMasks(hostWritten, ResolveResourceUse(vertex, QueueType::GRAPHICS), 0);
+    const BarrierMasks afterHost = DeriveBarrierMasks(hostWritten, ResolveResourceUse(vertex), 0);
     CHECK(afterHost.bNeeded);
     CHECK(afterHost.srcStage == VK_PIPELINE_STAGE_2_HOST_BIT);
     CHECK(afterHost.srcAccess == VK_ACCESS_2_HOST_WRITE_BIT);
@@ -1695,23 +1693,95 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the stage filter reflects
 #endif
 }
 
-TEST_CASE("RenderGraphBuilder: a GPU write is a shader write; a CPU write is a host write", "[RenderGraphBuilder]")
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a host write is declared, and the declaration is checked",
+                 "[RenderGraphBuilder]")
 {
-    // #12. One table entry, two meanings: `WRITE` on a storage buffer is a host upload from a CPU node and
-    // a shader store from a GPU node. The queue type is the only thing that distinguishes them, and
-    // getting it wrong put HOST in the destination stage of a GPU write, which orders it against nothing.
-    const ResourceUse write{.handle = ResourceHandle("Out"),
-                            .io = ResourceIOType::WRITE,
-                            .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER};
+    // #152. Three ways to get the declaration wrong, each caught where it is written rather than at draw time.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("DeviceOnly", BufferResourceDesc{.count = 1,
+                                                         .stride = sizeof(uint32_t),
+                                                         .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                         .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddResource("HostVisible", BufferResourceDesc{.count = 1,
+                                                          .stride = sizeof(uint32_t),
+                                                          .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                          .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource(
+        "Target",
+        ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM, .extent = {8, 8}, .usage = VK_IMAGE_USAGE_SAMPLED_BIT});
 
-    const ResolvedResourceUse gpu = ResolveResourceUse(write, QueueType::COMPUTE);
+    const auto use = [](const char* handle, ResourceIOType io, ResourceUsage usage, ResourceKind kind)
+    { return ResourceUse{.handle = ResourceHandle(handle), .io = io, .usage = usage, .kind = kind}; };
+
+    // A CPU node has no command buffer, so it can only write through the host.
+    CHECK_THROWS_WITH(
+        builder.AddNode({.nodeName = "CpuWriter",
+                         .queueType = QueueType::CPU,
+                         .resourceUses = {use("HostVisible", ResourceIOType::WRITE, ResourceUsage::UNIFORM_BUFFER,
+                                              ResourceKind::BUFFER)}}),
+        Catch::Matchers::ContainsSubstring("'CpuWriter'") && Catch::Matchers::ContainsSubstring("HOST_WRITE"));
+
+    // There is no host write to an image in this engine.
+    CHECK_THROWS_WITH(builder.AddNode({.nodeName = "ImageHostWriter",
+                                       .queueType = QueueType::GRAPHICS,
+                                       .resourceUses = {use("Target", ResourceIOType::HOST_WRITE,
+                                                            ResourceUsage::SAMPLED, ResourceKind::IMAGE)},
+                                       .execute = [](RenderGraphNodeContext&) {}}),
+                      Catch::Matchers::ContainsSubstring("'ImageHostWriter'") &&
+                          Catch::Matchers::ContainsSubstring("no host write to an image"));
+
+    // The same argument for an image, which cannot be written by a CPU node at all (#155 review N1).
+    CHECK_THROWS_WITH(builder.AddNode({.nodeName = "CpuImageWriter",
+                                       .queueType = QueueType::CPU,
+                                       .resourceUses = {use("Target", ResourceIOType::WRITE, ResourceUsage::SAMPLED,
+                                                            ResourceKind::IMAGE)}}),
+                      Catch::Matchers::ContainsSubstring("'CpuImageWriter'") &&
+                          Catch::Matchers::ContainsSubstring("no host image write"));
+
+    // A host write needs host-visible storage; the allocation is where that has to be true.
+    CHECK_THROWS_WITH(builder.AddNode({.nodeName = "GpuMemoryHostWriter",
+                                       .queueType = QueueType::GRAPHICS,
+                                       .resourceUses = {use("DeviceOnly", ResourceIOType::HOST_WRITE,
+                                                            ResourceUsage::UNIFORM_BUFFER, ResourceKind::BUFFER)},
+                                       .execute = [](RenderGraphNodeContext&) {}}),
+                      Catch::Matchers::ContainsSubstring("'GpuMemoryHostWriter'") &&
+                          Catch::Matchers::ContainsSubstring("device-only memory"));
+
+    // And the correct declaration is accepted, so the checks are not simply rejecting everything.
+    builder.AddNode({.nodeName = "CorrectWriter",
+                     .queueType = QueueType::GRAPHICS,
+                     .resourceUses = {use("HostVisible", ResourceIOType::HOST_WRITE, ResourceUsage::UNIFORM_BUFFER,
+                                          ResourceKind::BUFFER)},
+                     .execute = [](RenderGraphNodeContext&) {}});
+}
+
+TEST_CASE("RenderGraphBuilder: WRITE is a shader store and HOST_WRITE is a host write", "[RenderGraphBuilder]")
+{
+    // #152. The declaration says which write it means, not the node's queue type: a GPU node that maps a buffer
+    // writes through the host just as a CPU node does, and the two need different barrier scopes.
+    const ResourceUse shaderWrite{.handle = ResourceHandle("Out"),
+                                  .io = ResourceIOType::WRITE,
+                                  .usage = ResourceUsage::STORAGE_BUFFER,
+                                  .kind = ResourceKind::BUFFER};
+    const ResolvedResourceUse gpu = ResolveResourceUse(shaderWrite);
     CHECK(gpu.stages == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
     CHECK(gpu.access == VK_ACCESS_2_SHADER_WRITE_BIT);
 
-    const ResolvedResourceUse host = ResolveResourceUse(write, QueueType::CPU);
+    const ResourceUse hostWrite{.handle = ResourceHandle("Out"),
+                                .io = ResourceIOType::HOST_WRITE,
+                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                .kind = ResourceKind::BUFFER};
+    const ResolvedResourceUse host = ResolveResourceUse(hostWrite);
     CHECK(host.stages == VK_PIPELINE_STAGE_2_HOST_BIT);
     CHECK(host.access == VK_ACCESS_2_HOST_WRITE_BIT);
+
+    // And a host write orders the next reader at the host stage, which is the property that was missing when a
+    // GPU node's mapped write resolved to a shader store.
+    BarrierPriorState state = RecordAccess(BarrierPriorState{}, host);
+    const BarrierMasks masks = DeriveBarrierMasks(state, ResolveResourceUse(shaderWrite), 0);
+    CHECK(masks.bNeeded);
+    CHECK(masks.srcStage == VK_PIPELINE_STAGE_2_HOST_BIT);
+    CHECK(masks.srcAccess == VK_ACCESS_2_HOST_WRITE_BIT);
 }
 
 TEST_CASE("RenderGraphBuilder: an acceleration-structure build is ordered against the trace", "[RenderGraphBuilder]")
@@ -1729,8 +1799,8 @@ TEST_CASE("RenderGraphBuilder: an acceleration-structure build is ordered agains
                             .usage = ResourceUsage::ACCEL_STRUCTURE,
                             .kind = ResourceKind::ACCELERATION_STRUCTURE};
 
-    const ResolvedResourceUse buildUse = ResolveResourceUse(build, QueueType::RAY_TRACING);
-    const ResolvedResourceUse traceUse = ResolveResourceUse(trace, QueueType::RAY_TRACING);
+    const ResolvedResourceUse buildUse = ResolveResourceUse(build);
+    const ResolvedResourceUse traceUse = ResolveResourceUse(trace);
     CHECK(buildUse.stages == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
     CHECK(buildUse.access == VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
     CHECK(traceUse.access == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
@@ -1760,7 +1830,7 @@ TEST_CASE("RenderGraphBuilder: a use the device cannot enable is reported, not s
                           .io = ResourceIOType::READ,
                           .usage = ResourceUsage::ACCEL_STRUCTURE,
                           .kind = ResourceKind::ACCELERATION_STRUCTURE};
-    const ResolvedResourceUse resolved = ResolveResourceUse(use, QueueType::RAY_TRACING);
+    const ResolvedResourceUse resolved = ResolveResourceUse(use);
     const auto noRayTracing = ~static_cast<VkPipelineStageFlags2>(VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
     CHECK_THROWS_WITH(
         DeriveBarrierMasks(BarrierPriorState{}, resolved, 0, noRayTracing),
@@ -2457,11 +2527,11 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
         .resourceUses =
             {
                 ResourceUse{.handle = ResourceHandle("DrawSources"),
-                            .io = ResourceIOType::WRITE,
+                            .io = ResourceIOType::HOST_WRITE,
                             .usage = ResourceUsage::STORAGE_BUFFER,
                             .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("PreViewData"),
-                            .io = ResourceIOType::WRITE,
+                            .io = ResourceIOType::HOST_WRITE,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER},
             },
@@ -2867,11 +2937,11 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                                             .resourceUses =
                                                 {
                                                     ResourceUse{.handle = ResourceHandle("RTParityCamera"),
-                                                                .io = ResourceIOType::WRITE,
+                                                                .io = ResourceIOType::HOST_WRITE,
                                                                 .usage = ResourceUsage::UNIFORM_BUFFER,
                                                                 .kind = ResourceKind::BUFFER},
                                                     ResourceUse{.handle = ResourceHandle("RTParityPerObjData"),
-                                                                .io = ResourceIOType::WRITE,
+                                                                .io = ResourceIOType::HOST_WRITE,
                                                                 .usage = ResourceUsage::STORAGE_BUFFER,
                                                                 .kind = ResourceKind::BUFFER},
                                                 },
@@ -3100,7 +3170,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and 
     builder.AddNode({.nodeName = "ASBuildCameraPrep",
                      .queueType = QueueType::CPU,
                      .resourceUses = {ResourceUse{.handle = ResourceHandle("ASBuildCamera"),
-                                                  .io = ResourceIOType::WRITE,
+                                                  .io = ResourceIOType::HOST_WRITE,
                                                   .usage = ResourceUsage::UNIFORM_BUFFER,
                                                   .kind = ResourceKind::BUFFER}},
                      .execute = [&camera](RenderGraphNodeContext& ctx)
@@ -3219,11 +3289,11 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
         .resourceUses =
             {
                 ResourceUse{.handle = ResourceHandle("RTMazdaCamera"),
-                            .io = ResourceIOType::WRITE,
+                            .io = ResourceIOType::HOST_WRITE,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
                             .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("RTMazdaDrawCommands"),
-                            .io = ResourceIOType::WRITE,
+                            .io = ResourceIOType::HOST_WRITE,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
                             .kind = ResourceKind::BUFFER},
             },
@@ -3710,11 +3780,11 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind sem
         .nodeName = "CameraPrep",
         .queueType = QueueType::CPU,
         .resourceUses = {ResourceUse{.handle = ResourceHandle("CameraA"),
-                                     .io = ResourceIOType::WRITE,
+                                     .io = ResourceIOType::HOST_WRITE,
                                      .usage = ResourceUsage::UNIFORM_BUFFER,
                                      .kind = ResourceKind::BUFFER},
                          ResourceUse{.handle = ResourceHandle("CameraB"),
-                                     .io = ResourceIOType::WRITE,
+                                     .io = ResourceIOType::HOST_WRITE,
                                      .usage = ResourceUsage::UNIFORM_BUFFER,
                                      .kind = ResourceKind::BUFFER}},
         .execute = [](RenderGraphNodeContext& ctx)
@@ -3829,7 +3899,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
         .nodeName = "OverlayCameraPrep",
         .queueType = QueueType::CPU,
         .resourceUses = {ResourceUse{.handle = ResourceHandle("OverlayCamera"),
-                                     .io = ResourceIOType::WRITE,
+                                     .io = ResourceIOType::HOST_WRITE,
                                      .usage = ResourceUsage::UNIFORM_BUFFER,
                                      .kind = ResourceKind::BUFFER}},
         .execute = [](RenderGraphNodeContext& ctx)
@@ -3958,7 +4028,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: CPU node between GPU node
     RenderGraphNodeCreateInfo cpuPass = {.nodeName = "BCpu",
                                          .queueType = QueueType::CPU,
                                          .resourceUses = {ResourceUse{.handle = ResourceHandle("CpuData"),
-                                                                      .io = ResourceIOType::WRITE,
+                                                                      .io = ResourceIOType::HOST_WRITE,
                                                                       .usage = ResourceUsage::UNIFORM_BUFFER,
                                                                       .kind = ResourceKind::BUFFER}},
                                          .execute = [&nCpuRuns](RenderGraphNodeContext&) { ++nCpuRuns; }};
@@ -4010,7 +4080,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
         .nodeName = "WawCameraPrep",
         .queueType = QueueType::CPU,
         .resourceUses = {ResourceUse{.handle = ResourceHandle("WawCamera"),
-                                     .io = ResourceIOType::WRITE,
+                                     .io = ResourceIOType::HOST_WRITE,
                                      .usage = ResourceUsage::UNIFORM_BUFFER,
                                      .kind = ResourceKind::BUFFER}},
         .execute = [](RenderGraphNodeContext& ctx)

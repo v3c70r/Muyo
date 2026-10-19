@@ -878,7 +878,8 @@ ResourceKind KindOfResource(const IRenderResource* resource)
 /// @param desc     The declared resource's description, or nothing when the resource is imported.
 /// @param imported The imported resource, or null when the resource is declared.
 void ValidateUseAgainstResource(const std::string& nodeName, const ResourceUse& use,
-                                const std::optional<ResourceDesc>& desc, const IRenderResource* imported)
+                                const std::optional<ResourceDesc>& desc, const IRenderResource* imported,
+                                QueueType queueType)
 {
     ResourceKind resourceKind = ResourceKind::BUFFER;
     if (desc.has_value())
@@ -896,6 +897,50 @@ void ValidateUseAgainstResource(const std::string& nodeName, const ResourceUse& 
         throw std::runtime_error("Node '" + nodeName + "' uses resource '" + use.handle + "' as " +
                                  ArticleForKind(use.kind) + NameOfKind(use.kind) + ", but the resource is " +
                                  ArticleForKind(resourceKind) + NameOfKind(resourceKind) + ".");
+    }
+
+    // The declaration has to say *which* write it means (#152): a shader store and a host write need different
+    // barrier scopes, and the graph cannot tell them apart from the node's queue type - a GPU node may map a
+    // buffer. These three checks are what makes that distinction reliable rather than a convention.
+    if (use.io == ResourceIOType::HOST_WRITE)
+    {
+        if (resourceKind == ResourceKind::IMAGE)
+        {
+            throw std::runtime_error("Node '" + nodeName + "' declares HOST_WRITE of image '" + use.handle +
+                                     "'. This engine has no host write to an image: write a staging buffer and "
+                                     "copy from it with TRANSFER_DEST.");
+        }
+        if (desc.has_value())
+        {
+            // A two-value allowlist on purpose. The VMA `AUTO*` modes resolve at allocation time, and this check
+            // runs before anything is allocated - so it cannot know whether VMA would pick host-visible memory.
+            // A buffer whose host visibility the barrier will rely on should say `CPU_TO_GPU`, which puts the
+            // property in the declaration rather than in the allocator's choice.
+            const auto& bufferDesc = std::get<BufferResourceDesc>(*desc);
+            if (bufferDesc.memoryProperties != VMA_MEMORY_USAGE_CPU_TO_GPU &&
+                bufferDesc.memoryProperties != VMA_MEMORY_USAGE_CPU_ONLY)
+            {
+                throw std::runtime_error("Node '" + nodeName + "' declares HOST_WRITE of buffer '" + use.handle +
+                                         "', which was declared with device-only memory. A host write needs "
+                                         "VMA_MEMORY_USAGE_CPU_TO_GPU or CPU_ONLY.");
+            }
+        }
+    }
+    else if (queueType == QueueType::CPU && use.io == ResourceIOType::WRITE)
+    {
+        // Both kinds, because the argument is the same for both and stronger for an image: a CPU node has no
+        // command buffer, and this engine has no host image write at all - so a CPU node's `WRITE` of an image
+        // can only mean nothing, while it still marks the resource written for the lifetime check (#155).
+        if (resourceKind == ResourceKind::IMAGE)
+        {
+            throw std::runtime_error("Node '" + nodeName + "' is a CPU node and declares WRITE of image '" +
+                                     use.handle +
+                                     "'. This engine has no host image write: write a staging buffer and copy "
+                                     "from it with TRANSFER_DEST.");
+        }
+        throw std::runtime_error("Node '" + nodeName + "' is a CPU node and declares WRITE of buffer '" + use.handle +
+                                 "'. A CPU node writes through the host, so declare HOST_WRITE: WRITE means a "
+                                 "shader store, and the host write would be in no barrier's source scope.");
     }
 
     // U2: the role must admit that kind, and a declared resource must carry the allocation bit it implies.
@@ -1079,8 +1124,8 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
         const std::optional<ResourceDesc> resourceDesc = GetResourceDesc(resourceUse.handle);
         const IRenderResource* pImportedResource =
             resourceDesc.has_value() ? nullptr : m_importedResources.at(resourceUse.handle);
-        ValidateUseAgainstResource(nodeName, resourceUse, resourceDesc, pImportedResource);
-        ResolvedResourceUse resolved = ResolveResourceUse(resourceUse, nodeCreateInfo.queueType);
+        ValidateUseAgainstResource(nodeName, resourceUse, resourceDesc, pImportedResource, nodeCreateInfo.queueType);
+        ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
         // A range on a buffer bound into a descriptor is validated in
         // `BuildReflectionDescriptorSets`, which knows the descriptor type from reflection; that runs
         // at Build() too, so a bad range still fails there rather than mid-record in Execute.
@@ -1191,8 +1236,7 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
             // rejected a graph in which one node's transfer fills a transient and the next reads it -
             // which is what transfer roles are for. Found by the transfer round trip test, and it was
             // reachable before that through DRAW_COMMAND_BUFFER with TRANSFER_WRITE, which no test used.
-            const bool bWrites = use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE ||
-                                 use.io == ResourceIOType::TRANSFER_WRITE;
+            const bool bWrites = IsWrite(use.io);
             if (!bWrites && written.find(use.handle) == written.end())
             {
                 // Named, because the whole value of the check is telling the author which line is wrong.
@@ -1544,7 +1588,7 @@ void RenderGraphBuilder::Build()
                 else
                 {
                     resource.version = resourceCurrentVersions[handle];
-                    if (resource.io == ResourceIOType::WRITE || resource.io == ResourceIOType::READ_WRITE)
+                    if (IsWrite(resource.io))
                     {
                         resourceCurrentVersions[handle]++;
                     }
@@ -1933,7 +1977,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         EnsureMappingsReleased(rgn.name);
         for (const auto& use : rgn.resourceUses)
         {
-            if (use.io == ResourceIOType::WRITE || use.io == ResourceIOType::READ_WRITE)
+            if (IsWrite(use.io))
             {
                 BarrierPriorState& state = m_resourceAccessStates[use.handle];
                 state.bWrittenByHost = true;

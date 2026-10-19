@@ -93,8 +93,8 @@ ResourceUse{.handle = "Upload",
 to `vkCmdCopy*` and the transition in between is the graph's.
 
 Two things the table is precise about, because they are easy to get wrong. **A copy destination must say
-`TRANSFER_WRITE`**: for a buffer, `WRITE` means a *host* write here, which is how a mapped upload declares
-itself, so the two are not interchangeable. And **a clear needs no role of its own**: `vkCmdClear*Image`
+`TRANSFER_WRITE`**, and **a host write must say `HOST_WRITE`**: for a buffer, `WRITE` is a *shader* store, so
+none of the three is interchangeable. And **a clear needs no role of its own**: `vkCmdClear*Image`
 and `vkCmdFillBuffer` are transfer writes in the specification's own terms, so `TRANSFER_DEST` covers them
 and the node records whichever command it means. A pair with no policy is rejected at `Build()` naming the
 resource, both values and the likely fix.
@@ -181,9 +181,9 @@ no edges are still scheduled.
 - **Dependencies and ordering** — `AddDependency(from, to)` declares edges; cycles are rejected.
 - **Barriers** — image layouts, access masks and pipeline stages are derived from each resource's
   `ResourceUsage` (see `K_USAGE_POLICIES` in `ResourceUseResolver.h`). Two details matter when
-  declaring a use: `WRITE` on a buffer means a **host** write from a `CPU` node and a **shader** write
-  from a GPU node (the queue type is what distinguishes them), and a stage the device does not enable
-  is filtered out of the mask rather than emitted.
+  declaring a use: `WRITE` is a **shader** store and `HOST_WRITE` is a write through a mapping — a `CPU`
+  node must use the latter, and a host write is rejected on device-only memory — and a stage the device
+  does not enable is filtered out of the mask rather than emitted.
 - **Dynamic rendering** — graphics nodes are wrapped in `vkCmdBeginRendering`/`vkCmdEndRendering`
   automatically; the first writer of an attachment clears it.
 - **Pipelines and descriptors** — built from the declared shaders, PSO and resource uses.
@@ -282,6 +282,10 @@ for a later check therefore has to satisfy the earlier ones (usually by declarin
 | `Node 'N' uses resource 'R' as a buffer, but the resource is an image` | U1 | Fix `ResourceUse::kind`. |
 | `Node 'N' uses image 'R' as STORAGE_IMAGE, but it was declared without VK_IMAGE_USAGE_STORAGE_BIT` | U2 | Add the flag the role needs to the declaration. |
 | `... which is not a buffer usage` | U2 | The role is image-only (or buffer-only); use a role that matches the kind. |
+| `... is a CPU node and declares WRITE of buffer 'R'` | host write | Declare `HOST_WRITE`: a CPU node writes through the host, and `WRITE` is a shader store. |
+| `... is a CPU node and declares WRITE of image 'R'` | host write | There is no host image write; stage it and copy with `TRANSFER_DEST`. |
+| `... declares HOST_WRITE of image 'R'` | host write | There is no host image write; stage it and copy with `TRANSFER_DEST`. |
+| `... declares HOST_WRITE of buffer 'R', which was declared with device-only memory` | host write | Declare the buffer `VMA_MEMORY_USAGE_CPU_TO_GPU` or `CPU_ONLY`. |
 | `Node 'N' binds resource 'R' at set S, binding B, but its shader declares no descriptor there` | binding | Fix the `descriptorBinding`, or the shader; the message lists what it declares. |
 | `... which the shader declares as descriptor type T, but the graph binds …` | binding type | Bind a resource of the type the shader reflects. |
 | `... binds more than one resource at set S, binding B` | duplicate | One resource per binding. |

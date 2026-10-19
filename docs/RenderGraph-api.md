@@ -581,6 +581,10 @@ Explicit shader descriptor location (set + binding) for a resource.
 | `uint32_t set` | Descriptor set index. |
 | `uint32_t binding` | Binding index within the set. |
 
+### `constexpr bool Muyo::RenderGraph::IsWrite(ResourceIOType io)`
+
+io An IO type. Whether the access writes the resource. One place instead of five: every check that asks "is this a write" has to answer the same way, and adding HOST_WRITE (#152) is the demonstration - the transient-lifetime validation counted writes by listing the enumerators, so a host write stopped being a write the moment a new one appeared.
+
 ### `constexpr const char * Muyo::RenderGraph::NameOf(ResourceIOType io)`
 
 The name of an IO type, for diagnostics. A switch with no default on purpose: adding a value becomes a warning here rather than a message that prints a number.
@@ -628,9 +632,10 @@ Whether a node reads or writes a resource. Drives barrier generation.
 | Value | Description |
 | --- | --- |
 | `READ` | Read-only access. |
-| `WRITE` | Write-only access. |
+| `WRITE` | Written by a shader (a storage buffer store, an attachment write). |
 | `READ_WRITE` | Read and write (e.g. an atomic counter). |
 | `TRANSFER_WRITE` | Written by a transfer operation (e.g. vkCmdCopyBuffer). |
+| `HOST_WRITE` | Written by the host through a mapping, e.g. BufferResource::SetData or Map()/memcpy. Distinct from `WRITE` because the barrier has to be: a host write's source scope is `HOST`/`HOST_WRITE`, and a shader write's is the shader stages. Declaring one as the other leaves the barrier ordering a write that never happened - and the graph cannot infer it from the node's queue type, because a GPU node that maps a buffer is a documented pattern (`EnsureMappingsReleased` guards it). See #152. |
 
 ### `enum ResourceKind`
 
@@ -759,7 +764,7 @@ Barrier policy table: maps every supported (ResourceUsage, ResourceIOType) pair 
 
 Looks up the UsagePolicy for a key.
 
-### `ResolvedResourceUse Muyo::RenderGraph::ResolveResourceUse(const ResourceUse &use, QueueType queueType)`
+### `ResolvedResourceUse Muyo::RenderGraph::ResolveResourceUse(const ResourceUse &use)`
 
 Resolve a node's ResourceUse into a ResolvedResourceUse.
 
