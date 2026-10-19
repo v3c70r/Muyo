@@ -4,6 +4,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "RenderGraphNodeResource.h"
@@ -401,4 +402,77 @@ inline BarrierPriorState RecordAccess(BarrierPriorState prior, const ResolvedRes
     prior.pendingAcquireFamily = -1;
     return prior;
 }
+/// The barriers one node's uses add up to.
+struct BarrierBatch
+{
+    std::vector<VkImageMemoryBarrier2> images;    ///< Image barriers, one per use that needs one.
+    std::vector<VkBufferMemoryBarrier2> buffers;  ///< Buffer and acceleration-structure barriers.
+    std::optional<VkMemoryBarrier2> memory;       ///< The merged in-family acceleration-structure barrier.
+};
+
+/// What a use needs to address its resource. The graph resolves the handle; a test supplies sentinels.
+struct BarrierTarget
+{
+    VkImage image = VK_NULL_HANDLE;                         ///< Set for an image use.
+    VkBuffer buffer = VK_NULL_HANDLE;                       ///< Set for a buffer, or an AS's backing buffer.
+    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;  ///< Set for an image use.
+};
+
+/// Build the barriers a node's uses need, and advance the recorded access state.
+///
+/// This is the whole of `RecordBarriers` except resolving the handles and calling `vkCmdPipelineBarrier2` - so
+/// the assembly is observable without a device, which is what #160 asked for: dropping an append used to leave the
+/// suite green, because nothing looked at the batch that was about to be recorded.
+///
+/// @tparam ResolveTarget Callable `BarrierTarget(const ResourceHandle&)`; the graph passes a resolver over the
+///         resource table, a test passes one returning sentinel handles.
+/// @param uses            The node's uses, in declaration order.
+/// @param states          The recorded access state per resource, updated in place.
+/// @param queueFamily     Queue family the node is being recorded on.
+/// @param supportedStages Stage bits this device enables.
+/// @param resolveTarget   Maps a handle to the handles its barrier addresses.
+/// @return The barriers, with one memory barrier carrying the union of the in-family AS uses.
+template <typename ResolveTarget>
+BarrierBatch DeriveBarrierBatch(const std::vector<ResolvedResourceUse>& uses,
+                                std::unordered_map<ResourceHandle, BarrierPriorState>& states, uint32_t queueFamily,
+                                VkPipelineStageFlags2 supportedStages, ResolveTarget resolveTarget)
+{
+    BarrierBatch batch;
+
+    for (const auto& use : uses)
+    {
+        BarrierPriorState& prior = states[use.handle];
+        const BarrierMasks masks = DeriveBarrierMasks(prior, use, queueFamily, supportedStages);
+
+        if (masks.bNeeded)
+        {
+            const BarrierTarget target = resolveTarget(use.handle);
+            const UseBarriers useBarriers = DeriveUseBarriers(use, masks, target.image, target.buffer, target.aspect);
+
+            batch.images.insert(batch.images.end(), useBarriers.barriers.images.begin(),
+                                useBarriers.barriers.images.end());
+            batch.buffers.insert(batch.buffers.end(), useBarriers.barriers.buffers.begin(),
+                                 useBarriers.barriers.buffers.end());
+
+            if (useBarriers.memory.has_value())
+            {
+                // One memory barrier per batch carries the union: it is device-wide already, so merging changes
+                // nothing it orders.
+                if (!batch.memory.has_value())
+                {
+                    batch.memory = VkMemoryBarrier2{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+                }
+                batch.memory->srcStageMask |= useBarriers.memory->srcStageMask;
+                batch.memory->srcAccessMask |= useBarriers.memory->srcAccessMask;
+                batch.memory->dstStageMask |= useBarriers.memory->dstStageMask;
+                batch.memory->dstAccessMask |= useBarriers.memory->dstAccessMask;
+            }
+        }
+
+        prior = RecordAccess(prior, use, supportedStages);
+    }
+
+    return batch;
+}
+
 }  // namespace Muyo::RenderGraph

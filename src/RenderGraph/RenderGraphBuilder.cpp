@@ -1746,87 +1746,50 @@ void RenderGraphBuilder::RecordPresentTransition(VkCommandBuffer cmdBuf,
 void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
                                         uint32_t queueFamily)
 {
-    std::vector<VkImageMemoryBarrier2> imageBarriers;
-    std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+    // Everything that decides *which* barriers this node needs lives in `DeriveBarrierBatch`, which is device-free
+    // and therefore assertable - the assembly used to be inline here, where dropping an append left the suite green
+    // (#160). What remains here is resolving the handles and handing the result to Vulkan.
+    const BarrierBatch batch =
+        DeriveBarrierBatch(resourceUses, m_resourceAccessStates, queueFamily, SupportedStages(),
+                           [this](const ResourceHandle& handle)
+                           {
+                               BarrierTarget target;
+                               const IRenderResource* pResource = ResolveResource(handle);
+                               if (pResource == nullptr)
+                               {
+                                   // Master dropped the barrier here, which leaves a race; recording one with a
+                                   // null handle would be an invalid barrier, which is UB. Neither is a barrier,
+                                   // so a handle that does not resolve is reported - unreachable for a graph that
+                                   // built, since every use was checked at `AddNode`.
+                                   throw std::runtime_error(
+                                       "Barrier for '" + handle +
+                                       "' is needed but the resource does not resolve, so no barrier can address it.");
+                               }
+                               if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+                               {
+                                   target.image = pImage->getImage();
+                                   target.aspect = AspectForFormat(pImage->GetImageFormat());
+                               }
+                               else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
+                               {
+                                   target.buffer = pAccel->GetBackingBuffer();
+                               }
+                               else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
+                               {
+                                   target.buffer = pBuffer->buffer();
+                               }
+                               return target;
+                           });
 
-    // Acceleration structures have no dedicated barrier type: a build's write and a trace's read are
-    // ordered by a global memory barrier whose masks name the AS access bits. It is not addressed to a
-    // resource, so one barrier per batch carries the union - a weaker dependency than per-resource
-    // barriers would be, but a memory barrier is already device-wide and merging changes nothing it
-    // orders.
-    bool bMemoryBarrier = false;
-    VkMemoryBarrier2 memoryBarrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
-
-    // The stage masks come from the uses themselves, via the usage table: an attachment write is ordered
-    // at COLOR_ATTACHMENT_OUTPUT and a vertex-buffer read at VERTEX_INPUT, rather than both at
-    // ALL_COMMANDS. `DeriveBarrierMasks` owns that derivation and the three cases where the previous
-    // stages are not the source (first use, a host write, a queue handover); this function only turns the
-    // result into barriers.
-    for (const auto& use : resourceUses)
-    {
-        BarrierPriorState& prior = m_resourceAccessStates[use.handle];
-        const BarrierMasks masks = DeriveBarrierMasks(prior, use, queueFamily, SupportedStages());
-
-        if (masks.bNeeded)
-        {
-            // Resolve the handle the kind needs, then let `DeriveUseBarriers` decide *which* barrier this use
-            // takes - that decision is what #158 is about, and it is only observable now because it lives there.
-            const IRenderResource* pResource = ResolveResource(use.handle);
-            if (pResource == nullptr)
-            {
-                // Master dropped the barrier here, which leaves a race; recording one with a null handle would
-                // be an invalid barrier, which is UB. Neither is a barrier, so a handle that does not resolve is
-                // reported - unreachable for a graph that built, since every use was checked at `AddNode`.
-                throw std::runtime_error(
-                    "Barrier for '" + use.handle +
-                    "' is needed but the resource does not resolve, so no barrier can address it.");
-            }
-            VkImage image = VK_NULL_HANDLE;
-            VkBuffer buffer = VK_NULL_HANDLE;
-            VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-            if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
-            {
-                image = pImage->getImage();
-                aspect = AspectForFormat(pImage->GetImageFormat());
-            }
-            else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
-            {
-                buffer = pAccel->GetBackingBuffer();
-            }
-            else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
-            {
-                buffer = pBuffer->buffer();
-            }
-
-            const UseBarriers useBarriers = DeriveUseBarriers(use, masks, image, buffer, aspect);
-            imageBarriers.insert(imageBarriers.end(), useBarriers.barriers.images.begin(),
-                                 useBarriers.barriers.images.end());
-            bufferBarriers.insert(bufferBarriers.end(), useBarriers.barriers.buffers.begin(),
-                                  useBarriers.barriers.buffers.end());
-            if (useBarriers.memory.has_value())
-            {
-                // One memory barrier per batch carries the union of the in-family AS uses; a memory barrier is
-                // device-wide already, so merging changes nothing it orders.
-                memoryBarrier.srcStageMask |= useBarriers.memory->srcStageMask;
-                memoryBarrier.srcAccessMask |= useBarriers.memory->srcAccessMask;
-                memoryBarrier.dstStageMask |= useBarriers.memory->dstStageMask;
-                memoryBarrier.dstAccessMask |= useBarriers.memory->dstAccessMask;
-                bMemoryBarrier = true;
-            }
-        }
-
-        prior = RecordAccess(prior, use, SupportedStages());
-    }
-
-    if (imageBarriers.empty() && bufferBarriers.empty() && !bMemoryBarrier) return;
+    if (batch.images.empty() && batch.buffers.empty() && !batch.memory.has_value()) return;
 
     VkDependencyInfo dependencyInfo = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    dependencyInfo.memoryBarrierCount = bMemoryBarrier ? 1 : 0;
-    dependencyInfo.pMemoryBarriers = bMemoryBarrier ? &memoryBarrier : nullptr;
-    dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(bufferBarriers.size());
-    dependencyInfo.pBufferMemoryBarriers = bufferBarriers.empty() ? nullptr : bufferBarriers.data();
-    dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(imageBarriers.size());
-    dependencyInfo.pImageMemoryBarriers = imageBarriers.empty() ? nullptr : imageBarriers.data();
+    dependencyInfo.memoryBarrierCount = batch.memory.has_value() ? 1 : 0;
+    dependencyInfo.pMemoryBarriers = batch.memory.has_value() ? &batch.memory.value() : nullptr;
+    dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(batch.buffers.size());
+    dependencyInfo.pBufferMemoryBarriers = batch.buffers.empty() ? nullptr : batch.buffers.data();
+    dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(batch.images.size());
+    dependencyInfo.pImageMemoryBarriers = batch.images.empty() ? nullptr : batch.images.data();
 
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }

@@ -408,6 +408,16 @@ Free and device-free so the recorded barrier can be asserted without a device - 
 
 - `std::runtime_error` — if the kind has no barrier to express a handover.
 
+### `struct Muyo::RenderGraph::BarrierBatch`
+
+The barriers one node's uses add up to.
+
+| Member | Description |
+| --- | --- |
+| `std::vector< VkImageMemoryBarrier2 > images` | Image barriers, one per use that needs one. |
+| `std::vector< VkBufferMemoryBarrier2 > buffers` | Buffer and acceleration-structure barriers. |
+| `std::optional< VkMemoryBarrier2 > memory` | The merged in-family acceleration-structure barrier. |
+
 ### `struct Muyo::RenderGraph::BarrierMasks`
 
 The masks, layouts and queue-family indices one barrier between two uses needs.
@@ -441,6 +451,33 @@ One of these is kept per resource for the duration of one Execute. It is a plain
 | `ResourceIOType lastIo` | Its direction, for the WAR/WAW test. |
 | `bool bWrittenByHost` | The last writer was a CPU node, so the write needs flushing. |
 | `int32_t pendingAcquireFamily` | Producer queue family when an ownership handover is pending. |
+
+### `struct Muyo::RenderGraph::BarrierTarget`
+
+What a use needs to address its resource. The graph resolves the handle; a test supplies sentinels.
+
+| Member | Description |
+| --- | --- |
+| `VkImage image` | Set for an image use. |
+| `VkBuffer buffer` | Set for a buffer, or an AS's backing buffer. |
+| `VkImageAspectFlags aspect` | Set for an image use. |
+
+### `BarrierBatch Muyo::RenderGraph::DeriveBarrierBatch(const std::vector< ResolvedResourceUse > &uses, std::unordered_map< ResourceHandle, BarrierPriorState > &states, uint32_t queueFamily, VkPipelineStageFlags2 supportedStages, ResolveTarget resolveTarget)`
+
+Build the barriers a node's uses need, and advance the recorded access state.
+
+This is the whole of RecordBarriers except resolving the handles and calling vkCmdPipelineBarrier2 - so the assembly is observable without a device, which is what #160 asked for: dropping an append used to leave the suite green, because nothing looked at the batch that was about to be recorded.
+
+| Parameter | Description |
+| --- | --- |
+| `ResolveTarget` | Callable BarrierTarget(const ResourceHandle&); the graph passes a resolver over the resource table, a test passes one returning sentinel handles. |
+| `uses` | The node's uses, in declaration order. |
+| `states` | The recorded access state per resource, updated in place. |
+| `queueFamily` | Queue family the node is being recorded on. |
+| `supportedStages` | Stage bits this device enables. |
+| `resolveTarget` | Maps a handle to the handles its barrier addresses. |
+
+**Returns** — The barriers, with one memory barrier carrying the union of the in-family AS uses.
 
 ### `BarrierMasks Muyo::RenderGraph::DeriveBarrierMasks(const BarrierPriorState &prior, const ResolvedResourceUse &use, uint32_t queueFamily, VkPipelineStageFlags2 supportedStages=~VkPipelineStageFlags2{0})`
 

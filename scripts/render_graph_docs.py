@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import filecmp
-import glob
 import os
 import shutil
 import subprocess
@@ -133,7 +132,19 @@ def check_rendered_sections(xml_dir: str, md_path: str) -> int:
     cell_counts = {"param": 0, "return": 0, "exception": 0}
     seen: set[str] = set()
 
-    for path in sorted(glob.glob(os.path.join(xml_dir, "*.xml"))):
+    index_path = os.path.join(xml_dir, "index.xml")
+    if not os.path.isfile(index_path):
+        print(f"render_graph_docs: no Doxygen index.xml in {xml_dir!r}.")
+        return 1
+    index = ET.parse(index_path).getroot()
+
+    # Iterate the compounds the index lists rather than every file in the directory: the index is what the
+    # generator reads, and a leftover XML file is not an entity of this build.
+    for compound in index.findall("compound"):
+        refid = compound.get("refid") or ""
+        path = os.path.join(xml_dir, f"{refid}.xml")
+        if not os.path.isfile(path):
+            continue
         root = ET.parse(path).getroot()
         compounddef = root.find("compounddef")
         if compounddef is None:
@@ -222,12 +233,17 @@ def main() -> int:
     with open(doxyfile_path, "w", encoding="utf-8") as handle:
         handle.write(render_doxyfile(output_dir, warn_log))
 
+    # Doxygen does not clean its output directory: a `class*.xml` left by an older run survives and is picked up
+    # by anything that walks the XML. That is how the section check came to expect 41 member-cell returns where the
+    # reference renders 35 - the six extras were members of compounds that have since moved.
+    xml_dir = os.path.join(output_dir, "xml")
+    if os.path.isdir(xml_dir):
+        shutil.rmtree(xml_dir)
+
     rc = run([doxygen, doxyfile_path])
     if rc != 0:
         print("render_graph_docs: doxygen failed (see the warnings above).")
         return rc
-
-    xml_dir = os.path.join(output_dir, "xml")
 
     # 1. Coverage enforcement.
     rc = run([sys.executable, COVERAGE_CHECKER, xml_dir])
