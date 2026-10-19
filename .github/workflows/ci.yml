@@ -123,6 +123,14 @@ jobs:
           status=$?
           set -e
           tail -3 tests.out
+          # The sanitizer writes its report to stderr. Printing only the stdout tail made a failure read as
+          # "All tests passed" followed by a non-zero exit, with the reason discarded (#171).
+          if [ $status -ne 0 ]; then
+            echo "─ sanitizer stderr (grep) ─"
+            grep -iE "leak|SUMMARY|runtime error|ERROR: |sanitizer" tests.err | head -40 || true
+            echo "─ tests.err tail ─"
+            tail -40 tests.err || true
+          fi
           exit $status
 
       - name: Record what this run was
