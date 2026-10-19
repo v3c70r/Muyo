@@ -145,8 +145,13 @@ struct TraceSignal
 /// What a segment waits for, and why.
 struct TraceWait
 {
-    std::size_t segment = 0;                             ///< Segment that waits.
-    QueueType queue = QueueType::GRAPHICS;               ///< Queue the waited value belongs to.
+    std::size_t segment = 0;  ///< Segment that waits.
+    /// Queue this wait is recorded against.
+    ///
+    /// For `Timeline` it is the producer segment's queue, which owns the counter. For `Caller` the waited value
+    /// belongs to a semaphore the **caller** owns - it is not a graph timeline at all - so this records the queue the
+    /// gated segment runs on, which is what places the wait on a lane.
+    QueueType queue = QueueType::GRAPHICS;
     uint64_t value = 0;                                  ///< Timeline value waited for.
     TraceWaitReason reason = TraceWaitReason::Timeline;  ///< What demanded the wait.
 };
@@ -337,12 +342,19 @@ class TraceRecorder : public BarrierObserver, public SubmissionObserver
 {
 public:
     /// Start recording an execution.
-    /// @param plan  Plan about to run.
-    /// @param nodes Compiled nodes the plan indexes.
-    /// @param scope Device and topology producing this trace.
-    void Begin(const RenderGraphExecutionPlan& plan, std::span<const TraceNodeView> nodes, const TraceScope& scope)
+    ///
+    /// The execution number is passed in rather than assigned afterwards, because `Begin` replaces the trace
+    /// wholesale: a caller that wrote the counter *before* calling this had it discarded, and every trace carried
+    /// execution 0 - found in review of #166.
+    /// @param plan      Plan about to run.
+    /// @param nodes     Compiled nodes the plan indexes.
+    /// @param scope     Device and topology producing this trace.
+    /// @param execution Engine-lifetime counter for this execution.
+    void Begin(const RenderGraphExecutionPlan& plan, std::span<const TraceNodeView> nodes, const TraceScope& scope,
+               uint64_t execution)
     {
         m_trace = TracePlan(plan, nodes, scope);
+        m_trace.execution = execution;
         m_segment = 0;
     }
 
@@ -397,14 +409,8 @@ public:
         m_trace.waits.push_back(TraceWait{.segment = segment, .queue = queue, .value = value, .reason = reason});
     }
 
-    /// @return The execution counter this recorder will label the trace with.
-    uint64_t& Execution() { return m_trace.execution; }
-
     /// @return What has been recorded so far.
     const RenderGraphTrace& GetTrace() const { return m_trace; }
-
-    /// @return What has been recorded so far, for a sink that moves it.
-    RenderGraphTrace&& TakeTrace() { return std::move(m_trace); }
 
 private:
     static TraceBarrier MakeBarrier(const ResourceHandle& resource, TraceBarrierKind kind,

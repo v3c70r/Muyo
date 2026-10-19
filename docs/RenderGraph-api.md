@@ -1372,14 +1372,12 @@ Not thread-safe, by design: it records one execution, and an execution records f
 
 | Member | Description |
 | --- | --- |
-| `void Begin(const RenderGraphExecutionPlan &plan, std::span< const TraceNodeView > nodes, const TraceScope &scope)` | Start recording an execution. Parameters: `plan` - Plan about to run; `nodes` - Compiled nodes the plan indexes; `scope` - Device and topology producing this trace |
+| `void Begin(const RenderGraphExecutionPlan &plan, std::span< const TraceNodeView > nodes, const TraceScope &scope, uint64_t execution)` | Start recording an execution. Parameters: `plan` - Plan about to run; `nodes` - Compiled nodes the plan indexes; `scope` - Device and topology producing this trace; `execution` - Engine-lifetime counter for this execution |
 | `void BeginSegment(std::size_t segment)` | Parameters: `segment` - Segment whose recordings follow; barriers reported until the next call belong to it |
 | `void OnUseBarriers(const ResourceHandle &handle, const UseBarriers &barriers) override` | Parameters: `handle` - Resource the barriers address; `barriers` - The barriers derived for that use |
 | `void OnSegmentSignalled(std::size_t segment, QueueType queue, uint64_t value) override` | Parameters: `segment` - Segment whose completion is signalled; `queue` - Queue carrying the value; `value` - Timeline value signalled |
 | `void OnSegmentWait(std::size_t segment, QueueType queue, uint64_t value, TraceWaitReason reason) override` | Parameters: `segment` - Segment that waits; `queue` - Queue carrying the waited value; `value` - Timeline value waited for; `reason` - timeline or caller |
-| `uint64_t & Execution()` | Returns: The execution counter this recorder will label the trace with. |
 | `const RenderGraphTrace & GetTrace() const` | Returns: What has been recorded so far. |
-| `RenderGraphTrace && TakeTrace()` | Returns: What has been recorded so far, for a sink that moves it. |
 
 ### `struct Muyo::RenderGraph::TraceScope`
 
@@ -1452,7 +1450,7 @@ What a segment waits for, and why.
 | Member | Description |
 | --- | --- |
 | `std::size_t segment` | Segment that waits. |
-| `QueueType queue` | Queue the waited value belongs to. |
+| `QueueType queue` | Queue this wait is recorded against. |
 | `uint64_t value` | Timeline value waited for. |
 | `TraceWaitReason reason` | What demanded the wait. |
 

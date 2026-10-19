@@ -1,6 +1,8 @@
 #include "RenderGraphBuilder.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <set>
@@ -1797,7 +1799,8 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
 
 void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily,
                                                      uint32_t dstQueueFamily, bool bAcquire,
-                                                     const std::vector<ResourceHandle>& handles)
+                                                     const std::vector<ResourceHandle>& handles,
+                                                     BarrierObserver* pObserver)
 {
     if (bAcquire)
     {
@@ -1853,8 +1856,18 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
                                      "acceleration structure.");
         }
 
-        AppendReleaseTransfer(transferBarriers, handle, *kind, image, buffer, aspect, m_resourceAccessStates[handle],
+        QueueTransferBarriers single;
+        AppendReleaseTransfer(single, handle, *kind, image, buffer, aspect, m_resourceAccessStates[handle],
                               srcQueueFamily, dstQueueFamily);
+        // The release half of a handover is as much a part of "what ran" as the acquire, and it is derived on a
+        // different path (`AppendReleaseTransfer` here, `DeriveBarrierBatch` for the acquire), so the observer has
+        // to be told on this one too or a trace shows half of every handover (#166 review A1).
+        if (pObserver != nullptr)
+        {
+            pObserver->OnUseBarriers(handle, UseBarriers{.barriers = single, .memory = std::nullopt});
+        }
+        transferBarriers.images.insert(transferBarriers.images.end(), single.images.begin(), single.images.end());
+        transferBarriers.buffers.insert(transferBarriers.buffers.end(), single.buffers.begin(), single.buffers.end());
     }
 
     if (transferBarriers.images.empty() && transferBarriers.buffers.empty()) return;
@@ -2020,11 +2033,13 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
     TraceRecorder recorder;
     TraceViews views;
     TraceRecorder* pRecorder = (m_traceSink || bTraceToEnv) ? &recorder : nullptr;
+    // Advanced for every execution, traced or not: the counter describes the builder's lifetime, not the trace's, so
+    // that a consumer comparing two traces from one process can see that executions happened in between.
+    const uint64_t execution = m_nextExecution++;
     if (pRecorder != nullptr)
     {
         views.Build(m_compiledGraph.GetNodes());
-        recorder.Execution() = m_nextExecution++;
-        recorder.Begin(m_compiledGraph.GetExecutionPlan(), views.nodes, BuildTraceScope());
+        recorder.Begin(m_compiledGraph.GetExecutionPlan(), views.nodes, BuildTraceScope(), execution);
     }
 
     RenderGraphNodeContext context{
@@ -2077,6 +2092,13 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
+
+        // Before anything is recorded for this segment: a release barrier is emitted here, before the first node,
+        // and it belongs to this segment just as much as the per-node barriers do.
+        if (pRecorder != nullptr)
+        {
+            pRecorder->BeginSegment(s);
+        }
 
         // Mark resources handed over from another queue; RecordBarriers emits the acquire barrier.
         for (const auto& transfer : transfers)
@@ -2170,7 +2192,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             if (transfer.producer == s)
             {
                 RecordQueueTransferBarriers(cmdBuf, transfer.producerFamily, transfer.consumerFamily, false,
-                                            {transfer.handle});
+                                            {transfer.handle}, pRecorder);
             }
         }
 

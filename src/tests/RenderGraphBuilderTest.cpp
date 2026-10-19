@@ -4668,6 +4668,70 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a CPU node's write is vis
     CHECK_FALSE(captured.scope.timestamps.bKnown);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace labels each execution, and records the caller's wait",
+                 "[RenderGraphBuilder]")
+{
+    // #166 review C1 and N1. Two properties, one graph, because both are about facts only the builder and executor
+    // know and both were unobserved:
+    //
+    //  C1: `execution` was written to the recorder *before* `Begin` replaced the trace, so every trace carried 0.
+    //  N1: the caller's wait is reported on a third path, and deleting that report left the suite green.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Source", BufferResourceDesc{.count = 1,
+                                                     .stride = 4,
+                                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                     .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddNode({.nodeName = "Fill",
+                     .queueType = QueueType::GRAPHICS,
+                     .resourceUses = {{.handle = ResourceHandle("Source"),
+                                       .io = ResourceIOType::WRITE,
+                                       .usage = ResourceUsage::STORAGE_BUFFER,
+                                       .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext&) {}});
+
+    std::vector<uint64_t> executions;
+    std::vector<RenderGraphTrace> traces;
+    builder.SetTraceSink(
+        [&](RenderGraphTrace trace)
+        {
+            executions.push_back(trace.execution);
+            traces.push_back(std::move(trace));
+        });
+
+    // A *timeline* semaphore already at the value the execution waits for: legal (a wait for a reached value is
+    // satisfied) and it needs no pre-signalling submit. A binary semaphore here would be rejected as
+    // unsignallable by validation (VUID-vkQueueSubmit2-semaphore-03873) and would deadlock without it.
+    VkSemaphoreTypeCreateInfo typeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+    typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    typeInfo.initialValue = 1;
+    VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    semaphoreInfo.pNext = &typeInfo;
+    VkSemaphore caller = VK_NULL_HANDLE;
+    REQUIRE(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &caller) == VK_SUCCESS);
+
+    builder.Build();
+    builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = caller, .waitValue = 1});
+    builder.Execute();
+
+    REQUIRE(traces.size() == 2);
+    // Engine-lifetime counter: a consumer diffing two traces has to be able to see that a second execution happened.
+    CHECK(executions == std::vector<uint64_t>{0, 1});
+
+    // The first execution waited on the caller's semaphore. The reason distinguishes it from a graph handover,
+    // because the value belongs to a semaphore the graph does not own.
+    REQUIRE_FALSE(traces[0].waits.empty());
+    CHECK(traces[0].waits[0].reason == TraceWaitReason::Caller);
+    CHECK(traces[0].waits[0].segment == 0);
+    // The second execution asks for nothing, so it has no caller wait - which is what makes the assertion above
+    // about the first execution rather than about "a wait always exists".
+    for (const TraceWait& wait : traces[1].waits)
+    {
+        CHECK(wait.reason != TraceWaitReason::Caller);
+    }
+
+    vkDestroySemaphore(GetRenderDevice()->GetDevice(), caller, nullptr);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace records the segments, signals and waits it submitted",
                  "[RenderGraphBuilder]")
 {
@@ -4728,6 +4792,33 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace records the seg
         CHECK(captured.segments[1].dependsOn[0].resource == "Source");
         REQUIRE_FALSE(captured.waits.empty());
         CHECK(captured.waits[0].segment == 1);
+        // A1: a handover has two halves and they are derived on different paths (`AppendReleaseTransfer` for the
+        // release, `DeriveBarrierBatch` for the acquire). Both must appear, or a trace shows half of a handover.
+        // Identified by the family indices rather than by position: the producer segment also carries the node's own
+        // barriers, which have no handover and therefore `IGNORED` families.
+        const auto findHandover = [](const TraceSegment& segment)
+        {
+            for (const TraceBarrier& barrier : segment.barriers)
+            {
+                if (barrier.srcFamily != VK_QUEUE_FAMILY_IGNORED || barrier.dstFamily != VK_QUEUE_FAMILY_IGNORED)
+                {
+                    return &barrier;
+                }
+            }
+            return static_cast<const TraceBarrier*>(nullptr);
+        };
+
+        const TraceBarrier* pRelease = findHandover(captured.segments[0]);
+        REQUIRE(pRelease != nullptr);
+        CHECK(pRelease->resource == "Source");
+        CHECK(pRelease->srcFamily == captured.scope.computeFamily);
+        CHECK(pRelease->dstFamily == captured.scope.graphicsFamily);
+
+        const TraceBarrier* pAcquire = findHandover(captured.segments[1]);
+        REQUIRE(pAcquire != nullptr);
+        CHECK(pAcquire->resource == "Source");
+        CHECK(pAcquire->srcFamily == captured.scope.computeFamily);
+        CHECK(pAcquire->dstFamily == captured.scope.graphicsFamily);
         CHECK(captured.waits[0].queue == QueueType::COMPUTE);
         CHECK(captured.waits[0].value == captured.signals[0].value);
         INFO("device has a dedicated compute family: transfer edge and timeline wait were recorded");

@@ -282,8 +282,15 @@ private:
     void RecordPresentTransition(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses);
 
     // Emit queue-family ownership transfer barriers for resources crossing queues.
+    /// @param cmdBuf         Command buffer the release barrier is emitted into.
+    /// @param srcQueueFamily Family releasing ownership.
+    /// @param dstQueueFamily Family taking it.
+    /// @param bAcquire       True for the acquire half, which only records pending state.
+    /// @param handles        Resources being handed over.
+    /// @param pObserver      Optional observer told about each release barrier, with the resource it belongs to.
     void RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily, uint32_t dstQueueFamily,
-                                     bool bAcquire, const std::vector<ResourceHandle>& handles);
+                                     bool bAcquire, const std::vector<ResourceHandle>& handles,
+                                     BarrierObserver* pObserver = nullptr);
 
     // Resolve a handle to its concrete resource: imported resources take priority,
     // otherwise look in the graph-owned resource manager.
