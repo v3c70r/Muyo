@@ -170,6 +170,19 @@ if (UNIX)
     # so neither ever did anything.
     set(SANITIZE_FLAGS
       "$<${SANITIZE_CONDITION}:-fsanitize=address,undefined>"
+      # Undefined behaviour must *fail* the run, not print and continue. With `-fsanitize=undefined`
+      # alone the runtime default is to recover: a signed overflow or an out-of-range enum load prints a
+      # `runtime error:` line to stderr and the process still exits 0, so the suite reports success with
+      # UB inside it. Measured before this change on the tree: the same binary printed
+      # "runtime error: signed integer overflow" and exited 0. Every "no UBSan errors" claim in this
+      # repository was therefore a claim about *reading stderr*, not about an exit status.
+      # Not enabled: `-fsanitize=pointer-compare,pointer-subtract` with
+      # `ASAN_OPTIONS=detect_invalid_pointer_pairs=2`. Measured on this tree it aborts inside
+      # `_deps/vma-src/include/vk_mem_alloc.h:5231` (VmaPoolAllocator's intrusive list compares pointers
+      # that are not in the same object). VMA is a vendored header compiled into our translation units,
+      # so the check cannot be scoped away from it, and it would abort every run. Class of check is
+      # sound; this tree's dependency is not compatible with it.
+      "$<${SANITIZE_CONDITION}:-fno-sanitize-recover=undefined>"
       "$<${SANITIZE_CONDITION}:-fno-omit-frame-pointer>"
       # Sanitizer reports need line information, so -g is kept for Sanitize even though Release no
       # longer gets it from the shared flags.
@@ -183,6 +196,9 @@ elseif(MSVC)
     add_compile_options("$<${SANITIZE_CONDITION}:/Zi>")
 endif()
 
+# Deliberately *after* the third-party targets above (imgui, SPIRV-Reflect, tinygltf, stb, ...): only the
+# project's own targets inherit these, so UB inside a vendored library cannot abort our run and a vendored
+# warning cannot be mistaken for ours. The Sanitize build is a statement about this repository's code.
 add_compile_options(${SANITIZE_FLAGS})
 add_link_options(${SANITIZE_FLAGS})
 
