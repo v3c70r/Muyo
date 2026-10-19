@@ -19,12 +19,16 @@ cmake --build build --target render_graph_docs
 python3 scripts/render_graph_docs.py --check
 ```
 
-`render_graph_docs` runs three steps:
+`render_graph_docs` runs four steps:
 
 1. **Doxygen** parses `src/RenderGraph/*.h` into XML + HTML.
 2. **`docs/check_api_coverage.py`** fails if any public class/struct/enum, its public members or
    enum values, or any free function/alias lacks a brief or detailed description.
 3. **`docs/gen_api_md.py`** regenerates `docs/RenderGraph-api.md`, grouped by header.
+4. **A section check** fails if the generated Markdown renders fewer `@param`/`@returns`/`@throws`
+   sections than the headers document. The staleness comparison in `--check` cannot catch this on its
+   own: a generator that drops a section deterministically regenerates a file that matches itself, so
+   the reference would be stale-free and still wrong (#161).
 
 The task is also registered as the CTest test `RenderGraphApiDocs` when Doxygen is found.
 

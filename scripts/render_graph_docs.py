@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import glob
 import os
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 import sys
 import tempfile
 
@@ -76,6 +78,64 @@ def run(cmd: list[str]) -> int:
     return subprocess.call(cmd, cwd=REPO_ROOT)
 
 
+# Section markers `gen_api_md.py` emits, and the Doxygen element each one carries.
+_RENDERED_SECTIONS = (
+    ("| Parameter | Description |", ("parameterlist", "param")),
+    ("**Returns**", ("simplesect", "return")),
+    ("**Throws**", ("parameterlist", "exception")),
+)
+
+
+def check_rendered_sections(xml_dir: str, md_path: str) -> int:
+    """Fail when the reference omits a documented section.
+
+    Counts what the generator *walks* (`gen_api_md.collect`) against what the Markdown renders: entries get their
+    own blocks, members render into their table cell. Counting the raw XML instead would double-count, because
+    Doxygen repeats a memberdef in its file compound and in its class compound.
+    """
+    sys.path.insert(0, DOCS_DIR)
+    import gen_api_md  # noqa: PLC0415 - the generator lives beside this script
+
+    entry_markers = {
+        "| Parameter | Description |": 0,
+        "**Returns**": 0,
+        "**Throws**": 0,
+    }
+    cell_markers = {"Parameters: ": 0, "Returns: ": 0, "Throws: ": 0}
+    for entries in gen_api_md.collect(xml_dir).values():
+        for entry in entries:
+            if entry.get("params"):
+                entry_markers["| Parameter | Description |"] += 1
+            if entry.get("returns"):
+                entry_markers["**Returns**"] += 1
+            if entry.get("throws"):
+                entry_markers["**Throws**"] += 1
+            for member in entry.get("members") or []:
+                cell = member.get("compact") or ""
+                for marker in cell_markers:
+                    if marker in cell:
+                        cell_markers[marker] += 1
+
+    with open(md_path, encoding="utf-8") as handle:
+        rendered = handle.read()
+
+    missing = [
+        (marker, count)
+        for marker, count in list(entry_markers.items()) + list(cell_markers.items())
+        if count and rendered.count(marker) < count
+    ]
+    if not missing:
+        return 0
+
+    for marker, count in missing:
+        print(
+            f"render_graph_docs: {count} documented '{marker.strip('|* ')}' section(s), "
+            f"but the reference renders {rendered.count(marker)}."
+        )
+    print("render_graph_docs: the API reference is dropping documented sections (see #161).")
+    return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="verify coverage and that the Markdown is current")
@@ -113,6 +173,14 @@ def main() -> int:
     # 2. Markdown API reference.
     target_md = os.path.join(output_dir, "RenderGraph-api.md") if args.check else GENERATED_MD
     rc = run([sys.executable, MD_GENERATOR, xml_dir, target_md])
+    if rc != 0:
+        return rc
+
+    # 3. The reference has to *render* what the headers document. `gen_api_md.py` used to emit the brief only,
+    #    so every `@param`/`@returns`/`@throws` was dropped silently - a contract that exists only in source is
+    #    one a caller cannot see (#161). The staleness check cannot catch that class, because a generator that
+    #    drops a section deterministically regenerates a file that matches itself.
+    rc = check_rendered_sections(xml_dir, target_md)
     if rc != 0:
         return rc
 

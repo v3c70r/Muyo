@@ -12,19 +12,23 @@ Coverage is enforced: `docs/check_api_coverage.py` fails the build when a public
 
 The compiled, reusable result of RenderGraphBuilder::Build().
 
+Owns the per-node GPU objects and the metadata an executor needs. It is immutable between builds and deliberately holds no per-execution state: barrier bookkeeping, command buffers and in-flight slots belong to whoever executes it.
+
 | Member | Description |
 | --- | --- |
-| `const std::vector< CompiledRenderGraphNode > & GetNodes() const` | The compiled nodes, in execution (topological) order. |
-| `std::size_t GetNodeCount() const` | Number of compiled nodes. |
-| `void AddNode(CompiledRenderGraphNode node)` | Append a compiled node. Used by RenderGraphBuilder::Build() when compiling. node Compiled node to append. |
-| `void ReserveNodes(std::size_t count)` | Reserve room for count nodes, to avoid reallocation while compiling. count Number of nodes expected. |
-| `void RebuildExecutionPlan(const RenderGraphQueueFamilies &families)` | Recompute the scheduling plan from the current nodes. Called by RenderGraphBuilder::Build() after the nodes are compiled. families Queue family indices used to decide which resources cross a queue family. |
-| `const RenderGraphExecutionPlan & GetExecutionPlan() const` | The scheduling plan for the current nodes. Read-only during execution. |
-| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy every node's GPU objects and clear the node list. Safe to call repeatedly. device Device the objects were created on. descriptorPool Pool the per-node descriptor sets were allocated from. |
+| `const std::vector< CompiledRenderGraphNode > & GetNodes() const` | Returns: The compiled nodes, in execution (topological) order. |
+| `std::size_t GetNodeCount() const` | Returns: Number of compiled nodes. |
+| `void AddNode(CompiledRenderGraphNode node)` | Append a compiled node. Used by RenderGraphBuilder::Build() when compiling. Parameters: `node` - Compiled node to append |
+| `void ReserveNodes(std::size_t count)` | Reserve room for count nodes, to avoid reallocation while compiling. Parameters: `count` - Number of nodes expected |
+| `void RebuildExecutionPlan(const RenderGraphQueueFamilies &families)` | Recompute the scheduling plan from the current nodes. Called by RenderGraphBuilder::Build() after the nodes are compiled. Parameters: `families` - Queue family indices used to decide which resources cross a queue family |
+| `const RenderGraphExecutionPlan & GetExecutionPlan() const` | Returns: The scheduling plan for the current nodes. Read-only during execution. |
+| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy every node's GPU objects and clear the node list. Safe to call repeatedly. Parameters: `device` - Device the objects were created on; `descriptorPool` - Pool the per-node descriptor sets were allocated from |
 
 ### `struct Muyo::RenderGraph::CompiledRenderGraphNode`
 
 GPU objects and execution metadata for one node, produced by RenderGraphBuilder::Build().
+
+Immutable between builds: Execute() only reads it. The definition carries everything a node needs at record time, so it does not point back at the authoring structures.
 
 | Member | Description |
 | --- | --- |
@@ -44,7 +48,7 @@ GPU objects and execution metadata for one node, produced by RenderGraphBuilder:
 | `QueueType queueType` | Queue the node was compiled for. |
 | `VkPipelineBindPoint bindingPoint` | Bind point of the compiled pipeline. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
-| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy this node's GPU objects and clear the handles. Safe to call repeatedly. |
+| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy this node's GPU objects and clear the handles. Safe to call repeatedly. Parameters: `device` - Device the objects were created on; `descriptorPool` - Pool the node's descriptor sets were allocated from |
 
 
 ## `DependencyGraph.h`
@@ -53,15 +57,21 @@ GPU objects and execution metadata for one node, produced by RenderGraphBuilder:
 
 A directed acyclic graph used to order render graph nodes.
 
+Edges are from -> to ("`to` depends on `from`"). AddNode registers isolated nodes so they are still scheduled; AddEdge validates before mutating, so a rejected edge leaves the graph usable. The graph is generic over the node identifier type (which must be orderable).
+
+| Parameter | Description |
+| --- | --- |
+| `T` | Node identifier (e.g. std::string for node names). |
+
 | Member | Description |
 | --- | --- |
 | `void Muyo::DependencyGraph< T >::AddNode(const T &node)` | Register a node with no edges (in-degree 0) so it is included in the ordering. |
-| `bool Muyo::DependencyGraph< T >::AddEdge(const T &from, const T &to)` | Add a dependency edge from -> to (i.e. to must run after from). |
-| `std::vector< T > Muyo::DependencyGraph< T >::TopologicalSort() const` | Order all nodes so that every node appears after its dependencies (Kahn's algorithm). |
-| `std::vector< std::vector< T > > Muyo::DependencyGraph< T >::GetParallelExecutionLevels() const` | Group nodes into levels that can run in parallel (Kahn's algorithm). One vector of nodes per dependency level, in order. |
-| `bool Muyo::DependencyGraph< T >::IsAdjacentTo(const T &from, const T &to) const` | true if a direct edge from -> to exists. |
-| `bool Muyo::DependencyGraph< T >::HasCycle() const` | true if the graph currently contains a cycle. |
-| `size_t Muyo::DependencyGraph< T >::NodeCount() const` | Number of registered nodes. |
+| `bool Muyo::DependencyGraph< T >::AddEdge(const T &from, const T &to)` | Add a dependency edge from -> to (i.e. to must run after from). Returns: true if the edge exists afterwards (inserted or already present), false if it was rejected (self-edge or would create a cycle). |
+| `std::vector< T > Muyo::DependencyGraph< T >::TopologicalSort() const` | Order all nodes so that every node appears after its dependencies (Kahn's algorithm). Returns: The nodes in a valid execution order. |
+| `std::vector< std::vector< T > > Muyo::DependencyGraph< T >::GetParallelExecutionLevels() const` | Group nodes into levels that can run in parallel (Kahn's algorithm). Returns: One vector of nodes per dependency level, in order. |
+| `bool Muyo::DependencyGraph< T >::IsAdjacentTo(const T &from, const T &to) const` | Returns: true if a direct edge from -> to exists. |
+| `bool Muyo::DependencyGraph< T >::HasCycle() const` | Returns: true if the graph currently contains a cycle. |
+| `size_t Muyo::DependencyGraph< T >::NodeCount() const` | Returns: Number of registered nodes. |
 
 
 ## `DescriptorSetCache.h`
@@ -70,15 +80,19 @@ A directed acyclic graph used to order render graph nodes.
 
 Owns graph descriptor sets and reuses one per distinct set of contents.
 
+Set allocation charges the pool a set's declared descriptor counts, and a bindless array is 1024 of them. Allocating one set per node duplicated that; this allocates one set per content instead, so a material-binding node that binds the same material buffer as another pays once. The cache owns every set and layout it creates and frees them together.
+
+The cache is cleared between builds, because a rebuild may resolve a resource to a new handle and the old set would then be stale. Retaining frame-invariant sets across builds is a later step (see docs/DescriptorSet-Lifecycle-Design.md).
+
 | Member | Description |
 | --- | --- |
-| `DescriptorSetCache(VkDevice device, DescriptorManager &descManager)` | device Device the sets are created on. descManager Manager owning the pool and layout creation. |
+| `DescriptorSetCache(VkDevice device, DescriptorManager &descManager)` | Parameters: `device` - Device the sets are created on; `descManager` - Manager owning the pool and layout creation |
 | `~DescriptorSetCache()` | Frees every set and layout this cache owns. |
 | `DescriptorSetCache(const DescriptorSetCache &)=delete` | The cache owns raw Vulkan handles, so copying would double-free. |
 | `DescriptorSetCache & operator=(const DescriptorSetCache &)=delete` | Deleted for the same reason as the copy constructor. |
-| `Entry Acquire(const DescriptorSetKey &key, const std::function< void(VkDescriptorSet)> &write)` | Return the set for a key, allocating and writing it on first use. |
+| `Entry Acquire(const DescriptorSetKey &key, const std::function< void(VkDescriptorSet)> &write)` | Return the set for a key, allocating and writing it on first use. Parameters: `key` - What the set must contain; `write` - Called with a freshly allocated set to fill it; never called on a cache hit Returns: The layout and set for that content. |
 | `void Clear()` | Free every set and layout. Called between builds, so a rebuild cannot reuse a stale view. |
-| `std::size_t SetCount() const` | How many distinct sets the cache holds; the dedup observable for tests. |
+| `std::size_t SetCount() const` | Returns: How many distinct sets the cache holds; the dedup observable for tests. |
 
 ### `struct Muyo::RenderGraph::DescriptorSetCache::Entry`
 
@@ -93,12 +107,16 @@ One cache entry: the layout a set was allocated from and the set itself.
 
 Everything that decides a descriptor set's contents, so two nodes that would write the same set share one.
 
+A descriptor set holds concrete views - a VkBuffer handle, a VkImageView handle - so its identity is the set of resources bound into it, not the declaration that named them. Two nodes binding the same buffer at the same (set, binding) therefore have the same key and share one VkDescriptorSet; two nodes binding different buffers (including two aliased transients over one block, which are different VkImages) have different keys and get different sets. That is what makes a content-addressed cache safe under aliasing: it cannot hand one node another node's view.
+
+The reflected layout is part of the key, so two nodes that bind different descriptor types at the same set index never share either. The layout and the bound resources are stored in a canonical order (by binding), because reflection does not promise one.
+
 | Member | Description |
 | --- | --- |
 | `uint32_t set` | Descriptor set index. |
 | `std::vector< VkDescriptorSetLayoutBinding > layout` | Reflected bindings, sorted by binding. |
 | `std::vector< Bound > bound` | Bound resources, sorted by binding. |
-| `bool operator<(const DescriptorSetKey &other) const` | other Key to compare against. A strict weak ordering, so a key set can be a std::map. |
+| `bool operator<(const DescriptorSetKey &other) const` | Parameters: `other` - Key to compare against Returns: A strict weak ordering, so a key set can be a std::map. |
 
 ### `struct Muyo::RenderGraph::DescriptorSetKey::Bound`
 
@@ -113,7 +131,7 @@ One resource bound into a binding, with everything the write needs.
 | `VkDeviceSize bufferRange` | Buffer bind range, already resolved. |
 | `VkImageLayout imageLayout` | Image layout the descriptor samples in. |
 | `VkSampler sampler` | Sampler for a combined image sampler, else null. |
-| `bool operator<(const Bound &other) const` | other Binding to compare against. A strict weak ordering, so the bound set can key a std::map. |
+| `bool operator<(const Bound &other) const` | Parameters: `other` - Binding to compare against Returns: A strict weak ordering, so the bound set can key a std::map. |
 
 
 ## `PSODesc.h`
@@ -180,6 +198,17 @@ Comparison operation used by depth/stencil state.
 ### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineLayout pipelineLayout, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr)`
 
 Build a graphics pipeline from a PSODesc using dynamic rendering.
+
+| Parameter | Description |
+| --- | --- |
+| `psoDesc` | Pipeline state. |
+| `vkDevice` | Logical device. |
+| `shaderModuels` | Vertex shader module followed by the fragment shader module. |
+| `pipelineLayout` | Pipeline layout (descriptor sets and push constants). |
+| `renderingInfo` | Dynamic-rendering attachment formats. |
+| `pSpecializationInfo` | Values for the shaders' specialization constants, applied to both stages, or nullptr. Entries naming a constant a stage does not declare are ignored by Vulkan, so one map can serve both. |
+
+**Returns** — The created pipeline (caller owns it).
 
 ### `enum CullMode`
 
@@ -248,6 +277,8 @@ Multisample state.
 ### `struct Muyo::RenderGraph::PSODesc`
 
 Full pipeline state for a graphics node.
+
+The graph turns this into a VkPipeline (via CreatePipelineFromPSODesc), deriving the rendering attachment formats and vertex input from the node's declared resource uses.
 
 | Member | Description |
 | --- | --- |
@@ -339,13 +370,49 @@ Which vertex layout a graphics node's pipeline expects.
 
 Append the acquire half of a handover: an empty source scope, the consumer's stages and access, and both queue-family indices.
 
+| Parameter | Description |
+| --- | --- |
+| `out` | Lists to append to. |
+| `handle` | The resource's name, for the diagnostic. |
+| `kind` | Resource kind; decides the list, and an unexpressible kind is reported. |
+| `image` | The image handle, when kind is IMAGE. |
+| `buffer` | The buffer handle, or an acceleration structure's backing buffer. |
+| `aspect` | Image aspect mask, when kind is IMAGE. |
+| `masks` | The masks DeriveBarrierMasks produced for the first use in the consumer family; its srcQueueFamily/dstQueueFamily are the indices recorded here. |
+
+**Throws**
+
+- `std::runtime_error` — if no handover is pending, or the kind has no barrier to express one.
+
 ### `void Muyo::RenderGraph::AppendReleaseTransfer(QueueTransferBarriers &out, const std::string &handle, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierPriorState &prior, uint32_t srcFamily, uint32_t dstFamily)`
 
 Append the release half of a handover: the producer's own stages and access, an empty destination scope, and both queue-family indices.
 
+The destination scope is empty because the acquire barrier on the consumer side names it; waiting on ALL_COMMANDS on both sides would make the handover wait for work neither side has.
+
+Free and device-free so the recorded barrier can be asserted without a device - the same reason DeriveBarrierMasks is. Nothing here reads the handle: a test may pass VK_NULL_HANDLE and check the masks and indices, which are the part that regressed in #153.
+
+| Parameter | Description |
+| --- | --- |
+| `out` | Lists to append to. |
+| `handle` | The resource's name, for the diagnostic. |
+| `kind` | Resource kind; decides the list, and an unexpressible kind is reported. |
+| `image` | The image handle, when kind is IMAGE. |
+| `buffer` | The buffer handle, or an acceleration structure's backing buffer. |
+| `aspect` | Image aspect mask, when kind is IMAGE. |
+| `prior` | What the graph recorded for the resource. |
+| `srcFamily` | Producing queue family. |
+| `dstFamily` | Consuming queue family. |
+
+**Throws**
+
+- `std::runtime_error` — if the kind has no barrier to express a handover.
+
 ### `struct Muyo::RenderGraph::BarrierMasks`
 
 The masks, layouts and queue-family indices one barrier between two uses needs.
+
+Produced by DeriveBarrierMasks; consumed by RenderGraphBuilder::RecordBarriers, which only has to turn it into a VkImageMemoryBarrier2 or a VkBufferMemoryBarrier2.
 
 | Member | Description |
 | --- | --- |
@@ -363,6 +430,8 @@ The masks, layouts and queue-family indices one barrier between two uses needs.
 
 What the graph has recorded about a resource's most recent access.
 
+One of these is kept per resource for the duration of one Execute. It is a plain struct, and the derivation below is a free function, so the barrier a pair of uses produces can be checked without a device - which is the only way to test that the masks are right rather than that a run happened to validate.
+
 | Member | Description |
 | --- | --- |
 | `bool bSeen` | A GPU use of this resource has been recorded in this execution. |
@@ -377,13 +446,54 @@ What the graph has recorded about a resource's most recent access.
 
 Derive the barrier between a resource's last recorded access and the next use.
 
+The stage masks come from the uses themselves: ResolvedResourceUse::stages is the destination scope, and the previous use's stages are the source scope. That is the whole point of the table in ResourceUseResolver.h - a colour attachment write is ordered at COLOR_ATTACHMENT_OUTPUT and a vertex-buffer read at VERTEX_INPUT, rather than both at ALL_COMMANDS. The three cases where the previous stages are not known or are not the source are handled explicitly:
+
+First use in an execution. The contents are discarded (the image goes from UNDEFINED), so there is nothing to wait for: TOP_OF_PIPE, no source access. Last written by a CPU node. The write happened on the host, so the source is HOST and the access is HOST_WRITE - which is also what the destination-stage VUIDs require of a mask that includes HOST_WRITE. Ownership handover pending. The producing queue's stages are not recorded in this execution (the release barrier carried them), so the acquire waits on ALL_COMMANDS.
+
+A barrier is recorded when any of the following is true, and skipped otherwise: the first use, a pending acquire, a host write to flush, a change of access mask, a change of layout, or a write on either side (a WAW or WAR hazard remains even when the masks are identical).
+
+Stage bits are also masked against the stages the device actually enables. The table names a union of the stages that can touch a resource, and a stage bit whose feature is not enabled may not appear in a mask at all (VUID-VkImageMemoryBarrier2-dstStageMask-07946 for the ray tracing stage): a build without ray tracing would otherwise emit RAY_TRACING_SHADER in every sampled-texture barrier. A use whose only stage is masked out is a declaration the device cannot honour - an acceleration structure on a device without ray tracing - and is reported rather than silently emitting an empty mask.
+
+| Parameter | Description |
+| --- | --- |
+| `prior` | What the graph recorded for this resource, or a default-constructed value when it has not been used. |
+| `use` | The use about to be recorded. |
+| `queueFamily` | Family of the queue the use is being recorded on; used for the acquire's destination. |
+| `supportedStages` | Stage bits this device enables; see RenderGraphBuilder::SupportedStages(). |
+
+**Returns** — The masks and layouts of the barrier, and whether one is needed.
+
+**Throws**
+
+- `std::runtime_error` — if every stage the use needs is one this device does not enable.
+
 ### `UseBarriers Muyo::RenderGraph::DeriveUseBarriers(const ResolvedResourceUse &use, const BarrierMasks &masks, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect)`
 
 Build the barrier(s) a use needs, including which kind of barrier it takes.
 
+The routing is the point. An acceleration structure with a queue handover pending has to be a buffer barrier on its backing buffer - a memory barrier has no field for the family indices - while an in-family use is the device-wide memory barrier. That decision used to live inline in RecordBarriers, where no test could observe it: the emission was asserted after #156 and the routing was not, and falsifying it left the suite green (#158).
+
+Free and device-free like DeriveBarrierMasks, so both the choice and the barrier it produces can be asserted without a device. The handles are only copied into the barrier, never dereferenced.
+
+| Parameter | Description |
+| --- | --- |
+| `use` | The resolved use; its kind selects the barrier. |
+| `masks` | The masks DeriveBarrierMasks produced for it. |
+| `image` | The image handle, when use.kind is IMAGE. |
+| `buffer` | The buffer handle, or an acceleration structure's backing buffer. |
+| `aspect` | Image aspect mask, when use.kind is IMAGE. |
+
+**Returns** — The barriers; every list empty for a kind that has none.
+
+**Throws**
+
+- `std::runtime_error` — if a handover is pending for an acceleration structure that did not resolve to a structure with a backing buffer - the only way to express it - forwarded from AppendAcquireTransfer.
+
 ### `struct Muyo::RenderGraph::QueueTransferBarriers`
 
 The barrier lists one queue-family handover contributes to.
+
+A handover produces at most one barrier, but which list it belongs in depends on the resource kind, so the emitter appends rather than returns, and the caller records both lists in one vkCmdPipelineBarrier2.
 
 | Member | Description |
 | --- | --- |
@@ -393,6 +503,16 @@ The barrier lists one queue-family handover contributes to.
 ### `BarrierPriorState Muyo::RenderGraph::RecordAccess(BarrierPriorState prior, const ResolvedResourceUse &use, VkPipelineStageFlags2 supportedStages=~VkPipelineStageFlags2{0})`
 
 Record a use as the resource's new prior state.
+
+The stages are stored filtered, with the same set the barrier used. Storing the raw table stages would put a bit the device does not enable into the next barrier's source scope - a release barrier that names RAY_TRACING_SHADER on a build without ray tracing, which is the VUID class the filter exists to prevent.
+
+| Parameter | Description |
+| --- | --- |
+| `prior` | The state to update. |
+| `use` | The use just recorded. |
+| `supportedStages` | Stage bits this device enables; the default keeps everything, for tests and for callers that have no device. |
+
+**Returns** — The state the next barrier for this resource is derived from.
 
 ### `struct Muyo::RenderGraph::UseBarriers`
 
@@ -414,24 +534,28 @@ Maximum number of shader stages a node may declare (vertex + fragment, or raygen
 
 Declares and runs a render graph.
 
+Typical use: RenderGraphBuilderbuilder(RenderGraphServices{.device=GetRenderDevice(), .resourceManager=GetRenderResourceManager(), .descriptorManager=GetDescriptorManager()}); builder.AddResource("Color",ImageResourceDesc{.format=...,.extent=...,.usage=...}); builder.ImportResource("Vertices",meshManager.m_pVertexBuffer); builder.AddNode({.nodeName="Opaque",.queueType=QueueType::GRAPHICS,...}); builder.Build(); builder.Execute();
+
+Build() is idempotent for a fixed declaration: it topologically sorts the nodes, allocates graph-owned resources, compiles pipelines/descriptor sets and plans barriers. Execute() records and submits the frame, splitting work across queues when nodes opt into async compute.
+
 | Member | Description |
 | --- | --- |
-| `RenderGraphBuilder(const RenderGraphServices &services)` | services The device, resource allocator and descriptor allocator the graph uses. Each is required; a missing one is reported by name rather than dereferenced later, and the check throws so it survives NDEBUG. |
-| `RenderGraphBuilder(VkRenderDevice *renderDevice)` | Transitional: fills the remaining services from the engine's globals, for the callers that still use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is why it is documented as the transition rather than as an equal alternative. renderDevice Device used to create pipelines, command buffers and synchronisation. |
+| `RenderGraphBuilder(const RenderGraphServices &services)` | Parameters: `services` - The device, resource allocator and descriptor allocator the graph uses. Each is required; a missing one is reported by name rather than dereferenced later, and the check throws so it survives NDEBUG |
+| `RenderGraphBuilder(VkRenderDevice *renderDevice)` | Transitional: fills the remaining services from the engine's globals, for the callers that still use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is why it is documented as the transition rather than as an equal alternative. Parameters: `renderDevice` - Device used to create pipelines, command buffers and synchronisation |
 | `~RenderGraphBuilder()` | Releases compiled pipelines, descriptor sets and command buffers. |
-| `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. handle Name the graph and the nodes use for it. desc Allocation: buffer size, or image format/extent/usage, plus its lifetime. *this for chaining. std::runtime_error if desc cannot describe an allocation - a zero count/stride, a zero extent, VK_FORMAT_UNDEFINED, zero mips/layers, or usage == 0 - or if it asks for ResourceLifetime::Imported; use ImportResource for a resource the graph does not own. |
-| `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. *this for chaining. |
-| `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | The allocation description for a graph-owned resource, if any. |
-| `const IRenderResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. |
-| `const TransientMemoryPlan & GetTransientMemoryPlan() const` | The last build's transient memory plan: the blocks, their slots, and the two byte totals. reservedBytes < individualBytes is what sharing memory looks like from outside, and reservedBytes == individualBytes is a legitimate answer for a graph whose transients all overlap in time. Empty before the first build. |
-| `std::size_t GetDescriptorSetCount() const` | How many distinct descriptor sets the last build allocated. A graph whose nodes bind the same resources at the same sets shares one set across them, so this is below the number of descriptor-bound nodes exactly when the cache deduplicated; it is the descriptor analogue of GetTransientMemoryPlan(). Zero before the first build. |
-| `void AddNode(const RenderGraphNodeCreateInfo &nodeCreateInfo)` | Declare a node. std::runtime_error if the name is already used; a resource use names something neither declared with AddResource nor imported; a use's kind or usage does not agree with the resource it names (a sampled-only image bound as STORAGE_IMAGE, an image role on a buffer); a node's shader count does not match its queue type; a non-CPU node has no execute callback; or its attachments resolve to different extents. |
+| `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. Parameters: `handle` - Name the graph and the nodes use for it; `desc` - Allocation: buffer size, or image format/extent/usage, plus its lifetime Returns: *this for chaining. Throws: `std::runtime_error` - if desc cannot describe an allocation - a zero count/stride, a zero extent, VK_FORMAT_UNDEFINED, zero mips/layers, or usage == 0 - or if it asks for ResourceLifetime::Imported; use ImportResource for a resource the graph does not own |
+| `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. Returns: *this for chaining. |
+| `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | Returns: The allocation description for a graph-owned resource, if any. |
+| `const IRenderResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. Parameters: `handle` - Resource handle Returns: The resource, or nullptr when the handle names nothing the graph can see. |
+| `const TransientMemoryPlan & GetTransientMemoryPlan() const` | Returns: The last build's transient memory plan: the blocks, their slots, and the two byte totals. reservedBytes < individualBytes is what sharing memory looks like from outside, and reservedBytes == individualBytes is a legitimate answer for a graph whose transients all overlap in time. Empty before the first build. |
+| `std::size_t GetDescriptorSetCount() const` | Returns: How many distinct descriptor sets the last build allocated. A graph whose nodes bind the same resources at the same sets shares one set across them, so this is below the number of descriptor-bound nodes exactly when the cache deduplicated; it is the descriptor analogue of GetTransientMemoryPlan(). Zero before the first build. |
+| `void AddNode(const RenderGraphNodeCreateInfo &nodeCreateInfo)` | Declare a node. Throws: `std::runtime_error` - if the name is already used; a resource use names something neither declared with AddResource nor imported; a use's kind or usage does not agree with the resource it names (a sampled-only image bound as STORAGE_IMAGE, an image role on a buffer); a node's shader count does not match its queue type; a non-CPU node has no execute callback; or its attachments resolve to different extents |
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
-| `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. std::runtime_error for a declaration error, naming the node and resource: a dependency cycle; a transient read with no writer; a descriptorBinding the shader does not declare, a binding whose reflected type does not fit the resource, or two uses at one binding; and anything CompileRenderGraphNode rejects (shader load, specialization ids, buffer range). docs/RenderGraph.md has the failure index. |
+| `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. Throws: `std::runtime_error` - for a declaration error, naming the node and resource: a dependency cycle; a transient read with no writer; a descriptorBinding the shader does not declare, a binding whose reflected type does not fit the resource, or two uses at one binding; and anything CompileRenderGraphNode rejects (shader load, specialization ids, buffer range). docs/RenderGraph.md has the failure index |
 | `void Execute()` | Run every node once in execution order, inserting barriers between nodes and synchronising cross-queue handovers. |
-| `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU. Note this does not enable overlap: the builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the first completes. Overlap is an executor-API concern, see issue #11. info External semaphores to wait on before, and signal after, this execution. |
-| `std::vector< std::string > GetExecutionOrder() const` | The node names in dependency (topological) order. |
-| `const RenderGraphExecutionPlan & GetExecutionPlan() const` | The plan the last Build() produced: queue segments and cross-queue transfers. Derived, read-only state, empty before the first Build(). It is what tells a caller whether an async node actually got a cross-queue handover or was serialised on one family. |
+| `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU. Note this does not enable overlap: the builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the first completes. Overlap is an executor-API concern, see issue #11. Parameters: `info` - External semaphores to wait on before, and signal after, this execution |
+| `std::vector< std::string > GetExecutionOrder() const` | Returns: The node names in dependency (topological) order. |
+| `const RenderGraphExecutionPlan & GetExecutionPlan() const` | Returns: The plan the last Build() produced: queue segments and cross-queue transfers. Derived, read-only state, empty before the first Build(). It is what tells a caller whether an async node actually got a cross-queue handover or was serialised on one family. |
 
 ### `struct Muyo::RenderGraph::RenderGraphNodeCreateInfo`
 
@@ -455,6 +579,10 @@ User-facing declaration of a single render graph node (pass).
 
 The services a graph is given, rather than looking up as globals (#53).
 
+The split follows the design document: the graph owns the policy - transient lifetimes, barriers, scheduling, descriptor content - while the mechanism belongs to the host. The device, the memory and the descriptors are the host's, so they arrive by construction. A caller that supplies all three runs a graph without the engine's globals, which is what lets a compute-only consumer use it without the renderer. RenderGraphBuilder(VkRenderDevice*) still fills the other two from those globals for in-tree callers that have not moved, and is marked as the transition rather than the shape.
+
+Deliberately not here yet: a shader source provider (the graph still loads .spv by file name) and a pipeline cache (there is no channel for one at all). Both are capabilities rather than de-globalisation, and each belongs with the guarantee it closes - "a client can supply SPIR-V bytes" and the cost work.
+
 | Member | Description |
 | --- | --- |
 | `VkRenderDevice * device` | Device the graph creates pipelines, command buffers and synchronisation with. Required. |
@@ -469,6 +597,8 @@ Map of every declared resource handle to its allocation description.
 
 A value supplied for one of a shader's specialization constants.
 
+Its width is deliberately absent: the shader's reflection knows whether the constant is 8, 16, 32 or 64 bits, so the graph takes the width from there. A caller therefore cannot disagree with the shader about the size of its own constant, which is the failure a raw byte array invites.
+
 | Member | Description |
 | --- | --- |
 | `uint32_t id` | The constant_id the shader declared. |
@@ -479,24 +609,40 @@ A value supplied for one of a shader's specialization constants.
 
 ### `uint32_t Muyo::RenderGraph::GetQueueFamilyForQueueType(QueueType queueType, const RenderGraphQueueFamilies &families)`
 
-queueType A resolved queue key (as returned by GetQueueKey). families Queue family indices for this device. The Vulkan queue family the key runs on. Compute uses the compute family; graphics, ray tracing and CPU work follow the graphics family.
+| Parameter | Description |
+| --- | --- |
+| `queueType` | A resolved queue key (as returned by GetQueueKey). |
+| `families` | Queue family indices for this device. |
+
+**Returns** — The Vulkan queue family the key runs on. Compute uses the compute family; graphics, ray tracing and CPU work follow the graphics family.
 
 ### `QueueType Muyo::RenderGraph::GetQueueKey(QueueType type, bool bAsync)`
 
 Resolve which queue a node's work runs on.
 
+Only an explicitly-marked async compute node uses the dedicated async compute queue; everything else (including non-async compute) follows the graphics queue.
+
+| Parameter | Description |
+| --- | --- |
+| `type` | Queue the node declared. |
+| `bAsync` | Whether the node opted into the async compute queue. |
+
+**Returns** — The queue key the node is scheduled on.
+
 ### `struct Muyo::RenderGraph::RenderGraphExecutionPlan`
 
 The scheduling plan derived from a compiled graph.
+
+Tells an executor what to run where: which nodes are host-side, how the GPU nodes split into per-queue segments, and which resources cross a queue-family boundary. Derived purely from the compiled nodes and the device's queue families, so it is rebuilt whenever the graph is built and is read-only during execution.
 
 | Member | Description |
 | --- | --- |
 | `std::vector< std::size_t > cpuNodes` | Compiled node indices that run host-side (QueueType::CPU). They all run before any GPU segment is recorded, and belong to no segment. |
 | `std::vector< RenderGraphQueueSegment > segments` | Contiguous per-queue runs of compiled nodes, in execution order. |
 | `std::vector< RenderGraphQueueTransfer > transfers` | Resources crossing a queue-family boundary between two segments. |
-| `bool IsEmpty() const` | True when the graph has no GPU work to run. |
-| `std::size_t GetSegmentCount() const` | Number of queue segments. |
-| `std::size_t GetTransferCount() const` | Number of cross-queue transfers. |
+| `bool IsEmpty() const` | Returns: True when the graph has no GPU work to run. |
+| `std::size_t GetSegmentCount() const` | Returns: Number of queue segments. |
+| `std::size_t GetTransferCount() const` | Returns: Number of cross-queue transfers. |
 
 ### `struct Muyo::RenderGraph::RenderGraphQueueFamilies`
 
@@ -511,6 +657,10 @@ Queue family indices a plan resolves queue keys against.
 
 A contiguous run of compiled nodes that executes on one queue.
 
+Segment indices are ranges into CompiledRenderGraph::GetNodes(), so they are stable as long as the graph is not rebuilt.
+
+Segments are split at CPU nodes, so two adjacent segments can share a queue: a [GPU, CPU, GPU] sequence on one queue yields two segments, and therefore two submissions where the pre-split code made one. That is correct (program order on one queue) and adjacent segments with the same queueType need no ownership transfer, so a scheduler is free to merge them into a single submission.
+
 | Member | Description |
 | --- | --- |
 | `QueueType queueType` | Resolved queue this segment runs on. |
@@ -520,6 +670,8 @@ A contiguous run of compiled nodes that executes on one queue.
 ### `struct Muyo::RenderGraph::RenderGraphQueueTransfer`
 
 A resource handed from one queue segment to another across a queue-family boundary.
+
+Requires a release barrier when the producer segment ends and an acquire barrier before the consumer segment first touches the resource, plus a semaphore to order the two submissions.
 
 | Member | Description |
 | --- | --- |
@@ -536,6 +688,14 @@ A resource handed from one queue segment to another across a queue-family bounda
 
 External synchronization for one execution.
 
+signalSemaphore and signalFence both mean "every queue of this execution has completed". The semaphore is what a present path needs; the fence is host-waitable, so a caller that only wants to know the work is done does not have to submit anything of its own to find out.
+
+Passing neither is legitimate: the executor tracks completion itself with timeline values, and WaitIdle() observes it. Asking for no outward signal therefore costs nothing - in particular it needs no join submission.
+
+The executor's own timelines stay private. A caller that wants to chain executions owns its own timeline and passes it as both signalSemaphore/signalValue here and waitSemaphore/waitValue on the next execution, so the chaining contract does not depend on how the executor lays out its internal counters.
+
+Overlapping executions of the same graph share that graph's resources and are unordered relative to each other unless chained through these semaphores.
+
 | Member | Description |
 | --- | --- |
 | `VkSemaphore waitSemaphore` | Waited on before this execution's first work - e.g. the swapchain image-acquired semaphore. |
@@ -548,16 +708,24 @@ External synchronization for one execution.
 
 Executes a recorded render graph.
 
+The graph records one command buffer per queue segment (see RenderGraphExecutionPlan) and hands them here. Everything after recording belongs to the executor: the in-flight slots, the cross-queue handovers, the queue submissions, and what completion means.
+
+Completion is a timeline value per queue - not a fence, and not a binary semaphore. Every segment signals the next value on its queue's timeline, and waits on the values of the segments it consumes, so an execution has completed exactly when the values it signalled have been reached. Three things follow, and each replaces something the binary design could not express:
+
+a caller can wait for an execution itself, either through signalFence or by waiting on the values, where a binary semaphore is not host-waitable at all; slot reclamation is a value comparison against a counter, so a slot is reusable the moment its work is done rather than when a particular submission happened to signal a fence; nothing is created or destroyed per submission except command buffers, so overlapping executions cannot alias each other's signalling state.
+
+The executor owns the command buffers, because they cannot be recycled while an execution is still in flight - which is what the in-flight slots exist to track. AcquireSlot blocks while every slot is busy, so the CPU can run at most inFlightCount executions ahead of the GPU.
+
 | Member | Description |
 | --- | --- |
-| `RenderGraphExecutor(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | renderDevice Device whose queues executions are submitted to. inFlightCount How many executions may be in flight at once. 1 serialises them: the next AcquireSlot() blocks until the previous submission completes. A windowed caller passes its frame count; a headless caller can pass 1 and wait explicitly. |
+| `RenderGraphExecutor(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | Parameters: `renderDevice` - Device whose queues executions are submitted to; `inFlightCount` - How many executions may be in flight at once. 1 serialises them: the next AcquireSlot() blocks until the previous submission completes. A windowed caller passes its frame count; a headless caller can pass 1 and wait explicitly |
 | `~RenderGraphExecutor()` | Waits for outstanding work, then releases every slot's objects. |
 | `RenderGraphExecutor(const RenderGraphExecutor &)=delete` | Owns raw Vulkan handles and frees them on destruction, so copying would double-destroy. |
 | `RenderGraphExecutor & operator=(const RenderGraphExecutor &)=delete` | Deleted for the same reason as the copy constructor. |
-| `ExecutionSlot AcquireSlot(const RenderGraphExecutionPlan &plan)` | Acquire a slot to record into, blocking while every slot is still in flight. |
-| `void Submit(const RenderGraphExecutionPlan &plan, const ExecutionSlot &slot, const RenderGraphExecuteInfo &info)` | Submit a slot acquired from AcquireSlot(). plan Plan the slot was recorded from. slot Slot returned by AcquireSlot(). info External synchronization; both semaphores are optional. |
+| `ExecutionSlot AcquireSlot(const RenderGraphExecutionPlan &plan)` | Acquire a slot to record into, blocking while every slot is still in flight. Parameters: `plan` - Plan this execution will use; its segments size and type the command buffers Returns: The slot to record into. |
+| `void Submit(const RenderGraphExecutionPlan &plan, const ExecutionSlot &slot, const RenderGraphExecuteInfo &info)` | Submit a slot acquired from AcquireSlot(). Parameters: `plan` - Plan the slot was recorded from; `slot` - Slot returned by AcquireSlot(); `info` - External synchronization; both semaphores are optional |
 | `void WaitIdle()` | Block until every submitted execution has completed. Safe to call at any time. |
-| `VkQueue GetQueueForType(QueueType type) const` | type A resolved queue key (see GetQueueKey). The queue that key submits to. |
+| `VkQueue GetQueueForType(QueueType type) const` | Parameters: `type` - A resolved queue key (see GetQueueKey) Returns: The queue that key submits to. |
 
 ### `struct Muyo::RenderGraph::RenderGraphExecutor::ExecutionSlot`
 
@@ -579,6 +747,8 @@ Callback a node provides to record its GPU or host work.
 
 Context handed to a node's execute callback.
 
+The graph has already recorded the barriers, opened the render pass (graphics nodes) and bound the pipeline and descriptor sets, so most callbacks only issue draw/dispatch/trace commands.
+
 | Member | Description |
 | --- | --- |
 | `QueueType queueType` | Queue this node is running on. |
@@ -588,7 +758,7 @@ Context handed to a node's execute callback.
 | `VkPipeline pipeline` | Bound pipeline. |
 | `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
 | `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
-| `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). T Concrete resource type (e.g. BufferResource, RenderTarget). handle Resource name used in the node's resourceUses. The resource, or nullptr if it is not of type T. |
+| `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). Parameters: `T` - Concrete resource type (e.g. BufferResource, RenderTarget); `handle` - Resource name used in the node's resourceUses Returns: The resource, or nullptr if it is not of type T. |
 
 
 ## `RenderGraphNodeResource.h`
@@ -596,6 +766,10 @@ Context handed to a node's execute callback.
 ### `struct Muyo::RenderGraph::BufferRange`
 
 A byte range inside a buffer resource - a view of part of it.
+
+Declared on a ResourceUse to bind only [offset, offset + size), which is what one tensor of a packed weights buffer or a row of a KV cache needs. Without it the whole buffer is bound, which is what every existing caller gets.
+
+The range is resolved at Build(): it is written into VkDescriptorBufferInfo once, so changing it means rebuilding the graph. A base that is only known per execution is a different mechanism, not a different value of this one - see issue #81.
 
 | Member | Description |
 | --- | --- |
@@ -606,6 +780,8 @@ A byte range inside a buffer resource - a view of part of it.
 
 Explicit shader descriptor location (set + binding) for a resource.
 
+The graph derives a node's set layouts from the shader reflection and takes each resource's location from its ResourceUse, so a descriptor-bound resource must name its (set, binding). The engine's built-in set convention lives outside the library, in RenderGraphSemanticBindings.h.
+
 | Member | Description |
 | --- | --- |
 | `uint32_t set` | Descriptor set index. |
@@ -613,23 +789,37 @@ Explicit shader descriptor location (set + binding) for a resource.
 
 ### `constexpr bool Muyo::RenderGraph::IsWrite(ResourceIOType io)`
 
-io An IO type. Whether the access writes the resource. One place instead of five: every check that asks "is this a write" has to answer the same way, and adding HOST_WRITE (#152) is the demonstration - the transient-lifetime validation counted writes by listing the enumerators, so a host write stopped being a write the moment a new one appeared.
+HOST_WRITE (#152) is the demonstration - the transient-lifetime validation counted writes by listing the enumerators, so a host write stopped being a write the moment a new one appeared.
+
+| Parameter | Description |
+| --- | --- |
+| `io` | An IO type. |
+
+**Returns** — Whether the access writes the resource.
 
 ### `constexpr const char * Muyo::RenderGraph::NameOf(ResourceIOType io)`
 
-The name of an IO type, for diagnostics. A switch with no default on purpose: adding a value becomes a warning here rather than a message that prints a number.
+**Returns** — The name of an IO type, for diagnostics.
 
 ### `const char * Muyo::RenderGraph::NameOf(ResourceKind kind)`
 
-kind A resource kind. Its lower-case name, for diagnostics. An overload of NameOf rather than a second NameOfKind, because every diagnostic that names a kind wants the same word and the existing overloads already cover a usage and an IO type.
+NameOf rather than a second NameOfKind, because every diagnostic that names a kind wants the same word and the existing overloads already cover a usage and an IO type.
+
+| Parameter | Description |
+| --- | --- |
+| `kind` | A resource kind. |
+
+**Returns** — Its lower-case name, for diagnostics.
 
 ### `constexpr const char * Muyo::RenderGraph::NameOf(ResourceUsage usage)`
 
-The name of a usage, for diagnostics.
+**Returns** — The name of a usage, for diagnostics.
 
 ### `enum QueueType`
 
 Which executor / queue a node runs on. CPU is treated as a queue inside the graph.
+
+A node with QueueType::COMPUTE and RenderGraphNodeCreateInfo::async set may be run concurrently with the graphics queue; every other value is recorded on the graphics queue.
 
 | Value | Description |
 | --- | --- |
@@ -643,6 +833,8 @@ Which executor / queue a node runs on. CPU is treated as a queue inside the grap
 ### `struct Muyo::RenderGraph::ResolvedResourceUse`
 
 A ResourceUse after the graph has resolved it to concrete barrier state.
+
+Produced by ResolveResourceUse(); mostly consumed internally by RenderGraphBuilder.
 
 | Member | Description |
 | --- | --- |
@@ -685,6 +877,8 @@ The concrete Vulkan object kind behind a resource handle.
 ### `enum ResourceUsage`
 
 The semantic role of a resource within a node.
+
+Together with ResourceIOType this selects a UsagePolicy (barrier stage/access/layout), and for graphics nodes it also determines how the resource is bound (attachment, vertex buffer...).
 
 | Value | Description |
 | --- | --- |
@@ -730,12 +924,38 @@ Monotonic version counter used to track resource writes across nodes.
 
 Validate a declared byte range against the buffer it addresses and a device alignment limit.
 
+Free, and taking the alignment as an argument, for two reasons. It has to be callable from both places a buffer is bound into a descriptor, which are different classes. And the failure modes are worth testing on any machine: how much alignment a driver demands is a property of that device (minStorageBufferOffsetAlignment may be far larger than the 4 bytes this machine requires), while a free function with the limit passed in tests the rule without needing the device that exhibits it.
+
+Both checks exist because neither is caught where the mistake is made: an out-of-range range reads or writes the wrong bytes, and a misaligned one is a validation error at bind time, far from the line that declared it.
+
+| Parameter | Description |
+| --- | --- |
+| `nodeName` | Node that declared the range; named in the message. |
+| `handle` | Buffer handle; named in the message. |
+| `range` | The declared range. |
+| `bufferSize` | Size of the addressed buffer, in bytes. |
+| `requiredAlignment` | Device limit for the binding's descriptor type. 1 disables the check. |
+
+**Throws**
+
+- `std::runtime_error` — if the range is zero-sized, out of bounds, or misaligned.
+
 
 ## `RenderGraphResourceDesc.h`
 
 ### `IRenderResource * Muyo::RenderGraph::AllocateResource(const ResourceDesc &desc, RenderResourceManager &renderResourceManager, const ResourceHandle &handle)`
 
 Allocate a physical resource from a desc. The render graph calls this at Build() time.
+
+Uses the existing RenderResourceManager as the backend allocator and returns the existing resource if the handle is already allocated, so repeated builds reuse it.
+
+| Parameter | Description |
+| --- | --- |
+| `desc` | Allocation description (buffer or image). |
+| `renderResourceManager` | Backend allocator. |
+| `handle` | Name to allocate under. |
+
+**Returns** — The allocated (or pre-existing) resource.
 
 ### `struct Muyo::RenderGraph::BufferResourceDesc`
 
@@ -787,6 +1007,8 @@ FNV-1a 64-bit string hash. Reserved for a future hashed resource handle.
 
 Stable string name identifying a resource, node or imported object in the graph.
 
+The same name used in AddResource / ImportResource is how nodes refer to it in their ResourceUse lists.
+
 
 ## `ResourceUseResolver.h`
 
@@ -794,13 +1016,27 @@ Stable string name identifying a resource, node or imported object in the graph.
 
 Barrier policy table: maps every supported (ResourceUsage, ResourceIOType) pair to the pipeline stages, access mask and image layout the graph uses when a node touches it.
 
+This is the authoritative reference for how the graph synchronises resources; a use with no entry here is rejected by ResolvePolicy.
+
 ### `constexpr std::optional< UsagePolicy > Muyo::RenderGraph::ResolvePolicy(UsageKey key)`
 
 Looks up the UsagePolicy for a key.
 
+**Returns** — The policy, or nothing when the pair is unsupported - the caller reports that with the resource and both names in the message, which a bare string here cannot do.
+
 ### `ResolvedResourceUse Muyo::RenderGraph::ResolveResourceUse(const ResourceUse &use)`
 
 Resolve a node's ResourceUse into a ResolvedResourceUse.
+
+Fills in the barrier stages/access and (for images) the target layout from K_USAGE_POLICIES, and copies the binding information through.
+
+The declaration alone decides what a write means: WRITE is a shader store and HOST_WRITE is a host write through a mapping (#152). The node's queue type is deliberately not consulted - it was the proxy that used to make the choice, and it was wrong for a GPU node that maps a buffer.
+
+| Parameter | Description |
+| --- | --- |
+| `use` | The declared resource use. |
+
+**Returns** — The resolved use consumed by the graph's barrier and binding logic.
 
 ### `struct Muyo::RenderGraph::UsageKey`
 
@@ -827,15 +1063,38 @@ Barrier policy (stages/access/layout) for a (usage, io) pair.
 
 ### `TransientMemoryClass Muyo::RenderGraph::ClassOf(const ResourceDesc &desc, uint32_t memoryTypeBits)`
 
-desc A resource declaration. memoryTypeBits The memory type bits that declaration's requirements allow, from vkGetBufferMemoryRequirements / vkGetImageMemoryRequirements. The class that declaration belongs to. See TransientMemoryClass for why images are keyed on their whole create info and why the memory types are part of the key.
+| Parameter | Description |
+| --- | --- |
+| `desc` | A resource declaration. |
+| `memoryTypeBits` | The memory type bits that declaration's requirements allow, from vkGetBufferMemoryRequirements / vkGetImageMemoryRequirements. |
+
+**Returns** — The class that declaration belongs to. See TransientMemoryClass for why images are keyed on their whole create info and why the memory types are part of the key.
 
 ### `TransientMemoryPlan Muyo::RenderGraph::PlanTransientMemory(const std::vector< TransientMemoryRequest > &requests)`
 
 Pack a build's transients into as few blocks as their live ranges allow.
 
+Two transients share a slot when their intervals do not overlap and their classes are equal, and the packing is the classic interval greedy: process a class's requests in order of first use, and give each the first slot whose last use has already ended. Processing in order of start is what makes first-fit place every request that could possibly be placed, so the number of slots is the smallest the intervals permit - the same count a graph-colouring formulation would need.
+
+A slot's alignment is the widest of its members' and its offset is a multiple of it, so every member bound there satisfies its own alignment: the block's address is aligned to the block's maximum, and each offset within it to its own.
+
+Deterministic: requests are grouped by class (ordered by TransientMemoryClass::operator<) and within a class by (firstUse, handle), so the same graph always produces the same plan and the same memory layout.
+
+| Parameter | Description |
+| --- | --- |
+| `requests` | One per graph-owned transient. Order is irrelevant; the plan sorts. |
+
+**Returns** — The blocks and slots, with the reserved and individual byte totals.
+
+**Throws**
+
+- `std::runtime_error` — When an alignment is zero, when an interval is inverted (firstUse > lastUse), or when a block's members have no memory type in common - each of which is input-falsifiable, so each is a thrown error rather than an assertion that NDEBUG removes.
+
 ### `struct Muyo::RenderGraph::TransientMemoryBlock`
 
 One allocation, and the slots laid out inside it.
+
+One block per compatibility class, because a block is one VkDeviceMemory-sized unit: everything in it is bound to the same memory, which is what makes its class a contract rather than a label.
 
 | Member | Description |
 | --- | --- |
@@ -849,6 +1108,14 @@ One allocation, and the slots laid out inside it.
 
 The compatibility class a transient's memory belongs to.
 
+Two transients may share one block exactly when their classes compare equal, so the class is the aliasing contract, stated once and checkable: a buffer and an image never share a block, and two images share one only when their create info is identical.
+
+Identical create info is deliberately stricter than Vulkan requires. Aliasing two images whose formats differ is legal only with VK_IMAGE_CREATE_ALIAS_BIT and only when the formats are in the same compatibility class, and those rules are a table to get wrong from memory. Requiring the create info to match removes the question instead of answering it, and the cost - memory left on the table when two images differ only in format - buys the invariant "same class, therefore safe", which is true by construction rather than by consulting a table at every plan.
+
+A buffer's class carries no shape fields, because every buffer may share memory with every other buffer: the constraints that exist for images come from format compatibility and from tiling, and a buffer has neither.
+
+One field is not shape and belongs here anyway: memoryTypeBits. Two resources whose allowed memory types are disjoint cannot share memory whatever their shape, and the case is reachable rather than theoretical - a buffer created CPU_ONLY and one created GPU_ONLY have disjoint type sets on a discrete device, and both are ordinary. Carrying the bits in the class keeps the planner total: such a pair lands in two blocks instead of producing a plan the allocator cannot satisfy, and the intersection check inside the planner becomes the safety net for a caller that built the class by hand rather than the mechanism for telling them apart.
+
 | Member | Description |
 | --- | --- |
 | `VkFormat format` | Pixel format, for images. Unused for buffers. |
@@ -859,8 +1126,8 @@ The compatibility class a transient's memory belongs to.
 | `uint32_t memoryTypeBits` | Memory type bits the device allows for this resource, from its memory requirements. |
 | `VmaMemoryUsage memoryUsage` | The memory usage its block will be allocated with. A block is one allocation, so everything in it is created with one usage - and two resources asking for different usages are asking for different contracts even when the device offers them the same memory types. |
 | `bool isImage` | True for images, false for buffers. The discriminator: a buffer's other fields are all defaults. |
-| `bool operator==(const TransientMemoryClass &other) const` | other Class to compare against. True when two transients may share a block. |
-| `bool operator<(const TransientMemoryClass &other) const` | other Class to compare against. A strict weak ordering, so classes can key a map. It orders blocks in the plan deterministically; it carries no meaning about memory. |
+| `bool operator==(const TransientMemoryClass &other) const` | Parameters: `other` - Class to compare against Returns: True when two transients may share a block. |
+| `bool operator<(const TransientMemoryClass &other) const` | Parameters: `other` - Class to compare against Returns: A strict weak ordering, so classes can key a map. It orders blocks in the plan deterministically; it carries no meaning about memory. |
 
 ### `struct Muyo::RenderGraph::TransientMemoryPlan`
 
@@ -871,12 +1138,14 @@ What a build's transients should do with memory: one block per class, one offset
 | `std::vector< TransientMemoryBlock > blocks` | One per class that has any transient. Empty when the graph has no transients. |
 | `VkDeviceSize reservedBytes` | Bytes the graph will allocate: the sum of the blocks' sizes. |
 | `VkDeviceSize individualBytes` | Bytes it would allocate with one resource each: the sum of the requests' sizes. The two numbers together are the whole point - see SharesMemory. |
-| `std::size_t SlotCount() const` | How many distinct offsets the plan reserves across all blocks. |
-| `bool SharesMemory() const` | True when the plan allocates less than one resource each, i.e. some slot is shared. False is a legitimate answer for a graph whose transients all overlap; it is not a failure, and a caller that reports it as one would be reporting on its own graph. |
+| `std::size_t SlotCount() const` | Returns: How many distinct offsets the plan reserves across all blocks. |
+| `bool SharesMemory() const` | Returns: True when the plan allocates less than one resource each, i.e. some slot is shared. False is a legitimate answer for a graph whose transients all overlap; it is not a failure, and a caller that reports it as one would be reporting on its own graph. |
 
 ### `struct Muyo::RenderGraph::TransientMemoryRequest`
 
 One transient's demand on memory, in the terms the planner can reason about.
+
+The device-facing numbers (size, alignment, memoryTypeBits) come from vkGetBufferMemoryRequirements / vkGetImageMemoryRequirements on the created-but-unbound resource, and the interval comes from the graph's live ranges. Nothing here needs a device, which is what lets the packing be tested on hand-built requests.
 
 | Member | Description |
 | --- | --- |
@@ -905,6 +1174,15 @@ One offset inside a block, shared by every member whose live range does not over
 
 Check that a plan keeps the promise its shape makes.
 
+The plan's whole claim is "same slot, therefore never live at the same time", and every other property follows from the same arithmetic: offsets do not overlap, offsets honour alignments, each member fits, a block's memory types are valid for all of its members, and the byte totals are the sums they say they are. A plan that violates any of those is a bug in the planner, and this is how a test states that without a device.
+
+| Parameter | Description |
+| --- | --- |
+| `plan` | Plan to check, as returned by PlanTransientMemory. |
+| `requests` | The requests it was planned from. |
+
+**Returns** — An empty string when the plan is consistent, otherwise a description of the first violation found, naming the resources involved.
+
 
 ## `TransientResources.h`
 
@@ -912,25 +1190,35 @@ Check that a plan keeps the promise its shape makes.
 
 A transient buffer whose memory belongs to an aliasing block rather than to the buffer.
 
+The graph creates these with VkMemoryAllocator::CreateUnboundBuffer and binds them into a block itself, so the buffer and its memory have different owners. BufferResource already expresses that shape, and it is worth spelling out why nothing is overridden: the constructor that takes no size allocates nothing, the handles are protected, and the inherited destructor calls FreeBuffer(buffer, allocation) - which with a null allocation is vmaDestroyBuffer(allocator, buffer, VK_NULL_HANDLE): it destroys the buffer and frees no memory. The block's owner frees the memory, after every resource bound into it is gone.
+
+It stays a BufferResource on purpose. The graph's barrier path and its descriptor path both identify resources with dynamic_cast<const BufferResource*>; an aliased buffer that were merely some IRenderResource would be silently skipped by both, which is the kind of failure that shows up as a wrong barrier rather than as an error.
+
+One consequence worth knowing before it surprises someone: this resource cannot be mapped through BufferResource::Map, which maps the resource's own allocation and there is none. A caller that needs the bytes on the host copies out of it, which is what the readback cases in the suite do. A mapping accessor for graph-owned transients is a follow-up rather than an omission.
+
 | Member | Description |
 | --- | --- |
-| `TransientBufferResource(size_t nSize, VkBufferUsageFlags nUsage, VmaMemoryUsage nMemoryUsage)` | nSize Buffer size in bytes. The buffer itself is created by Adopt, not here. nUsage Vulkan buffer usage flags. nMemoryUsage The declared memory usage, which decides whether SetData can write through a host mapping or has to travel by transfer. |
-| `void Adopt(VkBuffer buffer)` | Take ownership of the unbound buffer the allocator created for this resource. buffer Buffer this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns. |
-| `void BindTo(VmaAllocation block, VkDeviceSize nOffset)` | Record the block and offset this resource was bound at, so a host mapping can find its bytes. block The block the buffer is bound into. Not owned, and outlived by nothing: the graph destroys every resource before it frees any block. nOffset Byte offset of this buffer inside that block. |
-| `void * Map() override` | Map this resource's bytes on the host. |
+| `TransientBufferResource(size_t nSize, VkBufferUsageFlags nUsage, VmaMemoryUsage nMemoryUsage)` | Parameters: `nSize` - Buffer size in bytes. The buffer itself is created by Adopt, not here; `nUsage` - Vulkan buffer usage flags; `nMemoryUsage` - The declared memory usage, which decides whether SetData can write through a host mapping or has to travel by transfer |
+| `void Adopt(VkBuffer buffer)` | Take ownership of the unbound buffer the allocator created for this resource. Parameters: `buffer` - Buffer this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns |
+| `void BindTo(VmaAllocation block, VkDeviceSize nOffset)` | Record the block and offset this resource was bound at, so a host mapping can find its bytes. Parameters: `block` - The block the buffer is bound into. Not owned, and outlived by nothing: the graph destroys every resource before it frees any block; `nOffset` - Byte offset of this buffer inside that block |
+| `void * Map() override` | Map this resource's bytes on the host. Returns: A host pointer to the start of this resource's storage, or nullptr when it is not bound yet. |
 | `void Unmap() override` | Release the mapping Map took. A resource that is not mapped is left alone, so a path that unmaps defensively cannot release the block out from under a member that still holds a pointer into it. |
-| `void SetData(const void *pData, size_t size) override` | Upload content into this buffer. |
-| `bool IsMapped() const` | True while this resource holds a host mapping. The graph's contract is that a mapping does not outlive the node whose use declared the resource, because that is what makes its slot exclusively its own for as long as the pointer is held. |
-| `size_t GetAliasedSize() const` | The size the buffer was created with, which is what the block's plan reserved for it. |
+| `void SetData(const void *pData, size_t size) override` | Upload content into this buffer. Parameters: `pData` - Source bytes; `size` - Byte count, at most the size this resource was planned at |
+| `bool IsMapped() const` | Returns: True while this resource holds a host mapping. The graph's contract is that a mapping does not outlive the node whose use declared the resource, because that is what makes its slot exclusively its own for as long as the pointer is held. |
+| `size_t GetAliasedSize() const` | Returns: The size the buffer was created with, which is what the block's plan reserved for it. |
 | `~TransientBufferResource() override` | Unmap before the base destructor destroys the buffer. The block is freed after every resource bound into it is gone, so this runs while the mapping is still valid - which is the whole reason the graph's teardown order is resources first, blocks second. |
 
 ### `class Muyo::RenderGraph::TransientImageResource`
 
 A transient image whose memory belongs to an aliasing block rather than to the image.
 
+Derives from ImageResource rather than from TextureResource: the graph's barrier, descriptor and binding paths all identify images with dynamic_cast<const ImageResource*>, so that is the whole requirement, and TextureResource adds a sampler and pixel loading that a render-graph target has no use for.
+
+The memory half is the same trick as the buffer's. m_allocation stays null, so the inherited destructor's FreeImage(image, VK_NULL_HANDLE) is vmaDestroyImage(allocator, image, VK_NULL_HANDLE) - it destroys the image and frees no memory, which is right because the block owns the memory and the graph frees the block after every image bound into it is gone. The view is not aliased: a view belongs to one resource and is created and destroyed as usual.
+
 | Member | Description |
 | --- | --- |
-| `TransientImageResource(const ImageResourceDesc &desc, VkImageUsageFlags usage)` | desc The image declaration, which is also its aliasing class. usage The usage flags to create it with - EffectiveImageUsageFlags of the declaration, so that this path and the resource manager's cannot disagree about what an image is. |
-| `const VkImageCreateInfo & ImageInfoForCreate() const` | The create info this image must be created with, which the caller needs because the allocator creates it before the resource can own it. |
-| `void Adopt(VkImage image)` | Take ownership of the unbound image the allocator created, and create its view. image Image this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns. The view is created from it here because a view cannot exist before its image does. |
+| `TransientImageResource(const ImageResourceDesc &desc, VkImageUsageFlags usage)` | Parameters: `desc` - The image declaration, which is also its aliasing class; `usage` - The usage flags to create it with - EffectiveImageUsageFlags of the declaration, so that this path and the resource manager's cannot disagree about what an image is |
+| `const VkImageCreateInfo & ImageInfoForCreate() const` | Returns: The create info this image must be created with, which the caller needs because the allocator creates it before the resource can own it. |
+| `void Adopt(VkImage image)` | Take ownership of the unbound image the allocator created, and create its view. Parameters: `image` - Image this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns. The view is created from it here because a view cannot exist before its image does |
 | `void CreateView()` | Create this image's view. |

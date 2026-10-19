@@ -15,3 +15,7 @@ compile_commands.json
 
 # Local toolchain downloads (see docs/README.md)
 /.tools/
+
+# Python bytecode from the docs tooling (gen_api_md is imported by the section check).
+__pycache__/
+*.pyc
