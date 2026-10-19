@@ -379,6 +379,27 @@ inline UseBarriers DeriveUseBarriers(const ResolvedResourceUse& use, const Barri
     return out;
 }
 
+/// Record a CPU node's writes in the access state.
+///
+/// A CPU node runs host-side and has no command buffer, so its writes are host writes: the resource is marked as
+/// written by the host and *unseen*, which makes the next GPU use derive its source scope from `HOST` rather than
+/// from whatever the previous GPU use left behind (#152). Free and device-free so the transition is assertable -
+/// the loop used to be three lines inline in `Execute`, where deleting the flag left the suite green (#155).
+///
+/// @param uses   The CPU node's uses, in declaration order.
+/// @param states The recorded access state per resource, updated in place.
+inline void ApplyHostWrites(const std::vector<ResolvedResourceUse>& uses,
+                            std::unordered_map<ResourceHandle, BarrierPriorState>& states)
+{
+    for (const auto& use : uses)
+    {
+        if (!IsWrite(use.io)) continue;
+        BarrierPriorState& state = states[use.handle];
+        state.bWrittenByHost = true;
+        state.bSeen = false;
+    }
+}
+
 /// Record a use as the resource's new prior state.
 ///
 /// The stages are stored **filtered**, with the same set the barrier used. Storing the raw table stages would

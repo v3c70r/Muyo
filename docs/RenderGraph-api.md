@@ -408,6 +408,17 @@ Free and device-free so the recorded barrier can be asserted without a device - 
 
 - `std::runtime_error` — if the kind has no barrier to express a handover.
 
+### `void Muyo::RenderGraph::ApplyHostWrites(const std::vector< ResolvedResourceUse > &uses, std::unordered_map< ResourceHandle, BarrierPriorState > &states)`
+
+Record a CPU node's writes in the access state.
+
+A CPU node runs host-side and has no command buffer, so its writes are host writes: the resource is marked as written by the host and unseen, which makes the next GPU use derive its source scope from HOST rather than from whatever the previous GPU use left behind (#152). Free and device-free so the transition is assertable - the loop used to be three lines inline in Execute, where deleting the flag left the suite green (#155).
+
+| Parameter | Description |
+| --- | --- |
+| `uses` | The CPU node's uses, in declaration order. |
+| `states` | The recorded access state per resource, updated in place. |
+
 ### `struct Muyo::RenderGraph::BarrierBatch`
 
 The barriers one node's uses add up to.
