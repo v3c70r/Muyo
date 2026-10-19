@@ -1,6 +1,8 @@
 #include "RenderGraphBuilder.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <set>
@@ -1744,42 +1746,43 @@ void RenderGraphBuilder::RecordPresentTransition(VkCommandBuffer cmdBuf,
 }
 
 void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
-                                        uint32_t queueFamily)
+                                        uint32_t queueFamily, BarrierObserver* pObserver)
 {
     // Everything that decides *which* barriers this node needs lives in `DeriveBarrierBatch`, which is device-free
     // and therefore assertable - the assembly used to be inline here, where dropping an append left the suite green
     // (#160). What remains here is resolving the handles and handing the result to Vulkan.
-    const BarrierBatch batch =
-        DeriveBarrierBatch(resourceUses, m_resourceAccessStates, queueFamily, SupportedStages(),
-                           [this](const ResourceHandle& handle)
-                           {
-                               BarrierTarget target;
-                               const IRenderResource* pResource = ResolveResource(handle);
-                               if (pResource == nullptr)
-                               {
-                                   // Master dropped the barrier here, which leaves a race; recording one with a
-                                   // null handle would be an invalid barrier, which is UB. Neither is a barrier,
-                                   // so a handle that does not resolve is reported - unreachable for a graph that
-                                   // built, since every use was checked at `AddNode`.
-                                   throw std::runtime_error(
-                                       "Barrier for '" + handle +
-                                       "' is needed but the resource does not resolve, so no barrier can address it.");
-                               }
-                               if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
-                               {
-                                   target.image = pImage->getImage();
-                                   target.aspect = AspectForFormat(pImage->GetImageFormat());
-                               }
-                               else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
-                               {
-                                   target.buffer = pAccel->GetBackingBuffer();
-                               }
-                               else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
-                               {
-                                   target.buffer = pBuffer->buffer();
-                               }
-                               return target;
-                           });
+    const BarrierBatch batch = DeriveBarrierBatch(
+        resourceUses, m_resourceAccessStates, queueFamily, SupportedStages(),
+        [this](const ResourceHandle& handle)
+        {
+            BarrierTarget target;
+            const IRenderResource* pResource = ResolveResource(handle);
+            if (pResource == nullptr)
+            {
+                // Master dropped the barrier here, which leaves a race; recording one with a
+                // null handle would be an invalid barrier, which is UB. Neither is a barrier,
+                // so a handle that does not resolve is reported - unreachable for a graph that
+                // built, since every use was checked at `AddNode`.
+                throw std::runtime_error(
+                    "Barrier for '" + handle +
+                    "' is needed but the resource does not resolve, so no barrier can address it.");
+            }
+            if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+            {
+                target.image = pImage->getImage();
+                target.aspect = AspectForFormat(pImage->GetImageFormat());
+            }
+            else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
+            {
+                target.buffer = pAccel->GetBackingBuffer();
+            }
+            else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
+            {
+                target.buffer = pBuffer->buffer();
+            }
+            return target;
+        },
+        pObserver);
 
     if (batch.images.empty() && batch.buffers.empty() && !batch.memory.has_value()) return;
 
@@ -1796,7 +1799,8 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
 
 void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily,
                                                      uint32_t dstQueueFamily, bool bAcquire,
-                                                     const std::vector<ResourceHandle>& handles)
+                                                     const std::vector<ResourceHandle>& handles,
+                                                     BarrierObserver* pObserver)
 {
     if (bAcquire)
     {
@@ -1852,8 +1856,18 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
                                      "acceleration structure.");
         }
 
-        AppendReleaseTransfer(transferBarriers, handle, *kind, image, buffer, aspect, m_resourceAccessStates[handle],
+        QueueTransferBarriers single;
+        AppendReleaseTransfer(single, handle, *kind, image, buffer, aspect, m_resourceAccessStates[handle],
                               srcQueueFamily, dstQueueFamily);
+        // The release half of a handover is as much a part of "what ran" as the acquire, and it is derived on a
+        // different path (`AppendReleaseTransfer` here, `DeriveBarrierBatch` for the acquire), so the observer has
+        // to be told on this one too or a trace shows half of every handover (#166 review A1).
+        if (pObserver != nullptr)
+        {
+            pObserver->OnUseBarriers(handle, UseBarriers{.barriers = single, .memory = std::nullopt});
+        }
+        transferBarriers.images.insert(transferBarriers.images.end(), single.images.begin(), single.images.end());
+        transferBarriers.buffers.insert(transferBarriers.buffers.end(), single.buffers.begin(), single.buffers.end());
     }
 
     if (transferBarriers.images.empty() && transferBarriers.buffers.empty()) return;
@@ -1909,9 +1923,124 @@ void RenderGraphBuilder::Execute()
     m_executor.WaitIdle();
 }
 
+namespace
+{
+/// A compiled graph rendered as the views the trace needs.
+///
+/// Takes the compiled nodes rather than including `CompiledRenderGraph.h` from the trace header: the record is about
+/// names, queues and uses, and this is the one place that knows how to get them. Owns the use lists because
+/// `TraceNodeView` holds spans into them, and reserves up front so no span is invalidated while building.
+struct TraceViews
+{
+    /// Uses per compiled node, in compiled order.
+    std::vector<std::vector<TraceUseView>> uses;
+    /// One view per compiled node.
+    std::vector<TraceNodeView> nodes;
+
+    /// @param compiled The graph's compiled nodes.
+    void Build(const std::vector<CompiledRenderGraphNode>& compiled)
+    {
+        uses.clear();
+        nodes.clear();
+        uses.resize(compiled.size());
+        nodes.reserve(compiled.size());
+        for (std::size_t i = 0; i < compiled.size(); ++i)
+        {
+            uses[i].reserve(compiled[i].resourceUses.size());
+            for (const ResolvedResourceUse& use : compiled[i].resourceUses)
+            {
+                uses[i].push_back(TraceUseView{.handle = use.handle, .io = use.io});
+            }
+            nodes.push_back(TraceNodeView{.name = compiled[i].name,
+                                          .queueType = compiled[i].queueType,
+                                          .bAsync = compiled[i].async,
+                                          .uses = std::span<const TraceUseView>(uses[i])});
+        }
+    }
+};
+
+/// @return True when `MUYO_RG_TRACE` is set to something other than empty or `0`.
+///
+/// Read once per process: this is a diagnostic switch, not a per-frame decision, and a `getenv` per execution would
+/// be a measurable part of a quiet frame's cost.
+bool TraceRequestedByEnvironment()
+{
+    static const bool s_requested = []()
+    {
+        const char* pValue = std::getenv("MUYO_RG_TRACE");
+        return pValue != nullptr && pValue[0] != '\0' && !(pValue[0] == '0' && pValue[1] == '\0');
+    }();
+    return s_requested;
+}
+
+/// Emit a trace as the `MUYO_RG_TRACE` variable asked for: `1` prints it, anything else is a file appended to.
+///
+/// NDJSON to a file rather than an array, so a long capture stays streamable and `tail -1` is a valid document. The
+/// file is opened per execution and closed again: tracing is a diagnostic, and holding a handle open for the
+/// process lifetime would make "did this run trace?" unanswerable from outside.
+/// @param trace Trace to emit.
+void EmitTraceToEnvironment(const RenderGraphTrace& trace)
+{
+    const char* pValue = std::getenv("MUYO_RG_TRACE");
+    if (pValue == nullptr || pValue[0] == '\0')
+    {
+        return;
+    }
+    if (pValue[0] == '1' && pValue[1] == '\0')
+    {
+        std::fputs(ToText(trace).c_str(), stdout);
+        return;
+    }
+
+    std::ofstream out(pValue, std::ios::app);
+    if (!out)
+    {
+        std::cerr << "[WARNING]: MUYO_RG_TRACE=" << pValue << " could not be opened; trace dropped" << std::endl;
+        return;
+    }
+    out << ToJson(trace) << '\n';
+}
+}  // namespace
+
+TraceScope RenderGraphBuilder::BuildTraceScope() const
+{
+    TraceScope scope;
+    if (m_services.device == nullptr)
+    {
+        return scope;
+    }
+
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(m_services.device->GetPhysicalDevice(), &properties);
+    scope.deviceName = properties.deviceName;
+    scope.graphicsFamily = m_services.device->GetGraphicsQueueFamily();
+    scope.computeFamily = m_services.device->GetComputeQueueFamily();
+    scope.bDedicatedCompute = m_services.device->IsComputeQueueDedicated();
+    // Timestamps are phase 2 (#56): the fields exist so the shape does not change, and `bKnown` stays false so a
+    // reader cannot mistake "not measured" for "measured as zero".
+    scope.timestamps = TraceTimestamps{};
+    return scope;
+}
+
 void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 {
     m_resourceAccessStates.clear();
+
+    // A trace is recorded when a sink is installed or `MUYO_RG_TRACE` asks for one. The environment variable is
+    // read once per process: it is a diagnostic switch, not a per-frame decision, and re-reading it per execution
+    // would cost more than the trace itself on a quiet frame.
+    const bool bTraceToEnv = TraceRequestedByEnvironment();
+    TraceRecorder recorder;
+    TraceViews views;
+    TraceRecorder* pRecorder = (m_traceSink || bTraceToEnv) ? &recorder : nullptr;
+    // Advanced for every execution, traced or not: the counter describes the builder's lifetime, not the trace's, so
+    // that a consumer comparing two traces from one process can see that executions happened in between.
+    const uint64_t execution = m_nextExecution++;
+    if (pRecorder != nullptr)
+    {
+        views.Build(m_compiledGraph.GetNodes());
+        recorder.Begin(m_compiledGraph.GetExecutionPlan(), views.nodes, BuildTraceScope(), execution);
+    }
 
     RenderGraphNodeContext context{
         .queueType = QueueType::GRAPHICS,
@@ -1964,6 +2093,13 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
 
+        // Before anything is recorded for this segment: a release barrier is emitted here, before the first node,
+        // and it belongs to this segment just as much as the per-node barriers do.
+        if (pRecorder != nullptr)
+        {
+            pRecorder->BeginSegment(s);
+        }
+
         // Mark resources handed over from another queue; RecordBarriers emits the acquire barrier.
         for (const auto& transfer : transfers)
         {
@@ -1992,8 +2128,13 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             // RenderResourceManager allocation calls SetDebugName with the handle.
             ScopedMarker<VkCommandBuffer> nodeMarker(cmdBuf, std::string(rgn.name));
 
-            // 1. Barrier batch: transition all resources used by this node.
-            RecordBarriers(cmdBuf, rgn.resourceUses, queueFamily);
+            // 1. Barrier batch: transition all resources used by this node. The observer is how the trace learns
+            // which resource each barrier belongs to, since the batch itself carries only handles.
+            if (pRecorder != nullptr)
+            {
+                pRecorder->BeginSegment(s);
+            }
+            RecordBarriers(cmdBuf, rgn.resourceUses, queueFamily, pRecorder);
 
             // 2. Auto render pass wrap for graphics nodes.
             bool rendering = false;
@@ -2051,7 +2192,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             if (transfer.producer == s)
             {
                 RecordQueueTransferBarriers(cmdBuf, transfer.producerFamily, transfer.consumerFamily, false,
-                                            {transfer.handle});
+                                            {transfer.handle}, pRecorder);
             }
         }
 
@@ -2059,7 +2200,19 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
     }
 
     // ── Submit through the executor, which owns the handover semaphores and the waiting. ───────
-    m_executor.Submit(plan, slot, info);
+    m_executor.Submit(plan, slot, info, pRecorder);
+
+    if (pRecorder != nullptr)
+    {
+        if (m_traceSink)
+        {
+            m_traceSink(recorder.GetTrace());
+        }
+        if (bTraceToEnv)
+        {
+            EmitTraceToEnvironment(recorder.GetTrace());
+        }
+    }
 }
 
 std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const { return m_dependencyGraph.TopologicalSort(); }

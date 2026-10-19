@@ -159,7 +159,7 @@ TEST_CASE("RenderGraphTrace: JSON carries every schema field and escapes what it
 
     TraceBarrier handover;
     handover.resource = "gbuffer.albedo";
-    handover.kind = "image";
+    handover.kind = TraceBarrierKind::Image;
     handover.srcStage = NameOfPipelineStages(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
     handover.dstStage = NameOfPipelineStages(VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT);
     handover.srcAccess = NameOfAccesses(VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
@@ -200,7 +200,7 @@ TEST_CASE("RenderGraphTrace: text, dot and mermaid describe the same trace", "[R
 
     TraceBarrier barrier;
     barrier.resource = "gbuffer.albedo";
-    barrier.kind = "image";
+    barrier.kind = TraceBarrierKind::Image;
     barrier.srcStage = "COLOR_ATTACHMENT_OUTPUT";
     barrier.dstStage = "COMPUTE_SHADER";
     barrier.srcAccess = "COLOR_ATTACHMENT_WRITE";
