@@ -123,13 +123,6 @@ jobs:
           status=$?
           set -e
           tail -3 tests.out
-          # TEMPORARY DIAGNOSTIC (reverted before merge): the sanitizer's own report goes to stderr, which this
-          # step otherwise discards, so a failure here has no visible reason.
-          if [ $status -ne 0 ]; then
-            echo "--- status=$status ---"
-            grep -iE "leak|SUMMARY|runtime error|ERROR: " tests.err | head -40 || true
-            tail -40 tests.err || true
-          fi
           exit $status
 
       - name: Record what this run was
