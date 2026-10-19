@@ -1937,15 +1937,10 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         context.pipeline = VK_NULL_HANDLE;
         rgn.execute(context);
         EnsureMappingsReleased(rgn.name);
-        for (const auto& use : rgn.resourceUses)
-        {
-            if (IsWrite(use.io))
-            {
-                BarrierPriorState& state = m_resourceAccessStates[use.handle];
-                state.bWrittenByHost = true;
-                state.bSeen = false;
-            }
-        }
+        // The transition itself lives in `ApplyHostWrites`, which is device-free and asserted. What remains here
+        // is the one call, which nothing observes: pinning it needs an execution trace (#56), not another
+        // extraction.
+        ApplyHostWrites(rgn.resourceUses, m_resourceAccessStates);
     }
 
     if (plan.IsEmpty()) return;

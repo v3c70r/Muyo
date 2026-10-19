@@ -2836,6 +2836,52 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     }
 }
 
+TEST_CASE("RenderGraphBuilder: a CPU node's write makes the next GPU use wait on the host", "[RenderGraphBuilder]")
+{
+    // #155. The CPU-node loop in `Execute` marked the resource host-written and unseen; deleting that line left the
+    // whole suite green, because nothing observed the transition - the device-free cases built the flag by hand
+    // instead. `ApplyHostWrites` owns it now, and this asserts the property it exists for: the next GPU use waits on
+    // HOST rather than on whatever the previous GPU use left behind.
+    const auto kBuffer = reinterpret_cast<VkBuffer>(static_cast<uintptr_t>(0x22));
+    const auto resolve = [kBuffer](const ResourceHandle&) { return BarrierTarget{.buffer = kBuffer}; };
+    constexpr VkPipelineStageFlags2 kAllStages = ~static_cast<VkPipelineStageFlags2>(0);
+
+    const ResourceUse vertexRead{.handle = ResourceHandle("Vertices"),
+                                 .io = ResourceIOType::READ,
+                                 .usage = ResourceUsage::VERTEX_BUFFER,
+                                 .kind = ResourceKind::BUFFER};
+    const ResourceUse hostWrite{.handle = ResourceHandle("Vertices"),
+                                .io = ResourceIOType::HOST_WRITE,
+                                .usage = ResourceUsage::VERTEX_BUFFER,
+                                .kind = ResourceKind::BUFFER};
+
+    std::unordered_map<ResourceHandle, BarrierPriorState> states;
+
+    // A GPU node read it, so the recorded state is a shader read at VERTEX_INPUT.
+    DeriveBarrierBatch({ResolveResourceUse(vertexRead)}, states, 0, kAllStages, resolve);
+    REQUIRE(states[vertexRead.handle].bSeen);
+    CHECK(states[vertexRead.handle].lastStages == VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
+
+    // Then a CPU node wrote it.
+    ApplyHostWrites({ResolveResourceUse(hostWrite)}, states);
+    CHECK(states[vertexRead.handle].bWrittenByHost);
+    CHECK_FALSE(states[vertexRead.handle].bSeen);
+
+    // The next GPU read therefore waits on the host, which is the whole point of the transition.
+    const BarrierBatch afterHost = DeriveBarrierBatch({ResolveResourceUse(vertexRead)}, states, 0, kAllStages, resolve);
+    REQUIRE(afterHost.buffers.size() == 1);
+    CHECK(afterHost.buffers[0].srcStageMask == VK_PIPELINE_STAGE_2_HOST_BIT);
+    CHECK(afterHost.buffers[0].srcAccessMask == VK_ACCESS_2_HOST_WRITE_BIT);
+    CHECK(afterHost.buffers[0].dstStageMask == VK_PIPELINE_STAGE_2_VERTEX_INPUT_BIT);
+
+    // Only writes are recorded: a CPU node that merely reads does not disturb what the state says.
+    std::unordered_map<ResourceHandle, BarrierPriorState> readOnly;
+    DeriveBarrierBatch({ResolveResourceUse(vertexRead)}, readOnly, 0, kAllStages, resolve);
+    ApplyHostWrites({ResolveResourceUse(vertexRead)}, readOnly);
+    CHECK_FALSE(readOnly[vertexRead.handle].bWrittenByHost);
+    CHECK(readOnly[vertexRead.handle].bSeen);
+}
+
 TEST_CASE("RenderGraphBuilder: the barrier batch is assembled from the node's uses", "[RenderGraphBuilder]")
 {
     // #160. Dropping an append from the batch used to leave the whole suite green, because nothing looked at the
