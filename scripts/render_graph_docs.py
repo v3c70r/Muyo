@@ -141,11 +141,17 @@ def check_rendered_sections(xml_dir: str, md_path: str) -> int:
         compound_kind = compounddef.get("kind")
         if compound_kind not in ("namespace", "class", "struct", "enum"):
             continue
+        # A non-public compound never becomes an entry, so counting its sections would over-expect and red a
+        # consistent tree. `RenderGraphBuilder::RenderGraphNode` and friends are exactly this case today.
+        if compounddef.get("prot") not in (None, "public"):
+            continue
 
-        # The compound's own description renders as an entry block.
-        compound_sections = _count_sections(compounddef.find("detaileddescription"))
-        for key, value in compound_sections.items():
-            entry_counts[key] += value
+        # The compound's own description renders as an entry block - but only for a class/struct/enum. The
+        # generator emits no entry for a namespace itself, so counting a namespace's own description would
+        # over-expect the same way.
+        if compound_kind in ("class", "struct", "enum"):
+            for key, value in _count_sections(compounddef.find("detaileddescription")).items():
+                entry_counts[key] += value
 
         # The API surface is the public members of public sections - the same selection the generator makes, so
         # the two agree on *which* entities exist. What this check does not share is the section *parsing*.
