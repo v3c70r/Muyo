@@ -158,6 +158,7 @@ struct QueueTransferBarriers
 /// masks and indices, which are the part that regressed in #153.
 ///
 /// @param out       Lists to append to.
+/// @param handle    The resource's name, for the diagnostic.
 /// @param kind      Resource kind; decides the list, and an unexpressible kind is reported.
 /// @param image     The image handle, when `kind` is `IMAGE`.
 /// @param buffer    The buffer handle, or an acceleration structure's backing buffer.
@@ -166,9 +167,9 @@ struct QueueTransferBarriers
 /// @param srcFamily Producing queue family.
 /// @param dstFamily Consuming queue family.
 /// @throws std::runtime_error if the kind has no barrier to express a handover.
-inline void AppendReleaseTransfer(QueueTransferBarriers& out, ResourceKind kind, VkImage image, VkBuffer buffer,
-                                  VkImageAspectFlags aspect, const BarrierPriorState& prior, uint32_t srcFamily,
-                                  uint32_t dstFamily)
+inline void AppendReleaseTransfer(QueueTransferBarriers& out, const std::string& handle, ResourceKind kind,
+                                  VkImage image, VkBuffer buffer, VkImageAspectFlags aspect,
+                                  const BarrierPriorState& prior, uint32_t srcFamily, uint32_t dstFamily)
 {
     switch (kind)
     {
@@ -210,14 +211,15 @@ inline void AppendReleaseTransfer(QueueTransferBarriers& out, ResourceKind kind,
 
     // Silently skipping a transfer is how an acceleration structure's handover went missing for two releases
     // (#153): the chain matched images and buffers and said nothing about anything else.
-    throw std::runtime_error("Queue handover of a " + std::string(NameOf(kind)) +
-                             " is scheduled but that kind has no barrier to express it.");
+    throw std::runtime_error("Queue handover of '" + handle + "' is scheduled, but a " + std::string(NameOf(kind)) +
+                             " has no barrier to express it.");
 }
 
 /// Append the acquire half of a handover: an empty source scope, the consumer's stages and access, and both
 /// queue-family indices.
 ///
 /// @param out    Lists to append to.
+/// @param handle The resource's name, for the diagnostic.
 /// @param kind   Resource kind; decides the list, and an unexpressible kind is reported.
 /// @param image  The image handle, when `kind` is `IMAGE`.
 /// @param buffer The buffer handle, or an acceleration structure's backing buffer.
@@ -225,12 +227,13 @@ inline void AppendReleaseTransfer(QueueTransferBarriers& out, ResourceKind kind,
 /// @param masks  The masks `DeriveBarrierMasks` produced for the first use in the consumer family; its
 ///               `srcQueueFamily`/`dstQueueFamily` are the indices recorded here.
 /// @throws std::runtime_error if no handover is pending, or the kind has no barrier to express one.
-inline void AppendAcquireTransfer(QueueTransferBarriers& out, ResourceKind kind, VkImage image, VkBuffer buffer,
-                                  VkImageAspectFlags aspect, const BarrierMasks& masks)
+inline void AppendAcquireTransfer(QueueTransferBarriers& out, const std::string& handle, ResourceKind kind,
+                                  VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierMasks& masks)
 {
     if (masks.srcQueueFamily == VK_QUEUE_FAMILY_IGNORED)
     {
-        throw std::runtime_error("An acquire barrier was requested for a resource with no handover pending.");
+        throw std::runtime_error("An acquire barrier was requested for '" + handle +
+                                 "', but no handover is pending for it.");
     }
 
     switch (kind)
@@ -257,9 +260,10 @@ inline void AppendAcquireTransfer(QueueTransferBarriers& out, ResourceKind kind,
             if (buffer == VK_NULL_HANDLE)
             {
                 throw std::runtime_error(
-                    "A handover is pending, but the resource did not resolve to a structure with a backing "
-                    "buffer - which is the only way to express it. Recording a family-less memory barrier "
-                    "instead would consume the handover and perform nothing (#153).");
+                    "A queue handover is pending for '" + handle +
+                    "', but it did not resolve to a structure with a backing buffer - which is the only way to "
+                    "express it. Recording a family-less memory barrier instead would consume the handover and "
+                    "perform nothing (#153).");
             }
             VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
             barrier.srcStageMask = masks.srcStage;
@@ -278,8 +282,8 @@ inline void AppendAcquireTransfer(QueueTransferBarriers& out, ResourceKind kind,
             break;
     }
 
-    throw std::runtime_error("A handover is pending for a " + std::string(NameOf(kind)) +
-                             ", which has no barrier to express it.");
+    throw std::runtime_error("A queue handover is pending for '" + handle + "', but a " + std::string(NameOf(kind)) +
+                             " has no barrier to express it.");
 }
 
 /// Record a use as the resource's new prior state.

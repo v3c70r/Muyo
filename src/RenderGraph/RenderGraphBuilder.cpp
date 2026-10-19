@@ -1797,7 +1797,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
                     // buffer barrier on that buffer (#153).
                     const auto* pAccel = dynamic_cast<const AccelerationStructure*>(ResolveResource(use.handle));
                     QueueTransferBarriers transferBarriers;
-                    AppendAcquireTransfer(transferBarriers, use.kind, VK_NULL_HANDLE,
+                    AppendAcquireTransfer(transferBarriers, use.handle, use.kind, VK_NULL_HANDLE,
                                           pAccel != nullptr ? pAccel->GetBackingBuffer() : VK_NULL_HANDLE,
                                           VK_IMAGE_ASPECT_COLOR_BIT, masks);
                     bufferBarriers.insert(bufferBarriers.end(), transferBarriers.buffers.begin(),
@@ -1878,7 +1878,7 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
             throw std::runtime_error("Queue handover of '" + handle + "' is scheduled but has no resource to address.");
         }
 
-        ResourceKind kind = ResourceKind::SAMPLER;
+        std::optional<ResourceKind> kind;
         VkImage image = VK_NULL_HANDLE;
         VkBuffer buffer = VK_NULL_HANDLE;
         VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1899,8 +1899,16 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
             kind = ResourceKind::BUFFER;
             buffer = pBuffer->buffer();
         }
+        if (!kind.has_value())
+        {
+            // Not "a sampler": the resource is something the barrier machinery does not recognise, and naming
+            // the wrong kind in the message is how a reader chases the wrong thing.
+            throw std::runtime_error("Queue handover of '" + handle +
+                                     "' is scheduled, but the resource is neither an image, a buffer nor an "
+                                     "acceleration structure.");
+        }
 
-        AppendReleaseTransfer(transferBarriers, kind, image, buffer, aspect, m_resourceAccessStates[handle],
+        AppendReleaseTransfer(transferBarriers, handle, *kind, image, buffer, aspect, m_resourceAccessStates[handle],
                               srcQueueFamily, dstQueueFamily);
     }
 

@@ -335,11 +335,11 @@ Which vertex layout a graphics node's pipeline expects.
 
 ## `RenderGraphBarrier.h`
 
-### `void Muyo::RenderGraph::AppendAcquireTransfer(QueueTransferBarriers &out, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierMasks &masks)`
+### `void Muyo::RenderGraph::AppendAcquireTransfer(QueueTransferBarriers &out, const std::string &handle, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierMasks &masks)`
 
 Append the acquire half of a handover: an empty source scope, the consumer's stages and access, and both queue-family indices.
 
-### `void Muyo::RenderGraph::AppendReleaseTransfer(QueueTransferBarriers &out, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierPriorState &prior, uint32_t srcFamily, uint32_t dstFamily)`
+### `void Muyo::RenderGraph::AppendReleaseTransfer(QueueTransferBarriers &out, const std::string &handle, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierPriorState &prior, uint32_t srcFamily, uint32_t dstFamily)`
 
 Append the release half of a handover: the producer's own stages and access, an empty destination scope, and both queue-family indices.
 

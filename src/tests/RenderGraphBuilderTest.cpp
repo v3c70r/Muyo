@@ -2853,7 +2853,7 @@ TEST_CASE("RenderGraphBuilder: a queue handover is recorded for every kind that 
     prior.lastAccess = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
 
     QueueTransferBarriers release;
-    AppendReleaseTransfer(release, ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
+    AppendReleaseTransfer(release, "TLAS", ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
                           VK_IMAGE_ASPECT_COLOR_BIT, prior, 1, 0);
     REQUIRE(release.buffers.size() == 1);
     CHECK(release.images.empty());
@@ -2874,7 +2874,7 @@ TEST_CASE("RenderGraphBuilder: a queue handover is recorded for every kind that 
     pending.pendingAcquireFamily = 1;
     const BarrierMasks masks = DeriveBarrierMasks(pending, ResolveResourceUse(trace), 0);
     QueueTransferBarriers acquire;
-    AppendAcquireTransfer(acquire, ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
+    AppendAcquireTransfer(acquire, "TLAS", ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
                           VK_IMAGE_ASPECT_COLOR_BIT, masks);
     REQUIRE(acquire.buffers.size() == 1);
     CHECK(acquire.buffers[0].dstStageMask == VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
@@ -2889,19 +2889,19 @@ TEST_CASE("RenderGraphBuilder: a queue handover is recorded for every kind that 
     imagePrior.lastAccess = VK_ACCESS_2_SHADER_READ_BIT;
     imagePrior.lastLayout = VK_IMAGE_LAYOUT_GENERAL;
     QueueTransferBarriers imageRelease;
-    AppendReleaseTransfer(imageRelease, ResourceKind::IMAGE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT,
-                          imagePrior, 1, 0);
+    AppendReleaseTransfer(imageRelease, "Target", ResourceKind::IMAGE, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                          VK_IMAGE_ASPECT_COLOR_BIT, imagePrior, 1, 0);
     REQUIRE(imageRelease.images.size() == 1);
     CHECK(imageRelease.buffers.empty());
     CHECK(imageRelease.images[0].oldLayout == VK_IMAGE_LAYOUT_GENERAL);
     CHECK(imageRelease.images[0].newLayout == VK_IMAGE_LAYOUT_GENERAL);
 
     // A kind with no barrier is reported rather than skipped, and so is an acquire with nothing to address.
-    CHECK_THROWS_WITH(AppendReleaseTransfer(release, ResourceKind::SAMPLER, VK_NULL_HANDLE, VK_NULL_HANDLE,
-                                            VK_IMAGE_ASPECT_COLOR_BIT, prior, 1, 0),
+    CHECK_THROWS_WITH(AppendReleaseTransfer(release, "NotTransferable", ResourceKind::SAMPLER, VK_NULL_HANDLE,
+                                            VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT, prior, 1, 0),
                       Catch::Matchers::ContainsSubstring("no barrier to express it"));
     QueueTransferBarriers noBuffer;
-    CHECK_THROWS_WITH(AppendAcquireTransfer(noBuffer, ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE,
+    CHECK_THROWS_WITH(AppendAcquireTransfer(noBuffer, "TLAS", ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE,
                                             VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT, masks),
                       Catch::Matchers::ContainsSubstring("backing buffer"));
 }
