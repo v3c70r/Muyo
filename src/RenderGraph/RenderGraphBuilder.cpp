@@ -1772,6 +1772,15 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             // Resolve the handle the kind needs, then let `DeriveUseBarriers` decide *which* barrier this use
             // takes - that decision is what #158 is about, and it is only observable now because it lives there.
             const IRenderResource* pResource = ResolveResource(use.handle);
+            if (pResource == nullptr)
+            {
+                // Master dropped the barrier here, which leaves a race; recording one with a null handle would
+                // be an invalid barrier, which is UB. Neither is a barrier, so a handle that does not resolve is
+                // reported - unreachable for a graph that built, since every use was checked at `AddNode`.
+                throw std::runtime_error(
+                    "Barrier for '" + use.handle +
+                    "' is needed but the resource does not resolve, so no barrier can address it.");
+            }
             VkImage image = VK_NULL_HANDLE;
             VkBuffer buffer = VK_NULL_HANDLE;
             VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
