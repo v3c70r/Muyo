@@ -127,6 +127,27 @@ constexpr const char* NameOf(ResourceIOType io)
     return "(unknown IO type)";
 }
 
+/// @param kind A resource kind.
+/// @return Its lower-case name, for diagnostics.
+///
+/// An overload of `NameOf` rather than a second `NameOfKind`, because every diagnostic that names a kind wants
+/// the same word and the existing overloads already cover a usage and an IO type.
+inline const char* NameOf(ResourceKind kind)
+{
+    switch (kind)
+    {
+        case ResourceKind::IMAGE:
+            return "image";
+        case ResourceKind::BUFFER:
+            return "buffer";
+        case ResourceKind::ACCELERATION_STRUCTURE:
+            return "acceleration structure";
+        case ResourceKind::SAMPLER:
+            return "sampler";
+    }
+    return "(unknown kind)";
+}
+
 /// @return The name of a usage, for diagnostics.
 constexpr const char* NameOf(ResourceUsage usage)
 {

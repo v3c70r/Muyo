@@ -335,6 +335,14 @@ Which vertex layout a graphics node's pipeline expects.
 
 ## `RenderGraphBarrier.h`
 
+### `void Muyo::RenderGraph::AppendAcquireTransfer(QueueTransferBarriers &out, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierMasks &masks)`
+
+Append the acquire half of a handover: an empty source scope, the consumer's stages and access, and both queue-family indices.
+
+### `void Muyo::RenderGraph::AppendReleaseTransfer(QueueTransferBarriers &out, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierPriorState &prior, uint32_t srcFamily, uint32_t dstFamily)`
+
+Append the release half of a handover: the producer's own stages and access, an empty destination scope, and both queue-family indices.
+
 ### `struct Muyo::RenderGraph::BarrierMasks`
 
 The masks, layouts and queue-family indices one barrier between two uses needs.
@@ -368,6 +376,15 @@ What the graph has recorded about a resource's most recent access.
 ### `BarrierMasks Muyo::RenderGraph::DeriveBarrierMasks(const BarrierPriorState &prior, const ResolvedResourceUse &use, uint32_t queueFamily, VkPipelineStageFlags2 supportedStages=~VkPipelineStageFlags2{0})`
 
 Derive the barrier between a resource's last recorded access and the next use.
+
+### `struct Muyo::RenderGraph::QueueTransferBarriers`
+
+The barrier lists one queue-family handover contributes to.
+
+| Member | Description |
+| --- | --- |
+| `std::vector< VkImageMemoryBarrier2 > images` | Image handovers. |
+| `std::vector< VkBufferMemoryBarrier2 > buffers` | Buffer and acceleration-structure handovers. |
 
 ### `BarrierPriorState Muyo::RenderGraph::RecordAccess(BarrierPriorState prior, const ResolvedResourceUse &use, VkPipelineStageFlags2 supportedStages=~VkPipelineStageFlags2{0})`
 
@@ -588,6 +605,10 @@ io An IO type. Whether the access writes the resource. One place instead of five
 ### `constexpr const char * Muyo::RenderGraph::NameOf(ResourceIOType io)`
 
 The name of an IO type, for diagnostics. A switch with no default on purpose: adding a value becomes a warning here rather than a message that prints a number.
+
+### `const char * Muyo::RenderGraph::NameOf(ResourceKind kind)`
+
+kind A resource kind. Its lower-case name, for diagnostics. An overload of NameOf rather than a second NameOfKind, because every diagnostic that names a kind wants the same word and the existing overloads already cover a usage and an IO type.
 
 ### `constexpr const char * Muyo::RenderGraph::NameOf(ResourceUsage usage)`
 

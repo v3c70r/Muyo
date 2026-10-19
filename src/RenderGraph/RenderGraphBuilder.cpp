@@ -1790,36 +1790,21 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             }
             else if (use.kind == ResourceKind::ACCELERATION_STRUCTURE)
             {
-                const auto* pAccel = dynamic_cast<const AccelerationStructure*>(ResolveResource(use.handle));
-                if (pAccel != nullptr && masks.srcQueueFamily != VK_QUEUE_FAMILY_IGNORED)
+                if (masks.srcQueueFamily != VK_QUEUE_FAMILY_IGNORED)
                 {
                     // An ownership acquire has to carry the two family indices, and a memory barrier has no
                     // field for them: the structure's memory is its backing buffer's, so the acquire is a
                     // buffer barrier on that buffer (#153).
-                    VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
-                    barrier.srcStageMask = masks.srcStage;
-                    barrier.dstStageMask = masks.dstStage;
-                    barrier.srcAccessMask = masks.srcAccess;
-                    barrier.dstAccessMask = masks.dstAccess;
-                    barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
-                    barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
-                    barrier.buffer = pAccel->GetBackingBuffer();
-                    barrier.offset = 0;
-                    barrier.size = VK_WHOLE_SIZE;
-                    bufferBarriers.push_back(barrier);
+                    const auto* pAccel = dynamic_cast<const AccelerationStructure*>(ResolveResource(use.handle));
+                    QueueTransferBarriers transferBarriers;
+                    AppendAcquireTransfer(transferBarriers, use.kind, VK_NULL_HANDLE,
+                                          pAccel != nullptr ? pAccel->GetBackingBuffer() : VK_NULL_HANDLE,
+                                          VK_IMAGE_ASPECT_COLOR_BIT, masks);
+                    bufferBarriers.insert(bufferBarriers.end(), transferBarriers.buffers.begin(),
+                                          transferBarriers.buffers.end());
                 }
                 else
                 {
-                    if (masks.srcQueueFamily != VK_QUEUE_FAMILY_IGNORED)
-                    {
-                        // A handover is pending and this side cannot carry the family indices: a memory barrier
-                        // has no field for them, so recording it would consume the pending handover and
-                        // perform nothing. That silence is what #153 was.
-                        throw std::runtime_error(
-                            "Acceleration structure '" + use.handle +
-                            "' has a queue handover pending but did not resolve to a structure with a backing "
-                            "buffer, which is the only way to express it.");
-                    }
                     // No handle to address: the barrier is a memory barrier, and the access masks name the AS
                     // bits rather than a range.
                     memoryBarrier.srcStageMask |= masks.srcStage;
@@ -1879,83 +1864,53 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
         return;
     }
 
-    // Release: hand ownership of the resource from the producing queue family to the consumer.
-    std::vector<VkImageMemoryBarrier2> imageBarriers;
-    std::vector<VkBufferMemoryBarrier2> bufferBarriers;
+    // Release: hand ownership of the resource from the producing queue family to the consumer. The barrier is
+    // built by `AppendReleaseTransfer`, which is device-free, so what it records can be asserted without a
+    // device - the part that regressed in #153 is the emitted barrier, not the decision to emit one.
+    QueueTransferBarriers transferBarriers;
     for (const auto& handle : handles)
     {
-        BarrierPriorState& state = m_resourceAccessStates[handle];
         const IRenderResource* pResource = ResolveResource(handle);
-        if (pResource == nullptr) continue;
-
-        if (const auto* image = dynamic_cast<const ImageResource*>(pResource))
+        if (pResource == nullptr)
         {
-            VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-            // Release: the producer's own stages are the source, and the destination scope is empty
-            // because the acquire barrier on the consumer side names it. `ALL_COMMANDS` on both sides
-            // would make the handover wait for work neither side has.
-            barrier.srcStageMask = state.lastStages;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = state.lastAccess;
-            barrier.dstAccessMask = 0;
-            barrier.oldLayout = state.lastLayout;
-            barrier.newLayout = state.lastLayout;
-            barrier.srcQueueFamilyIndex = srcQueueFamily;
-            barrier.dstQueueFamilyIndex = dstQueueFamily;
-            barrier.image = image->getImage();
-            barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
-            imageBarriers.push_back(barrier);
+            // The handle had to resolve to be scheduled at `Build()`, so a null here is a bug rather than
+            // something to skip - and skipping is how #153 stayed invisible.
+            throw std::runtime_error("Queue handover of '" + handle + "' is scheduled but has no resource to address.");
+        }
+
+        ResourceKind kind = ResourceKind::SAMPLER;
+        VkImage image = VK_NULL_HANDLE;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
+        if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+        {
+            kind = ResourceKind::IMAGE;
+            image = pImage->getImage();
+            aspect = AspectForFormat(pImage->GetImageFormat());
         }
         else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
         {
-            // The release half of #153: an AS used to be skipped here, because it is neither an image nor a
-            // buffer. Its memory is its backing buffer's, so the release is a buffer barrier on that buffer.
-            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
-            barrier.srcStageMask = state.lastStages;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = state.lastAccess;
-            barrier.dstAccessMask = 0;
-            barrier.srcQueueFamilyIndex = srcQueueFamily;
-            barrier.dstQueueFamilyIndex = dstQueueFamily;
-            barrier.buffer = pAccel->GetBackingBuffer();
-            barrier.offset = 0;
-            barrier.size = VK_WHOLE_SIZE;
-            bufferBarriers.push_back(barrier);
+            // Its memory is its backing buffer's, so the handover is a buffer barrier on that buffer.
+            kind = ResourceKind::ACCELERATION_STRUCTURE;
+            buffer = pAccel->GetBackingBuffer();
         }
-        else if (const auto* buffer = dynamic_cast<const BufferResource*>(pResource))
+        else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
         {
-            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
-            // Release: the producer's own stages are the source, and the destination scope is empty
-            // because the acquire barrier on the consumer side names it. `ALL_COMMANDS` on both sides
-            // would make the handover wait for work neither side has.
-            barrier.srcStageMask = state.lastStages;
-            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-            barrier.srcAccessMask = state.lastAccess;
-            barrier.dstAccessMask = 0;
-            barrier.srcQueueFamilyIndex = srcQueueFamily;
-            barrier.dstQueueFamilyIndex = dstQueueFamily;
-            barrier.buffer = buffer->buffer();
-            barrier.offset = 0;
-            barrier.size = VK_WHOLE_SIZE;
-            bufferBarriers.push_back(barrier);
+            kind = ResourceKind::BUFFER;
+            buffer = pBuffer->buffer();
         }
-        else
-        {
-            // Silently skipping a transfer is how an acceleration structure's handover went missing for two
-            // releases (#153): the chain matched images and buffers and said nothing about anything else. A
-            // transfer the graph scheduled and then could not express is a bug, not a no-op.
-            throw std::runtime_error("Queue handover of '" + handle +
-                                     "' is scheduled but the resource kind has no barrier to express it.");
-        }
+
+        AppendReleaseTransfer(transferBarriers, kind, image, buffer, aspect, m_resourceAccessStates[handle],
+                              srcQueueFamily, dstQueueFamily);
     }
 
-    if (imageBarriers.empty() && bufferBarriers.empty()) return;
+    if (transferBarriers.images.empty() && transferBarriers.buffers.empty()) return;
 
     VkDependencyInfo dependencyInfo = {VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(bufferBarriers.size());
-    dependencyInfo.pBufferMemoryBarriers = bufferBarriers.empty() ? nullptr : bufferBarriers.data();
-    dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(imageBarriers.size());
-    dependencyInfo.pImageMemoryBarriers = imageBarriers.empty() ? nullptr : imageBarriers.data();
+    dependencyInfo.bufferMemoryBarrierCount = static_cast<uint32_t>(transferBarriers.buffers.size());
+    dependencyInfo.pBufferMemoryBarriers = transferBarriers.buffers.empty() ? nullptr : transferBarriers.buffers.data();
+    dependencyInfo.imageMemoryBarrierCount = static_cast<uint32_t>(transferBarriers.images.size());
+    dependencyInfo.pImageMemoryBarriers = transferBarriers.images.empty() ? nullptr : transferBarriers.images.data();
 
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }

@@ -2835,6 +2835,77 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     }
 }
 
+TEST_CASE("RenderGraphBuilder: a queue handover is recorded for every kind that can cross a family",
+          "[RenderGraphBuilder]")
+{
+    // Review A2 on #153. What regressed was the *emitted* barrier - an acceleration structure was skipped
+    // entirely - and neither the validation layer nor a run can observe that here: deleting both halves leaves
+    // the suite green with 0 VUIDs. So the barrier is built by a free function and asserted directly, the same
+    // move as `DeriveBarrierMasks`. The handles are null on purpose: the mask, the indices and which list the
+    // barrier lands in are the subject, not the handle.
+    // A sentinel rather than `VK_NULL_HANDLE`: an acceleration structure's acquire refuses a null backing
+    // buffer (that is the guard this case's last assertion covers), and these handles are never dereferenced.
+    const auto kFakeBuffer = reinterpret_cast<VkBuffer>(static_cast<uintptr_t>(0x1));
+
+    BarrierPriorState prior;
+    prior.bSeen = true;
+    prior.lastStages = VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR;
+    prior.lastAccess = VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+
+    QueueTransferBarriers release;
+    AppendReleaseTransfer(release, ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
+                          VK_IMAGE_ASPECT_COLOR_BIT, prior, 1, 0);
+    REQUIRE(release.buffers.size() == 1);
+    CHECK(release.images.empty());
+    CHECK(release.buffers[0].srcStageMask == VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    CHECK(release.buffers[0].srcAccessMask == VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR);
+    CHECK(release.buffers[0].dstStageMask == VK_PIPELINE_STAGE_2_NONE);
+    CHECK(release.buffers[0].dstAccessMask == 0);
+    CHECK(release.buffers[0].srcQueueFamilyIndex == 1);
+    CHECK(release.buffers[0].dstQueueFamilyIndex == 0);
+
+    // The acquire names the consumer's scope and carries the same pair of indices, which is the half that used
+    // to be a family-less memory barrier.
+    const ResourceUse trace{.handle = ResourceHandle("TLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE};
+    BarrierPriorState pending = prior;
+    pending.pendingAcquireFamily = 1;
+    const BarrierMasks masks = DeriveBarrierMasks(pending, ResolveResourceUse(trace), 0);
+    QueueTransferBarriers acquire;
+    AppendAcquireTransfer(acquire, ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE, kFakeBuffer,
+                          VK_IMAGE_ASPECT_COLOR_BIT, masks);
+    REQUIRE(acquire.buffers.size() == 1);
+    CHECK(acquire.buffers[0].dstStageMask == VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
+    CHECK(acquire.buffers[0].dstAccessMask == VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+    CHECK(acquire.buffers[0].srcQueueFamilyIndex == 1);
+    CHECK(acquire.buffers[0].dstQueueFamilyIndex == 0);
+
+    // An image goes to the other list and keeps its layout, since the acquire performs the transition.
+    BarrierPriorState imagePrior;
+    imagePrior.bSeen = true;
+    imagePrior.lastStages = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+    imagePrior.lastAccess = VK_ACCESS_2_SHADER_READ_BIT;
+    imagePrior.lastLayout = VK_IMAGE_LAYOUT_GENERAL;
+    QueueTransferBarriers imageRelease;
+    AppendReleaseTransfer(imageRelease, ResourceKind::IMAGE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT,
+                          imagePrior, 1, 0);
+    REQUIRE(imageRelease.images.size() == 1);
+    CHECK(imageRelease.buffers.empty());
+    CHECK(imageRelease.images[0].oldLayout == VK_IMAGE_LAYOUT_GENERAL);
+    CHECK(imageRelease.images[0].newLayout == VK_IMAGE_LAYOUT_GENERAL);
+
+    // A kind with no barrier is reported rather than skipped, and so is an acquire with nothing to address.
+    CHECK_THROWS_WITH(AppendReleaseTransfer(release, ResourceKind::SAMPLER, VK_NULL_HANDLE, VK_NULL_HANDLE,
+                                            VK_IMAGE_ASPECT_COLOR_BIT, prior, 1, 0),
+                      Catch::Matchers::ContainsSubstring("no barrier to express it"));
+    QueueTransferBarriers noBuffer;
+    CHECK_THROWS_WITH(AppendAcquireTransfer(noBuffer, ResourceKind::ACCELERATION_STRUCTURE, VK_NULL_HANDLE,
+                                            VK_NULL_HANDLE, VK_IMAGE_ASPECT_COLOR_BIT, masks),
+                      Catch::Matchers::ContainsSubstring("backing buffer"));
+}
+
 #ifdef FEATURE_RAY_TRACING
 // Copy an image back to the host and decode the R32G32B32A32_SFLOAT pixels.
 static std::vector<glm::vec4> ReadTargetFloats(const ImageResource* pTarget, VkImageLayout oldLayout,
@@ -3241,10 +3312,15 @@ TEST_CASE_METHOD(GraphicsTestEnv,
                  "[RenderGraphBuilder][RayTracing]")
 {
     // #153. The build runs on the dedicated compute queue and the trace on the graphics queue, so the structure
-    // crosses a queue-family boundary. Validation rejects a buffer - and therefore an acceleration structure,
-    // whose memory is its backing buffer's - used by a family that does not own it, so this case fails loudly if
-    // either half of the handover is missing. Both used to be missing: `RecordQueueTransferBarriers` matched only
-    // images and buffers, and the acquire side recorded a `VkMemoryBarrier2`, which has no family fields.
+    // crosses a queue-family boundary. Both halves of the handover used to be missing: `RecordQueueTransferBarriers`
+    // matched only images and buffers, and the acquire side recorded a `VkMemoryBarrier2`, which has no family
+    // fields.
+    //
+    // What this case pins is the *routing* - the plan schedules the handover, the branches take the AS path, and
+    // the guards fire if either stops doing so. It is **not** the emitted barrier: the validation layer does not
+    // model an acceleration structure's queue ownership, and deleting both halves was measured to leave this run
+    // green with 0 VUIDs. The barrier itself is asserted device-free in
+    // `a queue handover is recorded for every kind that can cross a family`.
     if (!GetRenderDevice()->IsComputeQueueDedicated())
     {
         SKIP(
@@ -3255,13 +3331,30 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     GetMeshResourceManager()->PrepareSimpleMeshes();
     GetMeshResourceManager()->UploadMeshData();
     const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
-    const glm::mat4 model = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 5.0F));
+    // The structure is pre-built with the quad **off screen**, so a trace that saw only that would miss. The
+    // graph's build then points the same BLAS at an on-screen transform through an instance buffer this test
+    // owns, so the hit at the end is evidence that the in-graph build ran rather than that the scene manager
+    // built something - emptying the build node's callback makes this case fail (review A3).
+    const glm::mat4 offScreen = glm::translate(glm::mat4(1.0F), glm::vec3(10000.0F, 0.0F, 5.0F));
+    const glm::mat4 onScreen = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 5.0F));
 
     RayTracingSceneManager rtSceneManager;
-    AccelerationStructure* pTLAS = rtSceneManager.BuildSceneFromMeshes({{&quadMesh, model}});
+    AccelerationStructure* pTLAS = rtSceneManager.BuildSceneFromMeshes({{&quadMesh, offScreen}});
     REQUIRE(pTLAS != nullptr);
 
-    auto* pInstanceBuffer = GetRenderResourceManager()->GetAccelerationStructureBuffer("AS instance buffer", 0);
+    // The BLAS the scene manager built, addressed by our own instance.
+    auto* pBLAS = GetRenderResourceManager()->GetResource<AccelerationStructure>("acStruct_mesh_0");
+    REQUIRE(pBLAS != nullptr);
+
+    VkAccelerationStructureInstanceKHR instance{};
+    const glm::mat4 instanceTransform = glm::transpose(onScreen);
+    std::memcpy(&instance.transform, &instanceTransform[0][0], sizeof(instance.transform));
+    instance.mask = 0xFF;
+    instance.instanceShaderBindingTableRecordOffset = 0;
+    instance.accelerationStructureReference = pBLAS->GetAccelerationStructureAddress();
+
+    auto* pInstanceBuffer =
+        GetRenderResourceManager()->GetAccelerationStructureBuffer("XQInstances", &instance, sizeof(instance));
     REQUIRE(pInstanceBuffer != nullptr);
 
     VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
@@ -3375,8 +3468,9 @@ TEST_CASE_METHOD(GraphicsTestEnv,
         { return transfer.handle == ResourceHandle("XQTLAS") && transfer.producerFamily != transfer.consumerFamily; });
     CHECK(bTlasHanded);
 
-    // Zero validation errors is the assertion for the handover itself: an exclusive-share buffer used by a family
-    // that does not own it is a validation error, so a missing release or a family-less acquire aborts here.
+    // The run is expected to be validation-clean, but that is not what makes this case meaningful: the layer does
+    // not model an AS's queue ownership, so it would also be clean with no handover at all. The assertions above
+    // (the plan schedules it) and the guards' own throws are the teeth; see the device-free case.
     builder.Execute();
 
     auto* pOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("XQOutput"));
