@@ -1790,13 +1790,44 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
             }
             else if (use.kind == ResourceKind::ACCELERATION_STRUCTURE)
             {
-                // No handle to address: the barrier is a memory barrier, and the access masks name the AS
-                // bits rather than a range.
-                memoryBarrier.srcStageMask |= masks.srcStage;
-                memoryBarrier.srcAccessMask |= masks.srcAccess;
-                memoryBarrier.dstStageMask |= masks.dstStage;
-                memoryBarrier.dstAccessMask |= masks.dstAccess;
-                bMemoryBarrier = true;
+                const auto* pAccel = dynamic_cast<const AccelerationStructure*>(ResolveResource(use.handle));
+                if (pAccel != nullptr && masks.srcQueueFamily != VK_QUEUE_FAMILY_IGNORED)
+                {
+                    // An ownership acquire has to carry the two family indices, and a memory barrier has no
+                    // field for them: the structure's memory is its backing buffer's, so the acquire is a
+                    // buffer barrier on that buffer (#153).
+                    VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+                    barrier.srcStageMask = masks.srcStage;
+                    barrier.dstStageMask = masks.dstStage;
+                    barrier.srcAccessMask = masks.srcAccess;
+                    barrier.dstAccessMask = masks.dstAccess;
+                    barrier.srcQueueFamilyIndex = masks.srcQueueFamily;
+                    barrier.dstQueueFamilyIndex = masks.dstQueueFamily;
+                    barrier.buffer = pAccel->GetBackingBuffer();
+                    barrier.offset = 0;
+                    barrier.size = VK_WHOLE_SIZE;
+                    bufferBarriers.push_back(barrier);
+                }
+                else
+                {
+                    if (masks.srcQueueFamily != VK_QUEUE_FAMILY_IGNORED)
+                    {
+                        // A handover is pending and this side cannot carry the family indices: a memory barrier
+                        // has no field for them, so recording it would consume the pending handover and
+                        // perform nothing. That silence is what #153 was.
+                        throw std::runtime_error(
+                            "Acceleration structure '" + use.handle +
+                            "' has a queue handover pending but did not resolve to a structure with a backing "
+                            "buffer, which is the only way to express it.");
+                    }
+                    // No handle to address: the barrier is a memory barrier, and the access masks name the AS
+                    // bits rather than a range.
+                    memoryBarrier.srcStageMask |= masks.srcStage;
+                    memoryBarrier.srcAccessMask |= masks.srcAccess;
+                    memoryBarrier.dstStageMask |= masks.dstStage;
+                    memoryBarrier.dstAccessMask |= masks.dstAccess;
+                    bMemoryBarrier = true;
+                }
             }
             else if (use.kind == ResourceKind::BUFFER)
             {
@@ -1875,6 +1906,22 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
             barrier.subresourceRange = {AspectForFormat(image->GetImageFormat()), 0, 1, 0, 1};
             imageBarriers.push_back(barrier);
         }
+        else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
+        {
+            // The release half of #153: an AS used to be skipped here, because it is neither an image nor a
+            // buffer. Its memory is its backing buffer's, so the release is a buffer barrier on that buffer.
+            VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
+            barrier.srcStageMask = state.lastStages;
+            barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
+            barrier.srcAccessMask = state.lastAccess;
+            barrier.dstAccessMask = 0;
+            barrier.srcQueueFamilyIndex = srcQueueFamily;
+            barrier.dstQueueFamilyIndex = dstQueueFamily;
+            barrier.buffer = pAccel->GetBackingBuffer();
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
+            bufferBarriers.push_back(barrier);
+        }
         else if (const auto* buffer = dynamic_cast<const BufferResource*>(pResource))
         {
             VkBufferMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2};
@@ -1891,6 +1938,14 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
             barrier.offset = 0;
             barrier.size = VK_WHOLE_SIZE;
             bufferBarriers.push_back(barrier);
+        }
+        else
+        {
+            // Silently skipping a transfer is how an acceleration structure's handover went missing for two
+            // releases (#153): the chain matched images and buffers and said nothing about anything else. A
+            // transfer the graph scheduled and then could not express is a bug, not a no-op.
+            throw std::runtime_error("Queue handover of '" + handle +
+                                     "' is scheduled but the resource kind has no barrier to express it.");
         }
     }
 
