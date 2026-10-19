@@ -312,6 +312,9 @@ struct UseBarriers
 /// @param buffer The buffer handle, or an acceleration structure's backing buffer.
 /// @param aspect Image aspect mask, when `use.kind` is `IMAGE`.
 /// @return The barriers; every list empty for a kind that has none.
+/// @throws std::runtime_error if a handover is pending for an acceleration structure that did not resolve to a
+///         structure with a backing buffer - the only way to express it - forwarded from
+///         `AppendAcquireTransfer`.
 inline UseBarriers DeriveUseBarriers(const ResolvedResourceUse& use, const BarrierMasks& masks, VkImage image,
                                      VkBuffer buffer, VkImageAspectFlags aspect)
 {
