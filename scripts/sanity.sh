@@ -149,23 +149,67 @@ cmd_static() {
     echo "report: scan-view-20 build-static-report/* or open build-static-report/index.html"
 }
 
+# Sanitizer runtime options, in one place because three things read them: this script, the CI workflow,
+# and whoever reproduces a failure by hand. Each is here for a reason, not for thoroughness:
+#
+#  -detect_stack_use_after_return=1  finds use-after-return, which the default (heap-only) mode misses.
+#  -strict_string_checks=1            catches reads past the end of a string argument.
+#  -check_initialization_order=1      finds access to a global before its initialiser ran - the class that
+#                                     bit this repository's static registration order more than once.
+#  -print_stacktrace=1 (UBSan)        a runtime error without a stack is a location, not a bug report.
+#  -fast_unwind_on_malloc=0 (LSan)    full allocations stacks instead of one frame; this is what makes a
+#                                     leak attributable to a module instead of an address (#171).
+sanitizer_env() {
+    ASAN_OPTIONS="detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1"
+    UBSAN_OPTIONS="print_stacktrace=1"
+    LSAN_OPTIONS="suppressions=$ROOT/san.supp:print_suppressions=1:fast_unwind_on_malloc=0"
+    export ASAN_OPTIONS UBSAN_OPTIONS LSAN_OPTIONS
+}
+
 cmd_sanitize() {
-    bold "sanitize: ASan + UBSan build and tests"
+    bold "sanitize: ASan + UBSan build and tests (UB aborts; the options are printed below)"
     cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize >/dev/null || {
         bad "configure failed"
         fail=1
         return
     }
-    cmake --build build-san --target tests -j"$JOBS" || {
+    # Shaders and assets are both read relative to the working directory. Omitting them made a fresh
+    # `sanity.sh sanitize` fail with a shader-load error that looks like a code regression (AGENTS.md
+    # section 4).
+    cmake --build build-san --target tests Shaders -j"$JOBS" || {
         bad "build failed"
         fail=1
         return
     }
-    if (cd build-san && LSAN_OPTIONS="suppressions=$ROOT/san.supp:print_suppressions=1" ./tests); then
-        ok "sanitize OK"
-    else
-        bad "tests failed under sanitizers"
+    ln -sfn "$ROOT/assets" build-san/assets
+
+    sanitizer_env
+    echo "ASAN_OPTIONS=$ASAN_OPTIONS"
+    echo "UBSAN_OPTIONS=$UBSAN_OPTIONS"
+    echo "LSAN_OPTIONS=$LSAN_OPTIONS"
+
+    local log=/tmp/muyo-sanitize.err
+    (cd build-san && ./tests >/tmp/muyo-sanitize.out 2>"$log")
+    local status=$?
+    tail -3 /tmp/muyo-sanitize.out
+
+    # Two independent verdicts, because the exit status alone is not enough: a build whose UBSan was
+    # configured to recover prints `runtime error:` and still exits 0, which is how UB stayed invisible
+    # here until `-fno-sanitize-recover=undefined` was added. The grep catches that configuration as well
+    # as this one.
+    local diagnostics
+    diagnostics="$(grep -cE 'ERROR: (Address|Leak)Sanitizer|runtime error:' "$log" || true)"
+    if [ "$status" -ne 0 ]; then
+        bad "tests failed under sanitizers (exit $status)"
+        echo "first 20 diagnostic lines:"
+        grep -E 'ERROR: (Address|Leak)Sanitizer|runtime error:' "$log" | head -20 || true
         fail=1
+    elif [ "$diagnostics" != "0" ]; then
+        bad "sanitizer reported $diagnostics line(s) but the run exited 0 - the build is recovering, see CMakeLists.txt"
+        head -20 "$log"
+        fail=1
+    else
+        ok "sanitize OK (exit 0, no sanitizer diagnostics)"
     fi
 }
 

@@ -274,7 +274,9 @@ tooling is adopted in passes, so the current state is visible rather than discov
 | `clang-tidy` | **no** | `.clang-tidy` is a borrowed google-cloud-cpp config (`WarningsAsErrors: "*"`, C++14-era rationale) that has never been run here. See [#24](https://github.com/v3c70r/Muyo/issues/24). |
 | Clang static analyzer (`scan-build`) | yes | Not yet baselined: `scripts/sanity.sh static`. |
 | GCC `-fanalyzer` | yes (gcc 13.3) | Not yet baselined: `scripts/sanity.sh warnings`. |
-| Sanitizers (ASan + UBSan) | yes | `-DCMAKE_BUILD_TYPE=Sanitize`; suppressions in `san.supp`. |
+| Sanitizers (ASan + UBSan) | yes | `-DCMAKE_BUILD_TYPE=Sanitize`; suppressions in `san.supp`. **UB aborts**: `-fno-sanitize-recover=undefined` is set, without which a `runtime error:` prints and the run still exits 0. Runtime options live in `sanitizer_env` in `scripts/sanity.sh` and are duplicated in `.github/workflows/ci.yml` on purpose. |
+| ThreadSanitizer | yes, not yet wired | Measured recipe: build with `-fsanitize=thread` and **run under `setarch $(uname -m) -R`**. Without it every run dies with `FATAL: ThreadSanitizer: unexpected memory mapping` (kernel `vm.mmap_rnd_bits`); the workaround needs no root. `catch_discover_tests` executes the binary at build time, so the build needs the same emulator. [#173](https://github.com/v3c70r/Muyo/issues/173) |
+| MemorySanitizer | **no, and not planned** | It needs every dependency instrumented, including libc and the Vulkan driver. Uninstrumented code produces false positives, and a GPU driver cannot be rebuilt. |
 | Vulkan validation layers | always | Enabled in debug builds; the callback asserts on `ERROR`, so a validation error fails a test. |
 
 Rules:
@@ -293,6 +295,24 @@ Rules:
   it happened in the same fix, because the formatter had reflowed a second file.
 - **Run the sanitizers before merge for anything touching memory, lifetimes, threading or resource
   ownership** — `scripts/sanity.sh sanitize`. It is the cheapest real-bug detector available today.
+- **A sanitizer diagnostic must fail the run, not decorate it.** Until 2026-10-19 the Sanitize build passed
+  `-fsanitize=undefined` without `-fno-sanitize-recover=undefined`, whose default is to *recover*: a signed
+  overflow printed `runtime error:` and the process exited **0**. Measured on this tree with a planted
+  overflow: `exit=0` and `All tests passed (1 assertion in 1 test case)` with the old flags, `exit=1` with the
+  new one. So every earlier claim of "0 UBSan errors" was a claim about reading stderr, not about an exit
+  status — and a test that asserts the absence of a *line* is weaker than a process that cannot succeed.
+  `scripts/sanity.sh sanitize` now checks both the exit status **and** the diagnostic count, and prints the
+  options it used, because a local run and a CI run have to be the same experiment.
+- **Sanitizers are scoped to this repository's targets.** `add_compile_options(${SANITIZE_FLAGS})` sits after
+  the vendored targets (`imgui`, `SPIRV-Reflect`, `tinygltf`, `stb`, ...), so UB inside a dependency cannot
+  abort our run. It also means a sanitizer report is always about our code — which is what makes "fix the
+  finding" the right response to one.
+- **Some checks are rejected for a measured reason, and the reason is recorded where the flags are.** Pointer
+  pair checking (`-fsanitize=pointer-compare,pointer-subtract` +
+  `ASAN_OPTIONS=detect_invalid_pointer_pairs=2`) aborts inside `vk_mem_alloc.h`: VMA's intrusive list compares
+  pointers that are not in the same object. VMA is a header compiled into our translation units, so the check
+  cannot be scoped away from it. See the comment in `CMakeLists.txt`. A rejected check with a measurement
+  beats an adopted one that forces `detect_leaks=0`.
 - **Read `scripts/sanity.sh`'s exit status, not a grep of its output.** The script ends with a single
   `sanity: OK` / `sanity: FAILED` line, but the rule is the exit status: each check prints its own red
   message, they share no token, and a grep for `OK` will happily match a passing check while the

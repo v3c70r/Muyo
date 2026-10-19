@@ -119,7 +119,14 @@ jobs:
           ln -sfn "$PWD/assets" ${{ matrix.dir }}/assets
           cd ${{ matrix.dir }}
           set +e
-          LSAN_OPTIONS="suppressions=$PWD/../san.supp:print_suppressions=1" ./tests > tests.out 2> tests.err
+          # Kept identical to `sanitizer_env` in scripts/sanity.sh: a local run and a CI run must be the
+          # same experiment, or a green CI check stops meaning what a green local run means. The UBSan and
+          # ASan options are ignored by builds that have no sanitizer.
+          # `fast_unwind_on_malloc=0` is what makes a leak stack name a module instead of one frame (#171).
+          ASAN_OPTIONS="detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1" \
+          UBSAN_OPTIONS="print_stacktrace=1" \
+          LSAN_OPTIONS="suppressions=$PWD/../san.supp:print_suppressions=1:fast_unwind_on_malloc=0" \
+            ./tests > tests.out 2> tests.err
           status=$?
           set -e
           tail -3 tests.out
@@ -155,6 +162,17 @@ jobs:
             expected="VUID-vkWaitForFences-pFences-parameter"
             seen=$(grep -oE "#?VUID-[A-Za-z0-9-]+" tests.err 2>/dev/null | tr -d '#' | sort -u || true)
             unexpected=$(printf '%s\n' "$seen" | grep -v -x "$expected" | grep -c . || true)
+            # The toolchain states itself in the same block as the device does: a result is only evidence
+            # about the compiler and sanitizer configuration that produced it, and both machines switch
+            # between several. `-fno-sanitize-recover` is checked rather than assumed, because a build that
+            # recovers prints `runtime error:` and still exits 0.
+            echo "compiler: $(c++ --version | head -1)"
+            if [ "${{ matrix.build_type }}" = "Sanitize" ]; then
+              echo "sanitize: $(cmake -LA -N ${{ matrix.dir }} 2>/dev/null | grep -c . >/dev/null; \
+                    grep -o -- '-fno-sanitize-recover=undefined' ${{ matrix.dir }}/compile_commands.json | head -1)"
+              echo "ubsan recovers: $(grep -c -- '-fno-sanitize-recover=undefined' ${{ matrix.dir }}/compile_commands.json || true) files opt out of recovery (0 expected)"
+              echo "sanitizer diagnostics in tests.err: $(grep -cE 'ERROR: (Address|Leak)Sanitizer|runtime error:' tests.err || true)"
+            fi
             echo "validation VUIDs seen: $(printf '%s' "$seen" | tr '\n' ' ')"
             echo "unexpected VUIDs: $unexpected"
             if [ "$unexpected" != "0" ]; then
