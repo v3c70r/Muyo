@@ -148,7 +148,11 @@ static void installEventHandlers()
         });
 }
 
-static bool Init()
+// Entry points the two applications call. A translation unit that includes this header without
+// calling one of them gets `-Wunused-function` from a `static` definition, which says nothing (#25).
+// Not `inline`: these functions read the file-local `g_Time`, so external linkage would let the
+// linker choose a definition bound to a different copy of it.
+[[maybe_unused]] static bool Init()
 {
     g_Time = 0.0;
 
@@ -167,7 +171,7 @@ static bool Init()
     return true;
 }
 
-static void Shutdown() {}
+[[maybe_unused]] static void Shutdown() {}
 
 static void UpdateMouseCursor()
 {
@@ -215,7 +219,7 @@ static void UpdateGamepads()
     //     io.BackendFlags &= ~ImGuiBackendFlags_HasGamepad;
 }
 
-static void Update()
+[[maybe_unused]] static void Update()
 {
     UpdateMouseCursor();
     UpdateGamepads();

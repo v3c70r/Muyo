@@ -109,7 +109,7 @@ void SceneDebugPage::DisplaySceneNodeInfo(const SceneNode& sceneNode) const
 void SceneDebugPage::DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView,
                                           const glm::mat4& mProj) const
 {
-    if (const GeometrySceneNode* pGeometryNode = dynamic_cast<const GeometrySceneNode*>(pSceneNode))
+    if (dynamic_cast<const GeometrySceneNode*>(pSceneNode) != nullptr)
     {
         // construct bound
         auto AABB = pSceneNode->GetAABB();
@@ -120,7 +120,7 @@ void SceneDebugPage::DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4
         ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL,
                              ImGuizmo::MODE::WORLD, glm::value_ptr(mWorld), NULL, NULL, bounds, NULL);
     }
-    else if (const LightSceneNode* pLightNode = dynamic_cast<const LightSceneNode*>(pSceneNode))
+    else if (dynamic_cast<const LightSceneNode*>(pSceneNode) != nullptr)
     {
         // ImGuizmo::DrawCubes(glm::value_ptr(mView), glm::value_ptr(mProj), glm::value_ptr(mWorld), 1);
         ImGuizmo::Manipulate(glm::value_ptr(mView), glm::value_ptr(mProj), ImGuizmo::OPERATION::UNIVERSAL,

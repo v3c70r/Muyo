@@ -231,7 +231,6 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "VkMemoryAllocator: several resources al
     pAllocator->MapBuffer(block, &pMapped);
     REQUIRE(pMapped != nullptr);
     auto* pWords = static_cast<uint32_t*>(pMapped);
-    const auto* pWordsAtOffset = reinterpret_cast<const uint32_t*>(static_cast<const uint8_t*>(pMapped) + nOffsetB);
 
     // Disjoint: the caller's layout is real - each pattern is where the offsets say.
     pWords[0] = 0xA1A1A1A1;

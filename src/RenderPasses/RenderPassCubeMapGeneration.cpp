@@ -106,9 +106,6 @@ void RenderPassCubeMapGeneration::RecordCommandBuffers()
                                                     .setClearValues(clearValue)
                                                     .Build();
 
-    ViewportBuilder vpBuilder;
-    VkViewport viewport = vpBuilder.setWH(m_sizePerFace).Build();
-
     VkRect2D scissorRect;
     scissorRect.offset = {0, 0};
     scissorRect.extent = m_sizePerFace;

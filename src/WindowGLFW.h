@@ -223,7 +223,9 @@ static void ProcessEvents()
     glfwPollEvents();  // don't block
 }
 
-static std::pair<int, int> GetWindowSize()
+// Provided for callers that need the framebuffer size; the in-tree applications do not (yet), and a
+// translation unit that includes this header must not warn about it (#25).
+[[maybe_unused]] static std::pair<int, int> GetWindowSize()
 {
     int w;
     int h;

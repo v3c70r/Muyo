@@ -325,7 +325,7 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImage
     // check if format is depth format
     // TODO(P3): add more depth formats if we start to use them - deleted with src/RenderPasses/.
     attachmentRef.attachment = (uint32_t)m_vAttachmentDescriptions.size() - 1;
-    if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
+    if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D32_SFLOAT)
     {
         attachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         m_depthAttachmentReference = attachmentRef;
