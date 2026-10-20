@@ -2,7 +2,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <cstddef>
+#include <stdexcept>
 
+#include "MeshVertex.h"
 #include "RenderGraph/PSODesc.h"
 
 using namespace Muyo::RenderGraph;
@@ -74,4 +76,68 @@ TEST_CASE("PSODesc: a value outside an enum throws instead of being undefined be
     CHECK_THROWS_WITH(
         ToVkInputAssembly(static_cast<PrimitiveTopology>(200)),
         Catch::Matchers::ContainsSubstring("PrimitiveTopology") && Catch::Matchers::ContainsSubstring("200"));
+}
+
+// #178. The eighth conversion-shaped site in this header was different in kind: a void-context `switch` on
+// `VertexType`. A value outside the enum matched no case, both vectors stayed empty, and the pipeline was built with
+// no vertex input - creation succeeded and the mistake surfaced at draw time as a validation error far from the value
+// that caused it. It is a table now, and both directions are checked for the same reason as above: a total mapping
+// that throws can still map every in-range value wrongly, and a correct mapping can be indexed without a bound.
+
+TEST_CASE("PSODesc: every vertex type maps to its documented input layout", "[PSODesc]")
+{
+    const VertexInputLayout generic = ToVertexLayout(VertexType::GENERIC);
+    CHECK(generic.binding.binding == 0);
+    CHECK(generic.binding.stride == sizeof(Muyo::Vertex));
+    CHECK(generic.binding.inputRate == VK_VERTEX_INPUT_RATE_VERTEX);
+    REQUIRE(generic.attributes.size() == 3);
+    CHECK(generic.attributes[0].location == 0);
+    CHECK(generic.attributes[0].binding == 0);
+    CHECK(generic.attributes[0].format == VK_FORMAT_R32G32B32_SFLOAT);
+    CHECK(generic.attributes[0].offset == offsetof(Muyo::Vertex, pos));
+    CHECK(generic.attributes[1].location == 1);
+    CHECK(generic.attributes[1].format == VK_FORMAT_R32G32B32_SFLOAT);
+    CHECK(generic.attributes[1].offset == offsetof(Muyo::Vertex, normal));
+    CHECK(generic.attributes[2].location == 2);
+    CHECK(generic.attributes[2].format == VK_FORMAT_R32G32B32A32_SFLOAT);
+    CHECK(generic.attributes[2].offset == offsetof(Muyo::Vertex, textureCoord));
+
+    const VertexInputLayout ui = ToVertexLayout(VertexType::UI);
+    CHECK(ui.binding.binding == 0);
+    CHECK(ui.binding.stride == sizeof(ImDrawVert));
+    CHECK(ui.binding.inputRate == VK_VERTEX_INPUT_RATE_VERTEX);
+    REQUIRE(ui.attributes.size() == 3);
+    CHECK(ui.attributes[0].location == 0);
+    CHECK(ui.attributes[0].format == VK_FORMAT_R32G32_SFLOAT);
+    CHECK(ui.attributes[0].offset == offsetof(ImDrawVert, pos));
+    CHECK(ui.attributes[1].location == 1);
+    CHECK(ui.attributes[1].format == VK_FORMAT_R32G32_SFLOAT);
+    CHECK(ui.attributes[1].offset == offsetof(ImDrawVert, uv));
+    CHECK(ui.attributes[2].location == 2);
+    CHECK(ui.attributes[2].format == VK_FORMAT_R8G8B8A8_UNORM);
+    CHECK(ui.attributes[2].offset == offsetof(ImDrawVert, col));
+
+    // The two layouts must be different, or the table could be returning one of them for both enumerators and every
+    // check above would still pass for whichever it returned first.
+    CHECK(generic.binding.stride != ui.binding.stride);
+}
+
+TEST_CASE("PSODesc: a vertex type outside the enum throws rather than building an empty layout", "[PSODesc]")
+{
+    // `COUNT` first: it is the boundary every table has to reject and the easiest one to get wrong by indexing
+    // without a bounds check. 200 is what a cast from configuration or reflection data looks like.
+    CHECK_THROWS_AS(ToVertexLayout(VertexType::COUNT), std::invalid_argument);
+    CHECK_THROWS_AS(ToVertexLayout(static_cast<VertexType>(200)), std::invalid_argument);
+    CHECK_THROWS_WITH(ToVertexLayout(static_cast<VertexType>(200)),
+                      Catch::Matchers::ContainsSubstring("VertexType") && Catch::Matchers::ContainsSubstring("200"));
+
+    // And through the real entry point, with a null device: the throw has to happen before any Vulkan call, which is
+    // what makes the failure land at the bad value rather than at pipeline creation. The old `switch` fell through
+    // to a pipeline with zero vertex bindings instead.
+    PSODesc desc{};
+    desc.vertexType = static_cast<VertexType>(200);
+    VkPipelineRenderingCreateInfo renderingInfo{};
+    renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    CHECK_THROWS_AS(CreatePipelineFromPSODesc(desc, VK_NULL_HANDLE, {}, VK_NULL_HANDLE, renderingInfo),
+                    std::invalid_argument);
 }

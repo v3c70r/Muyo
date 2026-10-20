@@ -333,6 +333,22 @@ Stencil operations for one face.
 | `uint8_t depthFailOp` | Operation when the stencil passes but depth fails. |
 | `CompareOp compareOp` | Stencil comparison operation. |
 
+### `VertexInputLayout Muyo::RenderGraph::ToVertexLayout(VertexType vertexType)`
+
+Map a VertexType to the vertex input layout its pipeline must declare.
+
+A table indexed by the enum, for the reason ToVkIndexed records: a switch made "this type has a layout" a belief, and a value outside the enum left both vectors empty. The pipeline was then created with no vertex input at all, and the failure surfaced at draw time as a validation error far from the value that caused it (issue #178). The table's size is checked against VertexType::COUNT, so adding an enumerator without its layout is a compile error rather than a runtime throw nobody notices.
+
+| Parameter | Description |
+| --- | --- |
+| `vertexType` | Vertex layout to map. |
+
+**Returns** — The binding and attribute descriptions for that layout.
+
+**Throws**
+
+- `std::invalid_argument` — when vertexType is not one of the enumerators.
+
 ### `constexpr VkBlendFactor Muyo::RenderGraph::ToVkBlendFactor(BlendFactor blendFactor)`
 
 Maps BlendFactor to the Vulkan enum.
@@ -384,6 +400,15 @@ Maps PrimitiveTopology to the Vulkan enum.
 
 Maps FillMode to the Vulkan enum.
 
+### `struct Muyo::RenderGraph::VertexInputLayout`
+
+Vertex input layout selected by a VertexType.
+
+| Member | Description |
+| --- | --- |
+| `VkVertexInputBindingDescription binding` | The layout's single binding (binding 0). |
+| `std::vector< VkVertexInputAttributeDescription > attributes` | Attribute descriptions, in location order. |
+
 ### `enum VertexType`
 
 Which vertex layout a graphics node's pipeline expects.
@@ -392,6 +417,7 @@ Which vertex layout a graphics node's pipeline expects.
 | --- | --- |
 | `GENERIC` | Vertex (position/normal/texcoord) used by scene geometry. |
 | `UI` | ImGui's ImDrawVert used by the UI pass. |
+| `COUNT` | Number of values; not a valid value, only the bound for the layout table. |
 
 
 ## `RenderGraphBarrier.h`

@@ -16,7 +16,8 @@ namespace Muyo::RenderGraph
 enum class VertexType : uint8_t
 {
     GENERIC,  ///< `Vertex` (position/normal/texcoord) used by scene geometry.
-    UI        ///< ImGui's `ImDrawVert` used by the UI pass.
+    UI,       ///< ImGui's `ImDrawVert` used by the UI pass.
+    COUNT     ///< Number of values; not a valid value, only the bound for the layout table.
 };
 
 /// Primitive topology for a graphics pipeline.
@@ -282,6 +283,32 @@ struct PSODesc
         .sampleCount = 1, .sampleShadingEnable = false, .minSampleShading = 0.0F};  ///< Multisample state.
 };
 
+/// Vertex input layout selected by a `VertexType`.
+struct VertexInputLayout
+{
+    VkVertexInputBindingDescription binding;                    ///< The layout's single binding (binding 0).
+    std::vector<VkVertexInputAttributeDescription> attributes;  ///< Attribute descriptions, in location order.
+};
+
+/// Map a `VertexType` to the vertex input layout its pipeline must declare.
+///
+/// A table indexed by the enum, for the reason `ToVkIndexed` records: a `switch` made "this type has a layout" a
+/// belief, and a value outside the enum left both vectors empty. The pipeline was then created with no vertex input
+/// at all, and the failure surfaced at draw time as a validation error far from the value that caused it (issue
+/// #178). The table's size is checked against `VertexType::COUNT`, so adding an enumerator without its layout is a
+/// compile error rather than a runtime throw nobody notices.
+///
+/// @param vertexType Vertex layout to map.
+/// @return The binding and attribute descriptions for that layout.
+/// @throws std::invalid_argument when `vertexType` is not one of the enumerators.
+inline VertexInputLayout ToVertexLayout(VertexType vertexType)
+{
+    static const std::array kMap{
+        VertexInputLayout{Vertex::getBindingDescription(), Vertex::getAttributeDescriptions()},
+        VertexInputLayout{UIVertex::getBindingDescription(), UIVertex::getAttributeDescriptions()}};
+    return ToVkIndexed(vertexType, kMap, "VertexType");
+}
+
 /// Build a graphics pipeline from a PSODesc using dynamic rendering.
 ///
 /// @param psoDesc        Pipeline state.
@@ -339,19 +366,11 @@ inline VkPipeline CreatePipelineFromPSODesc(const PSODesc& psoDesc, VkDevice vkD
 
     std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 
-    std::vector<VkVertexInputBindingDescription> indexDescs;
-    std::vector<VkVertexInputAttributeDescription> attributeDescs;
-    switch (psoDesc.vertexType)
-    {
-        case VertexType::GENERIC:
-            indexDescs = {Vertex::getBindingDescription()};
-            attributeDescs = {Vertex::getAttributeDescriptions()};
-            break;
-        case VertexType::UI:
-            indexDescs = {UIVertex::getBindingDescription()};
-            attributeDescs = {UIVertex::getAttributeDescriptions()};
-            break;
-    }
+    // Total by construction: an out-of-range value throws here, naming the type and the value, instead of leaving
+    // both vectors empty and building a pipeline with no vertex input (#178).
+    const VertexInputLayout layout = ToVertexLayout(psoDesc.vertexType);
+    const std::vector<VkVertexInputBindingDescription> indexDescs{layout.binding};
+    const std::vector<VkVertexInputAttributeDescription> attributeDescs = layout.attributes;
     psoBuilder.setVertextInfo(indexDescs, attributeDescs);
 
     VkPipeline pipeline = psoBuilder.setShaderModules(shaderModuels, pSpecializationInfo)
