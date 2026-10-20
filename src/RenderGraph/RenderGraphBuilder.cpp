@@ -1623,7 +1623,8 @@ void RenderGraphBuilder::Build()
 }
 
 bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn,
-                                        RenderGraphNodeContext& ctx, std::unordered_set<ResourceHandle>& alreadyWritten,
+                                        RenderGraphNodeContext& /*ctx*/,
+                                        std::unordered_set<ResourceHandle>& alreadyWritten,
                                         std::vector<VkRenderingAttachmentInfo>& colorAttachments,
                                         std::vector<VkClearValue>& clearValues)
 {

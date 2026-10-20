@@ -176,7 +176,13 @@ if (UNIX)
     # warnings or -pthread: none of them creates threads, and scoping warnings to this project's
     # targets is the direction #36 asks for. Their language level is still C++20 from
     # CMAKE_CXX_STANDARD above, so meshoptimizer moves from the default gnu++17 to C++20.
-    add_compile_options(-Wall -Wno-missing-braces -pthread)
+    # `-Wextra` is on. `-Wmissing-field-initializers` is off, and not because it is noisy: it fires on
+    # exactly the initialisation style AGENTS.md section 3 mandates. `{VK_STRUCTURE_TYPE_...}` and partial
+    # designated initialisers omit fields on purpose - positional initialisation of a Vulkan struct is
+    # banned because the layouts do not match the specification order - so the check reports a style that
+    # is required here. Measured on the 2026-10-20 tree: 3824 of 3942 `-Wextra` warnings were this check;
+    # excluding it left 118, of which 40 are owned by #169/#186 and the rest were fixed or are vendored.
+    add_compile_options(-Wall -Wextra -Wno-missing-field-initializers -Wno-missing-braces -pthread)
     add_link_options(-pthread)
     # -g is left to the per-configuration defaults: Debug carries it via CMAKE_CXX_FLAGS_DEBUG, and
     # the old shared string pushed it into Release too. The dead CMAKE_CXX_DEBUG_FLAGS /
@@ -231,11 +237,19 @@ endif()
 set (SHARED_HEADER_DIR "${MUYO_ROOT}/shaders/shared")
 
 include_directories(
+    ${SHARED_HEADER_DIR}
+    )
+
+# Vendored and SDK headers are SYSTEM: `-Wextra` checks this repository's code, not its dependencies', and a
+# warning from `vk_mem_alloc.h` in every translation unit says nothing about us. Header names are unique
+# between these roots and ours (checked: no basename occurs in both), so `-isystem` cannot change what an
+# include resolves to - only which translation unit a diagnostic is attributed to. #53/#68 reshape this
+# include surface; this split is what the `-Wextra` baseline needs until then.
+include_directories(SYSTEM
     ${Vulkan_INCLUDE_DIR}
     ${GLFW3_INCLUDE_DIR}
     ${GLM_INCLUDE_DIRS}
     ${IMGUI_INCLUDE_DIRS}
-    ${SHARED_HEADER_DIR}
     ${IMGUIZMO_INCLUDE_DIRS}
     ${IMNODES_INCLUDE_DIRS}
     ${SPIRV-Reflect_INCLUDE_DIRS}
@@ -316,6 +330,12 @@ target_include_directories(muyo
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/Scene>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/Debug>
         $<BUILD_INTERFACE:${SHARED_HEADER_DIR}>
+    )
+
+# The dependency half of the same interface, marked SYSTEM so a consumer that turns on extra warnings is
+# not handed ours-vs-vendored ambiguity by this project's interface.
+target_include_directories(muyo SYSTEM
+    PUBLIC
         $<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>
         $<BUILD_INTERFACE:${IMGUI_INCLUDE_DIRS}>
         $<BUILD_INTERFACE:${IMGUIZMO_INCLUDE_DIRS}>
@@ -331,7 +351,7 @@ target_include_directories(muyo
 # RenderGraphResourceDesc.h uses VmaMemoryUsage in a public struct, so VMA is part of muyo_rg's
 # interface whether or not that is desirable - a consumer cannot compile the public surface without it.
 # #53 removes VMA from the surface; until then it has to be reachable.
-target_include_directories(muyo_rg PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
+target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
 
 # SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: RenderGraphBuilder.h includes
 # ShaderReflectionFetcher.h, which includes spirv_reflect.h, so a consumer compiles against its headers

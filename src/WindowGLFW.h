@@ -73,7 +73,7 @@ static Input::Key GetFunctionKey(int key)
     }
 }
 
-static void KeyStrokeCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+static void KeyStrokeCallback(GLFWwindow * /*window*/, int key, int /*scancode*/, int action, int mods)
 {
     auto pKeyEvent = EventSystem::sys()->globalEvent<EventType::KEY, GlobalKeyEvent>();
     EventState state = (action == GLFW_PRESS) ? EventState::PRESSED : EventState::RELEASED;
@@ -92,25 +92,25 @@ static void KeyStrokeCallback(GLFWwindow *window, int key, int scancode, int act
         pKeyEvent->Emit(Time(), press, modifiers, state);
 }
 
-static void CharCallback(GLFWwindow *window, unsigned int c)
+static void CharCallback(GLFWwindow * /*window*/, unsigned int c)
 {
     auto pCharEvent = EventSystem::sys()->globalEvent<EventType::CHAR, GlobalCharEvent>();
     pCharEvent->Emit(Time(), c);
 }
 
-static void ScrollCallback(GLFWwindow *window, double xoffset, double yoffset)
+static void ScrollCallback(GLFWwindow * /*window*/, double xoffset, double yoffset)
 {
     auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
     pWheel->Emit(Time(), xoffset, yoffset);
 }
 
-static void MouseCursorCallback(GLFWwindow *window, double xpos, double ypos)
+static void MouseCursorCallback(GLFWwindow * /*window*/, double xpos, double ypos)
 {
     auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION, GlobalMotionEvent>();
     pMove->Emit(Time(), xpos, ypos);
 }
 
-static void MouseCallback(GLFWwindow *window, int button, int action, int mods)
+static void MouseCallback(GLFWwindow * /*window*/, int button, int action, int /*mods*/)
 {
     auto pPress = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON, GlobalButtonEvent>();
     EventState state = (action == GLFW_PRESS) ? EventState::PRESSED : EventState::RELEASED;
@@ -133,7 +133,7 @@ static void MouseCallback(GLFWwindow *window, int button, int action, int mods)
     if (btn != Input::Button::BUTTON_COUNT) pPress->Emit(Time(), btn, state);
 }
 
-static void CursorSetCallback(uint32_t timestamp, Input::Cursor cursor)
+static void CursorSetCallback(uint32_t /*timestamp*/, Input::Cursor cursor)
 {
     if (cursor == Input::Cursor::CURSOR_NONE || glfwGetInputMode(s_pWindow, GLFW_CURSOR) == GLFW_CURSOR_DISABLED)
     {
@@ -191,7 +191,7 @@ static bool Initialize(const char *name, unsigned w, unsigned h, bool bResizable
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, bResizable ? GLFW_TRUE : GLFW_FALSE);
 
-    _GLFW::s_pWindow = glfwCreateWindow(w, h, "Vulkan", nullptr, nullptr);
+    _GLFW::s_pWindow = glfwCreateWindow(w, h, name, nullptr, nullptr);
     if (!_GLFW::s_pWindow)
     {
         glfwTerminate();

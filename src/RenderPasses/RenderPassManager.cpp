@@ -170,7 +170,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight, const VkSu
     pCameraDebugPage->SetCamera(GetCamera());
 }
 
-void RenderPassManager::OnResize(uint32_t uWidth, uint32_t uHeight)
+void RenderPassManager::OnResize(uint32_t /*uWidth*/, uint32_t /*uHeight*/)
 {
     // TODO(P3): implement resize function - deleted with src/RenderPasses/; helloVulkanRG owns resize.
     // if (m_uWidth != uWidth || m_uHeight != uHeight)

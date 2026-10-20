@@ -65,7 +65,7 @@ public:
     void SetTransparent() { m_bIsTransparent = true; }
     void SetOpaque() { m_bIsTransparent = false; }
 
-    const uint32_t GetMaterialIndex() const { return m_nMaterialIndex; }
+    uint32_t GetMaterialIndex() const { return m_nMaterialIndex; }
 
 private:
     MaterialParameters m_materialParameters;

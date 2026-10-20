@@ -90,15 +90,15 @@ static void rotateArcballCallback(double xpos, double ypos)
 static void InitEventHandlers()
 {
     auto pMove = EventSystem::sys()->globalEvent<EventType::MOUSEMOTION, GlobalMotionEvent>();
-    pMove->Watch([](uint32_t timestamp, float sx, float sy) { rotateArcballCallback(sx, sy); });
+    pMove->Watch([](uint32_t, float sx, float sy) { rotateArcballCallback(sx, sy); });
 
     auto pBtn = EventSystem::sys()->globalEvent<EventType::MOUSEBUTTON, GlobalButtonEvent>();
-    pBtn->Watch([](uint32_t timestamp, Input::Button btn, EventState state) { clickArcballCallback(btn, state); });
+    pBtn->Watch([](uint32_t, Input::Button btn, EventState state) { clickArcballCallback(btn, state); });
 
     auto pWheel = EventSystem::sys()->globalEvent<EventType::MOUSEWHEEL, GlobalWheelEvent>();
 
     pWheel->Watch(
-        [](uint32_t timestamp, double xoffset, double yoffset)
+        [](uint32_t, double, double yoffset)
         {
             if (Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera()))
             {
@@ -169,7 +169,7 @@ void cleanup()
     Window::Uninitialize();
 }
 
-void updateUniformBuffer(UniformBuffer<PerViewData> *ub) {
+void updateUniformBuffer(UniformBuffer<PerViewData> *) {
     // s_arcball.UpdatePerViewDataUBO(ub);
 };
 
