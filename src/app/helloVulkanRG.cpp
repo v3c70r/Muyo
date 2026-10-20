@@ -24,6 +24,7 @@
 #include "WindowGLFW.h"
 #endif
 
+#include "Debug/RenderGraphTracePage.h"
 #include "DescriptorManager.h"
 #include "FrameSync.h"
 #include "ImGuiControl.h"
@@ -111,6 +112,10 @@ int main()
         GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertexBuffer", dummyVertices, false);
     IndexBuffer* pUIIndices = GetRenderResourceManager()->GetIndexBuffer("UIIndexBuffer", dummyIndices, false);
 
+    // Retains the last few hundred executions so the lane view can be scrubbed. Declared outside the swapchain scope
+    // because the trace outlives any one swapchain: a resize rebuilds the swapchain but not the history.
+    auto pTracePage = std::make_unique<RenderGraphTracePage>("Render graph execution");
+
     {
         Swapchain swapchain;
         // The window owns the surface, so the swapchain must not destroy it. Wayland lets the app choose
@@ -173,6 +178,10 @@ int main()
             ImGui::Begin("hello Vulkan (render graph)");
             ImGui::Text("This frame is drawn by the render graph.");
             ImGui::End();
+            // The lane view is drawn from the trace of a *previous* execution - this frame has not run yet, because
+            // the UI data has to be uploaded before the graph records. One frame of lag is invisible in a window and
+            // keeps the page off the execution path entirely.
+            pTracePage->Render();
             ImGui::Render();
 
             ImDrawData* pDrawData = ImGui::GetDrawData();
@@ -205,6 +214,10 @@ int main()
             // A graph per frame, because the acquired image rotates and the graph fixes its imports at
             // Build. One graph per swapchain image is the optimisation and belongs with #40.
             RenderGraphBuilder builder(GetRenderDevice());
+            // Record every execution for the lane view. The sink's presence is what turns tracing on, and it costs
+            // one null check per node when the page is not shown.
+            builder.SetTraceSink([page = pTracePage.get()](RenderGraph::RenderGraphTrace trace)
+                                 { page->Push(std::move(trace)); });
             builder.ImportResource("Present", swapchain.GetImageResource(frame->imageIndex));
             builder.ImportResource("Font", pFont);
             builder.ImportResource("UIVertices", pUIVertices);
