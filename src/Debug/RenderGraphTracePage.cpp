@@ -52,15 +52,15 @@ const char* LaneLabel(RenderGraph::QueueType lane)
 }
 }  // namespace
 
-int AdjustSelectionAfterPush(int selected, std::size_t size)
+int AdjustSelectionAfterPush(int selected, std::size_t size, bool bDropped)
 {
     if (selected < 0 || size == 0)
     {
         return selected;
     }
-    // The oldest entry may have just been dropped, so every surviving index moved down by one. A selection already at
-    // zero pointed at that dropped execution; it stays at zero, which shows the oldest survivor rather than a gap.
-    if (selected > 0)
+    // Only a drop moves the data. During the fill phase the indices are stable, so the selection must be too - the
+    // distinction the first version of this function missed.
+    if (bDropped && selected > 0)
     {
         --selected;
     }
@@ -76,13 +76,15 @@ RenderGraphTracePage::RenderGraphTracePage(std::string sName, std::size_t capaci
 void RenderGraphTracePage::Push(RenderGraph::RenderGraphTrace trace)
 {
     m_history.push_back(std::move(trace));
+    bool bDropped = false;
     while (m_history.size() > m_capacity)
     {
         m_history.pop_front();
+        bDropped = true;
     }
-    // Keep the selection on the execution it meant, rather than letting it slide to the successor as the window
-    // drops its oldest entry.
-    m_selected = AdjustSelectionAfterPush(m_selected, m_history.size());
+    // Keep the selection on the execution it meant, rather than letting it slide to the successor as the window drops
+    // its oldest entry - and leave it alone entirely when nothing was dropped.
+    m_selected = AdjustSelectionAfterPush(m_selected, m_history.size(), bDropped);
 }
 
 void RenderGraphTracePage::Render() const

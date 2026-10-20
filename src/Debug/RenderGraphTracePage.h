@@ -11,15 +11,22 @@ namespace Muyo
 {
 /// @brief Where the selection points after one execution was appended and the oldest may have been dropped.
 ///
-/// A free function because the alternative is untested arithmetic inside `Push`: dropping the oldest entry shifts every
-/// index down by one, so a selection that was not adjusted silently slides to the *successor* execution - a wrong
-/// picture rather than a crash, which is the hardest kind to notice in a UI.
+/// A free function because the alternative is untested arithmetic inside `Push`: an index that is not adjusted when the
+/// window drops its oldest entry silently slides to the *successor* execution - a wrong picture rather than a crash,
+/// which is the hardest kind to notice in a UI.
+///
+/// **`bDropped` is part of the contract for a reason.** The first version took only `(selected, size)` and decremented
+/// whenever `selected > 0`, which is correct only once the window is full. During the fill phase nothing is dropped, so
+/// every push moved the selection one execution earlier: with a 240-entry window the view walked to the oldest
+/// execution and stayed there - the same wrong picture, pointed the other way (#179 review N1). Only `Push` knows
+/// whether its loop dropped anything, so it has to say.
 ///
 /// @param selected Current selection; negative means "nothing selected yet".
-/// @param size     Retained count after the append and the drop.
-/// @return The adjusted selection: unchanged for a negative input, decremented when it was not already the oldest, and
-///         clamped into the retained range.
-int AdjustSelectionAfterPush(int selected, std::size_t size);
+/// @param size     Retained count after the append and any drop.
+/// @param bDropped True when the oldest entry was dropped, which shifts every surviving index down by one.
+/// @return The adjusted selection: unchanged when nothing was dropped or nothing was selected, one lower when the data
+///         moved, and always clamped into the retained range.
+int AdjustSelectionAfterPush(int selected, std::size_t size, bool bDropped);
 
 /// Draws recorded executions as lanes, and keeps the history to scrub through.
 ///
