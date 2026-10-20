@@ -29,6 +29,10 @@ public:
         AllocateOwnedBuffer(size, "Uniform Buffer");
         m_nSize = size;
     }
+    // Keep the virtual `SetData(const void*, size_t)` visible. Without this line the typed overload below
+    // hides it, which is `-Woverloaded-virtual` once per translation unit that instantiates the template
+    // (#25). Calls keep resolving to the typed overload; the base one is simply no longer invisible.
+    using BufferResource::SetData;
     void SetData(const T& buffer) { BufferResource::SetData(&buffer, sizeof(T)); }
 };
 }  // namespace Muyo
