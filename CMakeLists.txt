@@ -153,7 +153,21 @@ if (NOT EXISTS ${Vulkan_SLANG_EXECUTABLE})
 endif()
 
 set(SANITIZE_CONDITION "$<CONFIG:Sanitize>")
+# ThreadSanitizer is a configuration of its own, not another flag for Sanitize: TSan and ASan cannot be
+# linked into one binary, and the two find different classes of defect. The flags are generator
+# expressions rather than CMAKE_CXX_FLAGS_THREAD so they behave the same on a single-config generator
+# regardless of how the configuration happened to be named. -DNDEBUG is deliberately absent, as in
+# Debug: a check that a release build removes is not the thing being verified.
+set(THREAD_FLAGS "")
 if (UNIX)
+    set(THREAD_FLAGS
+      "$<$<CONFIG:Thread>:-fsanitize=thread>"
+      "$<$<CONFIG:Thread>:-fno-omit-frame-pointer>"
+      # An unknown CMAKE_BUILD_TYPE gets no per-configuration defaults at all (AGENTS.md section 4),
+      # so the optimisation level and debug info are stated here rather than inherited.
+      "$<$<CONFIG:Thread>:-O1>"
+      "$<$<CONFIG:Thread>:-g>"
+    )
     # Compile options, not a replacement for CMAKE_CXX_FLAGS: assigning that variable discards
     # whatever a toolchain file or `-DCMAKE_CXX_FLAGS` provided, which is why
     # `scripts/sanity.sh warnings` was not actually applying its own flags (#36).
@@ -201,6 +215,17 @@ endif()
 # warning cannot be mistaken for ours. The Sanitize build is a statement about this repository's code.
 add_compile_options(${SANITIZE_FLAGS})
 add_link_options(${SANITIZE_FLAGS})
+# Same placement and the same reasoning: a TSan report is a statement about this repository's code, so
+# the vendored targets above stay uninstrumented.
+add_compile_options(${THREAD_FLAGS})
+add_link_options(${THREAD_FLAGS})
+if(CMAKE_BUILD_TYPE STREQUAL "Thread" AND NOT UNIX)
+    # Without this the configuration would build an ordinary binary on a platform where no TSan flag is
+    # wired, and the sanitizer run would be green because it never instrumented anything.
+    message(FATAL_ERROR
+        "CMAKE_BUILD_TYPE=Thread has no -fsanitize=thread flags on this platform; "
+        "ThreadSanitizer is wired for UNIX only (MSVC does not provide it).")
+endif()
 
 # Headers that shared between shader and cpp 
 set (SHARED_HEADER_DIR "${MUYO_ROOT}/shaders/shared")
@@ -455,6 +480,26 @@ target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/Ren
 # covering for it rather than the libraries (#76).
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo muyo_rg)
 include(Catch)
+
+# ThreadSanitizer cannot start on a kernel that randomises mappings beyond its shadow layout: every
+# invocation, including the one `catch_discover_tests` performs at *build* time, dies with
+# `FATAL: ThreadSanitizer: unexpected memory mapping ...`. Disabling address-space randomisation for
+# that process is the root-free workaround (`setarch x86_64 -R`), and the emulator property is where it
+# belongs because ctest and the build-time discovery both read it (#173). A single-config generator is
+# assumed - the repository builds with Unix Makefiles - so the configuration is named by
+# CMAKE_BUILD_TYPE; on a multi-config generator there is no one build type to test and this would be a
+# silent no-op, so it is refused rather than left looking wired.
+if(CMAKE_BUILD_TYPE STREQUAL "Thread")
+    if(CMAKE_CONFIGURATION_TYPES)
+        message(FATAL_ERROR
+            "CMAKE_BUILD_TYPE=Thread is only supported with a single-config generator: "
+            "CROSSCOMPILING_EMULATOR is a target property and cannot vary by configuration here.")
+    endif()
+    set_target_properties(tests PROPERTIES
+        CROSSCOMPILING_EMULATOR "setarch;${CMAKE_SYSTEM_PROCESSOR};-R")
+    message(STATUS "ThreadSanitizer: test discovery and ctest run under `setarch ${CMAKE_SYSTEM_PROCESSOR} -R`")
+endif()
+
 catch_discover_tests(tests)
 
 # Keep ImTextureID_Invalid consistent (see src/ImGuiUserConfig.h) across all imgui consumers.

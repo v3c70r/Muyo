@@ -14,6 +14,7 @@
 #   scripts/sanity.sh tidy         clang-tidy on the changed files (report only)
 #   scripts/sanity.sh static       Clang static analyzer over a dedicated build (slow)
 #   scripts/sanity.sh sanitize     build + run the tests under ASan/UBSan
+#   scripts/sanity.sh thread       build + run the device-free cases under ThreadSanitizer (report only)
 #   scripts/sanity.sh warnings     -Wextra / -fanalyzer fallout (slow, noisy)
 #   scripts/sanity.sh all          everything above
 #
@@ -41,6 +42,7 @@ SRC_GLOBS=('src/*.cpp' 'src/*.h' 'src/**/*.cpp' 'src/**/*.h')
 
 bold() { printf '\n\033[1m== %s ==\033[0m\n' "$*"; }
 ok() { printf '\033[32m%s\033[0m\n' "$*"; }
+warn() { printf '\033[33m%s\033[0m\n' "$*"; }
 bad() { printf '\033[31m%s\033[0m\n' "$*"; }
 
 fail=0
@@ -213,6 +215,64 @@ cmd_sanitize() {
     fi
 }
 
+cmd_thread() {
+    bold "thread: ThreadSanitizer over the device-free cases (report only, enforcement is #183)"
+    # TSan and ASan cannot share a binary, so this is its own configuration rather than another
+    # sanitizer flag. The emulator that makes test discovery work without root is set in CMakeLists.txt
+    # (`CROSSCOMPILING_EMULATOR`), because `catch_discover_tests` runs the binary at build time.
+    cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Thread >/dev/null || {
+        bad "configure failed"
+        fail=1
+        return
+    }
+    cmake --build build-tsan --target tests Shaders -j"$JOBS" || {
+        bad "build failed"
+        fail=1
+        return
+    }
+    ln -sfn "$ROOT/assets" build-tsan/assets
+    # A report count of zero is only evidence if the binary was instrumented. Linking libtsan is the
+    # runtime's own precondition, so this rules out the silent case where the configuration name and the
+    # flags disagree and the run is green because nothing was instrumented.
+    if ! ldd build-tsan/tests 2>/dev/null | grep -q libtsan; then
+        bad "build-tsan/tests is not linked against libtsan - this run would prove nothing"
+        fail=1
+        return
+    fi
+
+    # Scope, stated in tags rather than in prose: these are the cases that execute no Vulkan device.
+    # Device cases are excluded because a driver is uninstrumented - TSan can see the loader and our
+    # code, not the driver's threads - so a clean run over them would be a claim about an unnamed pair
+    # (issue #173 step 4). The case count is printed below so "clean" carries its scope.
+    local tags='[CaptureTool],[TransientMemoryPlanner],[RenderGraphTrace],[PSODesc],[LaneLayout]'
+    # halt_on_error=0 collects every report instead of stopping at the first, which is what a baseline
+    # needs. The verdict below is the report count, not the exit status: TSan's default exit status is
+    # still 66 once it has reported anything.
+    TSAN_OPTIONS="halt_on_error=0:second_deadlock_stack=1"
+    export TSAN_OPTIONS
+    echo "TSAN_OPTIONS=$TSAN_OPTIONS"
+    echo "scope tags: $tags"
+
+    local out=/tmp/muyo-thread.out err=/tmp/muyo-thread.err
+    (cd build-tsan && setarch "$(uname -m)" -R ./tests "$tags" >"$out" 2>"$err")
+    local status=$?
+    grep -E "All tests passed|test cases:" "$out" | tail -1
+
+    local reports
+    reports="$(grep -cE 'WARNING: ThreadSanitizer:' "$err" || true)"
+    if [ "$reports" != "0" ]; then
+        warn "thread: $reports report(s), run exited $status - REPORT ONLY until #183 enforces the baseline"
+        grep -A6 -E 'WARNING: ThreadSanitizer:' "$err" | head -40
+    elif [ "$status" -ne 0 ]; then
+        bad "thread: the device-free cases failed under TSan (exit $status, no TSan report) "
+        tail -20 "$err" | head -20
+        fail=1
+    else
+        ok "thread: 0 reports, exit 0 (scope is the cases named above, not the whole suite)"
+    fi
+    printf 'full log: %s\n' "$err"
+}
+
 cmd_warnings() {
     bold "warnings: -Wextra and gcc -fanalyzer fallout"
     echo "these are informational today (issue #25); the goal is a baseline, not zero"
@@ -240,6 +300,7 @@ for t in "${targets[@]}"; do
         tidy) cmd_tidy ;;
         static) cmd_static ;;
         sanitize) cmd_sanitize ;;
+        thread) cmd_thread ;;
         warnings) cmd_warnings ;;
         *)
             bad "unknown target: $t"
