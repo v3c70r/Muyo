@@ -195,6 +195,14 @@ Operational notes, each of which has cost someone a red herring:
   is off, which silently invalidates both halves of a Release verification. Pass the full
   `Debug`/`Release` strings (beware tag-slicing like `${tag##*-}` when looping over build dirs) and
   confirm `NDEBUG` in `compile_commands.json` before trusting a Release-only claim.
+- **ThreadSanitizer is a third configuration, not another sanitizer flag** (`-DCMAKE_BUILD_TYPE=Thread`;
+  TSan and ASan cannot share a binary). Its flags are generator expressions in `CMakeLists.txt`, so the
+  missing per-config defaults above do not apply - `-O1` and `-g` are stated there on purpose. Under
+  this configuration the `tests` target carries `CROSSCOMPILING_EMULATOR "setarch;<arch>;-R"`, which
+  is what lets `catch_discover_tests` execute the binary at build time; `ctest` applies the same prefix
+  when it runs a case. Invoking `build-tsan/tests` by hand needs `setarch $(uname -m) -R` in front, or
+  it dies with `FATAL: ThreadSanitizer: unexpected memory mapping` before running anything. See §5 for
+  the scope of `scripts/sanity.sh thread`.
 - **Selecting cases:** Catch2 specs are exact-match unless they contain a wildcard - a plain
   `"GPU frustum culling"` matches nothing (the case is `RenderGraphBuilder: GPU frustum culling
   (async compute queue)`); use `"*GPU frustum culling*"`. Multiple specs take comma-separated
@@ -275,7 +283,7 @@ tooling is adopted in passes, so the current state is visible rather than discov
 | Clang static analyzer (`scan-build`) | yes | Not yet baselined: `scripts/sanity.sh static`. |
 | GCC `-fanalyzer` | yes (gcc 13.3) | Not yet baselined: `scripts/sanity.sh warnings`. |
 | Sanitizers (ASan + UBSan) | yes | `-DCMAKE_BUILD_TYPE=Sanitize`; suppressions in `san.supp`. **UB aborts**: `-fno-sanitize-recover=undefined` is set, without which a `runtime error:` prints and the run still exits 0. Runtime options live in `sanitizer_env` in `scripts/sanity.sh` and are duplicated in `.github/workflows/ci.yml` on purpose. |
-| ThreadSanitizer | yes, not yet wired | Measured recipe: build with `-fsanitize=thread` and **run under `setarch $(uname -m) -R`**. Without it every run dies with `FATAL: ThreadSanitizer: unexpected memory mapping` (kernel `vm.mmap_rnd_bits`); the workaround needs no root. `catch_discover_tests` executes the binary at build time, so the build needs the same emulator. [#173](https://github.com/v3c70r/Muyo/issues/173) |
+| ThreadSanitizer | yes | `-DCMAKE_BUILD_TYPE=Thread`. `catch_discover_tests` executes the binary at *build* time and TSan cannot start on a kernel that randomises mappings beyond its shadow layout (`FATAL: ThreadSanitizer: unexpected memory mapping`, kernel `vm.mmap_rnd_bits`), so `CMakeLists.txt` sets `CROSSCOMPILING_EMULATOR "setarch;<arch>;-R"` on `tests` for that configuration: without it the build stops at discovery with `Result: 66` and deletes the target, before any test runs. `scripts/sanity.sh thread` runs the **device-free** subset only (the cases tagged `[CaptureTool]`, `[TransientMemoryPlanner]`, `[RenderGraphTrace]`, `[PSODesc]`, `[LaneLayout]`) and states the case count with the report count, because a driver is uninstrumented and a clean device-case run is not a claim about the device path. Report-only until the baseline is enforced ([#183](https://github.com/v3c70r/Muyo/issues/183)); adoption is [#173](https://github.com/v3c70r/Muyo/issues/173). |
 | MemorySanitizer | **no, and not planned** | It needs every dependency instrumented, including libc and the Vulkan driver. Uninstrumented code produces false positives, and a GPU driver cannot be rebuilt. |
 | Vulkan validation layers | always | Enabled in debug builds; the callback asserts on `ERROR`, so a validation error fails a test. |
 
