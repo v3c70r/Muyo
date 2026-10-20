@@ -2122,10 +2122,11 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             context.pipelineLayout = rgn.pipelineLayout;
             context.bindingPoint = rgn.bindingPoint;
 
-            // Bracket the node so a tool (RenderDoc, GPU-assisted validation, a frame capture) attributes
-            // the commands and anything it reports to this node rather than to the segment's command
-            // buffer, which several nodes share (#134). Resources carry their names already: every
-            // RenderResourceManager allocation calls SetDebugName with the handle.
+            // Bracket the node so a capture or validation tool attributes the commands and anything it reports to this
+            // node rather than to the segment's command buffer, which several nodes share (#134). Which tool is a
+            // host decision (see `src/Debug/CaptureTool.h`): the graph emits a label and a marker, and
+            // `src/RenderGraph/` names no vendor. Resources carry their names already: every RenderResourceManager
+            // allocation calls SetDebugName with the handle.
             ScopedMarker<VkCommandBuffer> nodeMarker(cmdBuf, std::string(rgn.name));
 
             // 1. Barrier batch: transition all resources used by this node. The observer is how the trace learns
