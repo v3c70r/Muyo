@@ -13,7 +13,6 @@
 
 #include "Camera.h"
 #include "CaptureToolRecorder.h"
-#include "Debug/RenderDoc.h"
 #include "Debug/RenderDocCaptureTool.h"
 #include "GraphicsTestEnv.h"
 #include "MeshVertex.h"
