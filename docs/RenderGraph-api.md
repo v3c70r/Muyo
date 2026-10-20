@@ -649,6 +649,8 @@ Build() is idempotent for a fixed declaration: it topologically sorts the nodes,
 | `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU. Note this does not enable overlap: the builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the first completes. Overlap is an executor-API concern, see issue #11. Parameters: `info` - External semaphores to wait on before, and signal after, this execution |
 | `std::vector< std::string > GetExecutionOrder() const` | Returns: The node names in dependency (topological) order. |
 | `const RenderGraphExecutionPlan & GetExecutionPlan() const` | Returns: The plan the last Build() produced: queue segments and cross-queue transfers. Derived, read-only state, empty before the first Build(). It is what tells a caller whether an async node actually got a cross-queue handover or was serialised on one family. |
+| `std::string ToMermaid() const` | Render what Build() compiled as a Mermaid flowchart, without executing anything. Returns: A Mermaid flowchart LR document. |
+| `std::string ToDot() const` | Render what Build() compiled as Graphviz DOT, for dot -Tsvg where no browser is involved. Returns: A DOT document. Empty before Build(). |
 
 ### `struct Muyo::RenderGraph::RenderGraphNodeCreateInfo`
 

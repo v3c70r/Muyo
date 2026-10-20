@@ -228,6 +228,22 @@ public:
     ///         `async` node actually got a cross-queue handover or was serialised on one family.
     const RenderGraphExecutionPlan& GetExecutionPlan() const { return m_compiledGraph.GetExecutionPlan(); }
 
+    /// Render what `Build()` compiled as a Mermaid flowchart, **without executing anything**.
+    ///
+    /// The diagram is the plan, not a trace: segments as nodes labelled with their queue and node names, and dependency
+    /// edges labelled with the resource that forces them. It answers "what did the graph compile to" - which queue each
+    /// node landed on, where the segments split, what is handed across a queue-family boundary - and needs no GPU work,
+    /// where a `RenderGraphTrace` describes one *execution* and therefore needs an `Execute()`.
+    ///
+    /// Markdown files and GitHub issues render this inline, so it is the cheapest way to put a graph in a review.
+    /// Empty before `Build()`, because there is no plan to draw yet.
+    /// @return A Mermaid `flowchart LR` document.
+    std::string ToMermaid() const;
+
+    /// Render what `Build()` compiled as Graphviz DOT, for `dot -Tsvg` where no browser is involved.
+    /// @return A DOT document. Empty before `Build()`.
+    std::string ToDot() const;
+
 private:
     struct RenderGraphNode
     {
@@ -255,6 +271,10 @@ private:
     // Build a ray tracing pipeline + shader binding table for a RAY_TRACING node.
     void BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
                                  const std::vector<VkShaderModule>& shaderModules);
+
+    /// The compiled plan as a diagram graph: segments, and the edges that force their order.
+    /// @return Segments and labelled edges, from what `Build()` compiled.
+    RenderGraph::TraceGraph BuildPlanGraph() const;
 
     /// Device and topology, as a trace records them. Read once per traced execution, never from the graph itself.
     /// @return The scope a trace produced now should carry.

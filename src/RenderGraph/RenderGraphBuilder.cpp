@@ -2002,6 +2002,38 @@ void EmitTraceToEnvironment(const RenderGraphTrace& trace)
 }
 }  // namespace
 
+RenderGraph::TraceGraph RenderGraphBuilder::BuildPlanGraph() const
+{
+    // The same three pieces a trace starts from, and the same views helper: the difference between this and a trace is
+    // that nothing has executed, so there are no barriers, no timeline values and no timings to record - only the plan.
+    TraceViews views;
+    views.Build(m_compiledGraph.GetNodes());
+    return RenderGraph::ToGraph(
+        RenderGraph::TracePlan(m_compiledGraph.GetExecutionPlan(), views.nodes, BuildTraceScope()));
+}
+
+std::string RenderGraphBuilder::ToMermaid() const
+{
+    const RenderGraph::TraceGraph graph = BuildPlanGraph();
+    // Nothing compiled yet: an empty document rather than a valid-but-contentless one, so a caller writing this to a
+    // file gets an empty file instead of a diagram that says nothing.
+    if (graph.nodes.empty())
+    {
+        return {};
+    }
+    return RenderGraph::ToMermaid(graph);
+}
+
+std::string RenderGraphBuilder::ToDot() const
+{
+    const RenderGraph::TraceGraph graph = BuildPlanGraph();
+    if (graph.nodes.empty())
+    {
+        return {};
+    }
+    return RenderGraph::ToDot(graph);
+}
+
 TraceScope RenderGraphBuilder::BuildTraceScope() const
 {
     TraceScope scope;

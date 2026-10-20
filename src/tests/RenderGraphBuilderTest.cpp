@@ -4698,8 +4698,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a CPU node's write is vis
     CHECK_FALSE(captured.scope.timestamps.bKnown);
 }
 
-// No comma in the name: a comma inside one case's name also splits a Catch2 spec, so `"*labels each execution*"`
-// was the only way to select this case, and the next session reading AGENTS section 4 would learn that the hard way.
 TEST_CASE_METHOD(GraphicsTestEnv,
                  "RenderGraphBuilder: executing a graph routes its node markers to the capture backend",
                  "[RenderGraphBuilder]")
@@ -4731,6 +4729,73 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     CHECK(tool.SawCallContaining("end"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the compiled plan renders as a diagram without executing it",
+                 "[RenderGraphBuilder]")
+{
+    // #56 phase 1 left the diagram renderers reachable only through an execution, because a trace describes one
+    // execution. What a reader usually wants from a review is the other question - "what did this compile to" - and it
+    // needs no GPU work at all.
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Source", BufferResourceDesc{.count = 1,
+                                                     .stride = 4,
+                                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                     .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddNode({.nodeName = "Fill",
+                     .queueType = QueueType::COMPUTE,
+                     .async = true,
+                     .resourceUses = {{.handle = ResourceHandle("Source"),
+                                       .io = ResourceIOType::WRITE,
+                                       .usage = ResourceUsage::STORAGE_BUFFER,
+                                       .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext&) {}});
+    builder.AddNode({.nodeName = "Consume",
+                     .queueType = QueueType::GRAPHICS,
+                     .resourceUses = {{.handle = ResourceHandle("Source"),
+                                       .io = ResourceIOType::READ,
+                                       .usage = ResourceUsage::STORAGE_BUFFER,
+                                       .kind = ResourceKind::BUFFER}},
+                     .execute = [](RenderGraphNodeContext&) {}});
+    builder.AddDependency("Fill", "Consume");
+
+    // Before Build there is no plan, so there is nothing to draw - and it must be an empty document rather than a
+    // crash or a half-drawn one.
+    CHECK(builder.ToMermaid().empty());
+    CHECK(builder.ToDot().empty());
+
+    builder.Build();
+    // No Execute() call anywhere in this case: the diagram comes from the compilation alone.
+    const std::string mermaid = builder.ToMermaid();
+    INFO(mermaid);
+
+    CHECK(mermaid.find("flowchart LR") != std::string::npos);
+    // Both nodes appear, and the label says which queue each segment runs on - the question a reader is asking.
+    CHECK(mermaid.find("Fill") != std::string::npos);
+    CHECK(mermaid.find("Consume") != std::string::npos);
+
+    const bool bDedicated = GetRenderDevice()->IsComputeQueueDedicated();
+    if (bDedicated)
+    {
+        // Cross-family: the plan has a handover, so the edge is labelled with the resource that forces it.
+        CHECK(mermaid.find("compute") != std::string::npos);
+        CHECK(mermaid.find("Source (transfer)") != std::string::npos);
+        INFO("device has a dedicated compute family: the handover edge is in the diagram");
+    }
+    else
+    {
+        // One family: no handover exists, so no transfer edge is drawn. Recorded rather than skipped, because a green
+        // run here proves nothing about the transfer edge (AGENTS section 4).
+        CHECK(mermaid.find("(transfer)") == std::string::npos);
+        INFO("device has ONE queue family: no transfer edge to draw, by construction");
+    }
+
+    // The same projection, in the other syntax.
+    const std::string dot = builder.ToDot();
+    CHECK(dot.find("digraph") != std::string::npos);
+    CHECK(dot.find("Consume") != std::string::npos);
+}
+
+// No comma in the name: a comma inside one case's name also splits a Catch2 spec, so `"*labels each execution*"`
+// was the only way to select this case, and the next session reading AGENTS section 4 would learn that the hard way.
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace labels each execution and records the caller wait",
                  "[RenderGraphBuilder]")
 {
