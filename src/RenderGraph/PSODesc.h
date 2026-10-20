@@ -3,6 +3,8 @@
 
 #include <array>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 
 #include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
@@ -25,24 +27,50 @@ enum class PrimitiveTopology : uint8_t
     LINES,           ///< Line list.
     LINE_STRIP,      ///< Line strip.
     POINTS,          ///< Point list.
+    COUNT            ///< Number of values; not a valid value, only the bound for the table below.
 };
+
+/// @brief Map an enum value through a table indexed by its underlying value.
+///
+/// A table rather than a `switch` because a `switch`'s exhaustiveness was a *belief*: the seven conversions in this
+/// header fell off the end of a non-void function for any value outside the enum, which is undefined behaviour, and
+/// `-Wreturn-type` reported all seven unnoticed (issue #174). Indexing makes the mapping total by construction, and
+/// the table's size is **deduced from its initialisers** and checked against the enum's `COUNT`: adding an enumerator
+/// without adding its mapping, or removing a mapping, is a compile error. The first version of this fix sized each
+/// table *by* `COUNT`, which made that assertion vacuous - an added enumerator simply extended the array with a
+/// zero - and a mutation test caught it.
+///
+/// The bounds check is a runtime check and not an `assert`, per AGENTS section 3: the value can be falsified by
+/// *input* - a `psoDesc` a graph user filled in - so it has to survive `NDEBUG`.
+///
+/// @tparam Enum    Enum whose enumerators are contiguous from zero, with a trailing `COUNT`.
+/// @tparam VkEnum  Vulkan enumerator type the table holds.
+/// @tparam N       Table size, which must equal `Enum::COUNT`.
+/// @param value    Value to map.
+/// @param table    One Vulkan enumerator per `Enum` value, in declaration order.
+/// @param typeName Enum name, used in the exception so the message says which type was wrong.
+/// @return The mapped Vulkan enumerator.
+/// @throws std::invalid_argument when `value` is not one of the enumerators.
+template <typename Enum, typename VkEnum, std::size_t N>
+constexpr VkEnum ToVkIndexed(Enum value, const std::array<VkEnum, N>& table, const char* typeName)
+{
+    static_assert(N == static_cast<std::size_t>(Enum::COUNT), "the table must cover every enumerator");
+    const std::size_t index = static_cast<std::size_t>(value);
+    if (index >= N)
+    {
+        throw std::invalid_argument(std::string(typeName) + " value " + std::to_string(index) +
+                                    " is not one of its enumerators, so it has no Vulkan mapping.");
+    }
+    return table[index];
+}
 
 /// Maps PrimitiveTopology to the Vulkan enum.
 constexpr VkPrimitiveTopology ToVkInputAssembly(PrimitiveTopology topology)
 {
-    switch (topology)
-    {
-        case PrimitiveTopology::TRIANGLES:
-            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-        case PrimitiveTopology::TRIANGLE_STRIP:
-            return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-        case PrimitiveTopology::LINES:
-            return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-        case PrimitiveTopology::LINE_STRIP:
-            return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-        case PrimitiveTopology::POINTS:
-            return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-    }
+    constexpr std::array kMap{VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                              VK_PRIMITIVE_TOPOLOGY_LINE_LIST, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP,
+                              VK_PRIMITIVE_TOPOLOGY_POINT_LIST};
+    return ToVkIndexed(topology, kMap, "PrimitiveTopology");
 }
 
 /// Input assembly state (topology and primitive restart).
@@ -55,20 +83,16 @@ struct InputAssemblyState
 /// Polygon fill mode.
 enum class FillMode : uint8_t
 {
-    SOLID,     ///< Filled polygons.
-    WIREFRAME  ///< Wireframe (`VK_POLYGON_MODE_LINE`).
+    SOLID,      ///< Filled polygons.
+    WIREFRAME,  ///< Wireframe (`VK_POLYGON_MODE_LINE`).
+    COUNT       ///< Number of values; not a valid value, only the bound for the table below.
 };
 
 /// Maps FillMode to the Vulkan enum.
 constexpr VkPolygonMode ToVkPolygonMode(FillMode fillMode)
 {
-    switch (fillMode)
-    {
-        case FillMode::SOLID:
-            return VK_POLYGON_MODE_FILL;
-        case FillMode::WIREFRAME:
-            return VK_POLYGON_MODE_LINE;
-    }
+    constexpr std::array kMap{VK_POLYGON_MODE_FILL, VK_POLYGON_MODE_LINE};
+    return ToVkIndexed(fillMode, kMap, "FillMode");
 }
 
 /// Face culling mode.
@@ -76,40 +100,30 @@ enum class CullMode : uint8_t
 {
     NONE,   ///< No culling.
     FRONT,  ///< Cull front faces.
-    BACK    ///< Cull back faces.
+    BACK,   ///< Cull back faces.
+    COUNT   ///< Number of values; not a valid value, only the bound for the table below.
 };
 
 /// Maps CullMode to the Vulkan enum.
 constexpr VkCullModeFlagBits ToVkCullMode(CullMode cullMode)
 {
-    switch (cullMode)
-    {
-        case CullMode::NONE:
-            return VK_CULL_MODE_NONE;
-        case CullMode::FRONT:
-            return VK_CULL_MODE_FRONT_BIT;
-        case CullMode::BACK:
-            return VK_CULL_MODE_BACK_BIT;
-    }
+    constexpr std::array kMap{VK_CULL_MODE_NONE, VK_CULL_MODE_FRONT_BIT, VK_CULL_MODE_BACK_BIT};
+    return ToVkIndexed(cullMode, kMap, "CullMode");
 }
 
 /// Winding considered to be the front face.
 enum class FrontFace : uint8_t
 {
-    CW,  ///< Clockwise.
-    CCW  ///< Counter-clockwise.
+    CW,    ///< Clockwise.
+    CCW,   ///< Counter-clockwise.
+    COUNT  ///< Number of values; not a valid value, only the bound for the table below.
 };
 
 /// Maps FrontFace to the Vulkan enum.
 constexpr VkFrontFace ToVkFrontFace(FrontFace frontFace)
 {
-    switch (frontFace)
-    {
-        case FrontFace::CW:
-            return VK_FRONT_FACE_CLOCKWISE;
-        case FrontFace::CCW:
-            return VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    }
+    constexpr std::array kMap{VK_FRONT_FACE_CLOCKWISE, VK_FRONT_FACE_COUNTER_CLOCKWISE};
+    return ToVkIndexed(frontFace, kMap, "FrontFace");
 }
 
 /// Rasterization state.
@@ -136,31 +150,22 @@ enum class CompareOp : uint8_t
     GREATER,        ///< Passes if greater.
     NOT_EQUAL,      ///< Passes if not equal.
     GREATER_EQUAL,  ///< Passes if greater or equal.
-    ALWAYS          ///< Always passes.
+    ALWAYS,         ///< Always passes.
+    COUNT           ///< Number of values; not a valid value, only the bound for the table below.
 };
 
 /// Maps CompareOp to the Vulkan enum.
 constexpr VkCompareOp ToVkCompareOp(CompareOp compareOp)
 {
-    switch (compareOp)
-    {
-        case CompareOp::NEVER:
-            return VK_COMPARE_OP_NEVER;
-        case CompareOp::LESS:
-            return VK_COMPARE_OP_LESS;
-        case CompareOp::EQUAL:
-            return VK_COMPARE_OP_EQUAL;
-        case CompareOp::LESS_EQUAL:
-            return VK_COMPARE_OP_LESS_OR_EQUAL;
-        case CompareOp::GREATER:
-            return VK_COMPARE_OP_GREATER;
-        case CompareOp::NOT_EQUAL:
-            return VK_COMPARE_OP_NOT_EQUAL;
-        case CompareOp::GREATER_EQUAL:
-            return VK_COMPARE_OP_GREATER_OR_EQUAL;
-        case CompareOp::ALWAYS:
-            return VK_COMPARE_OP_ALWAYS;
-    }
+    constexpr std::array kMap{VK_COMPARE_OP_NEVER,
+                              VK_COMPARE_OP_LESS,
+                              VK_COMPARE_OP_EQUAL,
+                              VK_COMPARE_OP_LESS_OR_EQUAL,
+                              VK_COMPARE_OP_GREATER,
+                              VK_COMPARE_OP_NOT_EQUAL,
+                              VK_COMPARE_OP_GREATER_OR_EQUAL,
+                              VK_COMPARE_OP_ALWAYS};
+    return ToVkIndexed(compareOp, kMap, "CompareOp");
 }
 
 /// Stencil operations for one face.
@@ -190,45 +195,34 @@ constexpr uint32_t MAX_COLOR_ATTACHMENTS = 8;
 /// Blend factor for color/alpha blending.
 enum class BlendFactor : uint8_t
 {
-    ONE,                 ///< 1.0.
-    ZERO,                ///< 0.0.
-    SRC_ALPHA,           ///< Source alpha.
-    ONE_MINUS_SRC_ALPHA  ///< 1 - source alpha.
+    ONE,                  ///< 1.0.
+    ZERO,                 ///< 0.0.
+    SRC_ALPHA,            ///< Source alpha.
+    ONE_MINUS_SRC_ALPHA,  ///< 1 - source alpha.
+    COUNT                 ///< Number of values; not a valid value, only the bound for the table below.
 };
 
 /// Maps BlendFactor to the Vulkan enum.
 constexpr VkBlendFactor ToVkBlendFactor(BlendFactor blendFactor)
 {
-    switch (blendFactor)
-    {
-        case BlendFactor::ONE:
-            return VK_BLEND_FACTOR_ONE;
-        case BlendFactor::ZERO:
-            return VK_BLEND_FACTOR_ZERO;
-        case BlendFactor::SRC_ALPHA:
-            return VK_BLEND_FACTOR_SRC_ALPHA;
-        case BlendFactor::ONE_MINUS_SRC_ALPHA:
-            return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    }
+    constexpr std::array kMap{VK_BLEND_FACTOR_ONE, VK_BLEND_FACTOR_ZERO, VK_BLEND_FACTOR_SRC_ALPHA,
+                              VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA};
+    return ToVkIndexed(blendFactor, kMap, "BlendFactor");
 }
 
 /// Blend operation.
 enum class BlendOp : uint8_t
 {
-    ADD,      ///< source + destination.
-    SUBTRACT  ///< source - destination.
+    ADD,       ///< source + destination.
+    SUBTRACT,  ///< source - destination.
+    COUNT      ///< Number of values; not a valid value, only the bound for the table below.
 };
 
 /// Maps BlendOp to the Vulkan enum.
 constexpr VkBlendOp ToVkBlendOp(BlendOp blendOp)
 {
-    switch (blendOp)
-    {
-        case BlendOp::ADD:
-            return VK_BLEND_OP_ADD;
-        case BlendOp::SUBTRACT:
-            return VK_BLEND_OP_SUBTRACT;
-    }
+    constexpr std::array kMap{VK_BLEND_OP_ADD, VK_BLEND_OP_SUBTRACT};
+    return ToVkIndexed(blendOp, kMap, "BlendOp");
 }
 
 /// Per-attachment blend state.
