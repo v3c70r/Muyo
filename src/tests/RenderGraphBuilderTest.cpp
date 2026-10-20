@@ -12,7 +12,9 @@
 #include <variant>
 
 #include "Camera.h"
+#include "CaptureToolRecorder.h"
 #include "Debug/RenderDoc.h"
+#include "Debug/RenderDocCaptureTool.h"
 #include "GraphicsTestEnv.h"
 #include "MeshVertex.h"
 #include "PerObjResourceManager.h"
@@ -55,6 +57,35 @@ static_assert(sizeof(Muyo::PerViewData) == 256 + 16 + 16 + 16 + 16 + 96,
 
 namespace Muyo::RenderGraph
 {
+namespace
+{
+/// RenderDoc through the capture-tool interface, named per case.
+///
+/// The engine had two ways to start a capture - this class and, before #167, a direct `RenderDocScopedCapture` - which
+/// is the shape that stops scaling to a second tool. One entry point now: the backend sits behind `ICaptureTool`, and
+/// a case names itself before the capture begins because a backend is process-wide.
+class ScopedRenderDocCapture
+{
+public:
+    /// @param name Capture file template and title.
+    explicit ScopedRenderDocCapture(const std::string& name)
+    {
+        // Process-wide, because a capture backend is: RenderDoc captures the frame, not the scope that asked for it.
+        static RenderDocCaptureTool s_tool;
+        s_tool.SetCaptureName(name);
+        SetCaptureTool(&s_tool);
+        s_tool.BeginCapture();
+    }
+    ~ScopedRenderDocCapture()
+    {
+        GetCaptureTool().EndCapture();
+        SetCaptureTool(nullptr);
+    }
+    ScopedRenderDocCapture(const ScopedRenderDocCapture&) = delete;
+    ScopedRenderDocCapture& operator=(const ScopedRenderDocCapture&) = delete;
+};
+}  // namespace
+
 // Copies the (already rendered) color target back to the host and returns how many
 // pixels are not fully black. A value of 0 means nothing was actually drawn.
 static uint32_t CountNonBlackPixels(const ImageResource* pTarget)
@@ -247,7 +278,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     builder.Build();
 
     {
-        RenderDocScopedCapture capture("test_quad");
+        ScopedRenderDocCapture capture("test_quad");
         builder.Execute();
     }
 
@@ -2785,7 +2816,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     {
         const glm::mat4 view = glm::lookAt(topDownEye, carCenter, up);
 
-        RenderDocScopedCapture capture("test_gpu_frustum_culling_visible");
+        ScopedRenderDocCapture capture("test_gpu_frustum_culling_visible");
         const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, proj);
         nVisibleWhenFacing = result.nVisibleCount;
 
@@ -2803,7 +2834,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     {
         const glm::mat4 view = glm::lookAt(topDownEye, topDownEye + glm::vec3(0.0F, 0.0F, 1.0F), up);
 
-        RenderDocScopedCapture capture("test_gpu_frustum_culling_away");
+        ScopedRenderDocCapture capture("test_gpu_frustum_culling_away");
         const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, proj);
 
         INFO("CPU draw sources = " << result.nSourceCount << ", GPU-visible = " << result.nVisibleCount
@@ -2823,7 +2854,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
             glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 3.6F);
         const glm::mat4 view = glm::lookAt(topDownEye, carCenter, up);
 
-        RenderDocScopedCapture capture("test_gpu_frustum_culling_partial");
+        ScopedRenderDocCapture capture("test_gpu_frustum_culling_partial");
         const GPUCullingResult result = RunGPUCullingScenario(m_mDrawList, view, clippedProj);
 
         INFO("CPU draw sources = " << result.nSourceCount << ", GPU-visible = " << result.nVisibleCount
@@ -3308,7 +3339,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     builder.AddDependency(cameraPass.nodeName, rayTracingPass.nodeName);
     builder.Build();
     {
-        RenderDocScopedCapture capture("test_ray_tracing");
+        ScopedRenderDocCapture capture("test_ray_tracing");
         builder.Execute();
     }
 
@@ -3856,7 +3887,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
     builder.AddDependency(cameraPass.nodeName, rayTracingPass.nodeName);
     builder.Build();
     {
-        RenderDocScopedCapture capture("test_ray_tracing_mazda");
+        ScopedRenderDocCapture capture("test_ray_tracing_mazda");
         builder.Execute();
     }
 
@@ -4670,6 +4701,37 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a CPU node's write is vis
 
 // No comma in the name: a comma inside one case's name also splits a Catch2 spec, so `"*labels each execution*"`
 // was the only way to select this case, and the next session reading AGENTS section 4 would learn that the hard way.
+TEST_CASE_METHOD(GraphicsTestEnv,
+                 "RenderGraphBuilder: executing a graph routes its node markers to the capture backend",
+                 "[RenderGraphBuilder]")
+{
+    // #167. `ScopedMarker` emits a Vulkan debug label *and* opens a marker on the installed capture tool. The label
+    // needs a device; the routing is what a backend depends on, and only a real execution shows the two are composed -
+    // the logic alone is covered by the `[CaptureTool]` cases.
+    Muyo::TestSupport::RecordingCaptureTool tool;
+    Muyo::TestSupport::InstalledCaptureTool installed(&tool);
+
+    RenderGraphBuilder builder(GetRenderDevice());
+    builder.AddResource("Target", ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                                    .extent = {8, 8},
+                                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
+    builder.AddNode({.nodeName = "MarkerProbe",
+                     .queueType = QueueType::GRAPHICS,
+                     .resourceUses = {{.handle = ResourceHandle("Target"),
+                                       .io = ResourceIOType::WRITE,
+                                       .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                       .kind = ResourceKind::IMAGE}},
+                     .execute = [](RenderGraphNodeContext&) {}});
+
+    builder.Build();
+    builder.Execute();
+
+    // The node's name reached the backend, and its marker was closed again: an unclosed marker leaves a malformed
+    // range in every profiler that reads it.
+    CHECK(tool.SawCallContaining("begin:MarkerProbe"));
+    CHECK(tool.SawCallContaining("end"));
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace labels each execution and records the caller wait",
                  "[RenderGraphBuilder]")
 {

@@ -3,7 +3,10 @@
 
 #include <source_location>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include "Debug/CaptureTool.h"
 
 namespace Muyo
 {
@@ -34,15 +37,19 @@ template <class T>
 class ScopedMarker
 {
 public:
-    ScopedMarker(T vkObj, std::string&& marker)
+    ScopedMarker(T vkObj, std::string&& marker) : m_captureMarker(marker)
     {
         m_markedVkObject = vkObj;
         beginMarker(vkObj, std::forward<std::string>(marker), uint64_t(0));
     }
+    // The Vulkan label closes first, then the capture marker: the two scopes nest the same way they were opened.
     ~ScopedMarker() { endMarker(m_markedVkObject); }
 
 private:
     T m_markedVkObject = VK_NULL_HANDLE;
+    // Routed through the capture-tool interface, so every backend receives node and segment markers for free. The
+    // Vulkan label above is unchanged; this is the *other* consumer of the same name.
+    ScopedCaptureMarker m_captureMarker;
 };
 
 /// Reports a failed Vulkan call and terminates the process.

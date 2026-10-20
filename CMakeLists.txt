@@ -214,6 +214,10 @@ include_directories(
     ${IMGUIZMO_INCLUDE_DIRS}
     ${IMNODES_INCLUDE_DIRS}
     ${SPIRV-Reflect_INCLUDE_DIRS}
+    # RenderDoc's API is a single header, and `src/Debug/RenderDoc.h` lives in this target. It compiled only because
+    # `tests` added this path for the vendor-specific test helper; the capture backend makes it a real dependency of
+    # `muyo`, so the path belongs here rather than in one consumer (#167).
+    ${MUYO_ROOT}/thirdparty/RenderDoc
     )
 
     
@@ -431,6 +435,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Catch2)
 add_executable(tests 
+    src/tests/CaptureToolTest.cpp
     src/tests/DebugCallbackTests.cpp
     src/tests/DeviceCapabilityTests.cpp
     src/tests/FrameSyncTest.cpp
