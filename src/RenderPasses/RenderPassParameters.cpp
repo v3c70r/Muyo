@@ -184,7 +184,10 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET,
                             sDescSetName.c_str());
 
-    bool bUpdated = UpdateDescriptorSet(m_vpResources[nDescSetIdx], nDescSetIdx, descriptorSet);
+    // The return value is a readiness flag: `false` means a resource is not bound yet, which is not an
+    // error. The assert records the current expectation; under `NDEBUG` the variable is otherwise unused,
+    // which is `-Wunused-variable` in Release only (#25).
+    [[maybe_unused]] bool bUpdated = UpdateDescriptorSet(m_vpResources[nDescSetIdx], nDescSetIdx, descriptorSet);
     assert(bUpdated);
 
     return descriptorSet;
@@ -205,7 +208,8 @@ VkDescriptorSet RenderPassParameters::AllocateDescriptorSet(const std::string& s
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(descriptorSet), VK_OBJECT_TYPE_DESCRIPTOR_SET,
                             sDescSetName.c_str());
 
-    bool bUpdated = UpdateDescriptorSet(vpResources, nDescSetIdx, descriptorSet);
+    // Same readiness flag and the same Release-only warning as the overload above (#25).
+    [[maybe_unused]] bool bUpdated = UpdateDescriptorSet(vpResources, nDescSetIdx, descriptorSet);
     assert(bUpdated);
 
     // Update resource array
@@ -325,7 +329,7 @@ void RenderPassParameters::AddAttachment(const ImageResource* pResource, VkImage
     // check if format is depth format
     // TODO(P3): add more depth formats if we start to use them - deleted with src/RenderPasses/.
     attachmentRef.attachment = (uint32_t)m_vAttachmentDescriptions.size() - 1;
-    if (format == VK_FORMAT_D32_SFLOAT_S8_UINT | format == VK_FORMAT_D32_SFLOAT)
+    if (format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D32_SFLOAT)
     {
         attachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         m_depthAttachmentReference = attachmentRef;

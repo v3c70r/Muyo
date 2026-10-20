@@ -279,8 +279,9 @@ int main(int argc, char **argv)
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
-        UniformBuffer<PerViewData> *pUniformBuffer =
-            GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
+        // Registration, not a lookup: the passes fetch "perView" by name, so the call has to happen
+        // even though this pointer is not read (#25).
+        (void)GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
 
         // Load materials
 
@@ -349,7 +350,8 @@ int main(int argc, char **argv)
                 int width;
                 int height;
                 Window::GetFramebufferSize(width, height);
-                VkExtent2D currentVp = GetRenderPassManager()->GetViewportSize();
+                // Used by the commented-out resize branch below; kept so re-enabling it is one uncomment.
+                [[maybe_unused]] VkExtent2D currentVp = GetRenderPassManager()->GetViewportSize();
                 // if (width != static_cast<int>(currentVp.width) || height != static_cast<int>(currentVp.height))
                 //{
                 //     // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
