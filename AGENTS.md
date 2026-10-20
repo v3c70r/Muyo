@@ -269,7 +269,8 @@ rather than left as configuration nothing executes.
   run on a device without that topology is not evidence about the path.
 
 Run `scripts/sanity.sh` before opening a pull request; it covers the documentation check and the
-format check described below in one command.
+format check described below in one command. `scripts/sanity.sh warnings` is the enforcing form of
+"no new warnings" and belongs in the same gate.
 
 ## 5. Static analysis and sanity checks
 
@@ -280,9 +281,9 @@ tooling is adopted in passes, so the current state is visible rather than discov
 | --- | --- | --- |
 | `clang-format` 18 + `clang-format-diff` | yes | The one-time pass ([#23](https://github.com/v3c70r/Muyo/pull/29)) landed: all files under `src/` conform (verified with 18.1.3). Keep new and edited lines clean via `scripts/sanity.sh format`. |
 | `clang-tidy` | **no** | `.clang-tidy` is a borrowed google-cloud-cpp config (`WarningsAsErrors: "*"`, C++14-era rationale) that has never been run here. See [#24](https://github.com/v3c70r/Muyo/issues/24). |
-| `-Wextra` | yes | On for the project's targets, with `-Wno-missing-field-initializers`. The exclusion is required by section 3's initialisation rule, not noise tolerance: the check fires on `{VK_STRUCTURE_TYPE_...}` and on partial designated initialisers, which is the style this repository mandates (3824 of 3942 `-Wextra` warnings were that one check when it was measured). Vendored and SDK include directories are `SYSTEM`, so their warnings are not attributed to our translation units. Remaining warnings are owned: [#169](https://github.com/v3c70r/Muyo/issues/169) and [#186](https://github.com/v3c70r/Muyo/issues/186), plus one diagnostic inside the vendored tinygltf target. The per-file baseline ([#25](https://github.com/v3c70r/Muyo/issues/25)) is not in place yet, so a new warning still passes. |
+| `-Wextra` | yes | On for the project's targets, with `-Wno-missing-field-initializers`. The exclusion is required by section 3's initialisation rule, not noise tolerance: the check fires on `{VK_STRUCTURE_TYPE_...}` and on partial designated initialisers, which is the style this repository mandates (3824 of 3942 `-Wextra` warnings were that one check when it was measured). Vendored and SDK include directories are `SYSTEM`, so their warnings are not attributed to our translation units. Remaining warnings are owned: [#169](https://github.com/v3c70r/Muyo/issues/169) and [#186](https://github.com/v3c70r/Muyo/issues/186), plus one diagnostic inside the vendored tinygltf target. `scripts/sanity.sh warnings` compares the changed files against `scripts/warning-baseline.txt` and fails if one gains a warning; files the branch did not touch only produce a note. |
 | Clang static analyzer (`scan-build`) | yes | Not yet baselined: `scripts/sanity.sh static`. |
-| GCC `-fanalyzer` | yes (gcc 13.3) | Not yet baselined: `scripts/sanity.sh warnings`. |
+| GCC `-fanalyzer` | yes (gcc 13.3) | Not yet baselined: `scripts/sanity.sh analyzer` (report only; separate from the `warnings` gate). |
 | Sanitizers (ASan + UBSan) | yes | `-DCMAKE_BUILD_TYPE=Sanitize`; suppressions in `san.supp`. **UB aborts**: `-fno-sanitize-recover=undefined` is set, without which a `runtime error:` prints and the run still exits 0. Runtime options live in `sanitizer_env` in `scripts/sanity.sh` and are duplicated in `.github/workflows/ci.yml` on purpose. |
 | ThreadSanitizer | yes | `-DCMAKE_BUILD_TYPE=Thread`. `catch_discover_tests` executes the binary at *build* time and TSan cannot start on a kernel that randomises mappings beyond its shadow layout (`FATAL: ThreadSanitizer: unexpected memory mapping`, kernel `vm.mmap_rnd_bits`), so `CMakeLists.txt` sets `CROSSCOMPILING_EMULATOR "setarch;<arch>;-R"` on `tests` for that configuration: without it the build stops at discovery with `Result: 66` and deletes the target, before any test runs. `scripts/sanity.sh thread` runs the **device-free** subset only (the cases tagged `[CaptureTool]`, `[TransientMemoryPlanner]`, `[RenderGraphTrace]`, `[PSODesc]`, `[LaneLayout]`) and states the case count with the report count, because a driver is uninstrumented and a clean device-case run is not a claim about the device path. Report-only until the baseline is enforced ([#183](https://github.com/v3c70r/Muyo/issues/183)); adoption is [#173](https://github.com/v3c70r/Muyo/issues/173). |
 | MemorySanitizer | **no, and not planned** | It needs every dependency instrumented, including libc and the Vulkan driver. Uninstrumented code produces false positives, and a GPU driver cannot be rebuilt. |
@@ -302,6 +303,16 @@ Rules:
   working tree**, so the verdict is about the committed state rather than the working tree that produced
   it. Staging only part of what the formatter touched is a second way to pass locally and fail in CI -
   it happened in the same fix, because the formatter had reflowed a second file.
+- **Warnings are compared, not eyeballed.** `scripts/sanity.sh warnings` rebuilds the whole Debug
+  configuration with the project's flags and compares the *changed* files against
+  `scripts/warning-baseline.txt` (per-file counts). A changed file that gains a warning fails; a
+  pre-existing warning in a file the branch did not touch is printed as a note and cannot block it. The
+  recorded counts are owned ([#169](https://github.com/v3c70r/Muyo/issues/169),
+  [#186](https://github.com/v3c70r/Muyo/issues/186)): raising one needs the owning issue in the commit
+  that raises it, and a count that falls should be re-recorded rather than left stale. The counts are
+  whole-build, so the target uses `--clean-first` - an incremental build reports warnings only for the
+  translation units it recompiles, which made the first version of this check vacuous. As with the
+  format check, a new file is invisible to it until it is staged.
 - **Run the sanitizers before merge for anything touching memory, lifetimes, threading or resource
   ownership** — `scripts/sanity.sh sanitize`. It is the cheapest real-bug detector available today.
 - **A sanitizer diagnostic must fail the run, not decorate it.** Until 2026-10-19 the Sanitize build passed

@@ -15,11 +15,12 @@
 #   scripts/sanity.sh static       Clang static analyzer over a dedicated build (slow)
 #   scripts/sanity.sh sanitize     build + run the tests under ASan/UBSan
 #   scripts/sanity.sh thread       build + run the device-free cases under ThreadSanitizer (report only)
-#   scripts/sanity.sh warnings     -Wextra / -fanalyzer fallout (slow, noisy)
-#   scripts/sanity.sh all          everything above
+#   scripts/sanity.sh warnings     -Wall/-Wextra baseline, changed files only (fails on a regression)
+#   scripts/sanity.sh analyzer     gcc -fanalyzer fallout (slow, report only)
+#   scripts/sanity.sh all          the slow checks: docs, format, static, sanitize, warnings, analyzer
 #
 # Environment:
-#   BASE=<ref>   comparison ref for the format check (default: origin/master)
+#   BASE=<ref>   comparison ref for the format and warnings checks (default: origin/master)
 #
 # The last line is always 'sanity: OK' or 'sanity: FAILED' and the exit status matches it - including
 # when the script cannot resolve the repository root and has nothing else to report.
@@ -274,15 +275,48 @@ cmd_thread() {
 }
 
 cmd_warnings() {
-    bold "warnings: -Wextra and gcc -fanalyzer fallout"
-    echo "these are informational today (issue #25); the goal is a baseline, not zero"
-    local log=/tmp/muyo-warnings.log
-    cmake -S . -B build-warn -DCMAKE_CXX_FLAGS="-std=c++20 -Wall -Wextra -Wno-missing-braces -fanalyzer -pthread -g" >/dev/null || {
+    bold "warnings: -Wall/-Wextra per-file baseline, changed files only"
+    # The project's own flags now include -Wextra, so this build uses the configuration under test
+    # rather than a hand-written flag string that can drift from CMakeLists.txt (#25).
+    # -DCMAKE_CXX_FLAGS= clears anything an earlier `warnings` run cached (it used to set an
+    # -fanalyzer string here); this check must measure the flags CMakeLists.txt defines and nothing else.
+    cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= >/dev/null || {
         bad "configure failed"
         fail=1
         return
     }
-    cmake --build build-warn -j"$JOBS" 2>&1 | tee "$log" | grep -E "warning:" | sed 's/^.*warning: /warning: /' | sort | uniq -c | sort -rn | head -30
+    # --clean-first, because an incremental build re-emits warnings only for the translation units it
+    # recompiles: a per-file count taken from one would read zero for every file that was already up to
+    # date, and the comparison would be vacuous. The counts in the baseline are whole-build counts.
+    local log=/tmp/muyo-warnings.log
+    if ! cmake --build build-warn --target tests helloVulkan helloVulkanRG --clean-first -j"$JOBS" >"$log" 2>&1; then
+        bad "build failed (see $log)"
+        tail -20 "$log"
+        fail=1
+        return
+    fi
+    # Changed files may keep their recorded count and not one warning more. Files this branch did not
+    # touch cannot block it, which is what makes a baseline usable while #169/#186 are still open.
+    if python3 scripts/warning_baseline.py --log "$log" --baseline scripts/warning-baseline.txt --base "$BASE"; then
+        ok "warnings OK (no new warning in a changed file)"
+    else
+        bad "warnings FAILED (see above; log: $log)"
+        fail=1
+    fi
+}
+
+cmd_analyzer() {
+    bold "analyzer: gcc -fanalyzer fallout (report only)"
+    # -fanalyzer is a path-sensitive analysis, not a warning level, and its findings still need triage
+    # before they can be enforced. Kept separate from `warnings` so enabling one does not silently
+    # enable the other (#25).
+    local log=/tmp/muyo-analyzer.log
+    cmake -S . -B build-analyzer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fanalyzer" >/dev/null || {
+        bad "configure failed"
+        fail=1
+        return
+    }
+    cmake --build build-analyzer -j"$JOBS" 2>&1 | tee "$log" | grep -E "warning:" | sed 's/^.*warning: /warning: /' | sort | uniq -c | sort -rn | head -30
     printf '\nfull log: %s\n' "$log"
     printf 'total warnings: %s\n' "$(grep -c 'warning:' "$log" || true)"
 }
@@ -290,7 +324,7 @@ cmd_warnings() {
 targets=("$@")
 [ ${#targets[@]} -eq 0 ] && targets=(docs format)
 if printf '%s\n' "${targets[@]}" | grep -qx all; then
-    targets=(docs format static sanitize warnings)
+    targets=(docs format static sanitize warnings analyzer)
 fi
 
 for t in "${targets[@]}"; do
@@ -302,6 +336,7 @@ for t in "${targets[@]}"; do
         sanitize) cmd_sanitize ;;
         thread) cmd_thread ;;
         warnings) cmd_warnings ;;
+        analyzer) cmd_analyzer ;;
         *)
             bad "unknown target: $t"
             fail=1

@@ -1,0 +1,17 @@
+# Per-file warning counts for `scripts/sanity.sh warnings` (Debug, -Wall -Wextra, whole build).
+#
+# A changed file may keep its recorded count here and not one warning more; files the branch did not
+# touch are reported but never fail. Regenerate after a deliberate change with:
+#
+#   rm -rf build-warn
+#   cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=
+#   cmake --build build-warn -j"$(nproc)" > /tmp/warn.log 2>&1
+#   python3 scripts/warning_baseline.py --log /tmp/warn.log --write > scripts/warning-baseline.txt
+#
+# Recorded at 745a219 (the commit that enabled -Wextra). Both entries are owned, and neither is a
+# licence to add warnings beside them:
+#
+#   src/Camera.h                                 #186  discarded glm::perspective in Resize
+#   src/RenderGraph/RenderGraphNodeResource.h    #169  NameOf(ResourceUsage) has no PRESENT case
+src/Camera.h 27
+src/RenderGraph/RenderGraphNodeResource.h 13
