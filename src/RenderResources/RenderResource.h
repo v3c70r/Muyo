@@ -99,7 +99,9 @@ public:
     {
     }
     BufferResource(VkBufferUsageFlags bufferUsage, VmaMemoryUsage memoryUsage, size_t sizeInByte)
-        : BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage), m_nSize(sizeInByte)
+        // Declaration order, not logical order: `m_nSize` is declared before the two const members, and a
+        // mismatched initializer list is `-Wreorder` per translation unit that includes this header (#25).
+        : m_nSize(sizeInByte), BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage)
     {
         AllocateOwnedBuffer(sizeInByte);
     }
