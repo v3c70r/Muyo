@@ -9,6 +9,18 @@
 
 namespace Muyo
 {
+/// @brief Where the selection points after one execution was appended and the oldest may have been dropped.
+///
+/// A free function because the alternative is untested arithmetic inside `Push`: dropping the oldest entry shifts every
+/// index down by one, so a selection that was not adjusted silently slides to the *successor* execution - a wrong
+/// picture rather than a crash, which is the hardest kind to notice in a UI.
+///
+/// @param selected Current selection; negative means "nothing selected yet".
+/// @param size     Retained count after the append and the drop.
+/// @return The adjusted selection: unchanged for a negative input, decremented when it was not already the oldest, and
+///         clamped into the retained range.
+int AdjustSelectionAfterPush(int selected, std::size_t size);
+
 /// Draws recorded executions as lanes, and keeps the history to scrub through.
 ///
 /// Not a `RenderPassUI` page: the graph app has no `RenderPassManager`, and this is deliberately independent of one

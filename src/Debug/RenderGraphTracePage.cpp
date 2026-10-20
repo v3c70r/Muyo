@@ -52,6 +52,22 @@ const char* LaneLabel(RenderGraph::QueueType lane)
 }
 }  // namespace
 
+int AdjustSelectionAfterPush(int selected, std::size_t size)
+{
+    if (selected < 0 || size == 0)
+    {
+        return selected;
+    }
+    // The oldest entry may have just been dropped, so every surviving index moved down by one. A selection already at
+    // zero pointed at that dropped execution; it stays at zero, which shows the oldest survivor rather than a gap.
+    if (selected > 0)
+    {
+        --selected;
+    }
+    const int last = static_cast<int>(size) - 1;
+    return selected > last ? last : selected;
+}
+
 RenderGraphTracePage::RenderGraphTracePage(std::string sName, std::size_t capacity)
     : IDebugUIPage(std::move(sName)), m_capacity(std::max<std::size_t>(1, capacity))
 {
@@ -64,11 +80,9 @@ void RenderGraphTracePage::Push(RenderGraph::RenderGraphTrace trace)
     {
         m_history.pop_front();
     }
-    // A selection shifted out of the window moves with the data rather than pointing at a different execution.
-    if (m_selected >= 0 && static_cast<std::size_t>(m_selected) >= m_history.size())
-    {
-        m_selected = static_cast<int>(m_history.size()) - 1;
-    }
+    // Keep the selection on the execution it meant, rather than letting it slide to the successor as the window
+    // drops its oldest entry.
+    m_selected = AdjustSelectionAfterPush(m_selected, m_history.size());
 }
 
 void RenderGraphTracePage::Render() const
@@ -81,8 +95,8 @@ void RenderGraphTracePage::Render() const
         return;
     }
 
-    // Selection is newest-first in the UI and oldest-first in the history, because a reader wants "how did the last
-    // frame look" by default and "step back" as an explicit act.
+    // The history is oldest-first and the slider runs left to right in that order; only the *default* selection is the
+    // newest, because a reader wants "how did the last frame look" without stepping back first.
     if (m_selected < 0 || static_cast<std::size_t>(m_selected) >= m_history.size())
     {
         m_selected = static_cast<int>(m_history.size()) - 1;

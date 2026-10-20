@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "Debug/RenderGraphLaneLayout.h"
+#include "Debug/RenderGraphTracePage.h"
 
 using namespace Muyo;
 using RenderGraph::QueueType;
@@ -247,4 +248,19 @@ TEST_CASE("RenderGraphLaneLayout: an empty execution produces no lanes and no bl
     REQUIRE(hostLayout.blocks.size() == 1);
     CHECK(hostLayout.blocks[0].bHostBlock);
     CHECK(hostLayout.blocks[0].label == "upload");
+}
+
+TEST_CASE("RenderGraphLaneLayout: the lane view's selection follows the data as history is dropped", "[LaneLayout]")
+{
+    // P1 from the #168 review: the comment claimed the selection "moves with the data", which the code did not do - the
+    // index stayed fixed, so once the oldest entry was dropped the view silently showed the *next* execution. A wrong
+    // picture rather than a crash, which is why it needs an assertion rather than a comment.
+    //
+    // The history keeps the newest `capacity` executions; each push may drop the oldest, shifting every index down.
+    CHECK(AdjustSelectionAfterPush(-1, 5) == -1);  // nothing selected yet stays that way
+    CHECK(AdjustSelectionAfterPush(0, 5) == 0);    // was the oldest: it is gone, so show the oldest survivor
+    CHECK(AdjustSelectionAfterPush(1, 5) == 0);    // followed its execution down
+    CHECK(AdjustSelectionAfterPush(4, 5) == 3);    // still points at the same execution
+    CHECK(AdjustSelectionAfterPush(9, 5) == 4);    // out of range: clamped to the newest retained
+    CHECK(AdjustSelectionAfterPush(3, 0) == 3);    // empty history: nothing to clamp to
 }
