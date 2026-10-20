@@ -435,6 +435,7 @@ add_executable(tests
     src/tests/DeviceCapabilityTests.cpp
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
+    src/tests/PSODescTest.cpp
     src/tests/RenderGraphTraceTest.cpp
     src/tests/SceneImporterTests.cpp
     src/tests/ShaderReflectionTests.cpp

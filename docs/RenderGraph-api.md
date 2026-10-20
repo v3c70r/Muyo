@@ -146,6 +146,7 @@ Blend factor for color/alpha blending.
 | `ZERO` | 0.0. |
 | `SRC_ALPHA` | Source alpha. |
 | `ONE_MINUS_SRC_ALPHA` | 1 - source alpha. |
+| `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
 ### `enum BlendOp`
 
@@ -155,6 +156,7 @@ Blend operation.
 | --- | --- |
 | `ADD` | source + destination. |
 | `SUBTRACT` | source - destination. |
+| `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
 ### `struct Muyo::RenderGraph::BlendState`
 
@@ -194,6 +196,7 @@ Comparison operation used by depth/stencil state.
 | `NOT_EQUAL` | Passes if not equal. |
 | `GREATER_EQUAL` | Passes if greater or equal. |
 | `ALWAYS` | Always passes. |
+| `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
 ### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineLayout pipelineLayout, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr)`
 
@@ -219,6 +222,7 @@ Face culling mode.
 | `NONE` | No culling. |
 | `FRONT` | Cull front faces. |
 | `BACK` | Cull back faces. |
+| `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
 ### `struct Muyo::RenderGraph::DepthStencilState`
 
@@ -241,6 +245,7 @@ Polygon fill mode.
 | --- | --- |
 | `SOLID` | Filled polygons. |
 | `WIREFRAME` | Wireframe (VK_POLYGON_MODE_LINE). |
+| `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
 ### `enum FrontFace`
 
@@ -250,6 +255,7 @@ Winding considered to be the front face.
 | --- | --- |
 | `CW` | Clockwise. |
 | `CCW` | Counter-clockwise. |
+| `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
 ### `struct Muyo::RenderGraph::InputAssemblyState`
 
@@ -300,6 +306,7 @@ Primitive topology for a graphics pipeline.
 | `LINES` | Line list. |
 | `LINE_STRIP` | Line strip. |
 | `POINTS` | Point list. |
+| `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
 ### `struct Muyo::RenderGraph::RasterState`
 
@@ -345,6 +352,29 @@ Maps CullMode to the Vulkan enum.
 ### `constexpr VkFrontFace Muyo::RenderGraph::ToVkFrontFace(FrontFace frontFace)`
 
 Maps FrontFace to the Vulkan enum.
+
+### `constexpr VkEnum Muyo::RenderGraph::ToVkIndexed(Enum value, const std::array< VkEnum, N > &table, const char *typeName)`
+
+Map an enum value through a table indexed by its underlying value.
+
+A table rather than a switch because a switch's exhaustiveness was a belief: the seven conversions in this header fell off the end of a non-void function for any value outside the enum, which is undefined behaviour, and -Wreturn-type reported all seven unnoticed (issue #174). Indexing makes the mapping total by construction, and the table's size is deduced from its initialisers and checked against the enum's COUNT: adding an enumerator without adding its mapping, or removing a mapping, is a compile error. The first version of this fix sized each table by COUNT, which made that assertion vacuous - an added enumerator simply extended the array with a zero - and a mutation test caught it.
+
+The bounds check is a runtime check and not an assert, per AGENTS section 3: the value can be falsified by input - a psoDesc a graph user filled in - so it has to survive NDEBUG.
+
+| Parameter | Description |
+| --- | --- |
+| `Enum` | Enum whose enumerators are contiguous from zero, with a trailing COUNT. |
+| `VkEnum` | Vulkan enumerator type the table holds. |
+| `N` | Table size, which must equal Enum::COUNT. |
+| `value` | Value to map. |
+| `table` | One Vulkan enumerator per Enum value, in declaration order. |
+| `typeName` | Enum name, used in the exception so the message says which type was wrong. |
+
+**Returns** — The mapped Vulkan enumerator.
+
+**Throws**
+
+- `std::invalid_argument` — when value is not one of the enumerators.
 
 ### `constexpr VkPrimitiveTopology Muyo::RenderGraph::ToVkInputAssembly(PrimitiveTopology topology)`
 
