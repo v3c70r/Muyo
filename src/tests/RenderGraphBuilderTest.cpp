@@ -1580,6 +1580,33 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an image role must fit it
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "BufferResource: a null source sizes the buffer without uploading",
+                 "[RenderGraphBuilder]")
+{
+    // `RenderPassUI::UpdateBuffers` sizes a CPU-visible buffer with `SetData(nullptr, n)` and then maps it.
+    // On a staged (TRANSFER_DST) buffer the same call used to hit `assert(pData != nullptr)` in Debug and
+    // `memcpy(dst, nullptr, n)` in Release (#191): the assert was false for the intended call and gone
+    // under NDEBUG, so the copy ran with a null source.
+    BufferResource staged(VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                          VMA_MEMORY_USAGE_GPU_ONLY);
+    staged.SetData(nullptr, 256);
+    CHECK(staged.GetSize() == 256);
+    CHECK(staged.GetCapacity() >= 256);
+
+    const std::vector<uint32_t> words(64, 0xA1A1A1A1);
+    staged.SetData(words.data(), words.size() * sizeof(uint32_t));
+    CHECK(staged.GetSize() == words.size() * sizeof(uint32_t));
+
+    // Host-visible: size, then map and write, which is the shape the UI pass uses.
+    BufferResource mapped(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    mapped.SetData(nullptr, 256);
+    CHECK(mapped.GetSize() == 256);
+    auto* pWords = static_cast<uint32_t*>(mapped.Map());
+    REQUIRE(pWords != nullptr);
+    pWords[0] = 0xB2B2B2B2;
+    mapped.Unmap();
+}
+
 TEST_CASE("BufferResource: capacity arithmetic does not truncate at 4 GiB", "[RenderGraphBuilder]")
 {
     // #124. `RoundUpCapacity` returned `uint32_t`, so a 4 GiB request rounded to 256 while `SetData`

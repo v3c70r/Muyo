@@ -118,7 +118,8 @@ public:
     /// Virtual for the same reason `Map` is: a resource whose storage belongs to a shared block cannot
     /// allocate, and cannot grow. An override reaches the staging copy - the part that is about the
     /// resource rather than about its memory - by calling this with a size the resource already has.
-    /// @param pData Source bytes.
+    /// @param pData Source bytes, or `nullptr` to size the buffer without uploading anything. The UI pass
+    ///        uses that to reserve a CPU-visible buffer before mapping it.
     /// @param size  Byte count, which must not exceed the storage the resource has.
     virtual void SetData(const void* pData, size_t size)
     {
@@ -138,9 +139,12 @@ public:
         }
         m_nSize = size;
 
-        if (BUFFER_USAGE & VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+        // A null source means "size the buffer, upload nothing". `memcpy(dst, nullptr, n)` is undefined for
+        // `n > 0`, and the assert that used to stand here was both false for the intended reserve call and
+        // removed by `NDEBUG`, so the release build copied from null (#191). Skipping the copy states the
+        // contract instead: a caller that has data passes it, and the UI pass sizes then maps.
+        if ((BUFFER_USAGE & VK_BUFFER_USAGE_TRANSFER_DST_BIT) && pData != nullptr)
         {
-            assert(pData != nullptr && "Need to have data to upload");
             // Create staging buffer
             VkBuffer stagingBuffer = VK_NULL_HANDLE;
             VmaAllocation stagingAllocation = VK_NULL_HANDLE;
