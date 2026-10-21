@@ -171,7 +171,9 @@ def main(argv: list[str]) -> int:
         print(f"warning_baseline: {error}", file=sys.stderr)
         return 2
     except OSError as error:
-        print(f"warning_baseline: cannot read {args.log!r}: {error}", file=sys.stderr)
+        # `error` already names the file that failed; naming `args.log` here was wrong when the baseline
+        # was the unreadable one (P1 on #201).
+        print(f"warning_baseline: {error}", file=sys.stderr)
         return 2
 
 
