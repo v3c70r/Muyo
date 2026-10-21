@@ -736,6 +736,14 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
 
 void VkRenderDevice::DestroyDevice()
 {
+    if (m_device == VK_NULL_HANDLE) return;
+    // `vkDestroyDevice` requires that no work is pending on the device. The test host creates and destroys
+    // a device per fixture and could reach here with a submission still in flight, which leaves the
+    // driver's worker threads racing their own teardown; on the CI software device that surfaced as
+    // thread-rooted LeakSanitizer reports at exit (#189). Waiting first is what the specification requires
+    // of a caller in any case. A lost device returns an error here and is destroyed anyway, so the drain is
+    // best-effort rather than asserted.
+    (void)vkDeviceWaitIdle(m_device);
     vkDestroyDevice(m_device, nullptr);
     m_device = VK_NULL_HANDLE;
 }
