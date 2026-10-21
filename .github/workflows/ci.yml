@@ -123,22 +123,48 @@ jobs:
           # same experiment, or a green CI check stops meaning what a green local run means. The UBSan and
           # ASan options are ignored by builds that have no sanitizer.
           # `fast_unwind_on_malloc=0` is what makes a leak stack name a module instead of one frame (#171).
-          ASAN_OPTIONS="detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1" \
-          UBSAN_OPTIONS="print_stacktrace=1" \
-          LSAN_OPTIONS="suppressions=$PWD/../san.supp:print_suppressions=1:fast_unwind_on_malloc=0" \
-            ./tests > tests.out 2> tests.err
+          run_env=(
+            ASAN_OPTIONS="detect_stack_use_after_return=1:strict_string_checks=1:check_initialization_order=1"
+            UBSAN_OPTIONS="print_stacktrace=1"
+            LSAN_OPTIONS="suppressions=$PWD/../san.supp:print_suppressions=1:fast_unwind_on_malloc=0"
+          )
+          # State the experiment in the log it belongs to: the report that named the loader leak (#189)
+          # had to be reconstructible from the run, not inferred from the workflow file.
+          printf 'run env: %s\n' "${run_env[@]}"
+          env "${run_env[@]}" ./tests > tests.out 2> tests.err
           status=$?
           set -e
           tail -3 tests.out
           # The sanitizer writes its report to stderr. Printing only the stdout tail made a failure read as
-          # "All tests passed" followed by a non-zero exit, with the reason discarded (#171).
+          # "All tests passed" followed by a non-zero exit, with the reason discarded (#171). The report is
+          # printed from the first sanitizer ERROR to the end rather than through a grep: the filtered
+          # version showed only the lines matching the pattern, so a leak's frames - which match neither
+          # `leak` nor `ERROR` - were exactly what it hid (#189).
           if [ $status -ne 0 ]; then
-            echo "─ sanitizer stderr (grep) ─"
-            grep -iE "leak|SUMMARY|runtime error|ERROR: |sanitizer" tests.err | head -40 || true
+            echo "─ sanitizer report (complete block, first 200 lines) ─"
+            sed -n '/ERROR: \(Address\|Leak\)Sanitizer/,$p' tests.err | head -200 || true
             echo "─ tests.err tail ─"
             tail -40 tests.err || true
+            # The hosted runner's software driver and loader allocate inside uninstrumented modules, so
+            # LeakSanitizer reports their allocations with no symbolizable frame (#189). Fail only when a
+            # leak's allocation is attributable to this repository - and only when the suite itself passed
+            # and exited 1, so this cannot excuse a test failure or an abort from a validation error.
+            if [ "$status" -eq 1 ] && grep -q "All tests passed" tests.out \
+               && python3 ../scripts/check_sanitizer_report.py --err tests.err; then
+              echo "::warning::the suite passed; every leak is allocated outside this repository (#189)"
+              exit 0
+            fi
           fi
           exit $status
+
+      - name: Upload the sanitizer report
+        # The next red run names its leaker even if the log is truncated (#189 criterion 1).
+        if: failure() && matrix.build_type == 'Sanitize'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitize-tests-err
+          path: ${{ matrix.dir }}/tests.err
+          if-no-files-found: warn
 
       - name: Record what this run was
         if: always()
