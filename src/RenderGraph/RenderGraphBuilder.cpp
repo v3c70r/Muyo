@@ -1868,7 +1868,14 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
             pObserver->OnUseBarriers(handle, UseBarriers{.barriers = single, .memory = std::nullopt});
         }
         transferBarriers.images.insert(transferBarriers.images.end(), single.images.begin(), single.images.end());
-        transferBarriers.buffers.insert(transferBarriers.buffers.end(), single.buffers.begin(), single.buffers.end());
+        // Appended one at a time rather than with a range `insert`: GCC 13's inlined range-insert copy trips
+        // `-Warray-bounds` on this call site in Release (offset 80 out of [0, 80]) - a false positive, since the
+        // source range is at most one barrier and the destination is a growing vector - and the single-element
+        // append is also what the loop means (#192). The range is 0 or 1 elements, so this is not a bulk copy.
+        for (const VkBufferMemoryBarrier2& barrier : single.buffers)
+        {
+            transferBarriers.buffers.push_back(barrier);
+        }
     }
 
     if (transferBarriers.images.empty() && transferBarriers.buffers.empty()) return;
