@@ -22,7 +22,9 @@ TextureResource::~TextureResource()
 void TextureResource::LoadPixels(void *pixels, int width, int height)
 {
     // Upload pixels to staging buffer
-    const size_t BUFFER_SIZE = width * height * 4;
+    // Multiply in size_t: `int * int * 4` overflows before it widens (clang-tidy
+    // bugprone-implicit-widening-of-multiplication-result, the #124 class).
+    const size_t BUFFER_SIZE = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
     VmaAllocation stagingAllocation;
     VkBuffer stagingBuffer;
     GetMemoryAllocator()->AllocateBuffer(BUFFER_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY,

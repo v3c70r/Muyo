@@ -141,7 +141,9 @@ public:
         , mZoom(0.0)
 
     {
-        Update();
+        // Qualified: this calls Arcball's own override, which is what the virtual call resolved to during
+        // construction anyway; naming it makes that explicit (clang-analyzer VirtualCall).
+        Arcball::Update();
     }
     void StartDragging()
     {

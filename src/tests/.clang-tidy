@@ -1,0 +1,10 @@
+---
+# Test code keeps the project's curated set except for the checks whose noise is specific to test idioms.
+#
+# `bugprone-unchecked-optional-access`: 5 firings in RenderGraphBuilderTest.cpp, all on values a preceding
+# CHECK/REQUIRE has already established - the old borrowed config excluded it for the same reason ("too many
+# false positives in tests"). Production code keeps the check; this directory turns it off.
+#
+# InheritParentConfig keeps every other check and option from the repository root in sync.
+InheritParentConfig: true
+Checks: '-bugprone-unchecked-optional-access'

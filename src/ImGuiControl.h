@@ -37,8 +37,9 @@ static ImGuiKey KeyToImGuiKey(Input::Key key)
             return ImGuiKey_Backspace;
         case Input::KEY_SPACE:
             return ImGuiKey_Space;
+        // Return and Enter are the same ImGui key; one case instead of two identical branches
+        // (clang-tidy bugprone-branch-clone).
         case Input::KEY_RETURN:
-            return ImGuiKey_Enter;
         case Input::KEY_ENTER:
             return ImGuiKey_Enter;
         case Input::KEY_ESCAPE:
