@@ -165,6 +165,8 @@ constexpr const char* NameOf(ResourceUsage usage)
             return "INPUT_ATTACHMENT";
         case ResourceUsage::RESOLVE_ATTACHMENT:
             return "RESOLVE_ATTACHMENT";
+        case ResourceUsage::PRESENT:
+            return "PRESENT";
         case ResourceUsage::UNIFORM_BUFFER:
             return "UNIFORM_BUFFER";
         case ResourceUsage::STORAGE_BUFFER:
