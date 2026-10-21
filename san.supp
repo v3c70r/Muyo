@@ -31,3 +31,13 @@ leak:libdrm.so.2
 # blocks LSan reports alongside these are children of the same roots; suppressing the root removes the
 # group (measured with a synthetic parent/child leak under these options).
 leak:setup_loader_term_phys_devs
+
+# The loader's ICD scan, reached from `vkCreateInstance` while it enumerates the installed drivers:
+# `loader_get_icd_interface_version` -> `loader_scanned_icd_add`. On an NVIDIA machine with the pinned SDK
+# loader (1.4.363) the allocation outlives the instance and is reported at exit (#202): 2496 B / 24
+# allocations, the frames above `loader_scanned_icd_add` are the uninstrumented ICD, and the project frames
+# below are the call site (the fixture's instance creation), not the leaker. Loader-scoped for the #149
+# reason: a leak that reaches project code has no loader-scan frame and is still reported. The sibling
+# `loader_get_icd_interface_version` frame is not matched separately - every report observed so far carries
+# the deeper `loader_scanned_icd_add` frame, and a second rule would only widen the surface.
+leak:loader_scanned_icd_add
