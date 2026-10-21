@@ -4,7 +4,7 @@
 # touch are reported but never fail. Regenerate after a deliberate change with:
 #
 #   rm -rf build-warn
-#   cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=
+#   cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DGLFW_BUILD_WAYLAND=OFF
 #   cmake --build build-warn -j"$(nproc)" > /tmp/warn.log 2>&1
 #   python3 scripts/warning_baseline.py --log /tmp/warn.log --write > scripts/warning-baseline.txt
 #

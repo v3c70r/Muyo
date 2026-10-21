@@ -138,7 +138,7 @@ cmd_static() {
         return
     fi
     echo "using $sb -- this rebuilds the whole project, expect several minutes"
-    cmake -S . -B build-static >/dev/null || {
+    cmake -S . -B build-static -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -171,7 +171,7 @@ sanitizer_env() {
 
 cmd_sanitize() {
     bold "sanitize: ASan + UBSan build and tests (UB aborts; the options are printed below)"
-    cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize >/dev/null || {
+    cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -221,7 +221,7 @@ cmd_thread() {
     # TSan and ASan cannot share a binary, so this is its own configuration rather than another
     # sanitizer flag. The emulator that makes test discovery work without root is set in CMakeLists.txt
     # (`CROSSCOMPILING_EMULATOR`), because `catch_discover_tests` runs the binary at build time.
-    cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Thread >/dev/null || {
+    cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Thread -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -280,7 +280,7 @@ cmd_warnings() {
     # rather than a hand-written flag string that can drift from CMakeLists.txt (#25).
     # -DCMAKE_CXX_FLAGS= clears anything an earlier `warnings` run cached (it used to set an
     # -fanalyzer string here); this check must measure the flags CMakeLists.txt defines and nothing else.
-    cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= >/dev/null || {
+    cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -311,7 +311,7 @@ cmd_analyzer() {
     # before they can be enforced. Kept separate from `warnings` so enabling one does not silently
     # enable the other (#25).
     local log=/tmp/muyo-analyzer.log
-    cmake -S . -B build-analyzer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fanalyzer" >/dev/null || {
+    cmake -S . -B build-analyzer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fanalyzer" -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
         bad "configure failed"
         fail=1
         return

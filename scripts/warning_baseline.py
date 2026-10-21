@@ -21,7 +21,9 @@ Usage
   warning_baseline.py --log BUILD_LOG --write
       Print a baseline for the log's counts, newest-state first (redirect into the baseline file).
 
-Exit status: 0 when no changed file regressed, 1 on a regression, 2 on a usage or input error.
+Exit status: 0 when no changed file regressed, 1 on a regression, 2 on a usage or input error (missing or
+unreadable log, malformed baseline, undiffable base) - so a caller can tell "the tree regressed" from "this
+check could not run".
 """
 
 from __future__ import annotations
@@ -34,6 +36,10 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASELINE_HEADER = "# <path> <count>  -  -Wall -Wextra (Debug) per-file warning counts."
+
+
+class InputError(Exception):
+    """A bad argument, an unreadable file or an undiffable base - not a warning regression."""
 
 # GCC prints one primary ``file:line:col: warning: ...`` line per diagnostic; notes and "In file
 # included from" continuation lines do not match. A diagnostic's option is the trailing ``[-W...]`` when
@@ -85,11 +91,11 @@ def read_baseline(path: str) -> dict[str, int]:
                 continue
             parts = line.split()
             if len(parts) != 2:
-                raise SystemExit(f"warning_baseline: malformed baseline line: {line!r}")
+                raise InputError(f"malformed baseline line: {line!r}")
             try:
                 baseline[parts[0]] = int(parts[1])
             except ValueError as error:
-                raise SystemExit(f"warning_baseline: malformed count in {line!r}") from error
+                raise InputError(f"malformed count in {line!r}") from error
     return baseline
 
 
@@ -103,7 +109,7 @@ def changed_files(base: str) -> set[str]:
             check=True,
         ).stdout
     except (OSError, subprocess.CalledProcessError) as error:
-        raise SystemExit(f"warning_baseline: cannot diff against {base!r}: {error}") from error
+        raise InputError(f"cannot diff against {base!r}: {error}") from error
     return {line.strip() for line in output.splitlines() if line.strip()}
 
 
@@ -152,15 +158,23 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--base", default="origin/master", help="reference for the changed-file set")
     parser.add_argument("--write", action="store_true", help="print a baseline instead of checking")
     args = parser.parse_args(argv)
-
-    counts, lines = counts_from_log(args.log)
-    if args.write:
-        write_baseline(counts)
-        return 0
-    if not args.baseline:
+    if not args.write and not args.baseline:
         parser.error("--baseline is required unless --write is given")
 
-    return check(counts, lines, read_baseline(args.baseline), changed_files(args.base))
+    try:
+        counts, lines = counts_from_log(args.log)
+        if args.write:
+            write_baseline(counts)
+            return 0
+        return check(counts, lines, read_baseline(args.baseline), changed_files(args.base))
+    except InputError as error:
+        print(f"warning_baseline: {error}", file=sys.stderr)
+        return 2
+    except OSError as error:
+        # `error` already names the file that failed; naming `args.log` here was wrong when the baseline
+        # was the unreadable one (P1 on #201).
+        print(f"warning_baseline: {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
