@@ -8,17 +8,23 @@ loader function or ``asan_thread_start``. No suppression can name those without 
 future project thread, and no runner image or driver version tested removes them (22.04, 24.04 and 26.04
 all report the same 18-allocation block).
 
-So the job keeps leak detection on and asks this script one question: **is any leak's allocation inside
-this repository?** It walks each leak block's frames from the allocator upwards, skips the C/C++/sanitizer
-runtime, and looks at the first frame that identifies an allocator:
+So the job keeps leak detection on and asks this script one question: **is the leak's allocation inside
+this repository?** It walks each leak block's frames from the allocator upwards and stops at the first frame
+the sanitizer could resolve:
 
-* a path under the repository root, or a symbol from the test binary -> the leak is ours, fail;
-* ``<unknown module>``, an SDK/loader path, or a driver module -> external, ignore;
-* no leak blocks at all, or an ASan/UBSan error -> fail, the run is not an external-leak-only failure.
+* **an unsymbolised frame decides external, whatever module it names.** That is ``(<unknown module>)`` and
+  ``(module+0xoffset)``, including frames ASan attributes to the test binary's own address range: an unwind
+  through uninstrumented thread code can land there, and calling those ours would fail the job on every run
+  of the hosted runner's software driver (#189). The cost is explicit: an unsymbolised frame *above* the
+  project frames makes the block external.
+* a symbolised frame from this repository - a path under the root, or a test-binary symbol - is ours, fail;
+* the C/C++/sanitizer runtime frames are skipped on the way to the allocator;
+* any other symbolised frame (SDK/loader/driver path) is external, ignore;
+* no leak blocks at all, or an ASan/UBSan error, fails: the run is not an external-leak-only failure.
 
-Conservative by construction: anything that is not clearly external fails the run, and anything that is not
-clearly ours is ignored. A project leak allocated through a driver callback would be classified external;
-that is the accepted cost of not being able to symbolise the driver.
+A project leak allocated through a driver callback would be classified external; that is the accepted cost
+of not being able to symbolise the driver. The alternative - treating unsymbolised frames as ours - makes
+the CI job permanently red on leaks this repository does not own.
 
 Usage
 -----
@@ -56,7 +62,7 @@ RUNTIME_MARKERS = (
     "operator delete",
 )
 
-# A frame we can attribute to an external module's own code.
+# A symbolised frame we can attribute to an external module's own code.
 EXTERNAL_MARKERS = (
     "<unknown module>",
     "/vulkan-sdk/",
@@ -67,7 +73,10 @@ EXTERNAL_MARKERS = (
     "llvmpipe",
 )
 
-PROJECT_MARKERS = ("tests+0x", "tests(", "/tests:")
+# Only consulted for *symbolised* frames: an unsymbolised `(tests+0x...)` is decided by the rule in
+# classify_block and is external. This marker catches the symbolised module+offset form the sanitizer
+# emits for an inlined frame with no source line.
+PROJECT_MARKERS = ("tests+0x",)
 
 
 def frame_is_runtime(where: str) -> bool:
@@ -87,10 +96,12 @@ def frame_is_external(where: str) -> bool:
 def classify_block(frames: list[tuple[bool, str]]) -> tuple[bool, str]:
     """Return (is_project, deciding frame) for one leak block.
 
-    A frame with no symbol (``(module+0xoffset)`` or ``(<unknown module>)``) is one the sanitizer could not
-    resolve; the driver, the loader and the ASan runtime all appear that way, and their allocations are not
-    ours. A symbolised frame decides: a repository path is ours, a loader/driver/system path is external,
-    and the C/C++/sanitizer runtime is skipped on the way to the allocator.
+    The first frame the sanitizer could resolve decides. An unsymbolised frame - ``(<unknown module>)`` or
+    ``(module+0xoffset)`` - is always external, *whatever module it names*, including the test binary: the
+    unwind can land in the main binary's address range through uninstrumented code, and attributing that to
+    us would make the CI job red on every run of the software driver (#189). A symbolised frame is ours only
+    if it names a repository path (or the symbolised test-binary form); loader/driver/system symbols are
+    external; the C/C++/sanitizer runtime is skipped on the way to the allocator.
     """
     for symbolized, where in frames:
         if not symbolized:

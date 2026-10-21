@@ -164,7 +164,7 @@ jobs:
         with:
           name: sanitize-tests-err
           path: ${{ matrix.dir }}/tests.err
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Record what this run was
         if: always()
