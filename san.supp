@@ -20,3 +20,14 @@ leak:loader_platform_open_library
 leak:libdbus-1.so
 leak:amdvlk64.so
 leak:libdrm.so.2
+
+# The loader's terminator physical-device setup, called from `vkCreateInstance` through
+# `loader_create_instance_chain` -> `terminator_EnumeratePhysicalDevices`. It asks each ICD to enumerate
+# devices and keeps the returned lists for the instance's lifetime; on the CI software device (llvmpipe
+# via SDK loader 1.4.363) one allocation per instance is still unreachable at exit, and with a fixture
+# creating an instance per test that is dozens of reports (#189). The allocation is inside the
+# uninstrumented ICD, so the frames above this one are module-less - this loader frame is the only
+# discriminator, and a leak that reaches project code cannot contain it. The indirect thread-rooted
+# blocks LSan reports alongside these are children of the same roots; suppressing the root removes the
+# group (measured with a synthetic parent/child leak under these options).
+leak:setup_loader_term_phys_devs
