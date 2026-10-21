@@ -145,6 +145,15 @@ jobs:
             sed -n '/ERROR: \(Address\|Leak\)Sanitizer/,$p' tests.err | head -200 || true
             echo "─ tests.err tail ─"
             tail -40 tests.err || true
+            # The hosted runner's software driver and loader allocate inside uninstrumented modules, so
+            # LeakSanitizer reports their allocations with no symbolizable frame (#189). Fail only when a
+            # leak's allocation is attributable to this repository - and only when the suite itself passed
+            # and exited 1, so this cannot excuse a test failure or an abort from a validation error.
+            if [ "$status" -eq 1 ] && grep -q "All tests passed" tests.out \
+               && python3 ../scripts/check_sanitizer_report.py --err tests.err; then
+              echo "::warning::the suite passed; every leak is allocated outside this repository (#189)"
+              exit 0
+            fi
           fi
           exit $status
 
