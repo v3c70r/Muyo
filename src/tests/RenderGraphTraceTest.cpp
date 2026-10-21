@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
+#include <cstdint>
 #include <string>
 #include <vector>
 
+#include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphTrace.h"
 
 using namespace Muyo::RenderGraph;
@@ -124,6 +126,22 @@ TEST_CASE("RenderGraphTrace: a CPU node is recorded as host work, in order", "[R
     CHECK(trace.nodes[5].queueType == QueueType::CPU);
     // The CPU node belongs to no segment, so the plan's segments are untouched by its presence.
     CHECK(trace.segments.size() == fixture.plan.segments.size());
+}
+
+TEST_CASE("RenderGraphNodeResource: every usage has a diagnostic name", "[RenderGraphBuilder]")
+{
+    // The enumerators are contiguous from SAMPLED to PUSH_CONSTANTS. A new one added without a case in
+    // `NameOf` stops the build (`-Wswitch`); this test pins what a diagnostic prints once it has a case.
+    // `PRESENT` was the enumerator that had none, so any message naming a present use said
+    // "(unknown usage)" (#169).
+    for (uint8_t value = static_cast<uint8_t>(ResourceUsage::SAMPLED);
+         value <= static_cast<uint8_t>(ResourceUsage::PUSH_CONSTANTS); ++value)
+    {
+        const auto usage = static_cast<ResourceUsage>(value);
+        INFO("usage value " << static_cast<int>(value));
+        CHECK(std::string(NameOf(usage)) != "(unknown usage)");
+    }
+    CHECK(std::string(NameOf(ResourceUsage::PRESENT)) == "PRESENT");
 }
 
 TEST_CASE("RenderGraphTrace: stage and access masks render as names, unknown bits as hex", "[RenderGraphTrace]")

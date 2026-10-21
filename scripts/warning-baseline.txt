@@ -8,10 +8,9 @@
 #   cmake --build build-warn -j"$(nproc)" > /tmp/warn.log 2>&1
 #   python3 scripts/warning_baseline.py --log /tmp/warn.log --write > scripts/warning-baseline.txt
 #
-# Recorded at 745a219 (the commit that enabled -Wextra). Both entries are owned, and neither is a
-# licence to add warnings beside them:
+# Recorded at 745a219 (the commit that enabled -Wextra), then reduced: the RenderGraphNodeResource.h entry
+# (13 warnings, #169 `NameOf` missing PRESENT) was removed when that case landed. The remaining entry is
+# owned, and not a licence to add warnings beside it:
 #
 #   src/Camera.h                                 #186  discarded glm::perspective in Resize
-#   src/RenderGraph/RenderGraphNodeResource.h    #169  NameOf(ResourceUsage) has no PRESENT case
 src/Camera.h 27
-src/RenderGraph/RenderGraphNodeResource.h 13
