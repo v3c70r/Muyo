@@ -89,6 +89,13 @@ jobs:
             libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
             libvulkan1 libvulkan-dev
 
+      # The configure step needs both shader compilers: `glslangValidator` and `slangc` are FATAL_ERRORs
+      # (CMakeLists.txt:136, 146), and only the SDK ships `slangc`. Cached by version, like the test jobs.
+      - name: Install the Vulkan SDK (pinned)
+        uses: ./.github/actions/install-vulkan-sdk
+        with:
+          version: ${{ env.VULKAN_SDK_VERSION }}
+
       - name: Record the tool versions this run used
         run: |
           clang-tidy-18 --version
