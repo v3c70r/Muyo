@@ -2,7 +2,8 @@ name: CI
 
 # Runs on GitHub-hosted runners with mesa's lavapipe as the Vulkan device, so it gates everything that
 # does not need a driver: both configurations build, the checked-in API reference matches the headers,
-# the changed lines are formatted, and the whole test suite passes with the validation layer on.
+# the changed lines are formatted and clang-tidy clean, and the whole test suite passes with the
+# validation layer on.
 #
 # What it cannot gate, recorded rather than implied - see AGENTS.md section 4 for the axis table:
 #
@@ -66,6 +67,55 @@ jobs:
         run: |
           git fetch --no-tags origin master:refs/remotes/origin/master
           scripts/sanity.sh format
+
+  tidy:
+    name: clang-tidy (changed lines)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # The gate diffs against the merge base with master, so it needs the history.
+          fetch-depth: 0
+
+      - name: Install clang-tidy and the configure dependencies
+        run: |
+          sudo apt-get update
+          # clang-tidy-18 is the pinned version (AGENTS.md section 5); a bump is a measured change.
+          # No Vulkan SDK: clang-tidy needs a compilation database and the project's headers, not
+          # slangc or the validation layer.
+          sudo apt-get install -y --no-install-recommends \
+            clang-tidy-18 cmake ninja-build python3 \
+            libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
+            libvulkan1 libvulkan-dev
+
+      # The configure step needs both shader compilers: `glslangValidator` and `slangc` are FATAL_ERRORs
+      # (CMakeLists.txt:136, 146), and only the SDK ships `slangc`. Cached by version, like the test jobs.
+      - name: Install the Vulkan SDK (pinned)
+        uses: ./.github/actions/install-vulkan-sdk
+        with:
+          version: ${{ env.VULKAN_SDK_VERSION }}
+
+      - name: Record the tool versions this run used
+        run: |
+          clang-tidy-18 --version
+          clang-tidy-diff-18.py --help >/dev/null && echo "clang-tidy-diff-18.py present"
+
+      - name: Configure (the compile database is all clang-tidy needs)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DFEATURE_RAY_TRACING=OFF \
+                -DGLFW_BUILD_WAYLAND=OFF
+
+      - name: Tidy the lines this change touched
+        run: |
+          # pipefail matters: a bare `| tee` reports tee's status, so a failing gate would show a green
+          # step with a failure in the summary. The gate's exit status is the verdict.
+          set -o pipefail
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          # Strip ANSI codes so the step summary renders as text rather than escape sequences.
+          BASE=origin/master scripts/sanity.sh tidy 2>&1 \
+            | sed $'s/\x1b\\[[0-9;]*m//g' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
   tests:
     name: tests (${{ matrix.name }})

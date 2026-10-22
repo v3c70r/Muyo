@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "RenderGraphResourceDesc.h"
 #include "RenderResourceManager.h"
 
 namespace Muyo::RenderGraph

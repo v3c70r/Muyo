@@ -2,22 +2,23 @@
 #
 # Local sanity checks for Muyo.
 #
-# There is no CI (see AGENTS.md, section 4): these run on the development machine,
-# normally before opening a pull request. Nothing here is required to pass yet --
-# the point is to make the state visible so it can be improved in passes (issues
-# #23, #24, #25) instead of being discovered late.
+# CI runs the build/test matrix and the docs, format and tidy gates on every pull request (AGENTS.md
+# section 4); this script is the same checks on the development machine, normally before opening one.
+# Not every check is enforced yet - the state is visible so it can be improved in passes (#23, #24, #25)
+# instead of being discovered late.
 #
 # Usage:
-#   scripts/sanity.sh              fast: docs coverage + formatting of changed lines
+#   scripts/sanity.sh              docs coverage, formatting and tidy on the lines this branch changed
+#                                  (tidy needs a configured build: cmake -S . -B build)
 #   scripts/sanity.sh docs         documentation coverage + generated markdown
 #   scripts/sanity.sh format       clang-format on the lines this branch changed
-#   scripts/sanity.sh tidy         clang-tidy on the changed files (report only)
+#   scripts/sanity.sh tidy         clang-tidy on the lines this branch changed (fails on a finding)
 #   scripts/sanity.sh static       Clang static analyzer over a dedicated build (slow)
 #   scripts/sanity.sh sanitize     build + run the tests under ASan/UBSan
 #   scripts/sanity.sh thread       build + run the device-free cases under ThreadSanitizer (report only)
 #   scripts/sanity.sh warnings     -Wall/-Wextra baseline, changed files only (fails on a regression)
 #   scripts/sanity.sh analyzer     gcc -fanalyzer fallout (slow, report only)
-#   scripts/sanity.sh all          the slow checks: docs, format, static, sanitize, warnings, analyzer
+#   scripts/sanity.sh all          the slow checks: docs, format, tidy, static, sanitize, warnings, analyzer
 #
 # Environment:
 #   BASE=<ref>   comparison ref for the format and warnings checks (default: origin/master)
@@ -91,13 +92,16 @@ cmd_format() {
 }
 
 cmd_tidy() {
-    bold "tidy: changed files (report only; curated .clang-tidy, #24)"
-    local tool
-    # Pin 18: the curated config is measured with it and it matches .clang-format; a newer clang-tidy
-    # adds checks and changes results, so a version bump is a deliberate change.
+    bold "tidy: changed lines (enforced; curated .clang-tidy, #24)"
+    local tool differ
+    # Pin 18: the curated config is measured with it and it matches .clang-format; a newer clang-tidy adds
+    # checks and changes results, so a version bump is a deliberate, re-measured change.
     tool="$(command -v clang-tidy-18 || command -v clang-tidy || true)"
-    if [ -z "$tool" ]; then
-        bad "clang-tidy not found; install clang-tidy (issue #24)"
+    differ="$(command -v clang-tidy-diff-18.py || command -v clang-tidy-diff || true)"
+    if [ -z "$tool" ] || [ -z "$differ" ]; then
+        # A gate that skips itself because a tool is missing passes for the wrong reason, so this fails.
+        bad "clang-tidy 18 / clang-tidy-diff not found; install clang-tidy-18 (issue #24)"
+        fail=1
         return
     fi
     if [ ! -f build/compile_commands.json ]; then
@@ -107,44 +111,60 @@ cmd_tidy() {
         return
     fi
 
-    # Translation units only: a bare header has no compile command, so clang-tidy parses it without its
-    # include context and reports `clang-diagnostic-error`s that are artifacts of the invocation (the
-    # `ImageResourceDesc` case in TransientResources.h). Header diagnostics still arrive through the TUs that
-    # include them, but a *header-only* change is not tidied yet - that gap is #206.
-    local files
-    files="$(git diff --name-only --diff-filter=ACMR "$BASE" -- "${SRC_GLOBS[@]}" | grep -E '\.cpp$' || true)"
-    if [ -z "$files" ]; then
+    # `git diff` does not see untracked files, so a new translation unit is invisible here until it is
+    # staged (`git add -N` suffices) and the build is reconfigured to give it a compile command. The
+    # format gate has the same blind spot; saying so is cheaper than discovering it at review time. This
+    # runs before the empty-diff return, so a change that consists only of a new file is not a silent pass.
+    local untracked
+    untracked="$(git ls-files --others --exclude-standard -- 'src/*.cpp' 'src/**/*.cpp' || true)"
+    if [ -n "$untracked" ]; then
+        warn "untracked translation units are not checked (stage them with 'git add -N'):"
+        printf '  %s\n' "$untracked"
+    fi
+
+    local diff
+    diff="$(git diff -U0 --no-color "$BASE" -- "${SRC_GLOBS[@]}")"
+    if [ -z "$diff" ]; then
+        if [ -n "$untracked" ]; then
+            bad "no tracked C++ changes; the untracked file(s) above were not tidied"
+            fail=1
+            return
+        fi
         ok "no changed C++ files"
         return
     fi
 
+    # Enforced gate: clang-tidy runs over each changed file (clang-tidy interpolates a compile command for a
+    # header from a TU that includes it) and `-line-filter` keeps only diagnostics on lines this change
+    # touched. That is the tidy analogue of the format gate: pre-existing findings in a file do not block
+    # work, and a new one on a changed line does. `clang-tidy-diff` returns non-zero only when a clang-tidy
+    # invocation fails, so the diagnostic count is what decides the verdict here.
     local log=/tmp/muyo-tidy.log
-    : >"$log"
-    while IFS= read -r f; do
-        [ -f "$f" ] || continue
-        echo "### $f" >>"$log"
-        "$tool" -p build "$f" >>"$log" 2>&1
-    done <<<"$files"
+    local rc=0 count
+    # `-clang-tidy-binary` pins the same version the comment above pins: clang-tidy-diff would otherwise
+    # call whatever `clang-tidy` is first on PATH.
+    printf '%s' "$diff" | "$differ" -clang-tidy-binary "$tool" -p1 -path build -j "$JOBS" >"$log" 2>&1 || rc=$?
+    count="$(grep -cE ':[0-9]+:[0-9]+: (warning|error):' "$log" || true)"
 
-    # Count only diagnostics located in this repository's own sources. clang-tidy can emit analyzer findings
-    # from vendored headers even with `HeaderFilterRegex` anchored - catch2's `catch_result_type.hpp` is the
-    # recorded case - and the gate must never fail on those. The full log keeps them, and the vendored count
-    # is printed so the two numbers reconcile. The check pattern allows dots and capitals: every
-    # `clang-analyzer-*` name has them, and the old lowercase-only pattern could not count that family at all.
-    local pattern='\[[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*\]$'
-    local project=/tmp/muyo-tidy-project.log
-    grep -E '^/[^:]+:[0-9]+:[0-9]+: (warning|error):' "$log" \
-        | grep -v -E '/(_deps|thirdparty|build[^/]*)/' >"$project" || true
+    if [ "$count" -eq 0 ] && [ "$rc" -eq 0 ]; then
+        ok "tidy OK (no diagnostics on changed lines)"
+        return
+    fi
 
-    echo "project diagnostics by check:"
-    grep -oE "$pattern" "$project" | sed 's/[][]//g' | tr ',' '\n' \
-        | grep -v warnings-as-errors | sort | uniq -c | sort -rn | head -20
-    local project_count vendored_count
-    project_count="$(grep -cE "$pattern" "$project" || true)"
-    vendored_count="$(( $(grep -cE "$pattern" "$log" || true) - project_count ))"
-    printf '\ntotal: %s project, %s vendored (not counted)   full log: %s\n' \
-        "$project_count" "$vendored_count" "$log"
-    echo "report-only for now: do not fail the build on these until #24 baselines them"
+    if [ "$count" -gt 0 ]; then
+        echo "diagnostics by check:"
+        # Dots and capitals are load-bearing: every `clang-analyzer-*` name has them.
+        grep -oE '\[[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*\]$' "$log" \
+            | sed 's/[][]//g' | tr ',' '\n' | sort | uniq -c | sort -rn | head -20
+        bad "tidy FAILED: $count diagnostic(s) on changed lines:"
+        grep -E ':[0-9]+:[0-9]+: (warning|error):' "$log" | head -40
+        printf '\nfull log: %s\n' "$log"
+    fi
+    if [ "$rc" -ne 0 ]; then
+        bad "clang-tidy-diff failed (exit $rc); tail of $log:"
+        tail -20 "$log"
+    fi
+    fail=1
 }
 
 cmd_static() {
@@ -340,9 +360,9 @@ cmd_analyzer() {
 }
 
 targets=("$@")
-[ ${#targets[@]} -eq 0 ] && targets=(docs format)
+[ ${#targets[@]} -eq 0 ] && targets=(docs format tidy)
 if printf '%s\n' "${targets[@]}" | grep -qx all; then
-    targets=(docs format static sanitize warnings analyzer)
+    targets=(docs format tidy static sanitize warnings analyzer)
 fi
 
 for t in "${targets[@]}"; do
