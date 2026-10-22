@@ -167,8 +167,8 @@ None of that is disqualifying on its own. The reasons it is the wrong *first* mo
    and have each consumer compile it, which removes the pin but keeps the parse cost — amortised over their
    translation units rather than paid per include, which is still the real win.
 3. **It does not address distribution.** #68 is `CMAKE_SOURCE_DIR` resolving to the consumer's root, 28
-   paths built from it, and `muyo_rg` declaring no dependencies. Modules change none of that; a consumer
-   still cannot configure the project.
+   paths built from it, and `muyo_rg` linking the engine rather than standing alone. Modules change none of
+   that; a consumer still cannot configure the project.
 4. **The upside is narrower than it looks.** A module would *enforce* the boundary — the compiler rejects
    reaching into internals, where a header split only reduces what is reachable — and that is a genuine
    advantage, the same one #53 wants from a stated surface. But it is a second-order benefit next to
