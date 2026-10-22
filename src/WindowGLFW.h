@@ -11,7 +11,7 @@
 namespace Window
 {
 
-namespace _GLFW
+namespace GLFWDetail
 {
 static GLFWwindow *s_pWindow = nullptr;
 static GLFWcursor *s_pCursors[Input::Cursor::CURSOR_COUNT];
@@ -86,10 +86,12 @@ static void KeyStrokeCallback(GLFWwindow * /*window*/, int key, int /*scancode*/
     if (mods & GLFW_MOD_CONTROL) modifiers |= Input::MOD_CTRL;
     if (mods & GLFW_MOD_SUPER) modifiers |= Input::MOD_META;
 
-    if ((press = GetEditKey(key)) != Input::KEY_UNKNOWN)
-        pKeyEvent->Emit(Time(), press, modifiers, state);
-    else if ((press = GetFunctionKey(key)) != Input::KEY_UNKNOWN)
-        pKeyEvent->Emit(Time(), press, modifiers, state);
+    // One lookup fallback rather than an assignment inside each condition: the same keys, without the
+    // duplicated emit body or the assignment-in-condition idiom (clang-tidy bugprone-branch-clone and
+    // -assignment-in-if-condition).
+    press = GetEditKey(key);
+    if (press == Input::KEY_UNKNOWN) press = GetFunctionKey(key);
+    if (press != Input::KEY_UNKNOWN) pKeyEvent->Emit(Time(), press, modifiers, state);
 }
 
 static void CharCallback(GLFWwindow * /*window*/, unsigned int c)
@@ -183,7 +185,7 @@ static void FiniCursors()
     }
 }
 
-}  // namespace _GLFW
+}  // namespace GLFWDetail
 
 static bool Initialize(const char *name, unsigned w, unsigned h, bool bResizable = false)
 {
@@ -191,32 +193,32 @@ static bool Initialize(const char *name, unsigned w, unsigned h, bool bResizable
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, bResizable ? GLFW_TRUE : GLFW_FALSE);
 
-    _GLFW::s_pWindow = glfwCreateWindow(w, h, name, nullptr, nullptr);
-    if (!_GLFW::s_pWindow)
+    GLFWDetail::s_pWindow = glfwCreateWindow(w, h, name, nullptr, nullptr);
+    if (!GLFWDetail::s_pWindow)
     {
         glfwTerminate();
         return false;
     }
 
-    glfwSetKeyCallback(_GLFW::s_pWindow, _GLFW::KeyStrokeCallback);
-    glfwSetMouseButtonCallback(_GLFW::s_pWindow, _GLFW::MouseCallback);
-    glfwSetCursorPosCallback(_GLFW::s_pWindow, _GLFW::MouseCursorCallback);
-    glfwSetScrollCallback(_GLFW::s_pWindow, _GLFW::ScrollCallback);
-    glfwSetCharCallback(_GLFW::s_pWindow, _GLFW::CharCallback);
+    glfwSetKeyCallback(GLFWDetail::s_pWindow, GLFWDetail::KeyStrokeCallback);
+    glfwSetMouseButtonCallback(GLFWDetail::s_pWindow, GLFWDetail::MouseCallback);
+    glfwSetCursorPosCallback(GLFWDetail::s_pWindow, GLFWDetail::MouseCursorCallback);
+    glfwSetScrollCallback(GLFWDetail::s_pWindow, GLFWDetail::ScrollCallback);
+    glfwSetCharCallback(GLFWDetail::s_pWindow, GLFWDetail::CharCallback);
 
-    _GLFW::InitCursors();
+    GLFWDetail::InitCursors();
     return true;
 }
 
 static void Uninitialize()
 {
-    glfwDestroyWindow(_GLFW::s_pWindow);
-    _GLFW::s_pWindow = nullptr;
-    _GLFW::FiniCursors();
+    glfwDestroyWindow(GLFWDetail::s_pWindow);
+    GLFWDetail::s_pWindow = nullptr;
+    GLFWDetail::FiniCursors();
     glfwTerminate();
 }
 
-static bool ShouldQuit() { return glfwWindowShouldClose(_GLFW::s_pWindow); }
+static bool ShouldQuit() { return glfwWindowShouldClose(GLFWDetail::s_pWindow); }
 
 static void ProcessEvents()
 {
@@ -229,11 +231,11 @@ static void ProcessEvents()
 {
     int w;
     int h;
-    glfwGetFramebufferSize(_GLFW::s_pWindow, &w, &h);
+    glfwGetFramebufferSize(GLFWDetail::s_pWindow, &w, &h);
     return std::make_pair(w, h);
 }
 
-static void GetFramebufferSize(int &w, int &h) { glfwGetFramebufferSize(_GLFW::s_pWindow, &w, &h); }
+static void GetFramebufferSize(int &w, int &h) { glfwGetFramebufferSize(GLFWDetail::s_pWindow, &w, &h); }
 
 static size_t GetVulkanInstanceExtensions(std::vector<const char *> &vExtensions)
 {
@@ -251,7 +253,7 @@ static size_t GetVulkanInstanceExtensions(std::vector<const char *> &vExtensions
 static VkSurfaceKHR GetVulkanSurface(VkInstance &instance)
 {
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    glfwCreateWindowSurface(instance, _GLFW::s_pWindow, NULL, &surface);
+    glfwCreateWindowSurface(instance, GLFWDetail::s_pWindow, NULL, &surface);
     return surface;
 }
 

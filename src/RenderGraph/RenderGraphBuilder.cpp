@@ -678,7 +678,10 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
 
     const uint32_t sbtSize = rgenRegion.size + missRegion.size + hitRegion.size;
     const uint32_t nHandleCount = 3;
-    std::vector<uint8_t> handles(nHandleCount * nHandleSize);
+    // The handle count and the handle size are 32-bit; multiply in size_t so the allocation and the pointer
+    // offsets below cannot wrap before they widen (bugprone-implicit-widening-of-multiplication-result,
+    // the #124 class).
+    std::vector<uint8_t> handles(static_cast<size_t>(nHandleCount) * nHandleSize);
     VK_ASSERT(VkExt::vkGetRayTracingShaderGroupHandlesKHR(m_vkDevice, rgn.pipeline, 0, nHandleCount, handles.size(),
                                                           handles.data()));
 
@@ -690,9 +693,10 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     hitRegion.deviceAddress = sbtAddress + rgenRegion.size + missRegion.size;
 
     uint8_t* pMapped = static_cast<uint8_t*>(pSBT->Map());
-    memcpy(pMapped, handles.data() + 0 * nHandleSize, nHandleSize);
-    memcpy(pMapped + rgenRegion.size, handles.data() + 1 * nHandleSize, nHandleSize);
-    memcpy(pMapped + rgenRegion.size + missRegion.size, handles.data() + 2 * nHandleSize, nHandleSize);
+    memcpy(pMapped, handles.data(), nHandleSize);
+    memcpy(pMapped + rgenRegion.size, handles.data() + static_cast<size_t>(nHandleSize), nHandleSize);
+    memcpy(pMapped + rgenRegion.size + missRegion.size, handles.data() + static_cast<size_t>(2) * nHandleSize,
+           nHandleSize);
     pSBT->Unmap();
 }
 

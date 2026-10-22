@@ -2267,6 +2267,16 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     REQUIRE(nRedPixels > 0);
 }
 
+TEST_CASE("RenderGraphExecutor: a null device is rejected before any Vulkan call", "[RenderGraphBuilder]")
+{
+    // The constructor reads the queue handles and creates timeline semaphores on the device, so a null
+    // device is a caller bug. The check is a runtime one because `NDEBUG` removes asserts (AGENTS section 3);
+    // clang-analyzer found the dereference behind the initialiser's `renderDevice != nullptr` ternary.
+    CHECK_THROWS_AS(RenderGraphExecutor(nullptr, 1), std::invalid_argument);
+    CHECK_THROWS_WITH(RenderGraphExecutor(nullptr, 1), Catch::Matchers::ContainsSubstring("RenderGraphExecutor") &&
+                                                           Catch::Matchers::ContainsSubstring("device"));
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: a multi-segment handover completes through timeline values",
                  "[RenderGraphBuilder]")
 {

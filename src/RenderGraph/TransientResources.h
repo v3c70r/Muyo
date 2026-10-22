@@ -136,7 +136,10 @@ public:
     /// Unmap before the base destructor destroys the buffer. The block is freed after every resource
     /// bound into it is gone, so this runs while the mapping is still valid - which is the whole reason the
     /// graph's teardown order is resources first, blocks second.
-    ~TransientBufferResource() override { Unmap(); }
+    // Qualified: this is the override this class defines, and naming it makes the dispatch explicit. The
+    // analyzer flags any virtual call in a destructor, correctly in general - here the call is this class's
+    // own Unmap, not a further-derived override that no longer exists.
+    ~TransientBufferResource() override { TransientBufferResource::Unmap(); }
 
 private:
     /// The block this resource was bound into, or null before `BindTo`.

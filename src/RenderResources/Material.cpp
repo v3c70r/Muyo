@@ -42,7 +42,10 @@ void MaterialManager::CreateDefaultMaterial()
     {
         Material &material = GetOrCreateMaterial(sDefaultName);
 
-        PBRMaterial pbrMaterial;
+        // Value-initialised: clang-analyzer found the factors read as garbage here (uninitialized.Assign),
+        // so the default material was configured from indeterminate values. Zero is deliberate - the default
+        // material is a placeholder, nothing renders it today, and a caller that does must set the factors.
+        PBRMaterial pbrMaterial{};
         material.SetMaterialParameterFactors(pbrMaterial, sDefaultName)
             .LoadTexture(Material::TEX_ALBEDO, "assets/Materials/white5x5.png", "defaultAlbedo")
             .LoadTexture(Material::TEX_METALNESS, "assets/Materials/white5x5.png", "defaultMetalness")

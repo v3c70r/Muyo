@@ -47,6 +47,14 @@ VkSemaphoreSubmitInfo MakeSemaphoreSubmitInfo(VkSemaphore semaphore, uint64_t va
 RenderGraphExecutor::RenderGraphExecutor(VkRenderDevice* renderDevice, uint32_t inFlightCount)
     : m_renderDevice(renderDevice), m_device(renderDevice != nullptr ? renderDevice->GetDevice() : VK_NULL_HANDLE)
 {
+    // The initialiser tolerates a null device, but the body does not: it reads the queue handles and creates
+    // timeline semaphores on the device. A caller that passes null is a bug, and this check survives NDEBUG
+    // (AGENTS section 3) instead of becoming a null dereference in Release.
+    if (renderDevice == nullptr)
+    {
+        throw std::invalid_argument(
+            "RenderGraphExecutor needs a device: it creates timeline semaphores and reads the queue handles.");
+    }
     if (inFlightCount == 0) inFlightCount = 1;
     m_slots.resize(inFlightCount);
 

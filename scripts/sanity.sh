@@ -91,9 +91,11 @@ cmd_format() {
 }
 
 cmd_tidy() {
-    bold "tidy: changed files (report only, .clang-tidy is not baselined yet)"
+    bold "tidy: changed files (report only; curated .clang-tidy, #24)"
     local tool
-    tool="$(command -v clang-tidy-21 || command -v clang-tidy || true)"
+    # Pin 18: the curated config is measured with it and it matches .clang-format; a newer clang-tidy
+    # adds checks and changes results, so a version bump is a deliberate change.
+    tool="$(command -v clang-tidy-18 || command -v clang-tidy || true)"
     if [ -z "$tool" ]; then
         bad "clang-tidy not found; install clang-tidy (issue #24)"
         return
@@ -105,8 +107,12 @@ cmd_tidy() {
         return
     fi
 
+    # Translation units only: a bare header has no compile command, so clang-tidy parses it without its
+    # include context and reports `clang-diagnostic-error`s that are artifacts of the invocation (the
+    # `ImageResourceDesc` case in TransientResources.h). Header diagnostics still arrive through the TUs that
+    # include them, but a *header-only* change is not tidied yet - that gap is #206.
     local files
-    files="$(git diff --name-only --diff-filter=ACMR "$BASE" -- "${SRC_GLOBS[@]}" | grep -E '\.(cpp|h)$' || true)"
+    files="$(git diff --name-only --diff-filter=ACMR "$BASE" -- "${SRC_GLOBS[@]}" | grep -E '\.cpp$' || true)"
     if [ -z "$files" ]; then
         ok "no changed C++ files"
         return
@@ -120,12 +126,24 @@ cmd_tidy() {
         "$tool" -p build "$f" >>"$log" 2>&1
     done <<<"$files"
 
-    echo "diagnostics by check (user code):"
-    local pattern='\[[a-z0-9]+(-[a-z0-9]+)*(,[a-z0-9-]+)*\]$'
-    grep -oE "$pattern" "$log" | sed 's/[][]//g' | tr ',' '\n' \
+    # Count only diagnostics located in this repository's own sources. clang-tidy can emit analyzer findings
+    # from vendored headers even with `HeaderFilterRegex` anchored - catch2's `catch_result_type.hpp` is the
+    # recorded case - and the gate must never fail on those. The full log keeps them, and the vendored count
+    # is printed so the two numbers reconcile. The check pattern allows dots and capitals: every
+    # `clang-analyzer-*` name has them, and the old lowercase-only pattern could not count that family at all.
+    local pattern='\[[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*\]$'
+    local project=/tmp/muyo-tidy-project.log
+    grep -E '^/[^:]+:[0-9]+:[0-9]+: (warning|error):' "$log" \
+        | grep -v -E '/(_deps|thirdparty|build[^/]*)/' >"$project" || true
+
+    echo "project diagnostics by check:"
+    grep -oE "$pattern" "$project" | sed 's/[][]//g' | tr ',' '\n' \
         | grep -v warnings-as-errors | sort | uniq -c | sort -rn | head -20
-    # Count the check-tagged lines themselves: portable, and independent of the source path.
-    printf '\ntotal: %s   full log: %s\n' "$(grep -cE "$pattern" "$log" || true)" "$log"
+    local project_count vendored_count
+    project_count="$(grep -cE "$pattern" "$project" || true)"
+    vendored_count="$(( $(grep -cE "$pattern" "$log" || true) - project_count ))"
+    printf '\ntotal: %s project, %s vendored (not counted)   full log: %s\n' \
+        "$project_count" "$vendored_count" "$log"
     echo "report-only for now: do not fail the build on these until #24 baselines them"
 }
 

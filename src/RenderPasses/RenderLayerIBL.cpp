@@ -594,7 +594,9 @@ RenderLayerIBL::RenderLayerIBL()
 {
     setupRenderPass();
     setupFramebuffer();
-    CreatePipeline();
+    // Qualified: this class's override, called from its own constructor body. The virtual call resolved here
+    // during construction; naming it says so (clang-analyzer VirtualCall).
+    RenderLayerIBL::CreatePipeline();
     setupDescriptorSets();
     RecordCommandBuffer();
 }
