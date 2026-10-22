@@ -48,7 +48,7 @@ tracking issue and, where it blocks a consumer, is marked.
 | Cooperative matrix can be enabled at device creation | muyo-llm | holds | — |
 | Cooperative matrix property sets can be read, to pick a kernel shape | muyo-llm | **gap** | #72 |
 | A client can supply SPIR-V bytes / a shader search path, not only a file name | muyo-llm | **gap** | #53 |
-| Declaration errors fail at `Build()`, naming the graph entity | muyo-llm | **gap** | #55 |
+| Declaration errors fail at `Build()`, naming the graph entity | muyo-llm | holds | — |
 
 ## Rules for consumers and for changes
 
