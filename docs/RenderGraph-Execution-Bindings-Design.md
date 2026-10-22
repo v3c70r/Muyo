@@ -28,8 +28,10 @@ expressed without rebuilding:
 - A per-frame uniform buffer (a ring of `framesInFlight` slices) has the same shape: the buffer is stable,
   the *offset* is not.
 - `Build()` is a full recreate: it destroys the compiled graph, the aliased transients and the descriptor
-  set cache, reallocates resources, recompiles every node (pipelines included) and re-plans barriers
-  (`RenderGraphBuilder.cpp:1542`). Rebuilding per frame pays all of that every frame.
+  set cache, reallocates resources, recompiles every node (pipelines included) and re-derives the execution
+  plan (`RenderGraphBuilder.cpp:1542`). The per-use barrier batch is separate: it is derived in
+  `RecordBarriers` on every `Execute()`, rebuild or not. Rebuilding per frame pays all of the above every
+  frame.
 
 `inFlightCount` is 1 (`RenderGraphExecutor.h:90`), so even a single-execution-per-frame loop cannot overlap
 CPU recording with GPU work yet. Raising it is [#40](https://github.com/v3c70r/Muyo/issues/40)'s subject and
@@ -49,7 +51,7 @@ device change, or an attachment-format change; it is made cheap by the caches in
 [#17](https://github.com/v3c70r/Muyo/issues/17), not avoided by caching the whole graph.
 
 `ResolveResource()` is already called at **record time** by the barrier path, `BeginRendering` and
-`EmitPresentTransition`. That is why the attachment case needs no descriptor work: the view is resolved
+`RecordPresentTransition`. That is why the attachment case needs no descriptor work: the view is resolved
 when the command buffer is recorded, so an execution binding is enough.
 
 ## 1. Resource slots
@@ -98,7 +100,7 @@ The mechanism follows from the resource kind, and this is the part worth not gen
 | Slot kind | Mechanism | Cost |
 | --- | --- | --- |
 | Image used only as an attachment or present target | resolve the view at record time; `VkRenderingAttachmentInfo` and the barriers are already built there | **zero** — no descriptor involved |
-| Image **sampled or stored** (history, per-frame shadow map) | per-execution descriptor set instance; the content-addressed key already includes the concrete view, so the cache holds one per in-flight execution | one set per execution, retained until that execution's timeline value completes |
+| Image **sampled or stored** (history, per-frame shadow map) | per-execution descriptor set instance; the content-addressed key already includes the concrete resource's identity, so the cache holds one per in-flight execution | one set per execution, retained until that execution's timeline value completes |
 | Buffer, whole-buffer slot | the resource identity changes the set key | one set per bound buffer |
 | Buffer, ranged slot | `*_DYNAMIC` descriptor + `pDynamicOffsets` in the `vkCmdBindDescriptorSets` that `Execute()` already emits | **zero** descriptor writes; the set stays shared |
 
@@ -212,8 +214,8 @@ it makes rebuilds cheap without changing what a build means.
 
 - **One graph per swapchain image.** It ties graph count to image count, multiplies transient memory,
   descriptor sets and pipelines by that count, collides on `RenderResourceManager` handles unless every
-  graph namespaces its resources, and conflates image count with frames in flight. #40 already calls it a
-  stopgap.
+  graph namespaces its resources, and conflates image count with frames in flight. It is an optimisation to
+  a design that should not need it, not the model.
 - **Writing the swapchain image through a storage descriptor selected by a push constant.** Swapchain images
   are created with `COLOR_ATTACHMENT` (+ transfer, if supported) and no `STORAGE` (`src/Swapchain.cpp:78`);
   present requires the `PRESENT_SRC_KHR` transition and the presentation engine's ownership. Push-constant
