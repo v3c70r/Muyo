@@ -268,9 +268,10 @@ rather than left as configuration nothing executes.
   an integration test's *subject* is the topology, it must say so rather than pass quietly: a green
   run on a device without that topology is not evidence about the path.
 
-Run `scripts/sanity.sh` before opening a pull request; it covers the documentation check and the
-format check described below in one command. `scripts/sanity.sh warnings` is the enforcing form of
-"no new warnings" and belongs in the same gate.
+Run `scripts/sanity.sh` before opening a pull request; it covers the documentation check, the format
+check and the changed-line clang-tidy gate described below in one command (the tidy gate needs a
+configured build). `scripts/sanity.sh warnings` is the enforcing form of "no new warnings" and belongs in
+the same gate.
 
 ## 5. Static analysis and sanity checks
 

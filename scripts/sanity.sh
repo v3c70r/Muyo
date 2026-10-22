@@ -2,13 +2,14 @@
 #
 # Local sanity checks for Muyo.
 #
-# There is no CI (see AGENTS.md, section 4): these run on the development machine,
-# normally before opening a pull request. Nothing here is required to pass yet --
-# the point is to make the state visible so it can be improved in passes (issues
-# #23, #24, #25) instead of being discovered late.
+# CI runs the build/test matrix and the docs, format and tidy gates on every pull request (AGENTS.md
+# section 4); this script is the same checks on the development machine, normally before opening one.
+# Not every check is enforced yet - the state is visible so it can be improved in passes (#23, #24, #25)
+# instead of being discovered late.
 #
 # Usage:
-#   scripts/sanity.sh              fast: docs coverage + formatting of changed lines
+#   scripts/sanity.sh              docs coverage, formatting and tidy on the lines this branch changed
+#                                  (tidy needs a configured build: cmake -S . -B build)
 #   scripts/sanity.sh docs         documentation coverage + generated markdown
 #   scripts/sanity.sh format       clang-format on the lines this branch changed
 #   scripts/sanity.sh tidy         clang-tidy on the lines this branch changed (fails on a finding)
@@ -17,7 +18,7 @@
 #   scripts/sanity.sh thread       build + run the device-free cases under ThreadSanitizer (report only)
 #   scripts/sanity.sh warnings     -Wall/-Wextra baseline, changed files only (fails on a regression)
 #   scripts/sanity.sh analyzer     gcc -fanalyzer fallout (slow, report only)
-#   scripts/sanity.sh all          the slow checks: docs, format, static, sanitize, warnings, analyzer
+#   scripts/sanity.sh all          the slow checks: docs, format, tidy, static, sanitize, warnings, analyzer
 #
 # Environment:
 #   BASE=<ref>   comparison ref for the format and warnings checks (default: origin/master)
@@ -359,7 +360,7 @@ cmd_analyzer() {
 }
 
 targets=("$@")
-[ ${#targets[@]} -eq 0 ] && targets=(docs format)
+[ ${#targets[@]} -eq 0 ] && targets=(docs format tidy)
 if printf '%s\n' "${targets[@]}" | grep -qx all; then
     targets=(docs format tidy static sanitize warnings analyzer)
 fi

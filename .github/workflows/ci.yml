@@ -112,7 +112,10 @@ jobs:
           # step with a failure in the summary. The gate's exit status is the verdict.
           set -o pipefail
           git fetch --no-tags origin master:refs/remotes/origin/master
-          BASE=origin/master scripts/sanity.sh tidy | tee -a "$GITHUB_STEP_SUMMARY"
+          # Strip ANSI codes so the step summary renders as text rather than escape sequences.
+          BASE=origin/master scripts/sanity.sh tidy 2>&1 \
+            | sed $'s/\x1b\\[[0-9;]*m//g' \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
   tests:
     name: tests (${{ matrix.name }})
