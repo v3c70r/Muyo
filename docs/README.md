@@ -9,6 +9,14 @@ Two documents cover the RenderGraph:
 
 Both are plain Markdown so they render on GitHub and can be read directly by tools/agents.
 
+Design notes for work that is **not implemented yet** are kept out of the generated reference on purpose
+(unimplemented designs are not API):
+
+| File | Status | Purpose |
+| --- | --- | --- |
+| [`DescriptorSet-Lifecycle-Design.md`](DescriptorSet-Lifecycle-Design.md) | design only | Content-addressed descriptor sets, frame retention, `framesInFlight`. |
+| [`RenderGraph-Execution-Bindings-Design.md`](RenderGraph-Execution-Bindings-Design.md) | design only | Per-execution resource slots, push-constant slots and dynamic state: one compiled graph, many frames. |
+
 ## Generating and checking
 
 ```bash
