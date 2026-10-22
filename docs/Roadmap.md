@@ -134,8 +134,10 @@ Measured, not estimated:
 - **`muyo_rg` is already a separate target, but a library in name only.** It now declares a dependency -
   `target_link_libraries(muyo_rg PUBLIC muyo)` - but that is the engine, not a standalone set of
   dependencies, and it still compiles inside the engine's include scope.
-- **7 of its files include engine headers** from outside `src/RenderGraph/`, concentrated in
-  `RenderGraphBuilder.h` (`MeshResourceManager`, `PerObjResourceManager`, `ShaderAsset`, `PSODesc`, …).
+- **8 of its files include at least one header from outside `src/RenderGraph/`**, largest in
+  `RenderGraphBuilder.cpp` (`Debug.h`, `PipelineStateBuilder.h`, `ShaderReflectionFetcher.h`,
+  `VkExtFuncsLoader.h`) and `RenderGraphBuilder.h` (`DescriptorManager.h`, `PerObjResourceManager.h`,
+  `ShaderAsset.h`). The scan is in `Roadmap-Visual.md` section 7.
 - **2 code call sites reach for engine singletons** rather than receiving them, both in the transitional
   `RenderGraphBuilder(VkRenderDevice*)` constructor. The services constructor (#85) is the path the
   consumer uses; the remaining work is making the transitional form unnecessary.

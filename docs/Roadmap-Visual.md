@@ -1,6 +1,7 @@
 # Roadmap: a visualized snapshot
 
-**Snapshot:** 2026-10-22, master `88bcd6c`, plus the execution-bindings design note in PR #208.
+**Snapshot:** 2026-10-22, master `88bcd6c`. The execution-bindings design note is open in PR #208 at the
+time of writing; it is referenced here, not assumed merged.
 
 **Authority:** phase membership is the six GitHub milestones; an issue's state is its `Status`,
 `Critical path`, `Depends on` and `Debt` fields on the [project board](https://github.com/users/v3c70r/projects/3);
@@ -19,8 +20,8 @@ about. The view lives here so the contract there stays true.
 ```mermaid
 flowchart LR
     P0["P0 Frame synchronization<br/>10 closed · 0 open<br/>executor + timeline values"]
-    P1["P1 Graph parity<br/>5 closed · 5 open<br/>capabilities + cost (#59)"]
-    P2["P2 App adoption<br/>0 closed · 4 open<br/>helloVulkanRG proves the loop;<br/>helloVulkan not ported"]
+    P1["P1 Graph parity<br/>5 closed · 7 open<br/>capabilities + cost (#59)"]
+    P2["P2 App adoption<br/>0 closed · 6 open<br/>helloVulkanRG proves the loop;<br/>helloVulkan not ported"]
     P3["P3 Deprecation<br/>0 closed · 1 open<br/>delete RenderPassManager"]
     L["L Library extraction<br/>7 closed · 7 open<br/>overlaps P1-P3"]
     P0 --> P1 --> P2 --> P3
@@ -183,11 +184,11 @@ branch and the corresponding issue/field edits do.
 | R1 | `Roadmap.md` "Where we are" line counts are stale. | `src/RenderGraph` is **7,466** lines (doc says 3,777); `src/RenderPasses` 4,412 (4,403); `helloVulkan.cpp` 376 (374). | Updated the table. |
 | R2 | "The graph has zero production adoption" overstates it now. | `helloVulkan` is still legacy, but `src/app/helloVulkanRG.cpp` (330 lines) owns its frame loop through the graph, and `muyo-llm` is an external non-renderer consumer. | Reworded: zero **in-repo renderer** adoption; helloVulkanRG + muyo-llm exercise it. |
 | R3 | `#83` is in `Backlog (after P3)`, but its design trigger is **after #20** (P2), which is before P3. | Design note (PR #208) status section; #83 body update. | Moved #83 to P2 (not part of the P2 gate). |
-| R4 | `Consumers.md` lists "Declaration errors fail at `Build()`, naming the graph entity" as a **gap** owned by #55 - but #55 is closed. | #55 closed; the failure-index work landed in #127/#128/#131/#132/#135/#142. | Row becomes `holds`. |
+| R4 | `Consumers.md` lists "Declaration errors fail at `Build()`, naming the graph entity" as a **gap** owned by #55 - but #55 is closed. | #55 closed; the failure-index work closed as completed in the batches #127/#128/#131/#132/#135/#142 (issues, not PRs). | Row becomes `holds`. |
 | R5 | The L milestone description says #55 and #16 block the gate; both are closed. | #16 and #55 are closed; the remaining gap rows are #53 (two) and #72. | Updated the milestone description. |
 | R6 | `#40`'s body says descriptor sets are written at record time and depends on #15/#16/#11. Since #15's cache, sets are written at `Build()`; #16 and #11 are closed. | `docs/RenderGraph.md` status bullet says the record-time hazard is gone; the remaining alias is transients. | Rewrote #40's blocker section: per-execution transients + frame-scoped sets + execution bindings (#83); updated `Depends on`. |
 | R7 | `#17` has `Critical path: No`, but the P1 gate names pipeline caching as a capability P1 cannot close without. | P1 milestone description. | Set `Critical path: Yes` (slippage moves P1's close). |
-| R8 | `#53`'s measurements are stale (13 files / 15 call sites / "no `target_link_libraries`"), and it still depends on #11 (closed). | Now **7** files include engine headers, **2** singleton call sites in the transitional constructor (+3 doc lines), and `muyo_rg` has `target_link_libraries(PUBLIC muyo)`. | Updated #53's body; cleared the closed dependency. |
+| R8 | `#53`'s measurements are stale (13 files / 15 call sites / "no `target_link_libraries`"), and it still depends on #11 (closed). | Now **8** files under `src/RenderGraph/` include at least one header from outside the directory (scan in section 7), **2** singleton code call sites in the transitional constructor (+3 doc lines), and `muyo_rg` has `target_link_libraries(PUBLIC muyo)`. | Updated #53's body; cleared the closed dependency. |
 | R9 | `#25` is titled "Enable -Wextra ...", but `-Wextra` and the warning baseline landed (#193/#194). Only `-Wconversion` measurement and the scan-build baseline remain. | #25's own status section. | Retitled to the remaining scope; kept `Debt: After P3`. |
 | R10 | Seven open issues have **no milestone**, so the Roadmap's "milestone owns the phase" contract does not cover them: #144, #157, #183, #186, #188, #197, #209. | `gh issue list` vs milestones. | Assigned: #197/#209 to P1, #186 to P2, #144/#157/#183/#188 to Backlog. |
 | R11 | The `Depends on` field for #59 is empty although #59 consumes #197's timing data; #57 still lists closed #16. | #59 body and #197 body. | Set #59 → #197; #57 keeps #15 (open) and drops #16. |
@@ -203,14 +204,30 @@ branch and the corresponding issue/field edits do.
 gh api 'repos/v3c70r/Muyo/milestones?state=all&per_page=100' \
   --jq '.[]|"\(.title): open=\(.open_issues) closed=\(.closed_issues)"'
 
-# issue state, including the custom fields (the key has a space: "critical path")
+# issue state, including the custom fields (the key has a space: "critical path"). Board reads need
+# the read:project scope (gh auth refresh -s read:project); without it the command fails, which is not
+# the same as an empty board.
 gh project item-list 3 --owner v3c70r --limit 200 --format json \
   | python3 -c 'import json,sys; [print(i["content"]["number"], i.get("status"), i.get("critical path"), i.get("depends on")) for i in json.load(sys.stdin)["items"] if i.get("content",{}).get("number")]'
 
 # the measurement claims in section 6
 cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h') | wc -l
-grep -rnE 'GetRenderDevice\(\)|GetRenderResourceManager\(\)|GetDescriptorManager\(\)' src/RenderGraph/ | wc -l
+grep -rnE 'GetRenderDevice\(\)|GetRenderResourceManager\(\)|GetDescriptorManager\(\)' --include=*.cpp src/RenderGraph/ | wc -l
+# -> 2. Without --include=*.cpp it prints 5: the two code sites plus three doc-comment lines in the header.
 grep -n 'target_link_libraries(muyo_rg' CMakeLists.txt
+
+# The include scan behind R8/R12: quoted includes that are not files in src/RenderGraph/.
+python3 - <<'PY'
+import os, glob, re
+d = 'src/RenderGraph'
+local = set(os.listdir(d))
+for f in sorted(glob.glob(d + '/*.h') + glob.glob(d + '/*.cpp')):
+    inc = [m.split('/')[-1] for m in re.findall(r'^\s*#include\s+"([^"]+)"', open(f, encoding='utf-8').read(), re.M)]
+    ext = [h for h in inc if h not in local and not h.startswith('vulkan')]
+    if ext:
+        print(f, '->', ' '.join(sorted(set(ext))))
+PY
+# 8 files at this head; the largest sets are RenderGraphBuilder.cpp (4) and RenderGraphBuilder.h (3).
 ```
 
 A number in this file is a measurement with a date. If it is wrong, the fix is the command, not the
