@@ -1,11 +1,13 @@
 # Descriptor set lifecycle — design note
 
-**Status:** design only, not implemented. Captures the reasoning behind the N2 finding from the
-PR #9 review and the follow-up discussion. The implementation is deferred to a dedicated
-descriptor-set refactor branch (see *Sequencing*).
+**Status:** superseded (draft) by the descriptor-heap design. This note is kept as the record of the
+descriptor-set reasoning and the N2 finding from the PR #9 review; it is no longer the direction.
+`VK_EXT_descriptor_heap` removes descriptor-set layouts, sets and pools from the graph path, so the
+content-addressed cache this note proposes is a solution to a problem the graph will not have.
 
-This note deliberately sits outside the Doxygen API reference: it describes a design we have not
-committed to yet.
+The replacement is recorded in `docs/DescriptorHeap-Bindless-Design.md`, which is deliberately outside
+this API reference because it is not implemented. See that file in the repository rather than the
+generated pages.
 
 ## The problem (N2)
 
