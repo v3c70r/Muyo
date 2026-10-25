@@ -107,7 +107,7 @@ state, and neither should try to carry the other's half.
 | Constraint | Why it is expensive to retrofit |
 | --- | --- |
 | **No frame boundary in the library** | An inference client submits work that outlives many display frames. `Execute()` draining at frame end is a convenience to keep, not the model: completion has to be expressible as a timeline value the client can chain across frames. |
-| **Device, allocator and descriptor allocation injected, not global** | There are 15 call sites inside `src/RenderGraph/` that reach for `GetRenderDevice()` and friends. A library cannot own the engine's singletons. |
+| **Device, allocator and descriptor allocation injected, not global** | The injection (#85) replaced the singleton lookups inside `src/RenderGraph/`; 2 transitional call sites remain. A library cannot own the engine's singletons. |
 | **Compute-only is a first-class profile** | No surface, no present, possibly no colour attachments. Nothing on the execution path may require a graphics family or a swapchain. |
 | **Long-lived resources are first-class** | Weights and a KV cache live for the process, not a frame. The transient/persistent split (`#15`, `#16`) has to serve that, not only per-frame render targets. |
 | **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |

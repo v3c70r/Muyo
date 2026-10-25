@@ -674,7 +674,7 @@ been reproduced on the merged content.
 | [`docs/CodingConventions.md`](docs/CodingConventions.md) | Repository-wide code rules. |
 | [`docs/RenderGraph.md`](docs/RenderGraph.md) | RenderGraph concept, quick start, status/limitations. |
 | [`docs/RenderGraph-api.md`](docs/RenderGraph-api.md) | Generated API reference (do not hand-edit). |
-| [`docs/DescriptorSet-Lifecycle-Design.md`](docs/DescriptorSet-Lifecycle-Design.md) | Descriptor-set redesign (not yet implemented). |
+| [`docs/DescriptorSet-Lifecycle-Design.md`](docs/DescriptorSet-Lifecycle-Design.md) | Historical descriptor-set design: the content-addressed cache half landed (#108/#109); the direction is superseded by the descriptor-heap bindless design (`docs/DescriptorHeap-Bindless-Design.md`, [#211](https://github.com/v3c70r/Muyo/pull/211)). |
 | [`docs/README.md`](docs/README.md) | How to generate and check the docs. |
 | [`docs/Roadmap.md`](docs/Roadmap.md) | The plan: goal, phases, gates, debt policy, risks. Reasoning lives here; state lives in the GitHub milestones and project fields — the doc's "Where the plan lives" section is the contract between them. |
 | [`docs/Roadmap-Visual.md`](docs/Roadmap-Visual.md) | A visualized snapshot: phase/gate diagrams, the critical path, the open-issue dependency graph, and the reconciliation record. A view, not a source. |
