@@ -706,7 +706,7 @@ This section is a proposal for `docs/Roadmap.md`; the roadmap PR applies it afte
 | **#40** in-flight > 1 | **Re-scoped.** The descriptor-set half is gone; the remaining work is per-execution transients and the optional root-memory arena. |
 | **#83** per-execution bindings | **Close after B2.** Different root data is a different value per execution; no rebuild and no descriptor rewrite. |
 | **#209** rebuild keeps stale resource | **Fixed in B2** by the desc-keyed resource cache. |
-| **#12** barriers | **Closed; no new work.** The stage/access work landed; the unified-layout removal is B3/deferred. |
+| **#12** barriers | **Closed; no new work.** The stage/access work landed; unified-layout removal is deferred to B3. If B3 is scheduled it gets its own issue; #12 is not reopened. |
 | **#14/#19** RT parity | RT shaders use heap handles. B0 verifies a null-layout RT pipeline; if a driver rejects it, RT waits on that driver rather than getting a second binding path — the graph does not keep descriptor sets for it. |
 | **#57** client frame helper | Unaffected; runs in parallel. |
 | **#20** `helloVulkan` port | **Freeze further ports after #111 until B2.** #111 already ported the UI pass; it is accepted double-conversion debt. Porting more passes now would convert twice; if work continues, record the double conversion as accepted debt. #20 remains open for the final port after B2. |
