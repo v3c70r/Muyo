@@ -9,13 +9,20 @@ The replacement is recorded in `docs/DescriptorHeap-Bindless-Design.md`, which i
 this API reference because it is not implemented. See that file in the repository rather than the
 generated pages.
 
+**Historical record — written 2026-10-06.** The body below describes that tree and is kept for the N2
+reasoning, not as a statement about the current implementation. Since then: A1 landed (`FrameSync` +
+timeline execution), the content-addressed cache landed as #108/#109, and
+`RenderGraphDescriptorSets.h`, `AllocateSemanticSet` and `DestroyCompiledRenderGraphNode` were removed.
+The remaining open half of step 2 is cross-frame retention, and it exists only while descriptor sets
+exist.
+
 ## The problem (N2)
 
 `MATERIAL` is one of the three built-in semantic descriptor sets. Its binding 1 is the bindless
 texture array:
 
 ```cpp
-// RenderGraphDescriptorSets.h
+// historical: RenderGraphDescriptorSets.h (removed by #108)
 { .binding = BINDING_TEXTURS,
   .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
   .descriptorCount = MAX_BINDLESS_TEXTURE_COUNT /* 1024 */ }
@@ -158,26 +165,28 @@ was that one set's contents are frame-invariant, which the key expresses directl
 | Push descriptors (`VK_KHR_push_descriptor`) | Records writes into the command buffer, so the update/bind timing problem disappears entirely. Good fit, needs the extension and a layout flag. |
 | Descriptor buffers (`VK_EXT_descriptor_buffer`) | Endgame: the descriptor table is a `BufferResource`, already a graph resource; the cache becomes a bump allocator and intra-frame reuse becomes legal. This is where A4 points. |
 
-## Sequencing
+## Sequencing (historical, 2026-10-06)
 
-1. **A1** — per-frame fences + timeline semaphores. Do this first: it changes the lifetime math, and
-   doing it after the cache means redoing the retention counts.
-2. **Descriptor set cache** (this note) — parameterised by `framesInFlight` from the start.
-3. **A4** — descriptor buffers / bindless; the cache degrades to an allocator over a buffer
-   resource.
+1. **A1** — per-frame fences + timeline semaphores. This was the prerequisite at the time; A1 has since
+   landed.
+2. **Descriptor set cache** (this note) — the cache and dedup landed as #108/#109. Cross-frame retention
+   remains open, and only matters while descriptor sets exist.
+3. **A4** — descriptor buffers / bindless; the cache degrades to an allocator over a buffer resource.
+   The descriptor-heap design supersedes this step.
 
-## Accepted debt
+## Accepted debt (historical; paid by #109)
 
-Until step 2 lands, `MATERIAL` allocates one 1024-descriptor set per material-binding node. This is
-accepted for now because the graph is not yet used by the application (it drives the tests only),
-and no shader declares set 2. It must be resolved before the graph takes over a real material pass,
-along with the rest of A4.
+At the time of writing, `MATERIAL` allocated one 1024-descriptor set per material-binding node. That was
+accepted because the graph was not yet used by the application (it drove the tests only) and no shader
+declared set 2. The content-addressed cache landed in #109, so that per-node allocation is gone; the
+remaining open half is cross-frame retention, which only applies while descriptor sets exist.
 
-## References
+## References (historical, 2026-10-06)
 
-- `src/RenderGraph/RenderGraphDescriptorSets.h` — layouts, per-node `AllocateSemanticSet`,
-  `BindResourceToDescriptorSet`.
-- `src/RenderGraph/RenderGraphBuilder.cpp` — `CompileRenderGraphNode` (per-node set allocation,
-  lazy `nSetCount`), `Execute` (semantic write + bind), `DestroyCompiledRenderGraphNode` (release).
-- `src/RenderResources/DescriptorManager.h` — pool sizes.
+- `src/RenderGraph/RenderGraphDescriptorSets.h` — removed by #108. It contained the layouts, per-node
+  `AllocateSemanticSet` and `BindResourceToDescriptorSet` this note described.
+- `src/RenderGraph/RenderGraphBuilder.cpp` — `CompileRenderGraphNode` derives layouts from reflection and
+  obtains sets from `DescriptorSetCache`; identical contents are shared, so the per-node duplication this
+  note describes is gone. `DestroyCompiledRenderGraphNode` is gone.
+- `src/RenderResources/DescriptorManager.h` — pool sizes; still present.
 - PR #9 review, findings C5/C6/N2/A4.

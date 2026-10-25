@@ -83,6 +83,24 @@ The only "layout" left is the **host's root data**. The graph treats it as bytes
 | D13 | **GPU-driven execution is host-owned.** The graph guarantees the binding primitives (heap, push data/root memory, indirect/draw usage) are usable from a host-recorded node; it does not add a DGC, meshlet or work-graph API. | A host feature the binding primitives cannot express. |
 | D14 | **Direct-heap exceptions are explicit.** Input attachments and YCbCr/subsampled/embedded samplers go through mappings or are rejected with a named diagnostic; custom-border samplers carry a registered index. | A driver or format that needs another exception. |
 
+### Device requirements and the deliberate floor raise
+
+`AGENTS.md` section 3 currently states a Vulkan 1.3 floor. This design **deliberately raises it to 1.4**
+and requires the following, each verified at device creation rather than enabled blindly:
+
+| Requirement | Extension / feature | Verified at |
+| --- | --- | --- |
+| Vulkan 1.4 | core (includes the `maintenance5` / extended-flags path the extension depends on) | instance/device creation |
+| Descriptor heaps | `VK_EXT_descriptor_heap`, `descriptorHeap` | device creation |
+| Direct heap access SPIR-V | `VK_KHR_shader_untyped_pointers`, `shaderUntypedPointers` | device creation |
+| Root/device pointers | `bufferDeviceAddress` and `shaderInt64` (already required by the engine) | device creation |
+| Ray tracing | `VK_KHR_ray_tracing_pipeline` (RT path only) | RT device creation |
+
+The implementation PR updates `AGENTS.md` section 3 and `Consumers.md`; this design note does not change the
+process file by itself. B0 records the same list on llvmpipe and each hardware driver, and unsupported
+configurations are recorded rather than treated as a green run. `VK_KHR_unified_image_layouts` is optional
+and deferred, not part of the floor.
+
 ## 4. Push data and root data
 
 Push data is **opaque to RenderGraph**. `vkCmdPushDataEXT` takes a byte blob; the extension does not require
