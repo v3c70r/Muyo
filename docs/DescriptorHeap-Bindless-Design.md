@@ -108,8 +108,8 @@ engine already enables and **requires** `shaderInt64` and `bufferDeviceAddress`
 (`src/RenderDevice/VkRenderDevice.cpp:352`, `:362`, `:541`, `:551`), so the "already required" row is
 checked against the current tree, not assumed. B0 queries `descriptorHeap` and
 `shaderUntypedPointers` at device creation and records them. `VK_KHR_unified_image_layouts` is absent
-from the dependency expression; llvmpipe exposes it and RADV 1.4.354 does not, which is why it remains
-optional and deferred rather than part of the floor.
+from the dependency expression; newer llvmpipe Mesa builds expose it, older ones and RADV 1.4.354 do
+not, which is why it remains optional and deferred rather than part of the floor.
 
 ## 4. Push data and root data
 
@@ -185,13 +185,27 @@ ConstantBuffer<PushBlock> push;
 and the host writes the struct into a root slice, pushes the pointer, and uses the indices:
 
 ```slang
-Texture2D    albedo = Texture2D.Handle(uint2(push.root->images[kAlbedo], 0));
-SamplerState linear = SamplerState.Handle(uint2(push.root->samplers[kLinear], 0));
-Sampler2D    mixed  = Sampler2D.Handle(
-    uint2(push.root->images[kAlbedo], push.root->samplers[kLinear]));
-StructuredBuffer<Material> materials =
-    StructuredBuffer<Material>.Handle(uint2(push.root->buffers[kMaterial], 0));
+[shader("fragment")]
+float4 shade(float2 uv : TEXCOORD0) : SV_Target
+{
+    // .Handle() is function-local: at module scope Slang treats the declaration as a
+    // shader parameter and emits an ordinary DescriptorSet/Binding instead of heap access.
+    Texture2D    albedo = Texture2D.Handle(uint2(push.root->images[kAlbedo], 0));
+    SamplerState linear = SamplerState.Handle(uint2(push.root->samplers[kLinear], 0));
+    Sampler2D    mixed  = Sampler2D.Handle(
+        uint2(push.root->images[kAlbedo], push.root->samplers[kLinear]));
+    StructuredBuffer<Material> materials =
+        StructuredBuffer<Material>.Handle(uint2(push.root->buffers[kMaterial], 0));
+    return mixed.Sample(uv);
+}
 ```
+
+**`.Handle()` must be function-local.** A module-scope declaration such as
+`StructuredBuffer<float> buf = StructuredBuffer<float>.Handle(idx);` compiles, but Slang treats it as a
+shader parameter: the SPIR-V carries `DescriptorSet`/`Binding` decorations and no heap access. On a
+null-layout heap pipeline that is a binding against a layout that does not exist, or a silent route
+through the mapping path. The global-scope shape is kept as a negative control in
+`docs/DescriptorHeap-Probes/`; B0 rejects any positive `.heap.spv` that contains a `Binding` decoration.
 
 The host chooses the sizes. The current lighting pass uses 11 images, 11 samplers and 3 buffers; a
 128/32/32/8 layout fits it with room for a whole scene. A 10,000-texture scene stores heap indices in
@@ -535,8 +549,9 @@ that layout and the image is never transitioned again. Present-only images are t
 
 That removes image-layout transitions from the sampled/storage/attachment path and lets a descriptor be
 written once. `VK_KHR_unified_image_layouts` would make the same statement at the API level and delete
-the layout field from the barrier path, but it is **not available on RADV 1.4.354** on the RDNA2 box (it
-is present on llvmpipe). B3 is therefore optional and driver-gated, not a B1 dependency. Until then, the
+the layout field from the barrier path, but it is **not available on RADV 1.4.354** on the RDNA2 box, and
+llvmpipe support is Mesa-version dependent (newer builds expose it, older ones do not). B3 is therefore
+optional and driver-gated, not a B1 dependency. Until then, the
 barrier code keeps only the present transition and the one-time conversion of imported images that are
 not created in `GENERAL`.
 
@@ -549,17 +564,27 @@ not a silent return to per-node descriptors.
 Direct heap access is a shader-source change, not a compiler flag:
 
 ```slang
-// before: descriptor-set declarations
+// before: descriptor-set declarations, module scope
 [[vk::binding(0, SET_PER_VIEW)]] ConstantBuffer<PerViewData> perView;
 [[vk::binding(0, SET_MATERIAL)]] StructuredBuffer<PBRMaterial> materials;
 
-// after: handles addressed through the host's own root data (example; not a graph ABI).
-// `push.root` is the host-defined pointer from §4.
-ConstantBuffer<PerViewData> perView = ConstantBuffer<PerViewData>.Handle(
-    uint2(push.root->buffers[kPerViewSlot], 0));
-StructuredBuffer<PBRMaterial> materials = StructuredBuffer<PBRMaterial>.Handle(
-    uint2(push.root->buffers[kMaterialSlot], 0));
+// after: handles inside the entry/function, addressed through the host's own root data
+// (example; not a graph ABI). `push.root` is the host-defined pointer from §4.
+[shader("fragment")]
+float4 shade(float2 uv : TEXCOORD0) : SV_Target
+{
+    ConstantBuffer<PerViewData> perView = ConstantBuffer<PerViewData>.Handle(
+        uint2(push.root->buffers[kPerViewSlot], 0));
+    StructuredBuffer<PBRMaterial> materials = StructuredBuffer<PBRMaterial>.Handle(
+        uint2(push.root->buffers[kMaterialSlot], 0));
+    return materials[0].albedo.Sample(uv);
+}
 ```
+
+The `before` declarations are module-scope parameters by design; the `after` handles must be
+**function-local**. Moving a `.Handle()` expression to module scope silently turns it back into a
+binding (H1 in the review); B0 checks the emitted SPIR-V for `Binding` decorations as a negative
+assertion, and the committed probes include the module-scope negative control.
 
 The graph shaders are converted in B1b. The legacy renderer keeps its GLSL/set-binding shaders until
 P3, so a pass shared by both paths gets two **separate sources**: `foo.slang` for the binding variant and
@@ -646,6 +671,7 @@ the `pipelineLayout` argument and `vkCmdPushConstants` call go.
 | --- | --- | --- |
 | Extension or feature absent | device creation | throw naming `VK_EXT_descriptor_heap`, `descriptorHeap`, `shaderUntypedPointers`, or `PhysicalStorageBuffer` support |
 | Shader compiled without the heap capability | `Build()` | reject the node; the shader has no `ResourceHeapEXT` built-in |
+| `.heap.spv` carries `Binding`/`DescriptorSet` decorations | `Build()` / B0 | reject; a module-scope `.Handle()` lowered to a parameter binding, see §4 |
 | Push data over `maxPushDataSize` | record time | name the offset/size and the device limit; the host must split or move data into root memory |
 | Optional root arena exhausted | `Execute()` | grow the arena or throw naming the node; never return a slice that aliases an in-flight root |
 | Input attachment declared under direct heap access | `Build()` | reject with a named diagnostic until the mapping path is implemented |
@@ -659,11 +685,11 @@ the `pipelineLayout` argument and `vkCmdPushConstants` call go.
 
 | Slice | Scope | Gate |
 | --- | --- | --- |
-| **B0 — probe** | Device features and heap properties; one compute and one graphics draw through a null-layout pipeline, host-defined push data and direct heap access; one RT pipeline with the heap flag; an AS direct/mapping decision; readback. | The same `.heap.spv` runs on RADV REMBRANDT, the RTX 3090 **and** llvmpipe; the SPIR-V contains `OpConstantSizeOfEXT`/`ArrayStrideIdEXT`; descriptor sizes/alignments, `maxPushDataSize`, max heap sizes, reserved ranges, RT acceptance and `VK_KHR_unified_image_layouts` are recorded. Unsupported configurations are recorded, not counted as failures. This is the go/no-go. |
+| **B0 — probe** | Device features and heap properties; the committed `docs/DescriptorHeap-Probes/` probes; one compute and one graphics draw through a null-layout pipeline, host-defined push data and direct heap access; one RT pipeline with the heap flag; an AS direct/mapping decision; readback. | The same `.heap.spv` runs on RADV REMBRANDT, the RTX 3090 **and** a llvmpipe whose Mesa exposes `VK_EXT_descriptor_heap` + `shaderUntypedPointers`; the probes validate and contain `OpConstantSizeOfEXT`/`ArrayStrideIdEXT`; **no positive `.heap.spv` contains a `Binding` decoration**, while the module-scope control does; descriptor sizes/alignments, `maxPushDataSize`, max heap sizes, reserved ranges, RT acceptance and `VK_KHR_unified_image_layouts` are recorded. The device line records driver, Mesa and loader versions plus heap/untyped support; absence is recorded, not counted as green. This is the go/no-go. |
 | **B1a — heap service** | `DescriptorHeapService` with image/texel and buffer/AS regions, per-region caches, debug slot generations; optional root-memory ring; bind once; device layer 1.4 features and function pointers. | A test writes image, texel-buffer, buffer, AS and sampler descriptors with queried sizes/alignments, reads them through host-defined push data, and creates no descriptor set or pipeline layout. AS direct access is either proven or routed to the mapping path. |
 | **B1b — graph bind** | Generic `PushData` + optional `AllocateRoot`; `GetHeapIndex`/`WriteRootIndex` resource-index resolver; host-defined root ABI; separate `.heap.slang` sources; named rejection of input attachments/YCbCr until mapping; delete `DescriptorSetCache`, set/pool/layout creation, `VkPipelineLayout` and graph push-constant plumbing from `src/RenderGraph/`. | Existing graph suite green in Debug and Release; `grep` for `vkCreateDescriptorSetLayout`, `vkAllocateDescriptorSets`, `vkCreatePipelineLayout`, `vkCmdPushConstants` in `src/RenderGraph/` is empty; no `GraphRoot`, `rootSlot` or `SetRoot*` in `src/RenderGraph/`; a node queries a heap index, writes its own root, and records `PushData`. |
 | **B2 — frame build** | Per-frame `Build()` with pipeline/resource/descriptor caches; optional per-slot root arena and transient arenas; `inFlightCount > 1`. | Resize and swapchain rotation with a build per frame; #209 regression test fails before the fix; #40's overlap test. |
-| **B3 — unified layouts** | **Deferred, not scheduled.** Adopt `VK_KHR_unified_image_layouts` when every target driver exposes it (llvmpipe does; RADV 1.4.354 does not). The GENERAL policy already removes the transitions. | No gate now; when adopted, no image-layout transition in a graph execution and validation clean. |
+| **B3 — unified layouts** | **Deferred, not scheduled.** Adopt `VK_KHR_unified_image_layouts` when every target driver exposes it (newer llvmpipe Mesa does; older llvmpipe builds and RADV 1.4.354 do not). The GENERAL policy already removes the transitions. | No gate now; when adopted, no image-layout transition in a graph execution and validation clean. |
 | **B4 — GPU-written root data** | The optional root arena is storage-capable so a **host** compute pass can fill it; a bindless draw consumes the result. Optional direct `ResourceDescriptorHeap` sugar. | A host compute pass writes root data and a bindless draw reads it; the graph adds no GPU-driven API. |
 
 B1 is the point of no return for the descriptor-set path. B0 is where the hardware claim is settled.
@@ -674,34 +700,33 @@ This section is a proposal for `docs/Roadmap.md`; the roadmap PR applies it afte
 
 | Current item | Disposition |
 | --- | --- |
-| **#15** content-addressed descriptor sets | **Close as superseded by B1.** The cache, pool and layouts are deleted; the `MATERIAL` cliff cannot exist. |
-| **#16** transient lifetime/aliasing | Keep. Aliasing becomes an optimization; B2 adds per-execution arenas. |
+| **#15** descriptor-set retention | **Re-scoped** to cross-frame retention (issue updated). The cache/cliff half landed in #108/#109; close it after B1 if the heap path lands. |
+| **#16** transient lifetime/aliasing | **Closed; no new work.** Aliasing remains a B2 optimization; the per-execution arena work belongs to #40's re-scope, not the closed issue. |
 | **#17** pipeline/shader cache | **Prerequisite for B2**, and simpler: no layout/descriptor state in the key. |
 | **#40** in-flight > 1 | **Re-scoped.** The descriptor-set half is gone; the remaining work is per-execution transients and the optional root-memory arena. |
 | **#83** per-execution bindings | **Close after B2.** Different root data is a different value per execution; no rebuild and no descriptor rewrite. |
 | **#209** rebuild keeps stale resource | **Fixed in B2** by the desc-keyed resource cache. |
-| **#12** barriers | Keep. The deferred unified-layout slice would remove the layout half; the stage/access half stays. |
+| **#12** barriers | **Closed; no new work.** The stage/access work landed; the unified-layout removal is B3/deferred. |
 | **#14/#19** RT parity | RT shaders use heap handles. B0 verifies a null-layout RT pipeline; if a driver rejects it, RT waits on that driver rather than getting a second binding path — the graph does not keep descriptor sets for it. |
 | **#57** client frame helper | Unaffected; runs in parallel. |
-| **#20** `helloVulkan` port | **After B2.** Porting to the descriptor-set model and converting again is the retrofit this design exists to avoid. |
+| **#20** `helloVulkan` port | **Freeze further ports after #111 until B2.** #111 already ported the UI pass; it is accepted double-conversion debt. Porting more passes now would convert twice; if work continues, record the double conversion as accepted debt. #20 remains open for the final port after B2. |
 | **#51** delete `RenderPassManager` | Unchanged, after P2. |
 | **#53/#58/#54** library track | `DescriptorManager` becomes the heap service; device floor becomes 1.4; #54's compute-only test runs on the heap. |
 | **#59** cost criterion | Add per-frame build CPU time and heap/descriptor traffic. Host-side draw-call and GPU-driven costs are the renderer's own metrics, not the graph's. |
-| **`AGENTS.md` / CI** | Raise the floor to 1.4, enable and verify `descriptorHeap` + `shaderUntypedPointers`, and record heap support in the `[test device]` line. Lavapipe supports both, so CI can gate the path. |
+| **`AGENTS.md` / CI** | Raise the floor to 1.4, enable and verify `descriptorHeap` + `shaderUntypedPointers`, and record driver, Mesa, loader and heap/untyped support in the `[test device]` line. Lavapipe gates the path only when its Mesa exposes both; absence is recorded, not green. |
 | **`docs/DescriptorSet-Lifecycle-Design.md`** | Mark superseded, and remove it from the Doxygen `INPUT` set and `scripts/render_graph_docs.py` in B1b so the API reference stops describing deleted types. |
 | **`Consumers.md` / muyo-llm** | The hard requirement and the 1.4 floor are a breaking change; name the consumer and add the guarantee row before B1b lands. |
 
 **New track `B Bindless (descriptor heap)`** alongside P0–P3 and L, with the B0–B4 gates above. There is no separate GPU-driven track: those are host renderer features, and the graph only has to stay out of their way.
 
-**Critical path:** `#17 → B0 → B1 → B2 → #20 → #51`. #57 runs in parallel; the L chain is unchanged;
-#59 spans B2 and #20. P1 cannot close until B2 and #59; P2 cannot start its full port until B2.
+**Critical path:** `#17 → B0 → B1 → B2 → #20 (final) → #51`. #111 landed the UI pass before the freeze and
+is accepted double-conversion debt. #57 runs in parallel; the L chain is unchanged; #59 spans B2 and #20.
+P1 cannot close until B2 and #59; P2 cannot start its full port until B2.
 
-**The two open documentation PRs.** #208 records per-execution descriptor sets, push-constant slots and
-dynamic offsets; this note replaces all three with root data, so #208 should be **closed as
-superseded**, keeping its structure-at-`Build()`/handles-at-`Execute()` split in the new note. #210 is a
-roadmap snapshot of the pre-bindless plan: it should land as the baseline with its `#208` reference
-removed, and the roadmap changes above should be the follow-up PR. Landing the snapshot first keeps the
-reconciliation record and the board edits, and keeps this pivot a separate reviewable concern.
+**The documentation PRs.** #208 was closed as superseded; this note keeps its
+structure-at-`Build()`/handles-at-`Execute()` split. #210 has merged unchanged (`acc0e12`) as the
+pre-bindless baseline snapshot. This note's roadmap follow-up removes the `#208` reference and applies
+the B track; there are no post-approval edits to #210.
 
 ## 14. Host GPU-driven work (out of scope)
 
@@ -737,13 +762,17 @@ commands contain.
 
 ## 15. Risks and unknowns
 
-1. **Driver and tooling maturity.** The extension is new. `descriptorHeapCaptureReplay = false` on llvmpipe; RenderDoc and vendor profilers may not understand a capture yet. B0 records
-   what each machine reports, and the first bug is attributed to the driver or to us before it is
-   worked around.
+1. **Driver and tooling maturity.** The extension is new. `descriptorHeapCaptureReplay = false` on llvmpipe; RenderDoc and vendor profilers may not understand a capture yet. llvmpipe's heap/untyped
+   support depends on the Mesa build (Mesa 26.2.5 exposes both; an LLVM 20.1.2 build exposes neither), so
+   CI must record the versions rather than assume support. B0 records what each machine reports, and the
+   first bug is attributed to the driver or to us before it is worked around.
 2. **API floor.** Vulkan 1.4 is a deliberate break from the current 1.3 floor in `AGENTS.md`; it must
    be recorded there and in `Consumers.md`, not only in code.
 3. **Shader rewrite cost.** B1b converts every graph shader, and the legacy renderer needs a second
-   variant until P3. The count is small (19 Slang shaders, 9 with bindings) but the overlap is real.
+   variant until P3. The count is small (19 Slang shaders; 8 with explicit `[[vk::binding]]` or a
+   `SET_(PER_VIEW|PER_OBJ|MATERIAL)` mention by
+   `grep -lE '\[\[vk::binding|SET_(PER_VIEW|PER_OBJ|MATERIAL)' shaders/*.slang | wc -l`) but the
+   overlap is real.
 4. **Host root memory.** If the host uses a raw pointer/`PhysicalStorageBuffer`, there are no bounds
    checks: a bad pointer is a GPU fault, not a validation error. If it uses the graph's optional
    `AllocateRoot`, the graph owns the ring and the host-write barrier, and exhaustion is an
@@ -770,77 +799,61 @@ commands contain.
 
 ## 16. Evidence collected for this draft
 
-All commands were run on llvmpipe unless stated. The RADV/AMDVLK probe needed the wider sandbox because
-the workspace policy blocks opening the render node read-write; it was run on the RDNA2 box.
+The probe sources are committed in `docs/DescriptorHeap-Probes/`; `run.sh` compiles them with Slang,
+validates them with `spirv-val`, and checks the SPIR-V words with `spirv_check.py`. The parser is
+deliberate: this SDK's `spirv-dis` does not know capability 5128 (`DescriptorHeapEXT`) and aborts on
+some valid modules.
 
 ```bash
-# Extension and feature, llvmpipe
-vulkaninfo | grep -i descriptor_heap
-# VK_EXT_descriptor_heap : extension revision 1
-# descriptorHeap = true, descriptorHeapCaptureReplay = false
-# VK_KHR_unified_image_layouts present, unifiedImageLayouts = true
-
-# Properties used by the design
-# samplerDescriptorSize 0x20, imageDescriptorSize 0x40, bufferDescriptorSize 0x10
-# maxPushDataSize 0x100, minResourceHeapReservedRange 0, minSamplerHeapReservedRange 0
-
-# RADV REMBRANDT, driver/api 1.4.354
-# descriptorHeap = true, descriptorHeapCaptureReplay = true
-# samplerDescriptorSize 16, imageDescriptorSize 64, bufferDescriptorSize 16
-# maxPushDataSize 0x100, maxResourceHeapSize = UINT64_MAX, shaderUntypedPointers = true
-# VK_KHR_ray_tracing_pipeline present
-# VK_KHR_unified_image_layouts ABSENT
-# AMDVLK 1.4.313: no VK_EXT_descriptor_heap and no VK_KHR_unified_image_layouts.
-
-# Host example: the legacy lighting pass binds 14 distinct tables
-grep -c "AddParameter\|AddImageParameter" src/RenderPasses/RenderPassOpaqueLighting.cpp
-# 14
-
-# Shader side: Slang 2026.17 emits the extension and untyped pointers.
-# With the default stride options, the SPIR-V must use runtime descriptor-size instructions.
-slangc probe.slang -target spirv -profile glsl_450 \
-  -capability spvDescriptorHeapEXT -capability spirv_1_4 -entry main -o probe.spv
-spirv-dis probe.spv | grep -E 'DescriptorHeapEXT|UntypedPointersKHR|ResourceHeapEXT|SamplerHeapEXT'
-spirv-dis probe.spv | grep -E 'OpConstantSizeOfEXT|ArrayStrideIdEXT'
-# OpCapability UntypedPointersKHR / DescriptorHeapEXT
-# OpExtension "SPV_KHR_untyped_pointers" / "SPV_EXT_descriptor_heap"
-# OpDecorate ... BuiltIn ResourceHeapEXT / SamplerHeapEXT
-spirv-val --target-env vulkan1.4 probe.spv   # exits 0
-
-# The same probe with a StructuredBuffer and RWStructuredBuffer compiles to
-# OpBufferPointerEXT and validates; buffers are heap handles, not raw pointers.
-
-# Combined Sampler2D handle: .x indexes the resource heap, .y the sampler heap,
-# then OpSampledImage; compiles and validates.
-spirv-dis combined.spv | grep -E 'ResourceHeapEXT|SamplerHeapEXT|OpSampledImage'
-spirv-val --target-env vulkan1.4 combined.spv   # exits 0
-
-# RT with the heap flag: the VUID requires a null layout, and trace commands
-# have heap VUIDs, so RT can drop the pipeline layout at the API level.
-# VUID-VkRayTracingPipelineCreateInfoKHR-flags-11311
-# VUID-vkCmdTraceRaysKHR-None-11308/11309/11376
-
-# Host example: push data carries a host-defined root pointer; Slang emits PhysicalStorageBuffer,
-# and a host root with separate image/sampler/buffer arrays validates. This is not a graph ABI.
-slangc rootarrays.slang -target spirv -profile glsl_450 \
-  -capability spvDescriptorHeapEXT -capability spirv_1_4 -entry main -o rootarrays.spv
-spirv-dis rootarrays.spv | grep -E 'PhysicalStorageBuffer|ResourceHeapEXT|SamplerHeapEXT|OpSampledImage|OpConstantSizeOfEXT|ArrayStrideIdEXT'
-spirv-val --target-env vulkan1.4 rootarrays.spv   # exits 0
-
-# Descriptor-size definitions used by the allocator:
-# imageDescriptorSize covers images and texel buffers; bufferDescriptorSize covers buffers and
-# acceleration structures; vkGetPhysicalDeviceDescriptorSizeEXT is authoritative per type.
-# The AS direct path is NOT tested here: B0 must write a real TLAS descriptor and compare the shader
-# representation with the implementation's size/alignment.
-
-# GLSL path, not yet compiled here: glslangValidator 16.6.0 advertises
-# GL_EXT_descriptor_heap and GL_EXT_structured_descriptor_heap in
-# glslang/MachineIndependent/Versions.h. B0 settles the syntax and the emitted capabilities.
+source <vulkansdk>/setup-env.sh
+./docs/DescriptorHeap-Probes/run.sh
+# heap_function_local: extensions=SPV_KHR_untyped_pointers,SPV_EXT_descriptor_heap,... bindings=0
+# heap_texture:        extensions=SPV_KHR_untyped_pointers,SPV_EXT_descriptor_heap bindings=0
+# root_pointer:        extensions=SPV_KHR_physical_storage_buffer,...,SPV_EXT_descriptor_heap bindings=0
+# heap_global_negative: extensions=SPV_KHR_storage_buffer_storage_class bindings=2
+# descriptor-heap probes: OK
 ```
 
-The RDNA2 and llvmpipe probes are measured here. The RTX 3090 support is **reported** by the maintainer,
-not measured in this session; B0 is the measurement. AMDVLK 1.4.313 is not a candidate while it lacks
-the extension.
+**H1 result.** A module-scope `.Handle()` produced only ordinary shader/storage-buffer capabilities plus
+`DescriptorSet`/`Binding` decorations; the function-local form produced `DescriptorHeapEXT`,
+`UntypedPointersKHR`, `ResourceHeapEXT`/`SamplerHeapEXT`, `OpBufferPointerEXT` and
+`OpConstantSizeOfEXT`/`ArrayStrideIdEXT`. The negative control preserves the module-scope shape, and the
+positive probes must have no `Binding` decoration. The migration examples are function-local.
+
+**Driver rows.**
+
+- **llvmpipe, Mesa 26.2.5 (this development box):** exposes `VK_EXT_descriptor_heap` revision 1,
+  `descriptorHeap = true`, `shaderUntypedPointers = true`, `VK_KHR_unified_image_layouts`, sampler/image/
+  buffer sizes 0x20/0x40/0x10, `maxPushDataSize = 0x100`, zero reserved ranges.
+- **llvmpipe, LLVM 20.1.2 (review machine):** exposes neither `VK_EXT_descriptor_heap` nor
+  `shaderUntypedPointers`. This is the important negative: a lavapipe CI run is a heap gate only when the
+  runner's Mesa exposes both. The `[test device]` line must record driver, Mesa, loader and the two
+  feature bits; absence is recorded, not green.
+- **RADV REMBRANDT, driver/API 1.4.354:** `descriptorHeap = true`, `shaderUntypedPointers = true`,
+  sampler/image/buffer sizes 16/64/16, `maxPushDataSize = 0x100`, `maxResourceHeapSize = UINT64_MAX`,
+  ray tracing present, `VK_KHR_unified_image_layouts` absent.
+- **RTX 3090:** `VK_EXT_descriptor_heap` revision 1 and `shaderUntypedPointers = true` at enumeration
+  level; the render path is B0, not claimed here.
+- **AMDVLK 1.4.313:** no `VK_EXT_descriptor_heap`, no `VK_KHR_unified_image_layouts`.
+
+**Quoted VUIDs.** `VkRayTracingPipelineCreateInfoKHR-flags-11311`,
+`vkCmdTraceRaysKHR-None-11308/11309/11376`, and `vkWriteSamplerDescriptorsEXT-pSamplers-11204` /
+`-borderColor-11444` / `-borderColor-11205` were checked against the SDK 1.4.363 `validusage.json` by the
+review; they exist on the commands the note cites them for.
+
+**Shader counts.** `ls shaders/*.slang | wc -l` is 19;
+`grep -lE '\[\[vk::binding|SET_(PER_VIEW|PER_OBJ|MATERIAL)' shaders/*.slang | wc -l` is 8. The earlier
+"9 with bindings" was wrong.
+
+**Descriptor-size definitions.** `imageDescriptorSize` covers images and texel buffers;
+`bufferDescriptorSize` covers unformatted buffers and acceleration structures;
+`vkGetPhysicalDeviceDescriptorSizeEXT` is authoritative per type. The AS direct path is **not** tested:
+B0 must write a real TLAS descriptor and compare the shader representation with the implementation's
+size/alignment.
+
+**GLSL path.** Not compiled here: glslangValidator 16.6.0 advertises `GL_EXT_descriptor_heap` and
+`GL_EXT_structured_descriptor_heap` in `glslang/MachineIndependent/Versions.h`; B0 settles the syntax and
+emitted capabilities.
 
 ## 17. Open questions
 
@@ -861,9 +874,9 @@ the extension.
    can drop the layout. Per-hit resources from SBT shader records are a later slice; B0 only proves the
    pipeline and a global-descriptor trace.
 6. **Unified image layouts**: RADV 1.4.354 on this RDNA2 box does **not** expose
-   `VK_KHR_unified_image_layouts`; llvmpipe does. B1's `GENERAL` policy already removes layout
-   transitions, so B3 is optional cleanup when the driver exposes it, not a B1 dependency. The RTX 3090
-   driver is recorded in B0.
+   `VK_KHR_unified_image_layouts`; newer llvmpipe Mesa builds do, older ones do not. B1's `GENERAL`
+   policy already removes layout transitions, so B3 is optional cleanup when the driver exposes it, not a
+   B1 dependency. The RTX 3090 driver is recorded in B0.
 7. **Opaque bindless declarations.** The first implementation requires a resource use per accessed
    resource and keeps the root representation out of it. Is a host-facing resource-group/scoped-bindless
    API needed before a GPU-driven pass declares hundreds of resources? If so, it must define the
