@@ -15,17 +15,18 @@ Move the RenderGraph to a bindless model built on `VK_EXT_descriptor_heap`, with
 - **no `VkDescriptorSetLayout`**, **no `VkDescriptorSet`**, **no descriptor pool** and **no
   `VkPipelineLayout`** on the graph path;
 - **one resource heap and one sampler heap** for the process, bound once per command buffer;
-- **one graph-wide root struct in GPU memory**, pointed to by an 8-byte push-data value, instead of a
-  layout object or a fixed slot table per pipeline;
+- **generic push data**: the graph records `vkCmdPushDataEXT` bytes and an optional root-memory helper;
+  the host owns the root layout, size and ABI, instead of a graph-imposed root table;
 - **direct heap access in shaders** (`Texture2D.Handle`, `StructuredBuffer<T>.Handle`,
-  `ResourceDescriptorHeap[...]`), not the set/binding mapping path;
+  `ResourceDescriptorHeap[...]`) as the default; the mapping path is reserved for the extension's
+  embedded-sampler and input-attachment exceptions;
 - **`Build()` safe to call every frame**, because the expensive things a build used to do are caches or
   do not exist any more.
 
 **Out of scope: GPU-driven execution.** DGC, meshlets, cluster LOD, GPU culling, state bucketing and work
 graphs are **host renderer** features. The graph does not own a draw list or a command-generation
-schedule; it provides the binding primitives those features consume (the heap, the root pointer, and
-the existing indirect/draw-command usages). A host can record one indirect/DGC call in a node callback
+schedule; it provides the binding primitives those features consume (the heap, generic push data and
+optional root memory, and the existing indirect/draw-command usages). A host can record one indirect/DGC call in a node callback
 without the graph knowing what it expands to.
 
 The result is the model in Sebastian Aaltonen's [No Graphics API](https://www.sebastianaaltonen.com/blog/no-graphics-api/):
@@ -57,11 +58,11 @@ explicit:
 | `DescriptorSetCache` allocates and writes sets at `Build()` | gone |
 | `CompileRenderGraphNode` creates a `VkPipelineLayout` per node (`RenderGraphBuilder.cpp:350`) | gone; `layout = VK_NULL_HANDLE` |
 | `vkCmdBindDescriptorSets` per node (`RenderGraphBuilder.cpp:2201`) | gone; heaps bind once |
-| `vkCmdPushConstants` / reflected push ranges | `vkCmdPushDataEXT` with a graph root pointer |
+| `vkCmdPushConstants` / reflected push ranges | `vkCmdPushDataEXT` with host-defined bytes |
 | pipeline key includes layouts and descriptor types | key is `PSODesc` + shaders + specialization constants |
 
-The only "layout" left is the graph's **root struct**, a plain block of typed heap indices in GPU memory.
-It is data, not a Vulkan object, and it is the thing every pipeline can share.
+The only "layout" left is the **host's root data**. The graph treats it as bytes passed through
+`vkCmdPushDataEXT`; it does not inspect or prescribe the structure.
 
 ## 3. Decisions
 
@@ -69,137 +70,136 @@ It is data, not a Vulkan object, and it is the thing every pipeline can share.
 | --- | --- | --- |
 | D1 | `VK_EXT_descriptor_heap` is a **hard requirement**. The graph does not keep a descriptor-set fallback. | A supported consumer device without the extension. |
 | D2 | The language/API floor becomes **Vulkan 1.4**, plus `VK_KHR_shader_untyped_pointers`. | A device or CI runner that cannot meet 1.4. |
-| D3 | Shaders use **direct heap access**. There is no set/binding mapping path. | A shader toolchain that cannot emit `SPV_EXT_descriptor_heap`. |
-| D4 | **Root data is a pointer** in push data to a graph-wide struct in GPU memory; the root is not a push-data-sized slot table. | A device without `PhysicalStorageBuffer` support, or a root buffer that cannot be kept coherent. |
-| D5 | **One resource heap and one sampler heap** — the extension has no per-type bound heaps. The resource heap is partitioned into typed regions (image, buffer, AS); the sampler heap is separate. Static descriptors are immutable; per-execution descriptors live in per-slot rings. | A resource whose descriptor must change while an earlier execution is in flight. |
+| D3 | Shaders use **direct heap access by default**. Embedded samplers, input attachments and YCbCr/subsampled samplers require the mapping path; they are supported there or rejected with named diagnostics, never left undefined. | A shader toolchain that cannot emit `SPV_EXT_descriptor_heap`. |
+| D4 | **Push data is opaque to the graph.** The host defines the root layout and ABI; the graph records bytes and optionally provides root-memory allocation/lifetime. No graph-level `GraphRoot`, slot table or root-size policy. | A host root layout that the optional root-memory helper cannot serve. |
+| D5 | **One resource heap and one sampler heap** — the extension has no per-type bound heaps. The resource heap is partitioned into typed regions (image/texel, buffer/acceleration structure); the sampler heap is separate. Static descriptors are immutable; per-execution descriptors live in per-slot rings. | A resource whose descriptor must change while an earlier execution is in flight. |
 | D6 | `Build()` is **per frame**; pipelines, resources and descriptors are caches behind it. | A measured build cost that cannot be brought down. |
-| D7 | **Per-execution state lives in the executor slot**: command buffers, root data, transient arenas. The compiled plan is shared. | A design that needs cross-execution state. |
+| D7 | **Per-execution state lives in the executor slot**: command buffers, optional root memory, transient arenas. The host may supply its own root memory. The compiled plan is shared. | A design that needs cross-execution state. |
 | D8 | Heap-visible images live in `VK_IMAGE_LAYOUT_GENERAL`, which removes their layout transitions **now**. `VK_KHR_unified_image_layouts` is deferred until every target driver exposes it. | A measured cost of `GENERAL`, or a driver that needs the extension for a valid layout. |
 | D9 | The legacy `RenderPassManager` keeps its descriptor-set shaders until P3; the graph gets **separate `.heap.slang`** sources rather than `#if` variants. | P3 arrives before the graph variants are done. |
 | D10 | Heap allocation is a static free-list plus **one dynamic ring per in-flight execution**; preallocate 8-16 MB and double at a frame boundary. | A measured need for a larger budget, or a low-memory target. |
 | D11 | RT pipelines use the heap flag with a **null layout**; the SBT remains, and per-hit shader-record resources are a later slice. | A driver rejecting the null RT layout. |
-| D12 | The root struct holds **separate image, buffer, AS and sampler arrays**; combined `Sampler2D` is a shader-side composition of two indices, not a combined descriptor. | A pass that needs more top-level entries than the arrays hold. |
-| D13 | **GPU-driven execution is host-owned.** The graph guarantees the binding primitives (heap, root pointer, indirect/draw usage) are usable from a host-recorded node; it does not add a DGC, meshlet or work-graph API. | A host feature the binding primitives cannot express. |
+| D12 | The heap service writes **separate image and sampler descriptors**; combined `Sampler2D` is a shader-side composition of two heap indices, not a combined descriptor. Root layout is the host's concern. | A resource type that requires a combined or embedded descriptor. |
+| D13 | **GPU-driven execution is host-owned.** The graph guarantees the binding primitives (heap, push data/root memory, indirect/draw usage) are usable from a host-recorded node; it does not add a DGC, meshlet or work-graph API. | A host feature the binding primitives cannot express. |
+| D14 | **Direct-heap exceptions are explicit.** Input attachments and YCbCr/subsampled/embedded samplers go through mappings or are rejected with a named diagnostic; custom-border samplers carry a registered index. | A driver or format that needs another exception. |
 
-## 4. Root data
+## 4. Push data and root data
 
-The root is a **pointer**, not a table. Push data carries `GraphRoot* root`; the struct lives in GPU
-memory and can be as large as the node needs. That is the difference between "the heap has a slot
-budget" and "the heap has a table budget": the heap can hold millions of descriptors, and the root only
-names the top-level tables a draw needs directly.
+Push data is **opaque to RenderGraph**. `vkCmdPushDataEXT` takes a byte blob; the extension does not require
+a pipeline layout and does not prescribe a root structure. The graph records the bytes; the host owns the
+layout.
+
+| RenderGraph responsibilities | Host-renderer responsibilities |
+| --- | --- |
+| Bind the resource/sampler heaps and create heap-flagged pipelines with `layout = VK_NULL_HANDLE`. | Define the root struct, its size, alignment and CPU/shader ABI. |
+| Record generic `vkCmdPushDataEXT(offset, bytes)` from a node callback; check the device's `maxPushDataSize`. | Choose handles, slot numbers, named fields, pointers and inline constants. |
+| Optionally allocate host-writable root memory per execution, with a device address, lifetime and a host-write-to-shader barrier. | Decide whether root data is inline, indirect, GPU-generated or supplied to device-generated commands. |
+| Track the resource uses the host declares and derive synchronization independently of root data. | Declare every resource the workload accesses, including bindless and indirect accesses. |
+
+The graph does **not** know a `GraphRoot`, `images[128]`, `rootSlot`, a root size, or a slot-to-resource
+agreement. Those are host choices. A host can push a 64-bit pointer, a pointer plus inline values, a
+small inline struct, or nothing at all.
+
+The generic API is intentionally small:
 
 ```cpp
-// shaders/shared/RenderGraph/GraphRoot.h, also included by the graph
-namespace Muyo::RenderGraph
+// Host-facing, on RenderGraphNodeContext:
+void PushData(uint32_t offset, std::span<const std::byte> bytes);
+
+// Optional helper: a host-writable slice in the execution's root ring.
+struct RootSlice
 {
+    std::span<std::byte> host;  // mapped for the host to write
+    VkDeviceAddress      device;
+};
+RootSlice AllocateRoot(size_t size, size_t alignment);
+```
+
+`PushData` records `vkCmdPushDataEXT` and validates `offset + size <= maxPushDataSize`. `AllocateRoot` is
+convenience, not policy: it returns memory valid for the current execution slot, records the necessary
+host-write barrier, and resets only after the slot's timeline completes. A host that already owns root
+memory can ignore it and push its own address.
+
+### Host example: a root pointer
+
+The following is **a host-renderer convention**, not a RenderGraph contract. It is the convention the
+first renderer is expected to use; another host may choose something else.
+
+```cpp
+// Host renderer, not RenderGraph:
 inline constexpr uint32_t kMaxRootImages   = 128;
 inline constexpr uint32_t kMaxRootSamplers = 32;
 inline constexpr uint32_t kMaxRootBuffers  = 32;
 inline constexpr uint32_t kMaxRootAccel    = 8;
 
-struct GraphRoot
+struct MyRoot
 {
-    uint32_t images[kMaxRootImages];      ///< Resource-heap index, image descriptor stride.
-    uint32_t samplers[kMaxRootSamplers];  ///< Sampler-heap index.
-    uint32_t buffers[kMaxRootBuffers];    ///< Resource-heap index, buffer descriptor stride.
-    uint32_t accel[kMaxRootAccel];        ///< Resource-heap index, acceleration-structure stride.
+    uint32_t images[kMaxRootImages];
+    uint32_t samplers[kMaxRootSamplers];
+    uint32_t buffers[kMaxRootBuffers];
+    uint32_t accel[kMaxRootAccel];
 };
-static_assert(sizeof(GraphRoot) == 800, "the shared root header");
-}
 ```
 
-The snippet spells `uint32_t` for readability; the shared header uses an `unsigned int` typedef so the same
-file parses as both C++ and Slang. The `static_assert` is C++-side; the Slang side uses the same field
-order, and a C++ test asserts the 800-byte layout.
-
-The sizes are chosen from the passes, not from a round number: the current lighting pass uses 11 images,
-11 samplers and 3 buffers, and a whole-scene pass adds a few more tables. The arrays are **top-level
-tables**, not the resource limit. A 10,000-texture scene stores heap indices in its material data; a
-10,000-object scene stores transforms in an instance buffer. The heap holds the descriptors; the root
-arrays only name the tables one draw reads directly.
-
-The shader declares a pointer in its push block:
+The shader declares the matching type and a push block:
 
 ```slang
 struct PushBlock
 {
-    GraphRoot* root;
-    uint       drawIndex;   // small node-owned constants can stay inline
+    MyRoot* root;
+    uint    drawIndex;
 };
 
 [[vk::push_constant]]
 ConstantBuffer<PushBlock> push;
 ```
 
-and dereferences it directly:
+and the host writes the struct into a root slice, pushes the pointer, and uses the indices:
 
 ```slang
-Texture2D    albedo  = Texture2D.Handle(uint2(push.root->images[kAlbedoSlot], 0));
-SamplerState linear  = SamplerState.Handle(uint2(push.root->samplers[kLinearSlot], 0));
-Sampler2D    mixed   = Sampler2D.Handle(
-    uint2(push.root->images[kAlbedoSlot], push.root->samplers[kLinearSlot]));
+Texture2D    albedo = Texture2D.Handle(uint2(push.root->images[kAlbedo], 0));
+SamplerState linear = SamplerState.Handle(uint2(push.root->samplers[kLinear], 0));
+Sampler2D    mixed  = Sampler2D.Handle(
+    uint2(push.root->images[kAlbedo], push.root->samplers[kLinear]));
 StructuredBuffer<Material> materials =
-    StructuredBuffer<Material>.Handle(uint2(push.root->buffers[kMaterialSlot], 0));
+    StructuredBuffer<Material>.Handle(uint2(push.root->buffers[kMaterial], 0));
 ```
 
-**Images and samplers are separate.** The image index names a descriptor in the resource heap, the
-sampler index names one in the sampler heap, and `Sampler2D` is only a shader-side composition of the two
-indices. There is no combined descriptor and no separate eight-slot sampler table: a standalone sampler
-is one entry in `samplers`, and a texture used with two samplers is two `Sampler2D` compositions of the
-same image index. The current lighting pass therefore fits as 11 image entries + 11 sampler entries + 3
-buffer entries, not 25 mixed slots.
+The host chooses the sizes. The current lighting pass uses 11 images, 11 samplers and 3 buffers; a
+128/32/32/8 layout fits it with room for a whole scene. A 10,000-texture scene stores heap indices in
+material data and a 10,000-object scene stores transforms in an instance buffer; the root names the
+top-level tables one draw reads, not every resource. These are host decisions, not graph checks.
 
-**Why a pointer works.** Slang emits `PhysicalStorageBuffer` for the root and `spirv-val` accepts it at
-Vulkan 1.4 (evidence in §16). The device already enables buffer device address and `shaderInt64`; the
-root buffer is a normal `SHADER_DEVICE_ADDRESS` buffer, not a descriptor and not a heap slot. Push data
-holds 8 bytes for the pointer; the rest of the 256-byte budget is available for small inline values.
+The host also owns the shader/root agreement. The graph cannot prove that a shader reads the field the
+host populated; the host's shared header and a readback test per pass are the mitigation. That diagnostic
+does not move into RenderGraph with the root layout.
 
-**One ABI, not two.** The pointer is the only root path. If the indirection measures badly for tiny
-roots, an inline fast path is a later optimization gated on that measurement, not a second ABI now.
+**Buffer device addresses remain a host option.** A host can push a buffer device address for large
+constants or structured data and use `PhysicalStorageBuffer`, instead of consuming a typed buffer
+descriptor. The heap remains the default path for shader-visible buffers, but the choice belongs with the
+root layout, not the graph.
 
-**The root buffer.** The graph allocates one root buffer per node per execution from a **host-visible
-ring**, writes the typed arrays, and records the pointer with `vkCmdPushDataEXT`. The node writes its own
-constants after `sizeof(GraphRoot)`, or passes a uniform-buffer handle in `buffers` when the constants are
-large. A pass that extends the root declares `struct PassRoot { GraphRoot graph; ... };`, sets
-`rootDataSize = sizeof(PassRoot)`, and uses `PassRoot*` in its push block; the graph writes the `GraphRoot`
-prefix and the node writes the rest. A node that needs a different root per draw can allocate another
-root slice and push a different pointer; the common case is one root per node plus `drawIndex` selecting
-material/instance data.
+### Resource uses are independent of root data
 
-The root buffer is not free:
+`ResourceUse` describes access, not handles. A node that samples a texture through a heap index still
+declares `ResourceUsage::SAMPLED` for that image; the graph barriers it, tracks its lifetime and aliases
+it like any other use. The root representation never enters `ResourceUse`, so a host can change its root
+layout without changing the graph's synchronization model.
 
-- it is host-visible, so it needs a `HOST_WRITE` to shader-read dependency (or a staging copy if it is
-  device-local), once per execution rather than per draw;
-- the ring is per in-flight execution, reset only after that execution's timeline value completes;
-- the node declares `rootDataSize` (at least `sizeof(GraphRoot)`, at most a fixed budget such as 4 KB),
-  and `Build()` rejects a declaration outside it.
+This is also the boundary for opaque accesses. If a node can reach resources the graph cannot see in the
+root data, the host must declare those uses:
 
-`RenderGraphNodeContext` exposes the mapped root: `Root<T>()` returns a `T*` into the root buffer,
-`SetRootImage/Buffer/Sampler(slot, resource)` fill typed entries by resolving the heap index, and
-`PushRoot()` records `vkCmdPushDataEXT` with the device address. The graph fills the typed arrays from
-the node's `ResourceUse`s before the callback; the callback writes its constants or per-draw overrides.
+- the declaration is the source of truth for barriers, transient lifetime, aliasing and resource reuse;
+- a resource the host does not declare has no graph-side barrier or lifetime guarantee, even if a shader
+  can reach it through the heap;
+- the declaration is independent of root layout, so changing handles or root fields does not change the
+  synchronization model;
+- debug mode should flag bindless accesses to resources the node did not declare where the tooling can
+  observe them.
 
-**Slot assignment.** `ResourceUse::rootSlot` is interpreted by the resource's usage: an image use writes
-`images[]`, a buffer use writes `buffers[]`, an acceleration structure writes `accel[]`, and a sampler
-writes `samplers[]`. A **combined** image+sampler use also sets `rootSamplerSlot`: the graph writes the
-image index to `images[rootSlot]` and the texture's sampler index to `samplers[rootSamplerSlot]`, and the
-shader composes the pair with `Sampler2D.Handle(uint2(...))`. Separate texture and sampler uses are the
-same mechanism with only one of the two slots set.
-
-The shared header declares the per-pass slot constants and their kinds; the graph rejects an
-out-of-range slot, a duplicate slot in one node, and a resource kind that does not fit the declared
-array. Only shader-visible resources take a root entry; attachments, vertex/index/indirect buffers and
-transfer uses keep their record-time binding and must not declare one.
-
-The graph still **cannot** prove that the shader reads the same slot the node populated. The shared
-per-pass header and a readback test per pass are the mitigation; a wrong slot is a wrong result, not a
-validation error. That is the one diagnostic the heap model loses, and it is unchanged by moving from a
-push table to a pointer.
-
-**Whole-scene binding does not grow the root.** A scene's instances, materials, lights and visible-list
-live in buffers whose handles occupy one buffer entry each; textures are heap indices stored *in those
-buffers*. A 10,000-object scene uses the same root struct as a 10-object scene; per-object values come
-from `drawIndex` or an indirect draw id, not from more root entries.
+Declaring every possible bindless resource can scale poorly. A host-facing resource-group or
+scoped-bindless model could make the declaration coarser, but it is a future extension with its own
+correctness argument, not a prerequisite of this design and not a graph-level GPU-driven feature.
 
 ## 5. Descriptor heap service
 
@@ -243,26 +243,35 @@ There is no separate buffer heap, image heap or command heap. You cannot have a 
 type without rebinding, and the proposal warns that changing the heap is expensive. What you *can* have
 is **typed regions and typed index spaces inside one resource heap**:
 
-| Region | Descriptor stride | Index used by the root array |
+| Region | Descriptor sizing and alignment | Index |
 | --- | --- | --- |
-| Images | `imageDescriptorSize` (64 B on RADV and llvmpipe) | `byteOffset / imageStride` |
-| Buffers | `bufferDescriptorSize` (16 B) | `byteOffset / bufferStride` |
-| Acceleration structures | 8 B (Slang's AS heap entry is a 64-bit address) | `byteOffset / 8` |
-| Texel buffers, if used | buffer stride | buffer-style index |
-| Samplers (separate heap) | `samplerDescriptorSize` (16 B RADV, 32 B llvmpipe) | `byteOffset / samplerStride` |
+| Images **and texel buffers** | `vkGetPhysicalDeviceDescriptorSizeEXT(type)`, at most `imageDescriptorSize`; aligned to `imageDescriptorAlignment` | `byteOffset / size` |
+| Buffers **and acceleration structures** | `vkGetPhysicalDeviceDescriptorSizeEXT(type)`, at most `bufferDescriptorSize`; aligned to `bufferDescriptorAlignment` | `byteOffset / size` |
+| Samplers (separate heap) | `vkGetPhysicalDeviceDescriptorSizeEXT(VK_DESCRIPTOR_TYPE_SAMPLER)`, at most `samplerDescriptorSize`; aligned to `samplerDescriptorAlignment` | `byteOffset / size` |
+
+The table follows the property definitions: `imageDescriptorSize` is the maximum size of **image and
+texel-buffer** descriptors, and `bufferDescriptorSize` is the maximum size of **unformatted buffer and
+acceleration-structure** descriptors. `vkGetPhysicalDeviceDescriptorSizeEXT` is the authoritative
+per-type size; the property is an upper bound. Texel buffers therefore belong in the image-sized,
+image-aligned region, not the buffer region.
 
 Each region has its own free-list and its own ring. The shader's handle type selects the stride:
-`Texture2D` uses the image stride, `StructuredBuffer<T>` the buffer stride,
-`RaytracingAccelerationStructure` the 8-byte AS stride, `SamplerState` the sampler stride. That is why
-the root arrays are typed and why `-spirv-unified-descriptor-heap-stride` is **not** needed: the arrays
-carry type-specific indices, and a buffer descriptor does not waste 48 bytes padding itself to image
-size. `-spirv-resource-heap-stride` stays at its default (type size); B0 records the device's AS
-descriptor size and uses an explicit stride only if it is not 8 bytes.
+`Texture2D`/`TextureBuffer<T>` use the image stride, `StructuredBuffer<T>`/`ByteAddressBuffer` the
+buffer stride, `SamplerState` the sampler stride. The host's root data carries type-specific indices;
+a buffer descriptor does not waste image-size padding.
 
-**There is a heap ceiling, but it is not the root table.** RADV reports `maxResourceHeapSize =
-UINT64_MAX` and llvmpipe about 8 GB; the practical bound is device memory, not a descriptor count. The
-128/32/32/8 arrays in §4 are per-draw **top-level tables**, not the heap's capacity. A scene with a
-million descriptors lives in the heap; the root names the tables one draw reads.
+**Acceleration structures are provisional.** Slang's default AS heap representation is a literal 8-byte
+device address, but the heap descriptor written by `vkWriteResourceDescriptorsEXT` is sized by
+`bufferDescriptorSize` and aligned by `bufferDescriptorAlignment`. An 8-byte shader-side representation
+does **not** prove that an 8-byte packed heap stride is valid. B0 must query
+`vkGetPhysicalDeviceDescriptorSizeEXT(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)`, write a real TLAS
+descriptor and test the direct path. If the representation does not match on an implementation, AS uses
+the mapping path (still heap-flagged, null layout) or is rejected with a named diagnostic; it is not
+silently packed at 8 bytes.
+
+**There is a heap ceiling, but it is not a root table.** RADV reports `maxResourceHeapSize = UINT64_MAX`
+and llvmpipe about 8 GB; the practical bound is device memory, not a descriptor count. The host decides
+how many heap indices its root data carries; the graph does not impose a root layout.
 
 - **One resource heap**, `VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT`,
   device-local, with the implementation's reserved range at the end (`minResourceHeapReservedRange`).
@@ -281,14 +290,17 @@ million descriptors lives in the heap; the root names the tables one draw reads.
   graphics and compute families, or transfer ownership with the plan; an exclusive heap read on a
   second family is an ownership error, and the single-queue CI device cannot reveal it.
 - Growth reallocates the heap buffer and re-uploads every live descriptor. Indices are byte offsets
-  divided by the type stride and do not change, so root arrays remain valid; the next command buffer
+  divided by the type stride and do not change, so host root-data indices remain valid; the next command buffer
   binds the new range.
 
-The strides are part of the **shader ABI**. Every heap shader must be compiled with the same
-`-spirv-resource-heap-stride` and `-spirv-sampler-heap-stride` values that the service uses; a shader
-compiled with a different stride computes a different address from the same index, and the symptom is a
-wrong result rather than a validation error. The values come from the device properties at startup and
-are passed to both the shader build and the heap service.
+The shader-side stride is **not an offline ABI**. Leave `-spirv-resource-heap-stride` and
+`-spirv-sampler-heap-stride` at their default value of `0`: Slang then emits `OpConstantSizeOfEXT` and
+`ArrayStrideIdEXT`, and the implementation resolves the descriptor size when it compiles the pipeline.
+The same `.heap.spv` can run on implementations with different descriptor sizes. The heap allocator uses
+`vkGetPhysicalDeviceDescriptorSizeEXT` and the matching alignment at runtime; it does not feed those
+values into the shader compiler. B0 inspects the emitted SPIR-V for `OpConstantSizeOfEXT` /
+`ArrayStrideIdEXT` and runs the same module on more than one implementation, rather than checking
+extension strings alone. Acceleration structures are the explicit exception covered above.
 
 ### Allocation policy
 
@@ -304,14 +316,18 @@ The heap is split into two allocation classes, and the split is what makes a rin
   overwrite descriptors that execution 1 is still reading.
 
 A single ring for the whole heap is therefore the wrong shape: it would recycle immutable descriptors
-and break the root arrays that point at them. The ring belongs to the dynamic region, sized
+and break the host root data that points at them. The ring belongs to the dynamic region, sized
 `maxDescriptorsPerExecution * inFlightCount` per region.
+
+**Debug validation.** The service should carry a generation tag per slot and check it in debug builds, so
+an index into a retired or in-flight slot is flagged instead of being read as a stale descriptor. The
+same validation should cover root-memory slices when `AllocateRoot` is used.
 
 **Preallocate, then grow rarely.** Start with a configured budget (8-16 MB is ~128k-256k 64-byte image
 descriptors, far more than a scene needs; buffer and AS regions cost less per entry). If it is exhausted,
 double at a frame boundary: allocate a new heap, copy every live descriptor, bind the new range from the
 next command buffer, and retire the old heap once the last execution using it has completed. Indices are
-byte offsets divided by the type stride, so they survive the copy and root arrays stay valid. If growth is
+byte offsets divided by the type stride, so they survive the copy and host root-data indices stay valid. If growth is
 impossible, `Build()` throws naming the resource rather than silently dropping a descriptor.
 
 ### Root buffers
@@ -332,7 +348,7 @@ per-node set problem. The static region removes the class by construction:
   seen, and the descriptor names the resource's current storage;
 - a resize or a changed declaration creates a new resource and a new descriptor, and retires the old one
   behind the timeline value of the last execution that used it;
-- stable per-frame variation is a **different index in the root array**, not a rewritten descriptor.
+- stable per-frame variation is a **different value in the host root data**, not a rewritten descriptor.
 
 The dynamic ring is the deliberate exception: its slots *are* reused, but only after the execution that
 owns the ring has completed, so no in-flight command buffer can observe a rewritten descriptor. That is
@@ -350,12 +366,30 @@ exposed (a `GetViewInfo()`), while attachments keep their views because `vkCmdBe
 `VkImageView`. An aliased transient's descriptor is written after its view info is finalized, so the
 bind-then-descriptor order is the same as the current bind-then-view order.
 
+**Input attachments are an exception.** The extension requires a binding/mapping for them; direct heap
+access is not the path. B1 rejects `INPUT_ATTACHMENT` with a named diagnostic until the mapping slice is
+implemented.
+
 ### Samplers
 
 `vkWriteSamplerDescriptorsEXT` takes `VkSamplerCreateInfo`, not a `VkSampler`. The engine currently
 creates samplers from local create-info structs and does not retain them
 (`Texture.h:167`, `SamplerManager.h:36`). The heap service therefore needs a **sampler cache keyed on
 create info**, or the resources must retain the create info. That is a prerequisite, not a detail.
+
+**Custom border colors have a lifecycle.** A sampler whose `borderColor` is
+`VK_BORDER_COLOR_FLOAT_CUSTOM_EXT` or `VK_BORDER_COLOR_INT_CUSTOM_EXT` must carry a
+`VkSamplerCustomBorderColorIndexCreateInfoEXT` in its `pNext`, and the index must come from
+`vkRegisterCustomBorderColorEXT` (VUID 11444/11205). The service owns that registry: register on first
+use, key the sampler cache on the registered index, and unregister only when no cached sampler uses it.
+This requires `VK_EXT_custom_border_color` and its `customBorderColors` feature; if the device does not
+enable it, a custom-border sampler is a `Build()` error. A custom-border sampler without a registered
+index is also a `Build()` error.
+
+**YCbCr and subsampled samplers cannot be written to the sampler heap.** `vkWriteSamplerDescriptorsEXT`
+forbids `VkSamplerYcbcrConversionInfo` in the create info (VUID 11204), and the proposal requires YCbCr
+and subsampled samplers to be embedded through the mapping path. Direct-heap nodes reject them with a
+named diagnostic until mapping support lands; they are not silently treated as ordinary samplers.
 
 ## 6. Build and Execute
 
@@ -364,18 +398,19 @@ create info**, or the resources must retain the create info. That is a prerequis
 1. Topological sort and declaration validation (unchanged).
 2. Resolve every `ResourceUse` to a resource. **Resources are cached by `ResourceDesc`, not by handle
    name**, which fixes #209: a changed extent or format recreates; an unchanged declaration reuses.
-3. Derive the typed root slot assignment (image/sampler/buffer/AS bounds, duplicates, and the node's
-   `rootDataSize`).
+3. Validate the host-declared resource uses and the node's push-data/root requirements; root layout and
+   size are host-owned.
 4. Derive the execution plan (queue segments, transfers).
 5. Compile a pipeline **on a cache miss only**. The key is `PSODesc` + shader hashes + specialization
    constants. There is no descriptor layout or pipeline layout in the key, because there are none.
 
 `Execute()`:
 
-1. Acquire an executor slot (command buffers, root-buffer ring, transient arena for that slot).
-2. For each node, resolve its resource slots to typed heap indices, write the root buffer, push its
-   device address with `vkCmdPushDataEXT`, call the node callback. A host-write-to-shader barrier is
-   recorded before the node reads the root; the ring is reset only after the slot's timeline completes.
+1. Acquire an executor slot (command buffers, optional root-memory ring, transient arena for that slot).
+2. For each node, resolve the declared resources for barriers, call the node callback, and let it record
+   its own `vkCmdPushDataEXT` and root data. If the callback uses `AllocateRoot`, the graph records the
+   host-write-to-shader barrier and resets that ring only after the slot's timeline completes. The graph
+   never writes or interprets the host's root layout.
 3. Record barriers using the existing sync2 path, submit, signal the timeline.
 
 The **compiled plan is shared**; the **execution state is per slot**. That is what allows
@@ -436,7 +471,8 @@ Direct heap access is a shader-source change, not a compiler flag:
 [[vk::binding(0, SET_PER_VIEW)]] ConstantBuffer<PerViewData> perView;
 [[vk::binding(0, SET_MATERIAL)]] StructuredBuffer<PBRMaterial> materials;
 
-// after: handles in the root data
+// after: handles addressed through the host's own root data (example; not a graph ABI).
+// `push.root` is the host-defined pointer from §4.
 ConstantBuffer<PerViewData> perView = ConstantBuffer<PerViewData>.Handle(
     uint2(push.root->buffers[kPerViewSlot], 0));
 StructuredBuffer<PBRMaterial> materials = StructuredBuffer<PBRMaterial>.Handle(
@@ -446,12 +482,19 @@ StructuredBuffer<PBRMaterial> materials = StructuredBuffer<PBRMaterial>.Handle(
 The graph shaders are converted in B1b. The legacy renderer keeps its GLSL/set-binding shaders until
 P3, so a pass shared by both paths gets two **separate sources**: `foo.slang` for the binding variant and
 `foo.heap.slang` for the direct-access variant. The CMake shader build gains a second rule:
-`.heap.slang` emits `.heap.spv` with `-capability spvDescriptorHeapEXT`, `-capability spirv_1_4`,
-`-spirv-resource-heap-stride` / `-spirv-sampler-heap-stride` only if the device's defaults differ; the
-existing rule is unchanged. No unified stride is used.
+`.heap.slang` emits `.heap.spv` with `-capability spvDescriptorHeapEXT`, `-capability spirv_1_4`.
+Leave `-spirv-resource-heap-stride` and `-spirv-sampler-heap-stride` at their default `0`, so the module
+uses `OpConstantSizeOfEXT`/`ArrayStrideIdEXT`; no device-specific stride is baked. The existing rule is
+unchanged, and no unified stride is used.
 The graph loads the `.heap.spv` name; the legacy path loads the old `.spv`. That is deliberate debt with
 an end date (the P3 deletion), not an argument for keeping a descriptor-set fallback in the graph. When
 P3 deletes the legacy renderer, the old sources go and the `.heap` suffix can be dropped mechanically.
+
+A pass that needs a direct-heap exception (input attachment, YCbCr/subsampled/embedded sampler) uses a
+**mapped shader variant** with the required `DescriptorSet`/`Binding` decorations and
+`VkShaderDescriptorSetAndBindingMappingInfoEXT`. It is still a heap-flagged, null-layout pipeline; the
+mapping path is not a descriptor-set fallback. B1 rejects those passes with a named diagnostic until the
+variant exists.
 
 The graph also uses GLSL shaders (`GBuffer.frag`, `GBuffer.vert`, `test16BitStorage.comp`), so the
 conversion is not Slang-only. glslang 16.6 advertises `GL_EXT_descriptor_heap` and
@@ -465,8 +508,9 @@ because there are none.
 
 Push constants are part of the same change: `vkCmdPushConstants` is invalid without a pipeline layout,
 so the app's call at `src/app/helloVulkanRG.cpp:273` becomes `RenderGraphNodeContext::PushData`, which
-records `vkCmdPushDataEXT` at the reflected offset. A shader that keeps its `[[vk::push_constant]]`
-block is otherwise unchanged except that it now starts with `GraphRoot* root` instead of a value block.
+records `vkCmdPushDataEXT` at the host-chosen offset. A shader that keeps its `[[vk::push_constant]]`
+block is otherwise unchanged except that its layout is now host-defined; for example it may start with a
+host-defined root pointer, but the graph does not require that field.
 
 ## 10. Synchronization
 
@@ -475,9 +519,9 @@ block is otherwise unchanged except that it now starts with `GraphRoot* root` in
   the first shader that reads the heap. The extension defines both access bits.
 - A host write straight into a host-visible heap needs the same destination access with a host-write
   source; a device-local heap plus a staging copy is the default and is what the sample uses.
-- Root buffers are host-written. A `VK_ACCESS_2_HOST_WRITE_BIT` to shader-read dependency is recorded
-  before the first node that reads the root; the root ring is per execution, so this is one dependency
-  per execution rather than one per draw.
+- Root memory is host-written. If the host uses the graph's optional `AllocateRoot`, the graph records a
+  `VK_ACCESS_2_HOST_WRITE_BIT` to shader-read dependency before the first node that reads it, and the
+  root ring is per execution. If the host owns the memory, the host owns that dependency.
 - `vkCmdPushDataEXT` is command-buffer state; no queue-level synchronization is needed beyond the
   existing node barriers.
 - Rebinding a heap is avoided; the spec notes implementations may synchronize internally, and the
@@ -489,13 +533,12 @@ block is otherwise unchanged except that it now starts with `GraphRoot* root` in
 | --- | --- | --- |
 | Extension or feature absent | device creation | throw naming `VK_EXT_descriptor_heap`, `descriptorHeap`, `shaderUntypedPointers`, or `PhysicalStorageBuffer` support |
 | Shader compiled without the heap capability | `Build()` | reject the node; the shader has no `ResourceHeapEXT` built-in |
-| Push block smaller than the root pointer | `Build()` | name the shader and its reflected push-constant size; the block must hold at least 8 bytes |
-| Push block (pointer + inline constants) over `maxPushDataSize` | `Build()` | name the node, the size and the limit; move constants into the root struct or a UBO |
-| `rootDataSize` below `sizeof(GraphRoot)` or above the budget | `Build()` | name the node, the size and the min/max |
-| Typed root index out of range or duplicated | `Build()` | name the node, the array (`images`/`buffers`/`accel`/`samplers`), the slot and the use |
-| Resource kind does not fit the typed array | `Build()` | name the use and the array; a buffer use cannot write `images` |
-| Shader reads a different slot than the node populated | runtime | **not detectable by the graph**; per-pass header + readback test, see §4 |
-| Root ring exhausted | Build / `Execute()` | grow the ring, or throw naming the node; do not silently reuse an in-flight root |
+| Push data over `maxPushDataSize` | record time | name the offset/size and the device limit; the host must split or move data into root memory |
+| Optional root arena exhausted | `Execute()` | grow the arena or throw naming the node; never return a slice that aliases an in-flight root |
+| Input attachment declared under direct heap access | `Build()` | reject with a named diagnostic until the mapping path is implemented |
+| YCbCr / subsampled / embedded sampler declared under direct heap access | `Build()` | reject with a named diagnostic; these require the mapping path |
+| Custom-border sampler without a registered index | `Build()` | reject; the create info must carry `VkSamplerCustomBorderColorIndexCreateInfoEXT` |
+| Acceleration-structure direct representation unverified/mismatched | B0 / `Build()` | record the implementation; use the mapping path or reject, never assume an 8-byte packed stride |
 | Descriptor heap full past `maxResourceHeapSize` | `Build()` / allocation | name the resource and the size; do not silently drop a descriptor |
 | Sampler has no create info | `Build()` | ask the resource for it; a sampler handle alone cannot be written |
 
@@ -503,12 +546,12 @@ block is otherwise unchanged except that it now starts with `GraphRoot* root` in
 
 | Slice | Scope | Gate |
 | --- | --- | --- |
-| **B0 — probe** | Device features and heap properties; one compute and one graphics draw through a null-layout pipeline, a root pointer and direct heap access; one RT pipeline with the heap flag; readback. | Runs on RADV REMBRANDT, the RTX 3090 **and** llvmpipe; the properties (strides, `maxPushDataSize`, max heap sizes, reserved ranges), RT acceptance and `VK_KHR_unified_image_layouts` support are recorded. This is the go/no-go. |
-| **B1a — heap service** | `DescriptorHeapService` with typed regions and per-region caches; root-buffer ring; bind once; device layer 1.4 features and function pointers. | A test writes an image, a buffer, an AS and a sampler descriptor, reads them through a root pointer, and creates no descriptor set or pipeline layout. |
-| **B1b — graph bind** | Root-pointer / typed-array ABI; `ResourceUse::rootSlot`; separate `.heap.slang` direct-access sources; delete `DescriptorSetCache`, set/pool/layout creation and `VkPipelineLayout` from `src/RenderGraph/`. | Existing graph suite green in Debug and Release; `grep` for `vkCreateDescriptorSetLayout`, `vkAllocateDescriptorSets`, `vkCreatePipelineLayout` in `src/RenderGraph/` is empty. |
-| **B2 — frame build** | Per-frame `Build()` with pipeline/resource/descriptor caches; per-slot root and transient arenas; `inFlightCount > 1`. | Resize and swapchain rotation with a build per frame; #209 regression test fails before the fix; #40's overlap test. |
+| **B0 — probe** | Device features and heap properties; one compute and one graphics draw through a null-layout pipeline, host-defined push data and direct heap access; one RT pipeline with the heap flag; an AS direct/mapping decision; readback. | The same `.heap.spv` runs on RADV REMBRANDT, the RTX 3090 **and** llvmpipe; the SPIR-V contains `OpConstantSizeOfEXT`/`ArrayStrideIdEXT`; descriptor sizes/alignments, `maxPushDataSize`, max heap sizes, reserved ranges, RT acceptance and `VK_KHR_unified_image_layouts` are recorded. Unsupported configurations are recorded, not counted as failures. This is the go/no-go. |
+| **B1a — heap service** | `DescriptorHeapService` with image/texel and buffer/AS regions, per-region caches, debug slot generations; optional root-memory ring; bind once; device layer 1.4 features and function pointers. | A test writes image, texel-buffer, buffer, AS and sampler descriptors with queried sizes/alignments, reads them through host-defined push data, and creates no descriptor set or pipeline layout. AS direct access is either proven or routed to the mapping path. |
+| **B1b — graph bind** | Generic `PushData` + optional `AllocateRoot`; host-defined root ABI; separate `.heap.slang` sources; named rejection of input attachments/YCbCr until mapping; delete `DescriptorSetCache`, set/pool/layout creation and `VkPipelineLayout` from `src/RenderGraph/`. | Existing graph suite green in Debug and Release; `grep` for `vkCreateDescriptorSetLayout`, `vkAllocateDescriptorSets`, `vkCreatePipelineLayout` in `src/RenderGraph/` is empty; no `GraphRoot`, `rootSlot` or `SetRoot*` in `src/RenderGraph/`. |
+| **B2 — frame build** | Per-frame `Build()` with pipeline/resource/descriptor caches; optional per-slot root arena and transient arenas; `inFlightCount > 1`. | Resize and swapchain rotation with a build per frame; #209 regression test fails before the fix; #40's overlap test. |
 | **B3 — unified layouts** | **Deferred, not scheduled.** Adopt `VK_KHR_unified_image_layouts` when every target driver exposes it (llvmpipe does; RADV 1.4.354 does not). The GENERAL policy already removes the transitions. | No gate now; when adopted, no image-layout transition in a graph execution and validation clean. |
-| **B4 — GPU-written root data** | Root buffers are storage-capable so a **host** compute pass can fill them; a bindless draw consumes the result. Optional direct `ResourceDescriptorHeap` sugar. | A host compute pass writes a root and a bindless draw reads it; the graph adds no GPU-driven API. |
+| **B4 — GPU-written root data** | The optional root arena is storage-capable so a **host** compute pass can fill it; a bindless draw consumes the result. Optional direct `ResourceDescriptorHeap` sugar. | A host compute pass writes root data and a bindless draw reads it; the graph adds no GPU-driven API. |
 
 B1 is the point of no return for the descriptor-set path. B0 is where the hardware claim is settled.
 
@@ -521,8 +564,8 @@ This section is a proposal for `docs/Roadmap.md`; the roadmap PR applies it afte
 | **#15** content-addressed descriptor sets | **Close as superseded by B1.** The cache, pool and layouts are deleted; the `MATERIAL` cliff cannot exist. |
 | **#16** transient lifetime/aliasing | Keep. Aliasing becomes an optimization; B2 adds per-execution arenas. |
 | **#17** pipeline/shader cache | **Prerequisite for B2**, and simpler: no layout/descriptor state in the key. |
-| **#40** in-flight > 1 | **Re-scoped.** The descriptor-set half is gone; the remaining work is per-execution transients and root/arena slots. |
-| **#83** per-execution bindings | **Close after B2.** A different root entry is a different value per execution; no rebuild and no descriptor rewrite. |
+| **#40** in-flight > 1 | **Re-scoped.** The descriptor-set half is gone; the remaining work is per-execution transients and the optional root-memory arena. |
+| **#83** per-execution bindings | **Close after B2.** Different root data is a different value per execution; no rebuild and no descriptor rewrite. |
 | **#209** rebuild keeps stale resource | **Fixed in B2** by the desc-keyed resource cache. |
 | **#12** barriers | Keep. The deferred unified-layout slice would remove the layout half; the stage/access half stays. |
 | **#14/#19** RT parity | RT shaders use heap handles. B0 verifies a null-layout RT pipeline; if a driver rejects it, RT waits on that driver rather than getting a second binding path — the graph does not keep descriptor sets for it. |
@@ -588,15 +631,15 @@ commands contain.
    be recorded there and in `Consumers.md`, not only in code.
 3. **Shader rewrite cost.** B1b converts every graph shader, and the legacy renderer needs a second
    variant until P3. The count is small (19 Slang shaders, 9 with bindings) but the overlap is real.
-4. **Root pointer and root buffer.** `PhysicalStorageBuffer` has no bounds checks: a bad root pointer
-   is a GPU fault, not a validation error. The root buffer is host-visible with a per-execution
-   host-write-to-shader barrier, or device-local with a staging copy; the ring must be sized for the
-   node's draws, and exhaustion is a `Build()`/`Execute()` error. This is a per-draw table cost, not a
-   heap-capacity limit.
+4. **Host root memory.** If the host uses a raw pointer/`PhysicalStorageBuffer`, there are no bounds
+   checks: a bad pointer is a GPU fault, not a validation error. If it uses the graph's optional
+   `AllocateRoot`, the graph owns the ring and the host-write barrier, and exhaustion is an
+   `Execute()` error. If it owns the memory, it owns both. The graph imposes no root table or size.
 5. **`GENERAL` layout cost.** Unmeasured. Unified layouts are deferred because RADV 1.4.354 does not
    expose them; a measured regression is the trigger for a per-resource policy, not for blocking B1.
-6. **Sampler create info** is not retained today; the heap cannot write a sampler descriptor from a
-   `VkSampler` handle alone.
+6. **Sampler create info and lifecycle.** The engine does not retain create info; custom-border samplers
+   need registered indices and unregistration; YCbCr/subsampled samplers cannot use the standalone
+   sampler heap and need the mapping path. B1 rejects the latter with named diagnostics until then.
 7. **Ray tracing** is spec-compatible with the heap: the flag requires a null layout
    (`VUID-VkRayTracingPipelineCreateInfoKHR-flags-11311`) and `vkCmdTraceRaysKHR` has heap VUIDs. The
    remaining risk is driver/validation acceptance, which B0 settles with an actual RT pipeline. SBT
@@ -608,6 +651,9 @@ commands contain.
 10. **AMDVLK 1.4.313 on this box lacks the extension entirely.** The hard requirement excludes it until
     it is updated; RADV is the AMD validation driver for this work. That is a deliberate consequence of
     D1, not an oversight.
+11. **Acceleration-structure sizing is unproven.** Slang's 8-byte AS heap representation may not match
+    the implementation's `bufferDescriptorSize`/`bufferDescriptorAlignment`. B0 must test a real TLAS;
+    if it does not match, AS uses mappings or is rejected, not packed at 8 bytes.
 
 ## 16. Evidence collected for this draft
 
@@ -633,14 +679,16 @@ vulkaninfo | grep -i descriptor_heap
 # VK_KHR_unified_image_layouts ABSENT
 # AMDVLK 1.4.313: no VK_EXT_descriptor_heap and no VK_KHR_unified_image_layouts.
 
-# Slot budget: the legacy lighting pass binds 14 distinct tables
+# Host example: the legacy lighting pass binds 14 distinct tables
 grep -c "AddParameter\|AddImageParameter" src/RenderPasses/RenderPassOpaqueLighting.cpp
 # 14
 
-# Shader side: Slang 2026.17 emits the extension and untyped pointers
+# Shader side: Slang 2026.17 emits the extension and untyped pointers.
+# With the default stride options, the SPIR-V must use runtime descriptor-size instructions.
 slangc probe.slang -target spirv -profile glsl_450 \
   -capability spvDescriptorHeapEXT -capability spirv_1_4 -entry main -o probe.spv
 spirv-dis probe.spv | grep -E 'DescriptorHeapEXT|UntypedPointersKHR|ResourceHeapEXT|SamplerHeapEXT'
+spirv-dis probe.spv | grep -E 'OpConstantSizeOfEXT|ArrayStrideIdEXT'
 # OpCapability UntypedPointersKHR / DescriptorHeapEXT
 # OpExtension "SPV_KHR_untyped_pointers" / "SPV_EXT_descriptor_heap"
 # OpDecorate ... BuiltIn ResourceHeapEXT / SamplerHeapEXT
@@ -659,12 +707,18 @@ spirv-val --target-env vulkan1.4 combined.spv   # exits 0
 # VUID-VkRayTracingPipelineCreateInfoKHR-flags-11311
 # VUID-vkCmdTraceRaysKHR-None-11308/11309/11376
 
-# Root pointer: push data carries GraphRoot*, Slang emits PhysicalStorageBuffer, and a
-# root struct with separate image/sampler/buffer arrays validates.
+# Host example: push data carries a host-defined root pointer; Slang emits PhysicalStorageBuffer,
+# and a host root with separate image/sampler/buffer arrays validates. This is not a graph ABI.
 slangc rootarrays.slang -target spirv -profile glsl_450 \
   -capability spvDescriptorHeapEXT -capability spirv_1_4 -entry main -o rootarrays.spv
-spirv-dis rootarrays.spv | grep -E 'PhysicalStorageBuffer|ResourceHeapEXT|SamplerHeapEXT|OpSampledImage'
+spirv-dis rootarrays.spv | grep -E 'PhysicalStorageBuffer|ResourceHeapEXT|SamplerHeapEXT|OpSampledImage|OpConstantSizeOfEXT|ArrayStrideIdEXT'
 spirv-val --target-env vulkan1.4 rootarrays.spv   # exits 0
+
+# Descriptor-size definitions used by the allocator:
+# imageDescriptorSize covers images and texel buffers; bufferDescriptorSize covers buffers and
+# acceleration structures; vkGetPhysicalDeviceDescriptorSizeEXT is authoritative per type.
+# The AS direct path is NOT tested here: B0 must write a real TLAS descriptor and compare the shader
+# representation with the implementation's size/alignment.
 
 # GLSL path, not yet compiled here: glslangValidator 16.6.0 advertises
 # GL_EXT_descriptor_heap and GL_EXT_structured_descriptor_heap in
@@ -677,26 +731,30 @@ the extension.
 
 ## 17. Open questions
 
-1. **Root arrays and root memory**: 128 images / 32 samplers / 32 buffers / 8 AS cover the current
-   lighting pass with room to spare, and material data carries the rest. Does any first-port pass need
-   more than 128 *top-level* images? Separately, should the root buffer start host-visible (one barrier
-   per execution) or device-local with a staging copy?
-2. **Combined vs separate at the shader level**: the ABI is separate arrays, so a shader may compose
-   `Sampler2D` from an image and a sampler index, or pass `Texture2D` and `SamplerState` separately.
-   Combined halves the number of root entries for material textures; separate is more explicit and lets
-   one image use several samplers without duplicate image entries. Slang has open bugs around
-   `DescriptorHandle` arrays and `ConstantBuffer.Handle`, so B1b tests the shapes the material and
-   shadow passes actually use either way.
-3. **Unified image layouts**: RADV 1.4.354 on this RDNA2 box does **not** expose
-   `VK_KHR_unified_image_layouts`; llvmpipe does. B1's `GENERAL` policy already removes layout
-   transitions, so B3 is optional cleanup when the driver exposes it, not a B1 dependency. The RTX 3090
-   driver is recorded in B0.
+1. **Push-data and root-memory API.** Is `PushData(offset, bytes)` plus `AllocateRoot(size, alignment)`
+   the right minimal surface? Should the helper start host-visible with a per-execution barrier, or
+   device-local with a staging copy? The graph must not learn the host's root layout either way.
+2. **Direct-heap exceptions.** B1 rejects input attachments and YCbCr/subsampled samplers with named
+   diagnostics; should the mapping slice land in B1 or B2? The same decision applies to acceleration
+   structures if B0 finds their direct representation does not match the implementation's descriptor
+   size/alignment.
+3. **Descriptor sizing and AS.** The allocator will use `vkGetPhysicalDeviceDescriptorSizeEXT` and the
+   matching alignment per type; texel buffers sit in the image region. B0 must prove the AS direct path
+   on each implementation, or route it to mappings. No 8-byte packed AS assumption is accepted yet.
 4. **Heap budget**: static free-list plus per-slot rings, preallocated at 8-16 MB and doubled at a frame
    boundary. Is 16 MB acceptable on the lowest-memory target?
 5. **RT shader records**: the null-layout RT pipeline is spec-required with the heap flag
    (`VUID-VkRayTracingPipelineCreateInfoKHR-flags-11311`) and `vkCmdTraceRaysKHR` has heap VUIDs, so RT
    can drop the layout. Per-hit resources from SBT shader records are a later slice; B0 only proves the
    pipeline and a global-descriptor trace.
+6. **Unified image layouts**: RADV 1.4.354 on this RDNA2 box does **not** expose
+   `VK_KHR_unified_image_layouts`; llvmpipe does. B1's `GENERAL` policy already removes layout
+   transitions, so B3 is optional cleanup when the driver exposes it, not a B1 dependency. The RTX 3090
+   driver is recorded in B0.
+7. **Opaque bindless declarations.** The first implementation requires a resource use per accessed
+   resource and keeps the root representation out of it. Is a host-facing resource-group/scoped-bindless
+   API needed before a GPU-driven pass declares hundreds of resources? If so, it must define the
+   barrier/lifetime contract; it is not part of this design.
 
 GPU-driven questions (DGC layouts, state buckets, meshlet formats, work graphs, CPU draw budgets) are
 **host renderer** questions, not this note's. The compatibility surface they rely on is §14; the answers
@@ -705,6 +763,8 @@ belong in the host renderer's own design and backlog.
 ## References
 
 - [VK_EXT_descriptor_heap proposal](https://docs.vulkan.org/features/latest/features/proposals/VK_EXT_descriptor_heap.html)
+- [Vulkan spec: Descriptor Heaps](https://docs.vulkan.org/spec/latest/chapters/descriptorheaps.html)
+- [Descriptor heap properties](https://docs.vulkan.org/refpages/latest/refpages/source/VkPhysicalDeviceDescriptorHeapPropertiesEXT.html)
 - [SPV_EXT_descriptor_heap](https://github.khronos.org/SPIRV-Registry/extensions/EXT/SPV_EXT_descriptor_heap.html)
 - [Slang descriptor handles and `spvDescriptorHeapEXT`](https://github.com/shader-slang/slang/blob/master/docs/user-guide/03-convenience-features.md)
 - [NVIDIA `vk_mini_samples` descriptor heap sample](https://github.com/nvpro-samples/vk_mini_samples/tree/main/samples/descriptor_heap)
