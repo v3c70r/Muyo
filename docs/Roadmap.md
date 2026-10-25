@@ -50,19 +50,22 @@ at all (the subsumed `TODO`s, which live in code). If a fact can be a field, mak
 
 | | Lines | State |
 | --- | --- | --- |
-| `src/RenderGraph/` | 3,777 | Drives the **tests only**. Foundation, sync2, timeline execution, spec-constant pipelines. |
-| `src/RenderPasses/` | 4,403 | What actually renders: 11 pass instantiations (10 distinct types) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. |
-| `src/app/helloVulkan.cpp` | 374 | Owns the frame loop and hand-rolled semaphores. |
+| `src/RenderGraph/` | 7,466 | Drives the **tests** and `helloVulkanRG` (the P2 increment-1 app). Foundation, sync2, timeline execution, spec-constant pipelines, tracing. |
+| `src/RenderPasses/` | 4,412 | What `helloVulkan` still renders with: 11 pass instantiations (10 distinct types) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. |
+| `src/app/helloVulkan.cpp` | 376 | Owns the legacy frame loop and hand-rolled semaphores. |
+| `src/app/helloVulkanRG.cpp` | 330 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 
 The counts are each tree's `*.cpp` and `*.h` concatenated and `wc -l`-ed —
 `cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h' | sort) | wc -l` — and they are a size signal rather
 than a target. They rotted once already: the graph gained roughly 400 lines while this document sat still,
 from `#18`, `#85`, `#90`, `#92` and `#94` alone.
 
-The single fact that matters: **the graph has zero production adoption.** Every guarantee it makes is
-exercised by the test suite and by nothing else, and `RenderPassManager` keeps its own frame-sync bugs
-in the meantime (`m_imageAvailable` reused every frame, per-swapchain-image fences). That asymmetry is
-the risk this roadmap exists to close — see Risks.
+The single fact that matters: **the graph has zero adoption in the in-repo renderer.** `helloVulkan` still
+renders through `RenderPassManager`, which keeps its own frame-sync bugs (`m_imageAvailable` reused every
+frame, per-swapchain-image fences). The asymmetry is now partial rather than total: the suite,
+`helloVulkanRG` (a second app that owns its loop through the graph) and the external `muyo-llm` consumer
+exercise the graph, but the renderer this repository ships does not yet. That is the risk this roadmap
+exists to close — see Risks.
 
 ## The library goal, and what it constrains now
 
@@ -104,7 +107,7 @@ state, and neither should try to carry the other's half.
 | Constraint | Why it is expensive to retrofit |
 | --- | --- |
 | **No frame boundary in the library** | An inference client submits work that outlives many display frames. `Execute()` draining at frame end is a convenience to keep, not the model: completion has to be expressible as a timeline value the client can chain across frames. |
-| **Device, allocator and descriptor allocation injected, not global** | There are 15 call sites inside `src/RenderGraph/` that reach for `GetRenderDevice()` and friends. A library cannot own the engine's singletons. |
+| **Device, allocator and descriptor allocation injected, not global** | The injection (#85) replaced the singleton lookups inside `src/RenderGraph/`; 2 transitional call sites remain. A library cannot own the engine's singletons. |
 | **Compute-only is a first-class profile** | No surface, no present, possibly no colour attachments. Nothing on the execution path may require a graphics family or a swapchain. |
 | **Long-lived resources are first-class** | Weights and a KV cache live for the process, not a frame. The transient/persistent split (`#15`, `#16`) has to serve that, not only per-frame render targets. |
 | **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
@@ -128,13 +131,16 @@ an order, and the difference is one doubled workstream.
 
 Measured, not estimated:
 
-- **`muyo_rg` is already a separate target, but a library in name only.** It declares no dependencies of
-  its own — no `target_link_libraries`, VMA as a private include directory — and compiles inside the
-  engine's include scope.
-- **13 of its files include engine headers** from outside `src/RenderGraph/`, concentrated in
-  `RenderGraphBuilder.h` (12 of them: `MeshResourceManager`, `PerObjResourceManager`, `ShaderAsset`,
-  `PSODesc`, …).
-- **15 call sites reach for engine singletons** rather than receiving them.
+- **`muyo_rg` is already a separate target, but a library in name only.** It now declares a dependency -
+  `target_link_libraries(muyo_rg PUBLIC muyo)` - but that is the engine, not a standalone set of
+  dependencies, and it still compiles inside the engine's include scope.
+- **8 of its files include at least one header from outside `src/RenderGraph/`**, largest in
+  `RenderGraphBuilder.cpp` (`Debug.h`, `PipelineStateBuilder.h`, `ShaderReflectionFetcher.h`,
+  `VkExtFuncsLoader.h`) and `RenderGraphBuilder.h` (`DescriptorManager.h`, `PerObjResourceManager.h`,
+  `ShaderAsset.h`). The scan is in `Roadmap-Visual.md` section 7.
+- **2 code call sites reach for engine singletons** rather than receiving them, both in the transitional
+  `RenderGraphBuilder(VkRenderDevice*)` constructor. The services constructor (#85) is the path the
+  consumer uses; the remaining work is making the transitional form unnecessary.
 
 None of that blocks the first consumer; all of it blocks a second one.
 
@@ -210,7 +216,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | --- | --- |
 | **Copy queue** (`QueueType::COPY` resolves to the graphics queue; `VkRenderDevice.h:59` `// TODO: Handle copy queue`) | The legacy path uses the graphics queue for every transfer, so a real transfer queue is a new capability, not parity. Unfiled today; file it when it is scheduled rather than carrying it. |
 | `ShaderReflectionFetcher` TODOs (input attachments, decorations, specialization constants) | They concern subpass features the graph does not use — it renders with dynamic rendering. Revisit only if subpasses return. |
-| **#24** clang-tidy, **#25** `-Wextra` | Incremental adoption, none of it blocking. Adopt each scoped to changed lines as AGENTS.md section 5 describes. **#22** (CI) left this table by landing in #91; AGENTS.md section 4 is now the honest statement of what a green run does and does not prove. |
+| **#25** remaining (`-Wconversion` measurement, scan-build baseline) | Incremental adoption, none of it blocking. `-Wextra` and the warning baseline landed in #193/#194; **#24** (clang-tidy) landed in #205/#207; **#22** (CI) left this table by landing in #91, and AGENTS.md section 4 is now the honest statement of what a green run does and does not prove. |
 
 ## Critical path
 
@@ -218,12 +224,15 @@ There are two chains, because there are two things to reach: the library shippin
 consumer adopting it. The project's `Critical path` field marks the union and the **Critical path** view
 filters on it — the issues are not listed here, for the reason above.
 
-- **Library** — frame sync (`#11`) → the graph boundary (`#53`) → the device boundary (`#58`) → the
+- **Library** — frame sync (`#11` ✅) → the graph boundary (`#53`) → the device boundary (`#58`) → the
   boundary test (`#54`). Nothing on this chain can slip without moving the goal.
-- **First consumer** — transfer and clear usages (`#18`) → descriptors (`#15`) and transients (`#16`) →
-  the client-side frame helper (`#57`) → the port (`#20`) → the deletion (`#51`). `#59` sits across this
-  chain rather than in it: P1 cannot close without its number, so its slippage moves the date even though
-  nothing waits on it.
+- **First consumer** — transfer and clear usages (`#18` ✅) → transients (`#16` ✅) → descriptors (`#15`;
+  the content-addressed cache landed, frame retention remains) → the client-side frame helper (`#57`;
+  `FrameSync` landed and `helloVulkanRG` uses it) → the port (`#20`; increment 1 landed as
+  `helloVulkanRG`) → the deletion (`#51`). `#59` sits across this chain rather than in it: P1 cannot close
+  without its number, so its slippage moves the date even though nothing waits for it.
+- **After adoption** — execution bindings (`#83`, design recorded in PR #208) → in-flight above 1
+  (`#40`). Deliberately after the port; #15's frame retention is their shared prerequisite.
 
 The union is deliberately broad: it is every issue whose slippage moves an end date, not a shortlist. If
 it stops being useful, narrow the field to *what blocks the current phase* rather than widening the
@@ -248,8 +257,9 @@ otherwise be read differently by each session that touched it.
    are its mitigation: **P2's gate is capability, not completeness.** A1.5 and #18 have both landed, so
    the condition this risk was written against is met: the loop can move even while #12, #17 and #19
    continue — the graph and the legacy renderer can coexist during P2, so "the graph is not finished" is
-   not a reason to keep `RenderPassManager` in the loop. The condition being met while P2 has not started
-   is the risk arriving, not a sentence to re-read as still hypothetical.
+   not a reason to keep `RenderPassManager` in the loop. Part of P2 has started (`helloVulkanRG` owns a
+   frame loop through the graph and has one pass ported); `helloVulkan` itself has not, which is the
+   remaining half of this risk rather than a hypothetical.
 2. **Two renderers means every fix lands twice.** Mitigated by the do-not-fix table above: the way to
    keep the cost bounded is to stop polishing the code being deleted, and to put new behaviour in the
    graph only.
@@ -277,7 +287,7 @@ otherwise be read differently by each session that touched it.
    sanitizers. It **cannot** gate the two axes that need a driver — a second queue *family* (lavapipe
    reports one family with one queue, so no ownership transfer and no dedicated compute queue) and
    driver-specific behaviour — and the job records both on every run so a green check states its own
-   scope. **Verification is therefore still manual where it matters most, which is not the same as
+   scope. The changed lines are also clang-tidy clean (#207), a job of its own. **Verification is therefore still manual where it matters most, which is not the same as
    single-vendor:** the project has two machines on different vendors (RADV REMBRANDT and an RTX 3090,
    both with a dedicated compute family), and the runbook in AGENTS.md section 6 already treats a
    hardware re-run as part of review. **The two-machine matrix is the standard for anything touching
@@ -296,6 +306,10 @@ verdict rather than an absence of one.
 **Four custom fields:** `Area` (single-select), `Depends on` (text, sparse), `Critical path`
 (single-select), and `Debt` (`Fix early` / `Subsumes debt` / `After P3`). The rest are GitHub's
 built-ins.
+
+A **visualized snapshot** of the phases, the critical path and the open issues, together with the
+reconciliation record that produced it, is [`Roadmap-Visual.md`](Roadmap-Visual.md). It is a view, not a
+source: the fields and milestones still own the state.
 
 **Eight saved views:** `Roadmap (by phase)`, `Critical path`, one per phase (`P0 - Frame synchronization`
 as a board, `P1 - Graph parity`, `Adoption (P2 + P3)`), one for the library track

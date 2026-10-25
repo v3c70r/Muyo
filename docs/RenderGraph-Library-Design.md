@@ -1,8 +1,8 @@
 # RenderGraph as a library: target architecture
 
 Companion to [Roadmap.md](Roadmap.md). The roadmap says *when*; this says *what the boundary should be*.
-No part of this is implemented — it is the shape to build toward, written down while there is one
-consumer so the second one is not what discovers it.
+Most of this is not implemented — it is the shape to build toward, written down while there is one
+consumer so the second one is not what discovers it. Where a piece has landed, the section says so.
 
 ## Decisions, with their triggers
 
@@ -94,8 +94,11 @@ Two ways to get a clean boundary:
   More flexible, and pays indirection for a second backend that does not exist.
 
 Choose the shared library, and revisit on the same trigger as the C ABI: a client that cannot use
-`muyo_device`. The current problem is not the *direction* of the dependency — it is that there is no
-target boundary at all (13 cross-includes, 15 singleton call sites). Fix the boundary, keep the direction.
+`muyo_device`. The current problem is not the *direction* of the dependency — it is that `muyo_rg` does
+not stand alone: 8 files under `src/RenderGraph/` include at least one header from outside the directory,
+2 code call sites reach for engine singletons (both in the transitional constructor), and the target
+links `muyo` publicly. The scan behind those numbers is in `Roadmap-Visual.md` section 7; #53 owns the
+remaining work. Fix the boundary, keep the direction.
 
 ### 3. Error reporting is unresolved, deliberately
 
@@ -121,7 +124,7 @@ gets validation whether it asked or not.
 ## Packaging an external consumer, and why not C++ modules yet
 
 How an external application *takes* the library is a separate question from how the library is layered, and
-it is the one #68 is about. Measured before deciding.
+it is the question #68 opened and #73 finishes. Measured before deciding.
 
 ### What a consumer pays today
 
@@ -166,17 +169,19 @@ None of that is disqualifying on its own. The reasons it is the wrong *first* mo
    what a library with a second consumer in another project wants. The way out is to ship module *source*
    and have each consumer compile it, which removes the pin but keeps the parse cost — amortised over their
    translation units rather than paid per include, which is still the real win.
-3. **It does not address distribution.** #68 is `CMAKE_SOURCE_DIR` resolving to the consumer's root, 28
-   paths built from it, and `muyo_rg` declaring no dependencies. Modules change none of that; a consumer
-   still cannot configure the project.
+3. **It does not address distribution.** #68 was `CMAKE_SOURCE_DIR` resolving to the consumer's root, 28
+   paths built from it, and `muyo_rg` linking the engine rather than standing alone; it is closed, with
+   the standalone target in #53 and the package in #73. Modules change none of that: they are a
+   source-level mechanism and do not produce an installable package.
 4. **The upside is narrower than it looks.** A module would *enforce* the boundary — the compiler rejects
    reaching into internals, where a header split only reduces what is reachable — and that is a genuine
    advantage, the same one #53 wants from a stated surface. But it is a second-order benefit next to
    "the consumer cannot build the thing".
 
-**Decision: fix #68 with paths and declared dependencies, add install/export rules for the packaging case,
-and revisit modules with a trigger** — when the public surface has been split (#53) *and* a consumer asks for
-one. Recorded the same way as the C-ABI decision, so it can be revisited rather than re-argued.
+**Decision: fix #68 with paths and declared dependencies (landed), add install/export rules for the
+packaging case (#73), and revisit modules with a trigger** — when the public surface has been split (#53)
+*and* a consumer asks for one. Recorded the same way as the C-ABI decision, so it can be revisited rather
+than re-argued.
 
 ### What the embed drags across, stated rather than discovered
 
@@ -299,9 +304,9 @@ small:
 
 **Fail at `Build()`, not at the GPU.** A graph can check its own declarations before recording anything:
 every read has a writer, no cycles, attachment extents agree, descriptor bindings match reflection, the
-queue families a node asks for exist. Each of those is a *declaration* error, and reporting it at Build
-points at the line that is wrong. Today several of them surface as a validation error during execution,
-several frames later, naming a handle.
+queue families a node asks for exist. Each of those is a *declaration* error, and reporting it at
+`Build()` points at the line that is wrong instead of at a handle several frames later. The declaration
+checks landed in #55: the failure index in `docs/RenderGraph.md` lists each message with its cause and fix.
 
 **Name the graph entity, not the handle.** The validation layer can only say
 `VkBuffer 0x…`. The graph knows which node and which resource that is.
@@ -309,7 +314,7 @@ several frames later, naming a handle.
 ```
 [RenderGraph] node 'ShadowPass' reads 'DepthTarget' (texture, 2048x2048, D32)
               which node 'GBuffer' writes as R16_UNORM (1024x1024)
-              -> extents must match; see docs/RenderGraph-Errors.md
+              -> extents must match; see the failure index in docs/RenderGraph.md
 ```
 
 **Attribute GPU errors for free with debug labels and object names.** The engine already has
@@ -325,27 +330,33 @@ It is also what the vendor tools need, so it pays twice.
 
 **And make the docs actionable.** Doxygen coverage is already enforced for every public entity; the bar
 for a library is one step further — each entry states its **preconditions** and its **failure modes**
-(what makes it throw, and what the caller must guarantee), not only what it does. Plus an index of
-failures with their fixes, in the shape of AGENTS.md's gotchas section, because an agent resolves an
-error by searching for it.
+(what makes it throw, and what the caller must guarantee), not only what it does. The failure index in
+`docs/RenderGraph.md` is the existing shape for the graph's own errors, in the spirit of AGENTS.md's
+gotchas section, and it has to cover the stated surface as the surface is split out, because an agent
+resolves an error by searching for it.
 
 ## Tooling: a trace first, vendor tools second
 
-Not in scope now — the tool is a separate project, and it may be a graph node with ImGui or a headless
-CLI. Two things in the library make either possible, and one of them is worth designing early because it
-is also our own test story.
+The tool is a separate project, and it may be a graph node with ImGui or a headless CLI. The two
+interfaces that make either possible have landed in their structural form; the timing data and the vendor
+backends are what remain.
 
-**An execution-plan trace.** The graph already computes the plan: segments, queue families, transfers,
-timeline values, resource dependencies. Emitting that as machine-readable data (not a picture) is
-backend-agnostic, costs one serializer, and powers the visual tool, the headless CLI, and the tests —
-"the second execution waited on value 4 of timeline Q" is a fact a test can assert and an agent can read.
+**An execution-plan trace — structural half landed (#165, #166).** The graph computes the plan: segments,
+queue families, transfers, timeline values, resource dependencies. `RenderGraphTrace.h` records that as
+data: `SetTraceSink` receives one trace per execution, `MUYO_RG_TRACE` writes it as well, and
+`ToJson`/`ToText` serialise it (`ToGraph` feeds `ToDot`/`ToMermaid` for diagrams). The
+`[RenderGraphTrace]` cases assert on the plan rather than on pixels, and the debug page in `helloVulkanRG`
+consumes it. **Pending (#197, the phase-2 half of #56):** the timings. `TraceInterval` is reserved and left
+invalid, and `TraceScope` reports `bKnown = false` for the timestamp capability, so the fields exist before
+the values do. Timings are also what #59's cost measurement consumes.
 
-**A capture-tool abstraction.** RenderDoc covers general validation but replay shows neither ray tracing
-nor queue scheduling; the vendor profilers cover those (Radeon GPU Profiler, Nsight) and disagree
-platform to platform. So: one small interface — begin/end capture, markers, resource annotations — with
-a backend per tool and a no-op default. The graph already emits markers through `ScopedMarker`; routing
-them through that interface means every backend gets them, and the per-platform scoping lives in the
-backend rather than in the graph.
+**A capture-tool abstraction — landed (#167).** RenderDoc covers general validation but replay shows
+neither ray tracing nor queue scheduling; the vendor profilers cover those (Radeon GPU Profiler, Nsight)
+and disagree platform to platform. `src/Debug/CaptureTool.h` is the one small interface — begin/end
+capture, markers, resource annotations — with a no-op default and a RenderDoc backend, and `ScopedMarker`
+composes the marker routing, so the graph's node markers reach whichever backend is installed. The RGP and
+Nsight backends are still to write; the per-platform scoping lives in the backend rather than in the
+graph.
 
-The reason to note this now rather than when the tool is built: the trace and the markers are the
-*interface*, and retrofitting an interface onto code that never emitted one is the expensive version.
+Landing the interfaces early was the point: the trace and the markers are the *interface*, and
+retrofitting an interface onto code that never emitted one is the expensive version.
