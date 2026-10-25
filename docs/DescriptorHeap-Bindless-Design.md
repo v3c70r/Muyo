@@ -201,6 +201,60 @@ Declaring every possible bindless resource can scale poorly. A host-facing resou
 scoped-bindless model could make the declaration coarser, but it is a future extension with its own
 correctness argument, not a prerequisite of this design and not a graph-level GPU-driven feature.
 
+### Resolving a declared use to a heap index
+
+The graph does not put resources into the root data for the host, but it does resolve the declared uses.
+The node context exposes the typed heap index for a heap-bound use:
+
+```cpp
+std::optional<uint32_t> GetHeapIndex(const ResourceHandle&, ResourceUsage) const;
+
+// Optional sugar: write the 32-bit index at a host-chosen offset in a root slice.
+bool WriteRootIndex(std::span<std::byte> root, size_t offset,
+                    const ResourceHandle&, ResourceUsage) const;
+```
+
+`GetHeapIndex` succeeds for sampled/storage images, uniform/storage buffers and acceleration structures;
+it returns `nullopt` for attachments, vertex/index/indirect buffers and transfer uses, which the graph
+binds directly or which have no shader-visible heap descriptor. The index is resolved per execution, so
+a host callback that runs per execution gets the current value rather than a stale one from `Build()`.
+
+The host decides where the index goes:
+
+```cpp
+node.execute = [](RenderGraphNodeContext& ctx)
+{
+    MyRoot root{};
+    if (auto i = ctx.GetHeapIndex("Albedo", ResourceUsage::SAMPLED))
+        root.albedo = *i;
+    if (auto i = ctx.GetHeapIndex("MaterialBuffer", ResourceUsage::STORAGE_BUFFER))
+        root.materialBuffer = *i;
+
+    auto slice = ctx.AllocateRoot(sizeof(MyRoot), alignof(MyRoot));
+    std::memcpy(slice.host.data(), &root, sizeof(root));
+    ctx.PushData(0, std::as_bytes(std::span{&slice.device, 1}));
+};
+```
+
+That is the whole relationship between input/output management and root data:
+
+- **Input/output is `ResourceUse`.** The host declares handles, `io` (READ/WRITE/READ_WRITE) and usage;
+  the graph resolves them for barriers, transient lifetime, aliasing and reuse. The root data is not the
+  dependency record.
+- **Root data is shader access.** The host decides which declared uses need an index, where the index
+  lives, and whether it is inline, indirect or GPU-generated. The graph supplies the current index; it
+  does not require a slot, a layout or an agreement check.
+- **Attachments need no index.** Color/depth attachments are bound through `vkCmdBeginRendering`; vertex,
+  index and indirect buffers through their own commands. Only heap-visible shader resources are resolved
+  to an index.
+- **A resource used twice with different roles** (for example sampled and storage) is declared per role;
+  `GetHeapIndex` takes the usage, so the host gets the descriptor for that role. If the roles need
+  different layouts or descriptor types, they are separate uses and separate indices.
+
+A host that wants a fixed layout can assign slots in its own header and copy the indices; a host that
+wants a GPU-generated root can have a compute pass write the same indices into its own buffer. The graph
+neither knows nor checks either layout.
+
 ## 5. Descriptor heap service
 
 The heap is a **host-owned service injected into the graph**, not graph-owned state:
@@ -407,10 +461,10 @@ named diagnostic until mapping support lands; they are not silently treated as o
 `Execute()`:
 
 1. Acquire an executor slot (command buffers, optional root-memory ring, transient arena for that slot).
-2. For each node, resolve the declared resources for barriers, call the node callback, and let it record
-   its own `vkCmdPushDataEXT` and root data. If the callback uses `AllocateRoot`, the graph records the
-   host-write-to-shader barrier and resets that ring only after the slot's timeline completes. The graph
-   never writes or interprets the host's root layout.
+2. For each node, resolve the declared resources for barriers and `GetHeapIndex`, call the node callback,
+   and let it record its own `vkCmdPushDataEXT` and root data. If the callback uses `AllocateRoot`, the
+   graph records the host-write-to-shader barrier and resets that ring only after the slot's timeline
+   completes. The graph never writes or interprets the host's root layout.
 3. Record barriers using the existing sync2 path, submit, signal the timeline.
 
 The **compiled plan is shared**; the **execution state is per slot**. That is what allows
@@ -506,11 +560,42 @@ untyped pointers (`spirv_reflect.c:522`, `:3848`), so reflection still supplies 
 specialization constants and heap-access metadata. It will no longer supply descriptor bindings,
 because there are none.
 
-Push constants are part of the same change: `vkCmdPushConstants` is invalid without a pipeline layout,
-so the app's call at `src/app/helloVulkanRG.cpp:273` becomes `RenderGraphNodeContext::PushData`, which
-records `vkCmdPushDataEXT` at the host-chosen offset. A shader that keeps its `[[vk::push_constant]]`
-block is otherwise unchanged except that its layout is now host-defined; for example it may start with a
-host-defined root pointer, but the graph does not require that field.
+### Push constants become push data
+
+`vkCmdPushConstants` requires a `VkPipelineLayout` and a `VkPushConstantRange`; a heap pipeline has
+`layout = VK_NULL_HANDLE`, so the graph drops `pipelineLayout`, `vkCmdPushConstants` and push-range
+plumbing from its API.
+
+The shader-side block does **not** disappear. A `[[vk::push_constant]]` block is still compiled to the
+SPIR-V `PushConstant` storage class; with a heap pipeline that storage is backed by push data. The host
+keeps its existing block layout and offsets; only the recording call changes:
+
+```cpp
+// before:
+vkCmdPushConstants(cmd, ctx.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, size, &value);
+
+// after:
+ctx.PushData(0, std::as_bytes(std::span{&value, 1}));
+```
+
+`PushData` records `vkCmdPushDataEXT` and copies the bytes into the command buffer; there is no host
+lifetime to manage. A typed `PushData<T>(offset, value)` is convenience only; the byte form is the
+contract. The graph checks `offset + size <= maxPushDataSize`.
+
+Two ordering rules matter:
+
+- **Keep heap and non-heap state separate.** `vkCmdPushDataEXT` invalidates non-heap descriptor state
+  (descriptor sets and push constants); descriptor-set/push-constant commands invalidate heap state and
+  push data. The graph path is heap-only: bind the heaps once and never call `vkCmdPushConstants` or
+  descriptor-set commands in a node. Push data and heap binding coexist; the executor keeps both heaps
+  bound while nodes push their data.
+- **Bind heaps once, not per node.** Rebinding a heap is expensive and can invalidate non-heap state; the
+  executor binds the resource and sampler heaps at the start of the command buffer and keeps them.
+
+Push data is not per-stage the way push-constant ranges are; every stage sees the same blob. The host's
+block layout is responsible for placing stage-specific values at the offsets each shader expects. The
+common single-block case is unchanged. `helloVulkanRG.cpp:273` is the worked migration: the block stays,
+the `pipelineLayout` argument and `vkCmdPushConstants` call go.
 
 ## 10. Synchronization
 
@@ -548,7 +633,7 @@ host-defined root pointer, but the graph does not require that field.
 | --- | --- | --- |
 | **B0 — probe** | Device features and heap properties; one compute and one graphics draw through a null-layout pipeline, host-defined push data and direct heap access; one RT pipeline with the heap flag; an AS direct/mapping decision; readback. | The same `.heap.spv` runs on RADV REMBRANDT, the RTX 3090 **and** llvmpipe; the SPIR-V contains `OpConstantSizeOfEXT`/`ArrayStrideIdEXT`; descriptor sizes/alignments, `maxPushDataSize`, max heap sizes, reserved ranges, RT acceptance and `VK_KHR_unified_image_layouts` are recorded. Unsupported configurations are recorded, not counted as failures. This is the go/no-go. |
 | **B1a — heap service** | `DescriptorHeapService` with image/texel and buffer/AS regions, per-region caches, debug slot generations; optional root-memory ring; bind once; device layer 1.4 features and function pointers. | A test writes image, texel-buffer, buffer, AS and sampler descriptors with queried sizes/alignments, reads them through host-defined push data, and creates no descriptor set or pipeline layout. AS direct access is either proven or routed to the mapping path. |
-| **B1b — graph bind** | Generic `PushData` + optional `AllocateRoot`; host-defined root ABI; separate `.heap.slang` sources; named rejection of input attachments/YCbCr until mapping; delete `DescriptorSetCache`, set/pool/layout creation and `VkPipelineLayout` from `src/RenderGraph/`. | Existing graph suite green in Debug and Release; `grep` for `vkCreateDescriptorSetLayout`, `vkAllocateDescriptorSets`, `vkCreatePipelineLayout` in `src/RenderGraph/` is empty; no `GraphRoot`, `rootSlot` or `SetRoot*` in `src/RenderGraph/`. |
+| **B1b — graph bind** | Generic `PushData` + optional `AllocateRoot`; `GetHeapIndex`/`WriteRootIndex` resource-index resolver; host-defined root ABI; separate `.heap.slang` sources; named rejection of input attachments/YCbCr until mapping; delete `DescriptorSetCache`, set/pool/layout creation, `VkPipelineLayout` and graph push-constant plumbing from `src/RenderGraph/`. | Existing graph suite green in Debug and Release; `grep` for `vkCreateDescriptorSetLayout`, `vkAllocateDescriptorSets`, `vkCreatePipelineLayout`, `vkCmdPushConstants` in `src/RenderGraph/` is empty; no `GraphRoot`, `rootSlot` or `SetRoot*` in `src/RenderGraph/`; a node queries a heap index, writes its own root, and records `PushData`. |
 | **B2 — frame build** | Per-frame `Build()` with pipeline/resource/descriptor caches; optional per-slot root arena and transient arenas; `inFlightCount > 1`. | Resize and swapchain rotation with a build per frame; #209 regression test fails before the fix; #40's overlap test. |
 | **B3 — unified layouts** | **Deferred, not scheduled.** Adopt `VK_KHR_unified_image_layouts` when every target driver exposes it (llvmpipe does; RADV 1.4.354 does not). The GENERAL policy already removes the transitions. | No gate now; when adopted, no image-layout transition in a graph execution and validation clean. |
 | **B4 — GPU-written root data** | The optional root arena is storage-capable so a **host** compute pass can fill it; a bindless draw consumes the result. Optional direct `ResourceDescriptorHeap` sugar. | A host compute pass writes root data and a bindless draw reads it; the graph adds no GPU-driven API. |
