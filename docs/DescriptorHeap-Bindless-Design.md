@@ -101,6 +101,16 @@ process file by itself. B0 records the same list on llvmpipe and each hardware d
 configurations are recorded rather than treated as a green run. `VK_KHR_unified_image_layouts` is optional
 and deferred, not part of the floor.
 
+**Evidence for the floor table.** The registry dependency expression for `VK_EXT_descriptor_heap` is
+`((VK_KHR_extended_flags,VK_KHR_maintenance5)+(VK_KHR_buffer_device_address,VK_VERSION_1_2),VK_VERSION_1_4)`:
+the `VK_VERSION_1_4` arm is the core path this design takes, while the KHR arm is the pre-1.4 route. The
+engine already enables and **requires** `shaderInt64` and `bufferDeviceAddress`
+(`src/RenderDevice/VkRenderDevice.cpp:352`, `:362`, `:541`, `:551`), so the "already required" row is
+checked against the current tree, not assumed. B0 queries `descriptorHeap` and
+`shaderUntypedPointers` at device creation and records them. `VK_KHR_unified_image_layouts` is absent
+from the dependency expression; llvmpipe exposes it and RADV 1.4.354 does not, which is why it remains
+optional and deferred rather than part of the floor.
+
 ## 4. Push data and root data
 
 Push data is **opaque to RenderGraph**. `vkCmdPushDataEXT` takes a byte blob; the extension does not require
