@@ -40,7 +40,9 @@ struct RenderGraphNodeContext
     VkPipeline pipeline = VK_NULL_HANDLE;                                ///< Bound pipeline.
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;                    ///< Bound pipeline layout.
     VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;  ///< Bind point for the pipeline.
-    /// Non-null for a node compiled with `useDescriptorHeap`; the heaps are bound before the pipeline.
+    /// Non-null for a node compiled with `useDescriptorHeap`. B1b-1 does not bind the heaps centrally:
+    /// the node callback uploads/binds them (see `DescriptorHeapProbeTests`), and B1b-2 moves that to one
+    /// bind per command buffer. Both heap and pipeline bind-point state precede the dispatch.
     DescriptorHeapService* descriptorHeap = nullptr;
     /// The device's `maxPushDataSize`; zero for a legacy descriptor node.
     uint32_t maxPushDataSize = 0;
