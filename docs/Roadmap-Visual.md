@@ -143,7 +143,7 @@ Twenty-eight issues are open. `CP` is the `Critical path` field; `Deps` is the `
 | 20 | Adoption | P2 | In Progress | Yes | #57 | #111 UI pass landed; #20 final port freezes until B2. |
 | 48 | Adoption | P2 | Todo | No | - | DebugUI decoupling; blocks #51. |
 | 49 | Adoption | P2 | Todo | No | - | ShadowPassManager into graph; blocks #51. |
-| 57 | Synchronization | P2 | In Progress | Yes | #15 | `FrameSync` + helloVulkanRG resize landed (#110/#113). |
+| 57 | Synchronization | P2 | In Progress | Yes | - | `FrameSync` + helloVulkanRG resize landed (#110/#113); #15 is a fallback, not a gate. |
 | 51 | Adoption | P3 | Todo | Yes | #20 | Deletion only. |
 | 53 | Graph API | L | In Progress | Yes | - | Services injected; header split, standalone build, packaging remain. |
 | 54 | Graph API | L | Todo | Yes | #58 | In-tree compute-only plan test. |
@@ -206,7 +206,7 @@ Each finding was checked against the repository or the board on 2026-10-22; R16�
 | R8 | `#53`'s measurements are stale (13 files / 15 call sites / "no `target_link_libraries`"), and it still depends on #11 (closed). | Now **8** files under `src/RenderGraph/` include at least one header from outside the directory (scan in section 7), **2** singleton code call sites in the transitional constructor (+3 doc lines), and `muyo_rg` has `target_link_libraries(PUBLIC muyo)`. | Updated #53's body; cleared the closed dependency. |
 | R9 | `#25` is titled "Enable -Wextra ...", but `-Wextra` and the warning baseline landed (#193/#194). Only `-Wconversion` measurement and the scan-build baseline remain. | #25's own status section. | Retitled to the remaining scope; kept `Debt: After P3`. |
 | R10 | Seven open issues have **no milestone**, so the Roadmap's "milestone owns the phase" contract does not cover them: #144, #157, #183, #186, #188, #197, #209. | `gh issue list` vs milestones. | Assigned: #197/#209 to P1, #186 to P2, #144/#157/#183/#188 to Backlog. |
-| R11 | The `Depends on` field for #59 is empty although #59 consumes #197's timing data; #57 still lists closed #16. | #59 body and #197 body. | Set #59 → #197; #57 keeps #15 (open) and drops #16. |
+| R11 | The `Depends on` field for #59 is empty although #59 consumes #197's timing data; #57 listed closed #16 and then the #15 fallback. | #59 body, #197 body, #57 board field. | Set #59 → #197; cleared #57 to none — #15 is a fallback, not a gate. |
 | R12 | `docs/RenderGraph-Library-Design.md` still says `muyo_rg` declares no dependencies, while it now links the engine. | `CMakeLists.txt:366 target_link_libraries(muyo_rg PUBLIC muyo)`. | Corrected the sentence: the remaining gap is standing alone, not declaring nothing. |
 | R13 | The Roadmap's "Not on the parity path" table still lists #22/#24 (closed) and #25 (landed except two items). | #22 and #24 closed; #25 status section. | Table updated: #25's remaining scope only. |
 | R14 | P0 has 0 open issues but the milestone is still open. | Milestone counts. | Left open as a grouping device; noted here so it is a decision rather than an oversight. |
