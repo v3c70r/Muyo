@@ -102,10 +102,14 @@ gh project item-edit --project-id <project-id> --id <item-id> \
 
 ## 3. Development process
 
-- **Language/API floor: Vulkan 1.3.** The engine uses `synchronization2` and timeline semaphores
-  only; the pre-1.0 synchronization API is not to be reintroduced. Required features are enabled
-  *and verified* at device creation (`VkRenderDevice::CreateDevice`) — add new requirements to that
-  list, never enable a feature blindly.
+- **Language/API floor: Vulkan 1.4.** The engine uses `synchronization2` and timeline semaphores
+  only; the pre-1.0 synchronization API is not to be reintroduced. The descriptor-heap path also
+  requires `VK_EXT_descriptor_heap` + `descriptorHeap` and `VK_KHR_shader_untyped_pointers` +
+  `shaderUntypedPointers`; the ray-tracing path requires `VK_KHR_ray_tracing_pipeline`. Required
+  features are enabled *and verified* at device creation (`VkRenderDevice::CreateDevice`) — add new
+  requirements to that list, never enable a feature blindly. B0 enables the heap chain when the
+  caller requests both extensions and records an unsupported device as a gap; the graph path requires
+  it from B1, and there is no descriptor-set fallback.
 - **Never initialize Vulkan structs positionally.** Use field-by-field assignment or C++20
   designated initializers. `{}` and `{VK_STRUCTURE_TYPE_...}` are fine. See
   [`docs/CodingConventions.md`](docs/CodingConventions.md) — the sync2 barrier layouts make a
@@ -218,15 +222,19 @@ Operational notes, each of which has cost someone a red herring:
 github-hosted runners with mesa's lavapipe as the Vulkan device: both configurations build, the
 checked-in reference matches the headers (`render_graph_docs.py --check`), the changed lines are
 `clang-format` clean, and the whole suite passes in Debug, Release, both ray-tracing shapes and under
-the sanitizers - with the validation layer on. The workflow's header states the two axes it does **not**
+the sanitizers - with the validation layer on. The workflow's header states the three axes it does **not**
 cover, and the job writes them into the run summary on every build:
 
   - **Queue topology.** lavapipe reports one queue family with one queue, so no cross-family ownership
 transfer and no dedicated compute queue is exercised; the suite takes the single-queue path. The
 `[test device]` line says so on every run.
   - **Driver-specific behaviour.** A software device passing is not evidence about a driver.
+  - **Descriptor heap.** The runner's Mesa may not expose `VK_EXT_descriptor_heap` or
+`shaderUntypedPointers`. The `[DescriptorHeap]` cases then skip with the reason and the `[test device]`
+line records the absent bits. That is a recorded gap, not a green heap result: the B0 hardware matrix
+(RADV, RTX 3090, and a qualifying llvmpipe) is the evidence for the heap path.
 
-Those two stay with the development machine and the review machine. **A green check is not a substitute
+Those three stay with the development machine and the review machine. **A green check is not a substitute
 for the hardware run in section 6**, and it never was: a clean run is evidence about a *code and
 validation-layer* pair on a *software device*, which is why the job records the device line and the layer
 version rather than just a tick. On a pull request, treat CI as the thing that rules out the cheap
@@ -245,8 +253,9 @@ rather than left as configuration nothing executes.
 - **Record what the tests ran on.** A verification table names the *device*, not the vendor:
   `llvmpipe`, `RADV REMBRANDT`, `RTX 3090`. The same commit has run green on a software rasteriser
   and on a real driver, and naming the vendor described neither correctly. `GraphicsTestEnv` logs the
-  selected device and whether a dedicated compute family is present, so a run states its own scope
-  instead of leaving it to be assumed.
+  selected device, driver and Mesa/loader versions, whether a dedicated compute family is present and
+  whether the descriptor-heap/untyped-pointer features are supported/enabled, so a run states its own
+  scope instead of leaving it to be assumed. A heap row that says "unsupported" is a gap.
 - **Plan tests across the configuration axes, and say which ones each covers.** "It passes" has
   repeatedly meant less here than it sounded, because the axes differ silently:
 
@@ -257,6 +266,7 @@ rather than left as configuration nothing executes.
   | In-flight count | 1 serialises; overlap, aliasing and chaining only appear above 1. |
   | Build configuration | `NDEBUG` removes asserts, and a Release build currently fails tests Debug passes. |
   | Resource sharing | per-execution vs shared resources decide whether a change can alias anything. |
+  | Descriptor heap | a device without the extension skips the probe; a green run there is not evidence about the heap path. |
 
   A test whose subject is one of these must state the axis it needs and fail or report loudly when the
   machine does not provide it — a green run on a configuration that cannot exercise the subject is not
@@ -638,6 +648,20 @@ been reproduced on the merged content.
   saying which case it was, so read that line before treating a green run as evidence about
   transfers. A machine with one queue family takes the single-queue path, which is a legitimate
   configuration rather than a failure, but it cannot validate handover machinery.
+- **Descriptor-heap sizes are not the shader's stride for every type.** `vkGetPhysicalDeviceDescriptorSizeEXT`
+  is the host write size, but Mesa's SPIR-V frontend resolves `OpConstantSizeOfEXT` for **every**
+  `OpTypeImage` (including `Dim Buffer` texel buffers and storage images) to
+  `VkPhysicalDeviceDescriptorHeapPropertiesEXT::imageDescriptorSize`. Measured on RADV REMBRANDT
+  (Mesa 26.2.5): `UNIFORM_TEXEL_BUFFER` reports 16 and `STORAGE_IMAGE` 32, while the shader indexes
+  those slots at 64. A heap region must therefore stride image-like descriptors by
+  `imageDescriptorSize` and feed the shader that index, not `byteOffset / per-type size`; the probe
+  in `src/tests/DescriptorHeapProbeTests.cpp` is the evidence. Acceleration structures are the
+  separate case: Slang lowers `RaytracingAccelerationStructure.Handle` to an 8-byte value; llvmpipe
+  reports 8 (direct works), RADV reports 16 (mapping or rejection required), and an RTX 3090 also
+  reports 8 but loses the device on the direct trace, so it also needs mapping or rejection. The 3090
+  is the first implementation with non-zero reserved ranges (`minResourceHeapReservedRange = 96768`,
+  `minSamplerHeapReservedRange = 512`) and finite heap maxima (32 MiB resource, 128 KiB sampler);
+  size a heap as descriptor budget + reserved range and check the maximum before allocating.
 - **AMDVLK ships an *implicit* layer that replaces device enumeration, not just adds a driver.** With
   `VK_LAYER_AMD_switchable_graphics_64` active (its manifest is in `/etc/vulkan/implicit_layer.d/`, so the
   loader enables it for every application), `vulkaninfo` and every app see **only AMDVLK's device** — RADV

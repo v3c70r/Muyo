@@ -11,8 +11,12 @@ name: CI
 #     transfer and no dedicated compute queue is exercised; the suite takes the single-queue path.
 #     The "[test device]" line the job records says so on every run.
 #   * Driver-specific behaviour. A software device passing is not evidence about a driver.
+#   * Descriptor heap. The runner's Mesa may not expose VK_EXT_descriptor_heap or
+#     shaderUntypedPointers; the [DescriptorHeap] probe then skips with the reason and the
+#     "[test device]" line records the absent bits. That is a recorded gap, not a green heap result;
+#     the B0 hardware matrix (RADV, RTX 3090, qualifying llvmpipe) is the evidence for that path.
 #
-# Those two stay with the development machine and the review machine, which is where the hardware
+# Those three stay with the development machine and the review machine, which is where the hardware
 # runbook in AGENTS.md section 6 already puts them. A green run here is evidence about a code and
 # validation-layer pair on a software device, and the job prints both so the claim is self-describing.
 
@@ -227,6 +231,9 @@ jobs:
             echo "### ${{ matrix.name }}"
             echo
             grep -F "[test device]" tests.err || echo "no [test device] line: the suite did not create a device"
+            grep -F "[descriptor heap]" tests.err || echo "no [descriptor heap] line: the heap probe row is a gap"
+            echo "mesa-vulkan-drivers: $(dpkg-query -W -f='${Version}' mesa-vulkan-drivers 2>/dev/null || echo unknown)"
+            grep -E "test cases:" tests.out || true
             vulkaninfo 2>/dev/null | grep -m1 "KHRONOS_validation" || echo "no validation layer line"
             echo "queue counts: $(vulkaninfo 2>/dev/null | grep -c queueCount) families reported below"
             vulkaninfo 2>/dev/null | grep -E "queueCount" || true

@@ -89,13 +89,26 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
     // Create instance
     // set physical device
     // Populate application info structure
+    //
+    // B0 raises the floor to Vulkan 1.4 (docs/DescriptorHeap-Bindless-Design.md D2). The loader is
+    // checked rather than assumed: a 1.3 loader cannot create a 1.4 instance, and failing here names the
+    // loader version instead of surfacing as an unrelated `VK_ERROR_INCOMPATIBLE_DRIVER` later.
+    VK_ASSERT(vkEnumerateInstanceVersion(&m_uInstanceVersion));
+    if (m_uInstanceVersion < VK_API_VERSION_1_4)
+    {
+        FatalError("Vulkan 1.4 is required (the descriptor-heap floor); the loader supports " +
+                   std::to_string(VK_VERSION_MAJOR(m_uInstanceVersion)) + "." +
+                   std::to_string(VK_VERSION_MINOR(m_uInstanceVersion)) + "." +
+                   std::to_string(VK_VERSION_PATCH(m_uInstanceVersion)));
+    }
+
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Muyo";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 3, 0);
+    appInfo.applicationVersion = VK_MAKE_VERSION(1, 4, 0);
     appInfo.pEngineName = "Muyo";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 3, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_3;
+    appInfo.engineVersion = VK_MAKE_VERSION(1, 4, 0);
+    appInfo.apiVersion = VK_API_VERSION_1_4;
 
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -426,6 +439,11 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     VK_ASSERT(vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &nSupportedDeviceExtensionCount,
                                                    vSupportedDeviceExtensions.data()));
 
+    // Device-level extension entry points are resolved through vkGetDeviceProcAddr, so the instance-level
+    // table has to be loaded first (it owns the physical-device query) and the device table after
+    // vkCreateDevice below.
+    VkExt::LoadInstanceFunctions(m_instance);
+
     VkPhysicalDeviceProperties deviceProperties{};
     vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProperties);
 
@@ -433,6 +451,111 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     {
         throw std::runtime_error(std::string("Device '") + deviceProperties.deviceName +
                                  "' does not support the requested extension: " + sUnsupported);
+    }
+
+    const auto isRequested = [&vDeviceExtensions](const char* sName)
+    {
+        return std::find_if(vDeviceExtensions.begin(), vDeviceExtensions.end(), [sName](const char* sRequested)
+                            { return sRequested != nullptr && strcmp(sRequested, sName) == 0; }) !=
+               vDeviceExtensions.end();
+    };
+    const bool bDescriptorHeapRequested = isRequested(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    const bool bUntypedPointersRequested = isRequested(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME);
+
+    // Query support whether or not the caller asked, so the test/device line can state an unsupported row
+    // rather than omit it (docs/DescriptorHeap-Bindless-Design.md §3). The extension and the feature are
+    // two checks: a device may expose one without the other.
+    const bool bDescriptorHeapExtension =
+        HasDeviceExtension(vSupportedDeviceExtensions, VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+    const bool bUntypedPointersExtension =
+        HasDeviceExtension(vSupportedDeviceExtensions, VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME);
+    if (bDescriptorHeapExtension)
+    {
+        VkPhysicalDeviceDescriptorHeapFeaturesEXT supportedDescriptorHeap{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_FEATURES_EXT};
+        VkPhysicalDeviceFeatures2 descriptorHeapQuery{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        descriptorHeapQuery.pNext = &supportedDescriptorHeap;
+        vkGetPhysicalDeviceFeatures2(m_physicalDevice, &descriptorHeapQuery);
+        m_bDescriptorHeapSupported = supportedDescriptorHeap.descriptorHeap == VK_TRUE;
+
+        VkPhysicalDeviceProperties2 properties2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+        properties2.pNext = &m_descriptorHeapProperties;
+        vkGetPhysicalDeviceProperties2(m_physicalDevice, &properties2);
+    }
+    if (bUntypedPointersExtension)
+    {
+        VkPhysicalDeviceShaderUntypedPointersFeaturesKHR supportedUntypedPointers{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_UNTYPED_POINTERS_FEATURES_KHR};
+        VkPhysicalDeviceFeatures2 untypedQuery{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        untypedQuery.pNext = &supportedUntypedPointers;
+        vkGetPhysicalDeviceFeatures2(m_physicalDevice, &untypedQuery);
+        m_bShaderUntypedPointersSupported = supportedUntypedPointers.shaderUntypedPointers == VK_TRUE;
+    }
+
+    // The heap path needs both: the heap capability and the SPIR-V untyped-pointer capability Slang emits
+    // for a function-local `.Handle()`. Requesting one without the other is a caller error rather than a
+    // half-enabled path.
+    if (bDescriptorHeapRequested != bUntypedPointersRequested)
+    {
+        throw std::runtime_error(std::string("Device '") + deviceProperties.deviceName +
+                                 "': " + VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME + " and " +
+                                 VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME +
+                                 " must be requested together; the heap path needs both features");
+    }
+    // CreateDevice owns these two feature structs: they are members so they outlive vkCreateDevice, and
+    // they are appended below. A caller that also passes one through vpFeatures would put a duplicate
+    // sType in the pNext chain, which is invalid usage. Refuse it by name rather than relying on the
+    // validation layer to explain a duplicate later.
+    for (const auto* pHeader = reinterpret_cast<const FeatureChainHeader*>(&features2); pHeader != nullptr;
+         pHeader = static_cast<const FeatureChainHeader*>(pHeader->pNext))
+    {
+        if (pHeader->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_FEATURES_EXT ||
+            pHeader->sType == VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_UNTYPED_POINTERS_FEATURES_KHR)
+        {
+            throw std::runtime_error(
+                "VkRenderDevice::CreateDevice owns the descriptor-heap feature structs; do not pass "
+                "VkPhysicalDeviceDescriptorHeapFeaturesEXT or VkPhysicalDeviceShaderUntypedPointersFeaturesKHR "
+                "through vpFeatures");
+        }
+    }
+
+    if (bDescriptorHeapRequested)
+    {
+        // The design's floor is a 1.4 device, not merely a 1.3 device that happens to expose the two
+        // extensions: VK_EXT_descriptor_heap's core dependency path is Vulkan 1.4.
+        if (deviceProperties.apiVersion < VK_API_VERSION_1_4)
+        {
+            throw std::runtime_error(std::string("Device '") + deviceProperties.deviceName + "' reports Vulkan " +
+                                     std::to_string(VK_VERSION_MAJOR(deviceProperties.apiVersion)) + "." +
+                                     std::to_string(VK_VERSION_MINOR(deviceProperties.apiVersion)) +
+                                     "; the descriptor-heap path requires Vulkan 1.4");
+        }
+        if (!m_bDescriptorHeapSupported)
+        {
+            throw std::runtime_error(std::string("Device '") + deviceProperties.deviceName + "' exposes " +
+                                     VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME +
+                                     " but reports descriptorHeap = VK_FALSE, so it cannot be enabled");
+        }
+        if (!m_bShaderUntypedPointersSupported)
+        {
+            throw std::runtime_error(std::string("Device '") + deviceProperties.deviceName + "' exposes " +
+                                     VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME +
+                                     " but reports shaderUntypedPointers = VK_FALSE, so it cannot be enabled");
+        }
+
+        m_descriptorHeapFeatures.descriptorHeap = VK_TRUE;
+        m_descriptorHeapFeatures.descriptorHeapCaptureReplay = VK_FALSE;
+        m_shaderUntypedPointersFeatures.shaderUntypedPointers = VK_TRUE;
+        m_bDescriptorHeapEnabled = true;
+        m_bShaderUntypedPointersEnabled = true;
+
+        // Append the two feature structs at the end of the chain the caller's feature structs left. The
+        // members outlive vkCreateDevice; vpFeatures' own structs stay the caller's responsibility.
+        ExtensionHeader* pLastFeature = reinterpret_cast<ExtensionHeader*>(&features2);
+        while (pLastFeature->pNext != nullptr) pLastFeature = reinterpret_cast<ExtensionHeader*>(pLastFeature->pNext);
+        pLastFeature->pNext = &m_descriptorHeapFeatures;
+        m_descriptorHeapFeatures.pNext = &m_shaderUntypedPointersFeatures;
+        m_shaderUntypedPointersFeatures.pNext = nullptr;
     }
 
     // Cooperative matrix is queried whether or not it is requested, so a consumer can ask before deciding
@@ -681,6 +804,10 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
 
     VK_ASSERT(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device));
 
+    // Resolve device-level extension entry points against the created device. The instance-level loader
+    // table is not sufficient here: it can return a trampoline for a command the device does not expose.
+    VkExt::LoadDeviceFunctions(m_device);
+
     {
         if (m_queueFamilyIndices.nGraphicsQueueFamily < 0)
         {
@@ -746,6 +873,8 @@ void VkRenderDevice::DestroyDevice()
     (void)vkDeviceWaitIdle(m_device);
     vkDestroyDevice(m_device, nullptr);
     m_device = VK_NULL_HANDLE;
+    m_bDescriptorHeapEnabled = false;
+    m_bShaderUntypedPointersEnabled = false;
 }
 
 void VkRenderDevice::CreateCommandPools()
@@ -965,6 +1094,21 @@ VkDeviceAddress VkRenderDevice::GetBufferDeviceAddress(VkBuffer buffer) const
     addInfo.buffer = buffer;
     VkDeviceAddress deviceAddress = vkGetBufferDeviceAddress(m_device, &addInfo);
     return deviceAddress;
+}
+
+VkDeviceSize VkRenderDevice::GetDescriptorSize(VkDescriptorType type) const
+{
+    // This is the implementation's host write size for the type; the heap properties' image/buffer/
+    // sampler sizes are region maxima (docs/DescriptorHeap-Bindless-Design.md §5). It is deliberately
+    // *not* always the shader index stride: Mesa lowers OpConstantSizeOfEXT for every OpTypeImage
+    // through imageDescriptorSize, which differs from the per-type size for texel and storage images
+    // (AGENTS.md section 8). A missing entry point means the extension is unavailable, which the caller
+    // is expected to have checked.
+    // The loader can return a trampoline for this command even when the selected ICD does not implement
+    // the extension (AMDVLK 1.4.313 here), and calling it then trips a validation error. Support is the
+    // gate, not the pointer.
+    if (!m_bDescriptorHeapSupported || VkExt::vkGetPhysicalDeviceDescriptorSizeEXT == nullptr) return 0;
+    return VkExt::vkGetPhysicalDeviceDescriptorSizeEXT(m_physicalDevice, type);
 }
 VkPipelineLayout VkRenderDevice::CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
                                                       const std::vector<VkPushConstantRange>& pushConstantRanges)
