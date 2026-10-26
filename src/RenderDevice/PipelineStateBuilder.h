@@ -86,6 +86,13 @@ public:
         return *this;
     }
 
+    /// Create with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and layout = VK_NULL_HANDLE.
+    PipelineStateBuilder& setDescriptorHeap()
+    {
+        m_bDescriptorHeap = true;
+        return *this;
+    }
+
     VkPipeline Build(VkDevice device);
 
 private:
@@ -105,6 +112,7 @@ private:
     VkRenderPass mRenderPass = {};
     uint32_t mSubpassIndex = 0;
     VkPipelineRenderingCreateInfo mRenderingInfo = {};
+    bool m_bDescriptorHeap = false;
 };
 
 // TODO(#17): finish other builders.

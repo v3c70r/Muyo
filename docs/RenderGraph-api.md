@@ -199,7 +199,7 @@ Comparison operation used by depth/stencil state.
 | `ALWAYS` | Always passes. |
 | `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
-### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineLayout pipelineLayout, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr)`
+### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineLayout pipelineLayout, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr, bool bDescriptorHeap=false)`
 
 Build a graphics pipeline from a PSODesc using dynamic rendering.
 
@@ -208,9 +208,10 @@ Build a graphics pipeline from a PSODesc using dynamic rendering.
 | `psoDesc` | Pipeline state. |
 | `vkDevice` | Logical device. |
 | `shaderModuels` | Vertex shader module followed by the fragment shader module. |
-| `pipelineLayout` | Pipeline layout (descriptor sets and push constants). |
+| `pipelineLayout` | Legacy descriptor layout, or VK_NULL_HANDLE when bDescriptorHeap is true. |
 | `renderingInfo` | Dynamic-rendering attachment formats. |
 | `pSpecializationInfo` | Values for the shaders' specialization constants, applied to both stages, or nullptr. Entries naming a constant a stage does not declare are ignored by Vulkan, so one map can serve both. |
+| `bDescriptorHeap` | Create with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and no pipeline layout. |
 
 **Returns** — The created pipeline (caller owns it).
 
