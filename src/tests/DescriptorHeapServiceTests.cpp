@@ -96,6 +96,8 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "DescriptorHeapService: sampler cache an
     customInfo.customBorderColor.float32[0] = 1.0F;
     customInfo.format = VK_FORMAT_UNDEFINED;
     custom.pNext = &customInfo;
+    CHECK_THROWS_WITH(service->AcquireSampler(custom, true),
+                      Catch::Matchers::ContainsSubstring("deferred to the B1b sampler cache"));
     if (Muyo::VkExt::vkRegisterCustomBorderColorEXT == nullptr)
     {
         CHECK_THROWS_WITH(service->AcquireSampler(custom),
@@ -190,6 +192,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "DescriptorHeapService: re-initialize cl
     Muyo::DescriptorHeapService::Config large;
     large.bufferSlots = 4;
     service->Initialize(device, large);
+    service->BeginExecution(1);
     Muyo::DescriptorSlot retired{};
     for (uint32_t i = 0; i < 4; ++i)
     {
