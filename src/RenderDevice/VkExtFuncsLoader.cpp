@@ -23,6 +23,8 @@ PFN_vkWriteSamplerDescriptorsEXT VkExt::vkWriteSamplerDescriptorsEXT = nullptr;
 PFN_vkCmdBindResourceHeapEXT VkExt::vkCmdBindResourceHeapEXT = nullptr;
 PFN_vkCmdBindSamplerHeapEXT VkExt::vkCmdBindSamplerHeapEXT = nullptr;
 PFN_vkCmdPushDataEXT VkExt::vkCmdPushDataEXT = nullptr;
+PFN_vkRegisterCustomBorderColorEXT VkExt::vkRegisterCustomBorderColorEXT = nullptr;
+PFN_vkUnregisterCustomBorderColorEXT VkExt::vkUnregisterCustomBorderColorEXT = nullptr;
 
 bool VkExt::bExtensionLoaded = false;
 
@@ -72,6 +74,8 @@ void VkExt::LoadDeviceFunctions(VkDevice device)
     GET_VK_DEVICE_FUNC_EXT(vkCmdBindResourceHeapEXT);
     GET_VK_DEVICE_FUNC_EXT(vkCmdBindSamplerHeapEXT);
     GET_VK_DEVICE_FUNC_EXT(vkCmdPushDataEXT);
+    GET_VK_DEVICE_FUNC_EXT(vkRegisterCustomBorderColorEXT);
+    GET_VK_DEVICE_FUNC_EXT(vkUnregisterCustomBorderColorEXT);
 
 #undef GET_VK_DEVICE_FUNC_EXT
 }

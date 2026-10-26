@@ -34,6 +34,9 @@ public:
     static PFN_vkCmdBindResourceHeapEXT vkCmdBindResourceHeapEXT;
     static PFN_vkCmdBindSamplerHeapEXT vkCmdBindSamplerHeapEXT;
     static PFN_vkCmdPushDataEXT vkCmdPushDataEXT;
+    // VK_EXT_custom_border_color (B1a sampler lifecycle).
+    static PFN_vkRegisterCustomBorderColorEXT vkRegisterCustomBorderColorEXT;
+    static PFN_vkUnregisterCustomBorderColorEXT vkUnregisterCustomBorderColorEXT;
 
     static bool bExtensionLoaded;
 

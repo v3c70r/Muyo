@@ -526,6 +526,7 @@ add_executable(tests
     src/tests/CaptureToolTest.cpp
     src/tests/DebugCallbackTests.cpp
     src/tests/DescriptorHeapProbeTests.cpp
+    src/tests/DescriptorHeapServiceTests.cpp
     src/tests/DeviceCapabilityTests.cpp
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
