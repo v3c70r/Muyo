@@ -201,6 +201,9 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "DescriptorHeapService: re-initialize cl
     Muyo::DescriptorHeapService::Config small;
     small.bufferSlots = 1;
     service->Initialize(device, small);
+    CHECK_THROWS_WITH(service->AcquireBuffer(buffer.address, 16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, true),
+                      Catch::Matchers::ContainsSubstring("ring acquisition without BeginExecution"));
+    service->BeginExecution(0);
     const Muyo::DescriptorSlot slot = service->AcquireBuffer(buffer.address, 16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     CHECK_NOTHROW(service->IndexOf(slot));
     DestroyAddressBuffer(buffer);

@@ -147,6 +147,8 @@ void DescriptorHeapService::Shutdown()
     m_customBorderIndices.clear();
     m_samplers.clear();
     m_pendingRetires.clear();
+    m_currentExecution = 0;
+    m_bHasExecution = false;
     DestroyHeap(m_resourceHeap);
     DestroyHeap(m_samplerHeap);
     m_device = nullptr;
