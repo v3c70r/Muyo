@@ -24,6 +24,7 @@
 #include <string>
 #include <vector>
 
+#include "DescriptorHeapService.h"
 #include "GraphicsTestEnv.h"
 #include "ShaderAsset.h"
 #include "VkExtFuncsLoader.h"
@@ -35,16 +36,16 @@ using Muyo::VK_ASSERT;
 using Muyo::VkExt;
 using Muyo::VkRenderDevice;
 
-constexpr VkDeviceSize kHeapSize = 64ULL * 1024;
 constexpr VkDeviceSize kProbeBufferSize = 16;
-constexpr uint32_t kProbeWidth = 1;
-constexpr uint32_t kProbeHeight = 1;
-
+#ifdef FEATURE_RAY_TRACING
 VkDeviceSize AlignUp(VkDeviceSize value, VkDeviceSize alignment)
 {
     if (alignment == 0) return value;
     return (value + alignment - 1) / alignment * alignment;
 }
+#endif
+constexpr uint32_t kProbeWidth = 1;
+constexpr uint32_t kProbeHeight = 1;
 
 uint32_t FindMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeBits, VkMemoryPropertyFlags properties)
 {
@@ -273,219 +274,6 @@ VkPipeline CreateGraphicsPipeline(VkDevice device, VkShaderModule vertexModule, 
     return pipeline;
 }
 
-class DescriptorHeapProbe
-{
-public:
-    DescriptorHeapProbe(VkRenderDevice *device, VkDeviceSize resourceBudget, VkDeviceSize samplerBudget)
-        : m_device(device)
-    {
-        const VkPhysicalDeviceDescriptorHeapPropertiesEXT &properties = device->GetDescriptorHeapProperties();
-        // The reserved range is not part of the descriptor budget: NVIDIA reports
-        // minResourceHeapReservedRange = 96768, so a flat 64 KiB heap is smaller than the range the
-        // implementation requires at the end. Size each heap as budget + reserved, then check the
-        // implementation's maximum (NVIDIA caps the resource heap at 32 MiB and the sampler heap at
-        // 128 KiB; RADV and llvmpipe report UINT64_MAX / ~8 GiB).
-        m_resourceHeap.reserved = properties.minResourceHeapReservedRange;
-        m_resourceHeap.size = AlignUp(resourceBudget + m_resourceHeap.reserved, properties.resourceHeapAlignment);
-        m_resourceHeap.alignment = properties.resourceHeapAlignment;
-        CheckHeapFits("resource", m_resourceHeap, properties.maxResourceHeapSize);
-
-        m_samplerHeap.reserved = properties.minSamplerHeapReservedRange;
-        m_samplerHeap.size = AlignUp(samplerBudget + m_samplerHeap.reserved, properties.samplerHeapAlignment);
-        m_samplerHeap.alignment = properties.samplerHeapAlignment;
-        CheckHeapFits("sampler", m_samplerHeap, properties.maxSamplerHeapSize);
-    }
-
-    ~DescriptorHeapProbe() { Destroy(); }
-
-    DescriptorHeapProbe(const DescriptorHeapProbe &) = delete;
-    DescriptorHeapProbe &operator=(const DescriptorHeapProbe &) = delete;
-
-    void Create()
-    {
-        if (VkExt::vkWriteResourceDescriptorsEXT == nullptr || VkExt::vkWriteSamplerDescriptorsEXT == nullptr ||
-            VkExt::vkCmdBindResourceHeapEXT == nullptr || VkExt::vkCmdBindSamplerHeapEXT == nullptr ||
-            VkExt::vkCmdPushDataEXT == nullptr)
-        {
-            throw std::runtime_error("descriptor-heap probe: extension entry points were not loaded");
-        }
-        CreateHeap(m_resourceHeap, VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT);
-        CreateHeap(m_samplerHeap, VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT);
-    }
-
-    uint32_t WriteResource(VkDescriptorType type, const VkResourceDescriptorInfoEXT &info)
-    {
-        const VkDeviceSize size = m_device->GetDescriptorSize(type);
-        if (size == 0) throw std::runtime_error("descriptor-heap probe: descriptor size is zero");
-        const VkPhysicalDeviceDescriptorHeapPropertiesEXT &properties = m_device->GetDescriptorHeapProperties();
-        // The shader's OpConstantSizeOfEXT for an OpTypeImage uses the implementation's image descriptor
-        // size, not the per-type host write size: Mesa's vtn_constants.c resolves every image type
-        // (including Dim Buffer and storage images) to imageDescriptorSize. RADV therefore reports 16 for
-        // UNIFORM_TEXEL_BUFFER and 32 for STORAGE_IMAGE while the shader indexes those slots at 64. The
-        // region stride must be the shader-visible size; the per-type value is only the host write size.
-        const bool bImageLike = IsImageLike(type);
-        // Acceleration structures use their own quark: Slang's heap representation is an 8-byte value and
-        // the descriptor size the driver reports is the shader stride for this type (8 on llvmpipe). Do not
-        // pad it to the buffer region's 16-byte maximum; on RADV the reported 16 and the 8-byte shader
-        // representation disagree, which is the recorded AS decision.
-        const VkDeviceSize stride = type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
-                                        ? size
-                                        : (bImageLike ? std::max(size, properties.imageDescriptorSize)
-                                                      : std::max(size, properties.bufferDescriptorSize));
-        const VkDeviceSize alignment =
-            bImageLike ? properties.imageDescriptorAlignment : properties.bufferDescriptorAlignment;
-        const VkHostAddressRangeEXT range = AllocateHostRange(m_resourceHeap, size, alignment, stride);
-        VK_ASSERT(VkExt::vkWriteResourceDescriptorsEXT(m_device->GetDevice(), 1, &info, &range));
-        return static_cast<uint32_t>(
-            (static_cast<uint8_t *>(range.address) -
-             (static_cast<uint8_t *>(m_resourceHeap.staging.mapped) + m_resourceHeap.baseOffset)) /
-            stride);
-    }
-
-    uint32_t WriteSampler(const VkSamplerCreateInfo &info)
-    {
-        const VkDeviceSize size = m_device->GetDescriptorSize(VK_DESCRIPTOR_TYPE_SAMPLER);
-        if (size == 0) throw std::runtime_error("descriptor-heap probe: sampler descriptor size is zero");
-        const VkDeviceSize stride = size;
-        const VkHostAddressRangeEXT range = AllocateHostRange(
-            m_samplerHeap, size, m_device->GetDescriptorHeapProperties().samplerDescriptorAlignment, stride);
-        VK_ASSERT(VkExt::vkWriteSamplerDescriptorsEXT(m_device->GetDevice(), 1, &info, &range));
-        return static_cast<uint32_t>(
-            (static_cast<uint8_t *>(range.address) -
-             (static_cast<uint8_t *>(m_samplerHeap.staging.mapped) + m_samplerHeap.baseOffset)) /
-            stride);
-    }
-
-    void UploadAndBind(VkCommandBuffer commandBuffer)
-    {
-        const auto copyHeap = [this, commandBuffer](const Heap &heap)
-        {
-            if (heap.buffer.buffer == VK_NULL_HANDLE) return;
-            VkBufferCopy copy{};
-            copy.size = heap.staging.size;
-            vkCmdCopyBuffer(commandBuffer, heap.staging.buffer, heap.buffer.buffer, 1, &copy);
-        };
-        const auto bindHeap = [commandBuffer](const Heap &heap)
-        {
-            if (heap.buffer.buffer == VK_NULL_HANDLE) return;
-            VkBindHeapInfoEXT bindInfo{VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT};
-            bindInfo.heapRange = {heap.base, heap.size};
-            bindInfo.reservedRangeOffset = heap.size - heap.reserved;
-            bindInfo.reservedRangeSize = heap.reserved;
-            if (heap.isSampler)
-                VkExt::vkCmdBindSamplerHeapEXT(commandBuffer, &bindInfo);
-            else
-                VkExt::vkCmdBindResourceHeapEXT(commandBuffer, &bindInfo);
-        };
-
-        // Copy the host-written descriptors into the device-local heaps, make the transfer writes visible
-        // to the heap reads, then bind once per command buffer (the proposal warns that rebinding is
-        // expensive; the graph binds at the start and keeps them).
-        copyHeap(m_resourceHeap);
-        copyHeap(m_samplerHeap);
-
-        VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
-        barrier.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
-        barrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
-        barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
-        barrier.dstAccessMask = VK_ACCESS_2_RESOURCE_HEAP_READ_BIT_EXT | VK_ACCESS_2_SAMPLER_HEAP_READ_BIT_EXT;
-        VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dependency.memoryBarrierCount = 1;
-        dependency.pMemoryBarriers = &barrier;
-        vkCmdPipelineBarrier2(commandBuffer, &dependency);
-
-        bindHeap(m_resourceHeap);
-        bindHeap(m_samplerHeap);
-    }
-
-    VkDeviceSize GetHeapSize() const { return m_resourceHeap.size; }
-
-private:
-    struct Heap
-    {
-        BufferAllocation buffer;
-        BufferAllocation staging;
-        VkDeviceAddress base = 0;
-        VkDeviceSize baseOffset = 0;
-        VkDeviceSize size = 0;
-        VkDeviceSize alignment = 1;
-        VkDeviceSize reserved = 0;
-        VkDeviceSize cursor = 0;
-        bool isSampler = false;
-    };
-
-    static bool IsImageLike(VkDescriptorType type)
-    {
-        return type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE ||
-               type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER || type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
-    }
-
-    static void CheckHeapFits(const char *name, const Heap &heap, VkDeviceSize maximum)
-    {
-        if (heap.size == 0) return;
-        if (maximum != 0 && heap.size > maximum)
-        {
-            throw std::runtime_error(std::string("descriptor-heap probe: ") + name +
-                                     " heap size (reserved range included) exceeds the implementation maximum");
-        }
-    }
-
-    void CreateHeap(Heap &heap, VkBufferUsageFlags heapUsage)
-    {
-        heap.isSampler = &heap == &m_samplerHeap;
-        if (heap.size == 0) return;
-        if (heap.reserved > heap.size)
-        {
-            throw std::runtime_error("descriptor-heap probe: heap is smaller than the implementation's reserved range");
-        }
-        const VkDeviceSize allocationSize = heap.size + heap.alignment;
-        heap.buffer =
-            CreateBuffer(m_device, allocationSize,
-                         heapUsage | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, false);
-        heap.base = AlignUp(heap.buffer.address, heap.alignment);
-        heap.baseOffset = heap.base - heap.buffer.address;
-        heap.staging = CreateBuffer(m_device, allocationSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, true);
-        if (heap.baseOffset + heap.size > heap.buffer.size)
-        {
-            throw std::runtime_error("descriptor-heap probe: aligned heap range does not fit its allocation");
-        }
-    }
-
-    VkHostAddressRangeEXT AllocateHostRange(Heap &heap, VkDeviceSize size, VkDeviceSize alignment, VkDeviceSize stride)
-    {
-        if (stride % alignment != 0)
-        {
-            throw std::runtime_error("descriptor-heap probe: descriptor stride is not a multiple of its alignment");
-        }
-        const VkDeviceSize offset = AlignUp(heap.cursor, stride);
-        const VkDeviceSize usable = heap.size - heap.reserved;
-        if (offset + size > usable || heap.baseOffset + offset + size > heap.staging.size)
-        {
-            throw std::runtime_error("descriptor-heap probe: descriptor budget exhausted before the reserved range");
-        }
-        heap.cursor = offset + stride;
-        auto *address = static_cast<uint8_t *>(heap.staging.mapped) + heap.baseOffset + offset;
-        return VkHostAddressRangeEXT{address, static_cast<size_t>(size)};
-    }
-
-    void Destroy()
-    {
-        const auto destroyHeap = [this](Heap &heap)
-        {
-            heap.buffer.Destroy(m_device->GetDevice());
-            heap.staging.Destroy(m_device->GetDevice());
-        };
-        destroyHeap(m_resourceHeap);
-        destroyHeap(m_samplerHeap);
-    }
-
-    VkRenderDevice *m_device = nullptr;
-    Heap m_resourceHeap;
-    Heap m_samplerHeap;
-};
-
 struct PushCompute
 {
     uint32_t inputIndex = 0;
@@ -641,8 +429,8 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
         SKIP("descriptor heap not enabled on this device; B0 records the row as a gap, not a pass");
     }
 
-    DescriptorHeapProbe heap(device, kHeapSize, kHeapSize);
-    heap.Create();
+    Muyo::DescriptorHeapService heap;
+    heap.Initialize(device);
 
     BufferAllocation input = CreateBuffer(
         device, kProbeBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -658,14 +446,14 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     inputDescriptor.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     inputDescriptor.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     inputDescriptor.data.pAddressRange = &inputRange;
-    const uint32_t inputIndex = heap.WriteResource(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, inputDescriptor);
+    const uint32_t inputIndex = heap.AcquireResource(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, inputDescriptor).index;
 
     VkDeviceAddressRangeEXT outputRange{output.address, output.size};
     VkResourceDescriptorInfoEXT outputDescriptor{};
     outputDescriptor.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     outputDescriptor.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     outputDescriptor.data.pAddressRange = &outputRange;
-    const uint32_t outputIndex = heap.WriteResource(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, outputDescriptor);
+    const uint32_t outputIndex = heap.AcquireResource(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, outputDescriptor).index;
 
     // Write the texel descriptor first so its index is 0: this isolates a stride/offset problem from a
     // driver/descriptor-type problem when the probe fails.
@@ -681,7 +469,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     texelDescriptor.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     texelDescriptor.type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
     texelDescriptor.data.pTexelBuffer = &texelInfo;
-    const uint32_t texelIndex = heap.WriteResource(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, texelDescriptor);
+    const uint32_t texelIndex = heap.AcquireResource(VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, texelDescriptor).index;
 
     ImageAllocation inputImage =
         CreateImage(device, {kProbeWidth, kProbeHeight}, VK_FORMAT_R8G8B8A8_UNORM,
@@ -699,7 +487,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     imageDescriptor.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     imageDescriptor.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     imageDescriptor.data.pImage = &imageInfo;
-    const uint32_t imageIndex = heap.WriteResource(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, imageDescriptor);
+    const uint32_t imageIndex = heap.AcquireResource(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, imageDescriptor).index;
 
     VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     samplerInfo.magFilter = VK_FILTER_NEAREST;
@@ -710,7 +498,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
     samplerInfo.maxLod = 0.0F;
-    const uint32_t samplerIndex = heap.WriteSampler(samplerInfo);
+    const uint32_t samplerIndex = heap.AcquireSampler(samplerInfo).index;
 
     ImageAllocation targetImage = CreateImage(device, {kProbeWidth, kProbeHeight}, VK_FORMAT_R32G32B32A32_SFLOAT,
                                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
@@ -752,7 +540,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
                     VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
                     VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT);
 
-    heap.UploadAndBind(commandBuffer);
+    heap.Upload(commandBuffer);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipeline);
     PushCompute pushCompute{};
@@ -878,8 +666,8 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
         "Slang heap lowering represents RaytracingAccelerationStructure as an 8-byte value; a different "
         "descriptor size means per-slot direct indexing cannot match without a mapping");
 
-    DescriptorHeapProbe heap(device, kHeapSize, 8ULL * 1024);
-    heap.Create();
+    Muyo::DescriptorHeapService heap;
+    heap.Initialize(device);
 
     BufferAllocation output = CreateBuffer(
         device, kProbeBufferSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -890,7 +678,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     outputDescriptor.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     outputDescriptor.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     outputDescriptor.data.pAddressRange = &outputRange;
-    const uint32_t outputIndex = heap.WriteResource(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, outputDescriptor);
+    const uint32_t outputIndex = heap.AcquireResource(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, outputDescriptor).index;
 
     const std::array<float, 9> vertices = {-0.5F, -0.5F, 0.0F, 0.5F, -0.5F, 0.0F, 0.0F, 0.5F, 0.0F};
     BufferAllocation vertexBuffer =
@@ -1004,7 +792,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     asDescriptor.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     asDescriptor.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
     asDescriptor.data.pAddressRange = &asRange;
-    const uint32_t asIndex = heap.WriteResource(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, asDescriptor);
+    const uint32_t asIndex = heap.AcquireResource(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, asDescriptor).index;
 
     VkShaderModule raygenModule = LoadHeapShader(device->GetDevice(), "heapProbe.rgen.heap.spv");
     VkShaderModule missModule = LoadHeapShader(device->GetDevice(), "heapProbe.rmiss.heap.spv");
@@ -1102,7 +890,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     asDependency.pMemoryBarriers = &asBarrier;
     vkCmdPipelineBarrier2(commandBuffer, &asDependency);
 
-    heap.UploadAndBind(commandBuffer);
+    heap.Upload(commandBuffer);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipeline);
 
     // Trace only when the shader representation (8-byte value, from the SPIR-V lowering) matches the
