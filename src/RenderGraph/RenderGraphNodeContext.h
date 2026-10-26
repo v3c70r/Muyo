@@ -1,10 +1,15 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
 #include <functional>
+#include <span>
+#include <stdexcept>
 
+#include "DescriptorHeapService.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderResourceManager.h"
+#include "VkExtFuncsLoader.h"
 
 namespace Muyo::RenderGraph
 {
@@ -35,6 +40,30 @@ struct RenderGraphNodeContext
     VkPipeline pipeline = VK_NULL_HANDLE;                                ///< Bound pipeline.
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;                    ///< Bound pipeline layout.
     VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;  ///< Bind point for the pipeline.
+    /// Non-null for a node compiled with `useDescriptorHeap`; the heaps are bound before the pipeline.
+    DescriptorHeapService* descriptorHeap = nullptr;
+    /// The device's `maxPushDataSize`; zero for a legacy descriptor node.
+    uint32_t maxPushDataSize = 0;
+
+    /// Record opaque root data for this node. Offsets are host-defined; the graph only bounds them by
+    /// the device's push-data limit. The pipeline has no layout, so this backs the shader's push block.
+    /// @throws std::runtime_error when the node is not a heap node or the range exceeds the device limit.
+    void PushData(uint32_t offset, std::span<const std::byte> bytes)
+    {
+        if (descriptorHeap == nullptr || VkExt::vkCmdPushDataEXT == nullptr)
+        {
+            throw std::runtime_error("RenderGraphNodeContext::PushData: the node is not a descriptor-heap node");
+        }
+        if (offset > maxPushDataSize || bytes.size() > maxPushDataSize - offset)
+        {
+            throw std::runtime_error("RenderGraphNodeContext::PushData: offset + size exceeds maxPushDataSize");
+        }
+        VkPushDataInfoEXT pushInfo{VK_STRUCTURE_TYPE_PUSH_DATA_INFO_EXT};
+        pushInfo.offset = offset;
+        pushInfo.data.address = bytes.data();
+        pushInfo.data.size = bytes.size();
+        VkExt::vkCmdPushDataEXT(commandBuffer, &pushInfo);
+    }
 
     /// Resolve a graph-declared resource to its concrete pointer (allocated at Build()).
     /// @tparam T Concrete resource type (e.g. `BufferResource`, `RenderTarget`).

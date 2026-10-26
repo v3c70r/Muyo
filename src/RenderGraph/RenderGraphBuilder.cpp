@@ -329,17 +329,39 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         }
     }
     result.execute = rgn.execute;
+    result.useDescriptorHeap = rgn.useDescriptorHeap;
 
     if (shaderReflections.size() > 0)
     {
         ShaderReflection mergedReflection = MergeShaderReflections(shaderReflections);
 
-        // Descriptor set layouts, derived from the shader reflection for *every* node. Graphics,
-        // compute and ray tracing all take the same path now: a use names its (set, binding)
-        // explicitly, reflection supplies the layout and the descriptor type, and the set is written
-        // here at Build(). The engine's PER_VIEW/PER_OBJ/MATERIAL convention is a consumer concern
-        // (RenderGraphSemanticBindings.h), not a graph one.
-        BuildReflectionDescriptorSets(result, rgn, mergedReflection);
+        if (rgn.useDescriptorHeap)
+        {
+            if (m_services.descriptorHeap == nullptr)
+            {
+                throw std::runtime_error("Node '" + rgn.name +
+                                         "' requests the descriptor heap, but RenderGraphServices::descriptorHeap "
+                                         "is null.");
+            }
+            if (rgn.queueType != QueueType::COMPUTE)
+            {
+                throw std::runtime_error("Node '" + rgn.name +
+                                         "' requests the descriptor heap; B1b-1 supports compute nodes only "
+                                         "(graphics/RT follow in the B1b shader conversion).");
+            }
+            if (!mergedReflection.descriptorBindings.empty())
+            {
+                throw std::runtime_error("Node '" + rgn.name +
+                                         "' requests the descriptor heap but its shaders still declare descriptor "
+                                         "bindings; convert them to a .heap.slang variant.");
+            }
+        }
+        else
+        {
+            // Legacy descriptor path: descriptor set layouts, derived from the shader reflection for
+            // every node, and one pipeline layout per node.
+            BuildReflectionDescriptorSets(result, rgn, mergedReflection);
+        }
 
         std::vector<VkPushConstantRange> pushConstantRanges;
         for (const auto& pcRange : mergedReflection.pushConstantRanges)
@@ -347,13 +369,16 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             pushConstantRanges.push_back(
                 {.stageFlags = pcRange.stageFlags, .offset = pcRange.offset, .size = pcRange.size});
         }
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .setLayoutCount = static_cast<uint32_t>(result.descriptorSetLayouts.size()),
-            .pSetLayouts = result.descriptorSetLayouts.empty() ? nullptr : result.descriptorSetLayouts.data(),
-            .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
-            .pPushConstantRanges = pushConstantRanges.empty() ? nullptr : pushConstantRanges.data()};
-        VK_ASSERT(vkCreatePipelineLayout(m_vkDevice, &pipelineLayoutInfo, nullptr, &result.pipelineLayout));
+        if (!rgn.useDescriptorHeap)
+        {
+            VkPipelineLayoutCreateInfo pipelineLayoutInfo{
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                .setLayoutCount = static_cast<uint32_t>(result.descriptorSetLayouts.size()),
+                .pSetLayouts = result.descriptorSetLayouts.empty() ? nullptr : result.descriptorSetLayouts.data(),
+                .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
+                .pPushConstantRanges = pushConstantRanges.empty() ? nullptr : pushConstantRanges.data()};
+            VK_ASSERT(vkCreatePipelineLayout(m_vkDevice, &pipelineLayoutInfo, nullptr, &result.pipelineLayout));
+        }
 
         // Inspect the node's resolved resource uses to determine attachment formats.
         std::vector<VkFormat> colorAttachmentFormats;
@@ -446,10 +471,13 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             stageInfo.module = shaderModules.front();
             stageInfo.pName = "main";
             stageInfo.pSpecializationInfo = pSpecializationInfo;
+            VkPipelineCreateFlags2CreateInfo heapFlags{VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO};
+            heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
             VkComputePipelineCreateInfo pipelineInfo{};
             pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+            pipelineInfo.pNext = rgn.useDescriptorHeap ? &heapFlags : nullptr;
             pipelineInfo.stage = stageInfo;
-            pipelineInfo.layout = result.pipelineLayout;
+            pipelineInfo.layout = rgn.useDescriptorHeap ? VK_NULL_HANDLE : result.pipelineLayout;
             VK_ASSERT(
                 vkCreateComputePipelines(m_vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &result.pipeline));
         }
@@ -1077,6 +1105,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     auto& rgn = m_renderGraphNodes.at(nodeName);
     rgn.queueType = nodeCreateInfo.queueType;
     rgn.async = nodeCreateInfo.async;
+    rgn.useDescriptorHeap = nodeCreateInfo.useDescriptorHeap;
     rgn.costHint = nodeCreateInfo.costHint;
     rgn.attachmentClearValues = nodeCreateInfo.attachmentClearValues;
     rgn.specializationConstants = nodeCreateInfo.specializationConstants;
@@ -2164,6 +2193,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             context.commandBuffer = cmdBuf;
             context.pipeline = rgn.pipeline;
             context.pipelineLayout = rgn.pipelineLayout;
+            context.descriptorHeap = rgn.useDescriptorHeap ? m_services.descriptorHeap : nullptr;
+            context.maxPushDataSize =
+                rgn.useDescriptorHeap ? m_services.descriptorHeap->GetProperties().maxPushDataSize : 0;
             context.bindingPoint = rgn.bindingPoint;
 
             // Bracket the node so a capture or validation tool attributes the commands and anything it reports to this

@@ -45,6 +45,7 @@ Immutable between builds: Execute() only reads it. The definition carries everyt
 | `bool isRayTracing` | True when this node dispatches a ray tracing pipeline. |
 | `std::array< VkStridedDeviceAddressRegionKHR, 3 > sbtRegions` | Shader binding table regions, for ray tracing nodes. |
 | `VkExtent2D traceExtent` | Extent the ray tracing trace call is issued over. |
+| `bool useDescriptorHeap` | True when the node was compiled for the descriptor-heap path (B1b). |
 | `QueueType queueType` | Queue the node was compiled for. |
 | `VkPipelineBindPoint bindingPoint` | Bind point of the compiled pipeline. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
@@ -694,6 +695,7 @@ User-facing declaration of a single render graph node (pass).
 | `PSODesc psoDesc` | Graphics pipeline state (ignored for compute/RT). |
 | `uint32_t costHint` | Reserved for the future scheduler. |
 | `std::vector< VkClearValue > attachmentClearValues` | Optional clear values for the node's attachments, in attachment declaration order. |
+| `bool useDescriptorHeap` | Opt-in B1b path: create the pipeline with VkPipelineCreateFlags2CreateInfo + VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and layout = VK_NULL_HANDLE instead of a reflection-derived pipeline layout. The node's shaders must not declare descriptor bindings; use RenderGraphNodeContext::PushData for its root data. B1b-1 supports compute only. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
 
 ### `struct Muyo::RenderGraph::RenderGraphServices`
@@ -708,7 +710,8 @@ Deliberately not here yet: a shader source provider (the graph still loads .spv 
 | --- | --- |
 | `VkRenderDevice * device` | Device the graph creates pipelines, command buffers and synchronisation with. Required. |
 | `RenderResourceManager * resourceManager` | Allocates and owns the graph's declared resources. Required. |
-| `DescriptorManager * descriptorManager` | Allocates descriptor set layouts and sets. Required. |
+| `DescriptorManager * descriptorManager` | Allocates descriptor set layouts and sets. Required for the legacy descriptor path. |
+| `DescriptorHeapService * descriptorHeap` | The B-track heap service. Required for a node that sets useDescriptorHeap. |
 
 ### `std::unordered_map< ResourceHandle, ResourceDesc > ResourceDescRegistry`
 
@@ -879,6 +882,9 @@ The graph has already recorded the barriers, opened the render pass (graphics no
 | `VkPipeline pipeline` | Bound pipeline. |
 | `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
 | `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
+| `DescriptorHeapService * descriptorHeap` | Non-null for a node compiled with useDescriptorHeap; the heaps are bound before the pipeline. |
+| `uint32_t maxPushDataSize` | The device's maxPushDataSize; zero for a legacy descriptor node. |
+| `void PushData(uint32_t offset, std::span< const std::byte > bytes)` | Record opaque root data for this node. Offsets are host-defined; the graph only bounds them by the device's push-data limit. The pipeline has no layout, so this backs the shader's push block. Throws: `std::runtime_error` - when the node is not a heap node or the range exceeds the device limit |
 | `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). Parameters: `T` - Concrete resource type (e.g. BufferResource, RenderTarget); `handle` - Resource name used in the node's resourceUses Returns: The resource, or nullptr if it is not of type T. |
 
 

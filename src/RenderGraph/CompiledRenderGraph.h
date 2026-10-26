@@ -45,6 +45,8 @@ struct CompiledRenderGraphNode
     std::array<VkStridedDeviceAddressRegionKHR, 3> sbtRegions{};
     /// Extent the ray tracing trace call is issued over.
     VkExtent2D traceExtent = {0, 0};
+    /// True when the node was compiled for the descriptor-heap path (B1b).
+    bool useDescriptorHeap = false;
     /// Queue the node was compiled for.
     QueueType queueType = QueueType::GRAPHICS;
     /// Bind point of the compiled pipeline.

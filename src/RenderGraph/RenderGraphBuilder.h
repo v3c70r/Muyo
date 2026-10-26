@@ -13,6 +13,7 @@
 
 #include "CompiledRenderGraph.h"
 #include "DependencyGraph.h"
+#include "DescriptorHeapService.h"
 #include "DescriptorManager.h"
 #include "DescriptorSetCache.h"
 #include "PSODesc.h"
@@ -81,6 +82,11 @@ struct RenderGraphNodeCreateInfo
     uint32_t costHint = 1;  ///< Reserved for the future scheduler.
     /// Optional clear values for the node's attachments, in attachment declaration order.
     std::vector<VkClearValue> attachmentClearValues;
+    /// Opt-in B1b path: create the pipeline with VkPipelineCreateFlags2CreateInfo +
+    /// VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and layout = VK_NULL_HANDLE instead of a
+    /// reflection-derived pipeline layout. The node's shaders must not declare descriptor bindings;
+    /// use `RenderGraphNodeContext::PushData` for its root data. B1b-1 supports compute only.
+    bool useDescriptorHeap = false;
     RenderGraphNodeCallback execute;  ///< Records the node's work.
 };
 
@@ -103,8 +109,10 @@ struct RenderGraphServices
     VkRenderDevice* device = nullptr;
     /// Allocates and owns the graph's declared resources. Required.
     RenderResourceManager* resourceManager = nullptr;
-    /// Allocates descriptor set layouts and sets. Required.
+    /// Allocates descriptor set layouts and sets. Required for the legacy descriptor path.
     DescriptorManager* descriptorManager = nullptr;
+    /// The B-track heap service. Required for a node that sets `useDescriptorHeap`.
+    DescriptorHeapService* descriptorHeap = nullptr;
 };
 
 /// Declares and runs a render graph.
@@ -250,6 +258,7 @@ private:
         std::string name;
         QueueType queueType = QueueType::GRAPHICS;
         bool async = false;
+        bool useDescriptorHeap = false;
         std::vector<ResolvedResourceUse> resourceUses;
         std::array<ShaderKey, MAX_SHADER_STAGES> shaders;
         // Ray tracing shader keys: [0] = raygen, [1] = miss, [2] = closest hit.
