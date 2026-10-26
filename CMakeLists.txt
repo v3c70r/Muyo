@@ -421,8 +421,12 @@ foreach (GLSL_SOURCE_FILE ${GLSL_SOURCE_FILES})
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()
 
-# Build slang shaders
+# Build slang shaders. `.heap.slang` sources are the direct-descriptor-heap variants: they compile with
+# the SPV_EXT_descriptor_heap capability and emit `<name>.heap.spv`, while the ordinary `.slang` rule stays
+# unchanged for the legacy RenderPassManager. The glob excludes the heap suffix so a source is built by
+# exactly one rule (docs/DescriptorHeap-Bindless-Design.md §9).
 file (GLOB_RECURSE SLANG_SOURCE_FILES "${MUYO_ROOT}/shaders/*.slang")
+list (FILTER SLANG_SOURCE_FILES EXCLUDE REGEX "\\.heap\\.slang$")
 message(STATUS "Slang Shaders: ${SLANG_SOURCE_FILES}")
 foreach (SLANG_SOURCE_FILE ${SLANG_SOURCE_FILES})
     get_filename_component(FILE_NAME ${SLANG_SOURCE_FILE} NAME)
@@ -433,6 +437,45 @@ foreach (SLANG_SOURCE_FILE ${SLANG_SOURCE_FILES})
         #hello-world.slang -profile glsl_450 -target spirv -o hello-world.spv -entry computeMain
         COMMAND ${Vulkan_SLANG_EXECUTABLE} ${SLANG_SOURCE_FILE} -DSHADER_CODE -DSLANG -capability spirv_1_4 -profile glsl_450 -target spirv -o ${SPIRV} -entry main
         DEPENDS ${SLANG_SOURCE_FILE}# ${GLSL_HEADER_FILES}) # Header change will trigger a full shader rebuild, which might not be necessary
+        )
+    list(APPEND SPIRV_BINARY_FILES ${SPIRV})
+endforeach()
+
+# Descriptor-heap variants. `-capability spvDescriptorHeapEXT` emits SPV_EXT_descriptor_heap +
+# SPV_KHR_untyped_pointers; the resource/sampler heap strides stay at Slang's default 0 so the module
+# carries OpConstantSizeOfEXT/ArrayStrideIdEXT rather than a device-specific stride
+# (docs/DescriptorHeap-Bindless-Design.md §5). The output name keeps the `.heap` marker so the graph can
+# load `foo.heap.spv` while the legacy renderer loads `foo.spv`.
+file (GLOB_RECURSE HEAP_SLANG_SOURCE_FILES "${MUYO_ROOT}/shaders/*.heap.slang")
+message(STATUS "Descriptor-heap Slang Shaders: ${HEAP_SLANG_SOURCE_FILES}")
+# Prefer the SDK's own validator: the distribution's spirv-val can be older than the extension it is
+# asked to validate (measured here: /usr/bin/spirv-val rejects capability 5128, the SDK's 2026.4 accepts
+# it). NO_DEFAULT_PATH makes the build use the pinned SDK or nothing, rather than silently picking the
+# wrong one from PATH.
+find_program(SPIRV_VAL_EXECUTABLE
+    NAMES spirv-val
+    HINTS "$ENV{VULKAN_SDK}/bin"
+    NO_DEFAULT_PATH)
+foreach (HEAP_SLANG_SOURCE_FILE ${HEAP_SLANG_SOURCE_FILES})
+    get_filename_component(FILE_NAME ${HEAP_SLANG_SOURCE_FILE} NAME)
+    string(REGEX REPLACE "\\.slang$" ".spv" SPIRV_NAME "${FILE_NAME}")
+    set(SPIRV "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${SPIRV_NAME}")
+    set(HEAP_VALIDATE_COMMAND)
+    if (SPIRV_VAL_EXECUTABLE)
+        set(HEAP_VALIDATE_COMMAND COMMAND ${SPIRV_VAL_EXECUTABLE} --target-env vulkan1.4 ${SPIRV})
+    else()
+        # Silence here would make an unvalidated .heap.spv look like a validated one, the same shape as
+        # the silent shader-load skips this repository has already paid for. Say it in configure output.
+        message(STATUS "descriptor-heap .spv validation: disabled (no spirv-val in $ENV{VULKAN_SDK}/bin)")
+    endif()
+    add_custom_command(
+        OUTPUT ${SPIRV}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/"
+        COMMAND ${Vulkan_SLANG_EXECUTABLE} ${HEAP_SLANG_SOURCE_FILE} -DSHADER_CODE -DSLANG
+                -capability spvDescriptorHeapEXT -capability spirv_1_4
+                -profile glsl_450 -target spirv -o ${SPIRV} -entry main
+        ${HEAP_VALIDATE_COMMAND}
+        DEPENDS ${HEAP_SLANG_SOURCE_FILE} ${GLSL_HEADER_FILES}
         )
     list(APPEND SPIRV_BINARY_FILES ${SPIRV})
 endforeach()
@@ -482,6 +525,7 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(tests 
     src/tests/CaptureToolTest.cpp
     src/tests/DebugCallbackTests.cpp
+    src/tests/DescriptorHeapProbeTests.cpp
     src/tests/DeviceCapabilityTests.cpp
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp

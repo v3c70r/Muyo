@@ -1,7 +1,5 @@
 #include "VkExtFuncsLoader.h"
 
-#include <vulkan/vulkan_core.h>
-
 namespace Muyo
 {
 
@@ -18,29 +16,64 @@ PFN_vkGetRayTracingShaderGroupHandlesKHR VkExt::vkGetRayTracingShaderGroupHandle
 PFN_vkCmdTraceRaysKHR VkExt::vkCmdTraceRaysKHR = nullptr;
 PFN_vkCmdPipelineBarrier2KHR VkExt::vkCmdPipelineBarrier2KHR = nullptr;
 PFN_vkCmdDrawMeshTasksEXT VkExt::vkCmdDrawMeshTasksEXT = nullptr;
+
+PFN_vkGetPhysicalDeviceDescriptorSizeEXT VkExt::vkGetPhysicalDeviceDescriptorSizeEXT = nullptr;
+PFN_vkWriteResourceDescriptorsEXT VkExt::vkWriteResourceDescriptorsEXT = nullptr;
+PFN_vkWriteSamplerDescriptorsEXT VkExt::vkWriteSamplerDescriptorsEXT = nullptr;
+PFN_vkCmdBindResourceHeapEXT VkExt::vkCmdBindResourceHeapEXT = nullptr;
+PFN_vkCmdBindSamplerHeapEXT VkExt::vkCmdBindSamplerHeapEXT = nullptr;
+PFN_vkCmdPushDataEXT VkExt::vkCmdPushDataEXT = nullptr;
+
 bool VkExt::bExtensionLoaded = false;
 
 void VkExt::LoadInstanceFunctions(VkInstance instance)
 {
-    if (!bExtensionLoaded)
-    {
-#define GET_VK_INSTANCE_FUNC_EXT(FUNC_NAME) FUNC_NAME = (PFN_##FUNC_NAME)vkGetInstanceProcAddr(instance, #FUNC_NAME);
+#define GET_VK_INSTANCE_FUNC_EXT(FUNC_NAME) \
+    FUNC_NAME = reinterpret_cast<PFN_##FUNC_NAME>(vkGetInstanceProcAddr(instance, #FUNC_NAME))
 
-        GET_VK_INSTANCE_FUNC_EXT(vkCreateAccelerationStructureKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkDestroyAccelerationStructureKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkCmdBuildAccelerationStructuresKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkCmdWriteAccelerationStructuresPropertiesKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkGetAccelerationStructureBuildSizesKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkCmdCopyAccelerationStructureKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkGetAccelerationStructureDeviceAddressKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkCreateRayTracingPipelinesKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkGetRayTracingShaderGroupHandlesKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkCmdTraceRaysKHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkCmdPipelineBarrier2KHR);
-        GET_VK_INSTANCE_FUNC_EXT(vkCmdDrawMeshTasksEXT);
+    GET_VK_INSTANCE_FUNC_EXT(vkCreateAccelerationStructureKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkDestroyAccelerationStructureKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkCmdBuildAccelerationStructuresKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkCmdWriteAccelerationStructuresPropertiesKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkGetAccelerationStructureBuildSizesKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkCmdCopyAccelerationStructureKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkGetAccelerationStructureDeviceAddressKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkCreateRayTracingPipelinesKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkGetRayTracingShaderGroupHandlesKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkCmdTraceRaysKHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkCmdPipelineBarrier2KHR);
+    GET_VK_INSTANCE_FUNC_EXT(vkCmdDrawMeshTasksEXT);
+    GET_VK_INSTANCE_FUNC_EXT(vkGetPhysicalDeviceDescriptorSizeEXT);
 
-        bExtensionLoaded = true;
-    }
+#undef GET_VK_INSTANCE_FUNC_EXT
+
+    bExtensionLoaded = true;
+}
+
+void VkExt::LoadDeviceFunctions(VkDevice device)
+{
+#define GET_VK_DEVICE_FUNC_EXT(FUNC_NAME) \
+    FUNC_NAME = reinterpret_cast<PFN_##FUNC_NAME>(vkGetDeviceProcAddr(device, #FUNC_NAME))
+
+    GET_VK_DEVICE_FUNC_EXT(vkCreateAccelerationStructureKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkDestroyAccelerationStructureKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdBuildAccelerationStructuresKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdWriteAccelerationStructuresPropertiesKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkGetAccelerationStructureBuildSizesKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdCopyAccelerationStructureKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkGetAccelerationStructureDeviceAddressKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkCreateRayTracingPipelinesKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkGetRayTracingShaderGroupHandlesKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdTraceRaysKHR);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdPipelineBarrier2KHR);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdDrawMeshTasksEXT);
+    GET_VK_DEVICE_FUNC_EXT(vkWriteResourceDescriptorsEXT);
+    GET_VK_DEVICE_FUNC_EXT(vkWriteSamplerDescriptorsEXT);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdBindResourceHeapEXT);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdBindSamplerHeapEXT);
+    GET_VK_DEVICE_FUNC_EXT(vkCmdPushDataEXT);
+
+#undef GET_VK_DEVICE_FUNC_EXT
 }
 
 }  // namespace Muyo

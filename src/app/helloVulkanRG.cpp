@@ -84,7 +84,13 @@ int main()
     const VkSurfaceKHR surface = Window::GetVulkanSurface(GetRenderDevice()->GetInstance());
 
     // The device takes the surface so it can select a present-capable queue family.
-    GetRenderDevice()->CreateDevice({VK_KHR_SWAPCHAIN_EXTENSION_NAME}, {}, &surface, {});
+    // The graph path takes the Vulkan 1.4 + descriptor-heap floor (B0): requesting the extensions here
+    // makes a device without them fail at creation with the missing extension named, rather than at the
+    // first heap bind once B1b lands. The feature structs are appended by `CreateDevice`, which also
+    // verifies descriptorHeap and shaderUntypedPointers before enabling them.
+    GetRenderDevice()->CreateDevice({VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME,
+                                     VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME},
+                                    {}, &surface, {});
     GetMemoryAllocator()->Initalize(GetRenderDevice());
     GetRenderDevice()->CreateCommandPools();
     GetDescriptorManager()->CreateDescriptorPool();

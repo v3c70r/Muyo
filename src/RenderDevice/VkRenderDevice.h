@@ -58,6 +58,40 @@ public:
 #endif
     }
 
+    /// @return True when the selected physical device exposes `VK_EXT_descriptor_heap` *and* reports
+    ///         `VkPhysicalDeviceDescriptorHeapFeaturesEXT::descriptorHeap`. Queried at device creation.
+    bool IsDescriptorHeapSupported() const { return m_bDescriptorHeapSupported; }
+
+    /// @return True when the descriptor heap extension and feature were requested and enabled on the
+    ///         device. False before `CreateDevice`, and false on a device that does not support it.
+    bool IsDescriptorHeapEnabled() const { return m_bDescriptorHeapEnabled; }
+
+    /// @return True when the device exposes `VK_KHR_shader_untyped_pointers` and reports
+    ///         `shaderUntypedPointers`. Queried at device creation.
+    bool IsShaderUntypedPointersSupported() const { return m_bShaderUntypedPointersSupported; }
+
+    /// @return True when untyped pointers were requested and enabled on the device.
+    bool IsShaderUntypedPointersEnabled() const { return m_bShaderUntypedPointersEnabled; }
+
+    /// @return The queried descriptor-heap properties, or a zeroed struct before `CreateDevice` or on a
+    ///         device without the extension. Read sizes from `GetDescriptorSize` rather than assuming
+    ///         the per-region maxima are the per-type strides.
+    const VkPhysicalDeviceDescriptorHeapPropertiesEXT& GetDescriptorHeapProperties() const
+    {
+        return m_descriptorHeapProperties;
+    }
+
+    /// @param type A descriptor type written to a descriptor heap.
+    /// @return The implementation's per-type descriptor size, or 0 when the extension is unavailable.
+    VkDeviceSize GetDescriptorSize(VkDescriptorType type) const;
+
+    /// @return The loader's supported instance version, recorded by `Initialize`.
+    uint32_t GetInstanceVersion() const { return m_uInstanceVersion; }
+
+    /// @return The selected device's name. Stable across instance re-creations because `PickPhysicalDevice`
+    ///         pins the device by name (#141).
+    const std::string& GetPhysicalDeviceName() const { return m_pinnedPhysicalDeviceName; }
+
     /// Pipeline stages this device's enabled features make legal in a barrier mask.
     ///
     /// A stage bit whose feature is not enabled may not appear in a mask at all: the ray tracing stage is
@@ -138,7 +172,6 @@ public:
 
     VkCommandBuffer AllocateReusablePrimaryCommandbuffer();
     void FreeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
-
 
     VkCommandBuffer AllocateImmediateCommandBuffer();
     void FreeImmediateCommandBuffer(VkCommandBuffer& commandBuffer);
@@ -281,6 +314,24 @@ private:  // Members
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR};
     /// Stage bits the assembled feature chain enables; see `EnabledPipelineStages()`.
     VkPipelineStageFlags2 m_enabledStages = ~static_cast<VkPipelineStageFlags2>(0);
+
+    /// Descriptor-heap support, queried at device creation whether or not the caller requests it, so the
+    /// `[test device]` line can record an unsupported row instead of leaving it implied. The feature
+    /// structs are owned by the device because they must outlive `vkCreateDevice`, and they are appended
+    /// to the chain only when the caller requested both extensions.
+    bool m_bDescriptorHeapSupported = false;
+    bool m_bDescriptorHeapEnabled = false;
+    bool m_bShaderUntypedPointersSupported = false;
+    bool m_bShaderUntypedPointersEnabled = false;
+    VkPhysicalDeviceDescriptorHeapPropertiesEXT m_descriptorHeapProperties{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_PROPERTIES_EXT};
+    VkPhysicalDeviceDescriptorHeapFeaturesEXT m_descriptorHeapFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_FEATURES_EXT};
+    VkPhysicalDeviceShaderUntypedPointersFeaturesKHR m_shaderUntypedPointersFeatures{
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_UNTYPED_POINTERS_FEATURES_KHR};
+
+    /// The loader's supported instance version, recorded by `Initialize`.
+    uint32_t m_uInstanceVersion = 0;
 
 protected:
     VkInstance m_instance = VK_NULL_HANDLE;

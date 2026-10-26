@@ -1,6 +1,8 @@
 #pragma once
 #include <cstring>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include "DescriptorManager.h"
 #include "Material.h"
@@ -48,11 +50,20 @@ public:
             }
         }
 
+        // Request the heap extension chain only when the selected device reports both extensions and both
+        // features. A test host that requested them unconditionally would turn an unsupported CI device
+        // into a red build before the probe could record the unsupported row; the probe itself skips with
+        // the reason, and the [test device] line says whether this run exercised the heap path.
         std::vector<const char *> deviceExtensions = GetTestDeviceExtensions();
+        std::vector<void *> deviceFeatures = GetTestDeviceFeatures();
+        if (DeviceSupportsDescriptorHeap())
+        {
+            deviceExtensions.push_back(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME);
+            deviceExtensions.push_back(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME);
+        }
         if (m_surface != VK_NULL_HANDLE) deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         const VkSurfaceKHR *pSurface = m_surface != VK_NULL_HANDLE ? &m_surface : nullptr;
-        GetRenderDevice()->CreateDevice(deviceExtensions, std::vector<const char *>(), pSurface,
-                                        GetTestDeviceFeatures());
+        GetRenderDevice()->CreateDevice(deviceExtensions, std::vector<const char *>(), pSurface, deviceFeatures);
         // The loader can offer the extension while the chosen device does not support the surface (AMDVLK
         // does not, Lavapipe does). `CreateDevice` then selects no present family; drop the surface so
         // present-path tests report their scope instead of using an unsupported one.
@@ -66,21 +77,46 @@ public:
         // driver from a software rasteriser, and this suite has silently run on both for the same
         // commit; verification tables record the device name for that reason (AGENTS.md section 4).
         // The topology note matters too: a device with a single queue family exercises none of the
-        // cross-queue code, so a green run there is not evidence about it.
+        // cross-queue code, so a green run there is not evidence about it. Driver, Mesa/loader and the
+        // heap/untyped feature bits are recorded beside it because B0 is a go/no-go and an unsupported
+        // row has to be visible in the run that did not exercise it.
         static bool bLoggedDevice = false;
         if (!bLoggedDevice)
         {
             bLoggedDevice = true;
             VkPhysicalDeviceProperties deviceProperties{};
             vkGetPhysicalDeviceProperties(GetRenderDevice()->GetPhysicalDevice(), &deviceProperties);
-            std::cerr << "[test device] " << deviceProperties.deviceName << " (Vulkan "
-                      << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "."
-                      << VK_VERSION_MINOR(deviceProperties.apiVersion) << "."
-                      << VK_VERSION_PATCH(deviceProperties.apiVersion) << ") - "
-                      << (GetRenderDevice()->IsComputeQueueDedicated()
-                              ? "dedicated compute family present, cross-queue path exercised"
-                              : "single queue family, cross-queue path NOT exercised")
-                      << std::endl;
+            VkPhysicalDeviceDriverProperties driverProperties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+            VkPhysicalDeviceProperties2 properties2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+            properties2.pNext = &driverProperties;
+            vkGetPhysicalDeviceProperties2(GetRenderDevice()->GetPhysicalDevice(), &properties2);
+
+            VkRenderDevice *pDevice = GetRenderDevice();
+            const VkPhysicalDeviceDescriptorHeapPropertiesEXT &heapProperties = pDevice->GetDescriptorHeapProperties();
+            std::cerr
+                << "[test device] " << deviceProperties.deviceName << " (Vulkan "
+                << VK_VERSION_MAJOR(deviceProperties.apiVersion) << "." << VK_VERSION_MINOR(deviceProperties.apiVersion)
+                << "." << VK_VERSION_PATCH(deviceProperties.apiVersion) << ", driver=" << driverProperties.driverName
+                << " " << driverProperties.driverInfo << ", loader=" << VK_VERSION_MAJOR(pDevice->GetInstanceVersion())
+                << "." << VK_VERSION_MINOR(pDevice->GetInstanceVersion()) << "."
+                << VK_VERSION_PATCH(pDevice->GetInstanceVersion())
+                << ") - heap: descriptorHeap=" << (pDevice->IsDescriptorHeapSupported() ? "true" : "false") << " ("
+                << (pDevice->IsDescriptorHeapEnabled()
+                        ? "enabled"
+                        : (pDevice->IsDescriptorHeapSupported() ? "available, not requested" : "unsupported"))
+                << ")" << ", shaderUntypedPointers=" << (pDevice->IsShaderUntypedPointersSupported() ? "true" : "false")
+                << " ("
+                << (pDevice->IsShaderUntypedPointersEnabled()
+                        ? "enabled"
+                        : (pDevice->IsShaderUntypedPointersSupported() ? "available, not requested" : "unsupported"))
+                << ")" << ", sizes sampler/image/buffer/AS=" << pDevice->GetDescriptorSize(VK_DESCRIPTOR_TYPE_SAMPLER)
+                << "/" << pDevice->GetDescriptorSize(VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE) << "/"
+                << pDevice->GetDescriptorSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER) << "/"
+                << pDevice->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+                << ", maxPushData=" << heapProperties.maxPushDataSize << " - "
+                << (pDevice->IsComputeQueueDedicated() ? "dedicated compute family present, cross-queue path exercised"
+                                                       : "single queue family, cross-queue path NOT exercised")
+                << std::endl;
         }
         GetRenderDevice()->CreateCommandPools();
         GetMemoryAllocator()->Initalize(GetRenderDevice());
@@ -135,6 +171,55 @@ private:
     }
 
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+
+    /// @return True when the selected device exposes both heap extensions and reports both features.
+    ///
+    /// Checked before requesting the chain so an unsupported device keeps its existing tests; the heap
+    /// probe itself skips with the same condition. The two features are queried rather than inferred from
+    /// the extension strings: a device can expose an extension and report the feature false.
+    static bool DeviceSupportsDescriptorHeap()
+    {
+        VkPhysicalDevice physicalDevice = GetRenderDevice()->GetPhysicalDevice();
+        uint32_t nExtensionCount = 0;
+        if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &nExtensionCount, nullptr) != VK_SUCCESS)
+        {
+            return false;
+        }
+        std::vector<VkExtensionProperties> extensions(nExtensionCount);
+        if (vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &nExtensionCount, extensions.data()) !=
+            VK_SUCCESS)
+        {
+            return false;
+        }
+        const auto hasExtension = [&extensions](const char *name)
+        {
+            for (const VkExtensionProperties &extension : extensions)
+            {
+                if (std::strcmp(extension.extensionName, name) == 0) return true;
+            }
+            return false;
+        };
+        if (!hasExtension(VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME) ||
+            !hasExtension(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME))
+        {
+            return false;
+        }
+
+        VkPhysicalDeviceDescriptorHeapFeaturesEXT heapFeatures{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_HEAP_FEATURES_EXT};
+        VkPhysicalDeviceFeatures2 heapQuery{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        heapQuery.pNext = &heapFeatures;
+        vkGetPhysicalDeviceFeatures2(physicalDevice, &heapQuery);
+
+        VkPhysicalDeviceShaderUntypedPointersFeaturesKHR untypedFeatures{
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_UNTYPED_POINTERS_FEATURES_KHR};
+        VkPhysicalDeviceFeatures2 untypedQuery{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        untypedQuery.pNext = &untypedFeatures;
+        vkGetPhysicalDeviceFeatures2(physicalDevice, &untypedQuery);
+
+        return heapFeatures.descriptorHeap == VK_TRUE && untypedFeatures.shaderUntypedPointers == VK_TRUE;
+    }
+
     // Device extensions required by the tests. Ray tracing must be requested here so the
     // acceleration-structure / SBT pools created by the memory allocator are valid.
     static const std::vector<const char *> &GetTestDeviceExtensions()
