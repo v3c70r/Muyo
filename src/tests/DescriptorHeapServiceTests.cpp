@@ -176,3 +176,32 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "DescriptorHeapService: AS direct decisi
     const VkDeviceSize size = device->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
     CHECK(service->CanUseDirectAccelerationStructure() == (size == 8));
 }
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "DescriptorHeapService: re-initialize clears stale free-list and ring state",
+                 "[DescriptorHeap]")
+{
+    Muyo::VkRenderDevice* device = Muyo::GetRenderDevice();
+    if (!device->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B1a records the row as a gap, not a pass");
+    }
+    auto service = CreateService();
+    AddressBuffer buffer = CreateAddressBuffer();
+
+    Muyo::DescriptorHeapService::Config large;
+    large.bufferSlots = 4;
+    service->Initialize(device, large);
+    Muyo::DescriptorSlot retired{};
+    for (uint32_t i = 0; i < 4; ++i)
+    {
+        retired = service->AcquireBuffer(buffer.address, 16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    }
+    service->Retire(retired, 1);
+    service->ResetExecution(0, 1);
+
+    Muyo::DescriptorHeapService::Config small;
+    small.bufferSlots = 1;
+    service->Initialize(device, small);
+    const Muyo::DescriptorSlot slot = service->AcquireBuffer(buffer.address, 16, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
+    CHECK_NOTHROW(service->IndexOf(slot));
+    DestroyAddressBuffer(buffer);
+}

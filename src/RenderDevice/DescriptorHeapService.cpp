@@ -89,6 +89,8 @@ void DescriptorHeapService::Initialize(VkRenderDevice* device, const Config& con
         region.stride = stride;
         region.staticSlots = staticSlots;
         region.ringSlots = ringSlots;
+        region.cursor = 0;
+        region.freeSlots.clear();
         region.generations.assign(staticSlots, 0);
         region.ringCursor.assign(inFlight, 0);
     };
@@ -281,7 +283,9 @@ void DescriptorHeapService::WriteResource(DescriptorSlot slot, VkDescriptorType 
     const VkDeviceSize offset =
         static_cast<VkDeviceSize>(slot.index) * RegionStride(static_cast<RegionId>(slot.region));
     auto* address = static_cast<uint8_t*>(m_resourceHeap.stagingMap) + m_resourceHeap.baseOffset + offset;
-    VkHostAddressRangeEXT range{address, static_cast<size_t>(hostSize)};
+    VkHostAddressRangeEXT range{};
+    range.address = address;
+    range.size = static_cast<size_t>(hostSize);
     VK_ASSERT(VkExt::vkWriteResourceDescriptorsEXT(m_device->GetDevice(), 1, &info, &range));
 }
 
@@ -321,7 +325,8 @@ DescriptorSlot DescriptorHeapService::AcquireTexelBuffer(VkFormat format, VkDevi
     VkTexelBufferDescriptorInfoEXT texelInfo{};
     texelInfo.sType = VK_STRUCTURE_TYPE_TEXEL_BUFFER_DESCRIPTOR_INFO_EXT;
     texelInfo.format = format;
-    texelInfo.addressRange = {address, size};
+    texelInfo.addressRange.address = address;
+    texelInfo.addressRange.size = size;
     VkResourceDescriptorInfoEXT info{};
     info.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     info.type = type;
@@ -332,7 +337,9 @@ DescriptorSlot DescriptorHeapService::AcquireTexelBuffer(VkFormat format, VkDevi
 DescriptorSlot DescriptorHeapService::AcquireBuffer(VkDeviceAddress address, VkDeviceSize size, VkDescriptorType type,
                                                     bool bRing)
 {
-    VkDeviceAddressRangeEXT range{address, size};
+    VkDeviceAddressRangeEXT range{};
+    range.address = address;
+    range.size = size;
     VkResourceDescriptorInfoEXT info{};
     info.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     info.type = type;
@@ -342,7 +349,9 @@ DescriptorSlot DescriptorHeapService::AcquireBuffer(VkDeviceAddress address, VkD
 
 DescriptorSlot DescriptorHeapService::AcquireAccelerationStructure(VkDeviceAddress address, bool bRing)
 {
-    VkDeviceAddressRangeEXT range{address, 0};
+    VkDeviceAddressRangeEXT range{};
+    range.address = address;
+    range.size = 0;
     VkResourceDescriptorInfoEXT info{};
     info.sType = VK_STRUCTURE_TYPE_RESOURCE_DESCRIPTOR_INFO_EXT;
     info.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
@@ -379,7 +388,11 @@ DescriptorSlot DescriptorHeapService::AcquireSampler(const VkSamplerCreateInfo& 
             throw std::runtime_error("DescriptorHeapService: YCbCr/subsampled samplers require the mapping path");
         }
     }
-    if (!bRing && !IsCustomBorderColor(createInfo.borderColor))
+    // Only a sampler with no pNext is cacheable: the field compare cannot see extension create-infos,
+    // and storing the caller's pNext would leave a dangling pointer in the entry. Custom-border values
+    // also cannot be compared here, so that path is outside the cache.
+    const bool bCacheable = !bRing && createInfo.pNext == nullptr && !IsCustomBorderColor(createInfo.borderColor);
+    if (bCacheable)
     {
         for (const SamplerEntry& entry : m_samplers)
         {
@@ -392,6 +405,11 @@ DescriptorSlot DescriptorHeapService::AcquireSampler(const VkSamplerCreateInfo& 
     VkSamplerCreateInfo effective = createInfo;
     uint32_t customBorderIndex = 0;
     const bool bCustom = IsCustomBorderColor(createInfo.borderColor);
+    if (bCustom && bRing)
+    {
+        throw std::runtime_error(
+            "DescriptorHeapService: ring custom-border samplers are deferred to the B1b sampler cache (#222)");
+    }
     if (bCustom)
     {
         if (VkExt::vkRegisterCustomBorderColorEXT == nullptr || VkExt::vkUnregisterCustomBorderColorEXT == nullptr)
@@ -423,12 +441,15 @@ DescriptorSlot DescriptorHeapService::AcquireSampler(const VkSamplerCreateInfo& 
     const VkDeviceSize hostSize = HostDescriptorSize(VK_DESCRIPTOR_TYPE_SAMPLER);
     const VkDeviceSize offset = static_cast<VkDeviceSize>(slot.index) * m_samplerStride;
     auto* address = static_cast<uint8_t*>(m_samplerHeap.stagingMap) + m_samplerHeap.baseOffset + offset;
-    VkHostAddressRangeEXT range{address, static_cast<size_t>(hostSize)};
+    VkHostAddressRangeEXT range{};
+    range.address = address;
+    range.size = static_cast<size_t>(hostSize);
     VK_ASSERT(VkExt::vkWriteSamplerDescriptorsEXT(m_device->GetDevice(), 1, &effective, &range));
-    if (!bRing)
+    if (bCacheable)
     {
         SamplerEntry entry;
         entry.createInfo = createInfo;
+        entry.createInfo.pNext = nullptr;
         entry.slot = slot;
         entry.customBorderIndex = customBorderIndex;
         entry.bHasCustomBorder = bCustom;
@@ -448,7 +469,7 @@ uint32_t DescriptorHeapService::IndexOf(DescriptorSlot slot) const
     if (local >= total) throw std::runtime_error("DescriptorHeapService: slot index is out of region");
     if (!slot.bRing)
     {
-        if (slot.index < region.offset / region.stride || local >= region.staticSlots)
+        if (local >= region.staticSlots)
         {
             throw std::runtime_error("DescriptorHeapService: slot is not a static slot");
         }
@@ -542,13 +563,15 @@ void DescriptorHeapService::Bind(VkCommandBuffer commandBuffer) const
 {
     if (!IsInitialized()) throw std::runtime_error("DescriptorHeapService: not initialized");
     VkBindHeapInfoEXT resourceBind{VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT};
-    resourceBind.heapRange = {m_resourceHeap.base, m_resourceHeap.size};
+    resourceBind.heapRange.address = m_resourceHeap.base;
+    resourceBind.heapRange.size = m_resourceHeap.size;
     resourceBind.reservedRangeOffset = m_resourceHeap.size - m_resourceHeap.reserved;
     resourceBind.reservedRangeSize = m_resourceHeap.reserved;
     VkExt::vkCmdBindResourceHeapEXT(commandBuffer, &resourceBind);
 
     VkBindHeapInfoEXT samplerBind{VK_STRUCTURE_TYPE_BIND_HEAP_INFO_EXT};
-    samplerBind.heapRange = {m_samplerHeap.base, m_samplerHeap.size};
+    samplerBind.heapRange.address = m_samplerHeap.base;
+    samplerBind.heapRange.size = m_samplerHeap.size;
     samplerBind.reservedRangeOffset = m_samplerHeap.size - m_samplerHeap.reserved;
     samplerBind.reservedRangeSize = m_samplerHeap.reserved;
     VkExt::vkCmdBindSamplerHeapEXT(commandBuffer, &samplerBind);
