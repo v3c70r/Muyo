@@ -67,10 +67,16 @@ bool IsAABBVisible(WorldAABB aabb, float4 vPlanes[6])
     RWStructuredBuffer<DrawIndexedCommand> drawCommands =
         RWStructuredBuffer<DrawIndexedCommand>.Handle(push.drawCommands);
     RWStructuredBuffer<uint> drawCount = RWStructuredBuffer<uint>.Handle(push.drawCount);
-    StructuredBuffer<PerViewData> perViewBuffer = StructuredBuffer<PerViewData>.Handle(push.perView);
-    // The test's PreViewData has one view; a multi-view culling pass must select the view here rather
-    // than pinning index 0.
-    PerViewData perView = perViewBuffer[0];
+    // Read the six frustum planes as a float4 slice at PerViewData offset 320 (320 / 16 = element 20).
+    // A StructuredBuffer<PerViewData> read of the same bytes culls everything on NVIDIA while passing on
+    // RADV; this form avoids the large-stride structured read. The test has one view; a multi-view pass
+    // must add the view's plane offset here rather than pinning view 0.
+    StructuredBuffer<float4> perViewPlanes = StructuredBuffer<float4>.Handle(push.perView);
+    float4 vPlanes[6];
+    for (uint plane = 0; plane < 6; ++plane)
+    {
+        vPlanes[plane] = perViewPlanes[20 + plane];
+    }
     StructuredBuffer<PerObjData> perObjData = StructuredBuffer<PerObjData>.Handle(push.perObjData);
 
     DrawSource src = drawSources[i];
@@ -79,7 +85,7 @@ bool IsAABBVisible(WorldAABB aabb, float4 vPlanes[6])
     PerObjData obj = perObjData[src.perObjId];
     WorldAABB worldAABB = TransformAABB(float3(obj.vAABBMin[0], obj.vAABBMin[1], obj.vAABBMin[2]),
                                         float3(obj.vAABBMax[0], obj.vAABBMax[1], obj.vAABBMax[2]), obj.mWorldMatrix);
-    if (!IsAABBVisible(worldAABB, perView.vFrustumPlanes)) return;
+    if (!IsAABBVisible(worldAABB, vPlanes)) return;
 
     uint slot = 0;
     InterlockedAdd(drawCount[0], 1, slot);
