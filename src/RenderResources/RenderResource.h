@@ -351,7 +351,8 @@ class StorageBuffer : public BufferResource
 {
 public:
     StorageBuffer(const T* buffer, uint32_t nNumStructs, bool bAllowReadback = false)
-        : BufferResource(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        : BufferResource(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                          bAllowReadback ? VMA_MEMORY_USAGE_CPU_TO_GPU : VMA_MEMORY_USAGE_GPU_ONLY)
 
     {

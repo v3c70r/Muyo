@@ -2607,28 +2607,33 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     builder.AddResource("PreViewData", BufferResourceDesc{.count = 1,
                                                           .stride = sizeof(PerViewData),
-                                                          .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                          .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     // Scene metadata: one entry per submesh that *may* be drawn. This is the only input the
     // CPU produces for the GPU-driven path; culling and command building happen on the GPU.
     builder.AddResource("DrawSources", BufferResourceDesc{.count = 1024,
                                                           .stride = sizeof(DrawSource),
-                                                          .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                          .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     // GPU-written, indirect-drawn command list (compacted by the compute pass).
-    builder.AddResource("GBuffer draw commands", BufferResourceDesc{.count = 1024,
-                                                                    .stride = sizeof(VkDrawIndexedIndirectCommand),
-                                                                    .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-                                                                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                                                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                                                                    .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
+    builder.AddResource(
+        "GBuffer draw commands",
+        BufferResourceDesc{.count = 1024,
+                           .stride = sizeof(VkDrawIndexedIndirectCommand),
+                           .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                           .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
     // GPU-written atomic counter consumed by vkCmdDrawIndexedIndirectCount (and read back for the test).
     builder.AddResource(
         "DrawCount",
         BufferResourceDesc{.count = 1,
                            .stride = sizeof(uint32_t),
                            .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                            .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY});
 
     // Imported resources (owned by the mesh / per-obj managers).
@@ -2713,30 +2718,26 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                 ResourceUse{.handle = ResourceHandle("DrawSources"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("GBuffer draw commands"),
                             .io = ResourceIOType::WRITE,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("DrawCount"),
                             .io = ResourceIOType::READ_WRITE,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("PreViewData"),
                             .io = ResourceIOType::READ,
-                            .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 3}},
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("PerObjData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 4}},
+                            .kind = ResourceKind::BUFFER},
             },
-        .shaderNames = {"prepareDrawCmdBuffer.comp.slang"},
+        .shaderNames = {"prepareDrawCmdBuffer.comp.heap"},
+        .useDescriptorHeap = true,
         .execute = [&nSourceCount](RenderGraphNodeContext& ctx)
         {
             const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
@@ -2761,8 +2762,29 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
             PrepareDrawCmdParams params{};
             params.sourceCount = nSourceCount;
             params.maxDrawCommands = maxDrawCommands;
-            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(params),
-                               &params);
+            const auto drawSources = ctx.GetHeapIndex("DrawSources", ResourceUsage::STORAGE_BUFFER);
+            const auto drawCommands = ctx.GetHeapIndex("GBuffer draw commands", ResourceUsage::DRAW_COMMAND_BUFFER);
+            const auto drawCount = ctx.GetHeapIndex("DrawCount", ResourceUsage::DRAW_COMMAND_BUFFER);
+            const auto perView = ctx.GetHeapIndex("PreViewData", ResourceUsage::STORAGE_BUFFER);
+            const auto perObj = ctx.GetHeapIndex("PerObjData", ResourceUsage::STORAGE_BUFFER);
+            REQUIRE(drawSources.has_value());
+            REQUIRE(drawCommands.has_value());
+            REQUIRE(drawCount.has_value());
+            REQUIRE(perView.has_value());
+            REQUIRE(perObj.has_value());
+            struct PushData
+            {
+                PrepareDrawCmdParams params;
+                uint32_t drawSources[2];
+                uint32_t drawCommands[2];
+                uint32_t drawCount[2];
+                uint32_t perView[2];
+                uint32_t perObjData[2];
+            };
+            const PushData push{params,          {*drawSources, 0}, {*drawCommands, 0},
+                                {*drawCount, 0}, {*perView, 0},     {*perObj, 0}};
+            ctx.descriptorHeap->Upload(ctx.commandBuffer);
+            ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
             const uint32_t nThreads = 256;
             const uint32_t nGroups = (nSourceCount + nThreads - 1) / nThreads;
@@ -2889,6 +2911,10 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
 TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum culling (async compute queue)",
                  "[RenderGraphBuilder][AsyncCompute]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the draw-command pass is heap-converted");
+    }
     const glm::mat4 proj =
         glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
 
