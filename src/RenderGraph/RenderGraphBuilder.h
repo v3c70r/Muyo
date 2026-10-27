@@ -392,6 +392,9 @@ private:
     /// member initialiser list runs in declaration order, so putting this first is what lets
     /// `RequireServices` reject a missing one by name before anything dereferences it.
     RenderGraphServices m_services;
+    /// Owned fallback for callers that did not inject a service; B1b-5b lets tests/builder construction
+    /// opt into heap nodes without threading a service, and the descriptor lifetime follows the graph.
+    std::unique_ptr<DescriptorHeapService> m_ownedDescriptorHeap;
     ShaderAssetManager m_shaderAssetManager;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
