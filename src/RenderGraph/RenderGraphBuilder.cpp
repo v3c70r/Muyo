@@ -148,6 +148,12 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
     , m_executor(m_services.device)
     , m_descriptorSetCache(m_vkDevice, *m_services.descriptorManager)
 {
+    if (m_services.descriptorHeap == nullptr && m_services.device->IsDescriptorHeapEnabled())
+    {
+        m_ownedDescriptorHeap = std::make_unique<DescriptorHeapService>();
+        m_ownedDescriptorHeap->Initialize(m_services.device);
+        m_services.descriptorHeap = m_ownedDescriptorHeap.get();
+    }
     VkPhysicalDeviceProperties deviceProperties{};
     vkGetPhysicalDeviceProperties(m_services.device->GetPhysicalDevice(), &deviceProperties);
     m_minUniformBufferOffsetAlignment = deviceProperties.limits.minUniformBufferOffsetAlignment;

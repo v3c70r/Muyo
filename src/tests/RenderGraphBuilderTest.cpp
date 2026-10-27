@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -84,6 +85,36 @@ public:
     ScopedRenderDocCapture(const ScopedRenderDocCapture&) = delete;
     ScopedRenderDocCapture& operator=(const ScopedRenderDocCapture&) = delete;
 };
+/// B1b-5b-1: turn an existing testFillColor node into the heap variant without rewriting its callback.
+/// The wrapper pushes the image index and keeps whatever dispatch/empty callback the test had.
+void ConvertFillNode(RenderGraphNodeCreateInfo& node)
+{
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B1b-5b-1 fill node needs it");
+    }
+    REQUIRE(node.resourceUses.size() == 1);
+    const ResourceHandle handle = node.resourceUses.front().handle;
+    node.useDescriptorHeap = true;
+    node.shaderNames = {"testFillColor.comp.heap"};
+    node.resourceUses.front().descriptorBinding.reset();
+    auto originalExecute = std::move(node.execute);
+    node.execute = [handle, originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
+    {
+        REQUIRE(context.descriptorHeap != nullptr);
+        const std::optional<uint32_t> outputIndex = context.GetHeapIndex(handle, ResourceUsage::STORAGE_IMAGE);
+        REQUIRE(outputIndex.has_value());
+        struct Push
+        {
+            uint32_t x;
+            uint32_t y;
+        };
+        const Push push{*outputIndex, 0};
+        context.descriptorHeap->Upload(context.commandBuffer);
+        context.PushData(0, std::as_bytes(std::span{&push, 1}));
+        if (originalExecute) originalExecute(context);
+    };
+}
 }  // namespace
 
 // Copies the (already rendered) color target back to the host and returns how many
@@ -397,6 +428,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builde
         .execute = [](RenderGraphNodeContext& ctx)
         { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
 
+    ConvertFillNode(fillPass);
     builder.AddNode(fillPass);
     builder.AddNode(quadPass);
     // Order the segments so the compute pass is the producer and the graphics pass the consumer.
@@ -498,6 +530,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains exec
         .execute = [](RenderGraphNodeContext& ctx)
         { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
 
+    ConvertFillNode(fillPass);
     builder.AddNode(fillPass);
     builder.AddNode(quadPass);
     builder.AddDependency(fillPass.nodeName, quadPass.nodeName);
@@ -896,7 +929,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never liv
 
     const auto addWriter = [&builder](const char* nodeName, const char* handle)
     {
-        builder.AddNode(RenderGraphNodeCreateInfo{
+        RenderGraphNodeCreateInfo fillNode{
             .nodeName = nodeName,
             .queueType = QueueType::COMPUTE,
             .resourceUses = {ResourceUse{.handle = ResourceHandle(handle),
@@ -908,7 +941,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never liv
                                          .kind = ResourceKind::IMAGE,
                                          .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
             .shaderNames = {"testFillColor.comp.slang"},
-            .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }});
+            .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
+        ConvertFillNode(fillNode);
+        builder.AddNode(fillNode);
     };
     addWriter("ImageAliasWriteA", "ImageAliasFirst");
     addWriter("ImageAliasWriteB", "ImageAliasSecond");
@@ -947,7 +982,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async and a graphics t
 
     const auto addWriter = [&builder](const char* nodeName, const char* handle, bool bAsync)
     {
-        builder.AddNode(RenderGraphNodeCreateInfo{
+        RenderGraphNodeCreateInfo fillNode{
             .nodeName = nodeName,
             .queueType = QueueType::COMPUTE,
             .async = bAsync,
@@ -957,7 +992,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async and a graphics t
                                          .kind = ResourceKind::IMAGE,
                                          .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
             .shaderNames = {"testFillColor.comp.slang"},
-            .execute = [](RenderGraphNodeContext&) {}});
+            .execute = [](RenderGraphNodeContext&) {}};
+        ConvertFillNode(fillNode);
+        builder.AddNode(fillNode);
     };
     addWriter("AsyncWriter", "AsyncTarget", true);
     addWriter("GraphicsWriter", "GraphicsTarget", false);
@@ -2027,15 +2064,18 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
 
     // 1. Compute writes a known colour into the first image. Existing usage, existing shader; it is here
     //    so the transfer reads something whose value the test knows.
-    builder.AddNode({.nodeName = "WriteGreen",
-                     .queueType = QueueType::COMPUTE,
-                     .resourceUses = {ResourceUse{.handle = ResourceHandle("TransferImageIn"),
-                                                  .io = ResourceIOType::READ_WRITE,
-                                                  .usage = ResourceUsage::STORAGE_IMAGE,
-                                                  .kind = ResourceKind::IMAGE,
-                                                  .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-                     .shaderNames = {"testFillColor.comp.slang"},
-                     .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }});
+    RenderGraphNodeCreateInfo writeGreen{
+        .nodeName = "WriteGreen",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("TransferImageIn"),
+                                     .io = ResourceIOType::READ_WRITE,
+                                     .usage = ResourceUsage::STORAGE_IMAGE,
+                                     .kind = ResourceKind::IMAGE,
+                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+        .shaderNames = {"testFillColor.comp.slang"},
+        .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
+    ConvertFillNode(writeGreen);
+    builder.AddNode(writeGreen);
 
     // 2. Image -> buffer: the first new policy on the read side, the second on the write side.
     builder.AddNode({.nodeName = "ImageToBuffer",
@@ -4489,6 +4529,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
         }};
 
     builder.AddNode(cameraPass);
+    ConvertFillNode(fillPass);
     builder.AddNode(fillPass);
     builder.AddNode(overlayPass);
     builder.AddDependency(cameraPass.nodeName, overlayPass.nodeName);
@@ -4556,6 +4597,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: CPU node between GPU node
                                            .execute = [](RenderGraphNodeContext& ctx)
                                            { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
 
+    ConvertFillNode(firstGpu);
+    ConvertFillNode(secondGpu);
     builder.AddNode(firstGpu);
     builder.AddNode(cpuPass);
     builder.AddNode(secondGpu);
