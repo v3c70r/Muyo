@@ -184,7 +184,38 @@ RenderGraphBuilder::~RenderGraphBuilder()
     // After the compiled graph, because its descriptors and pipelines name these buffers, and before the
     // device goes away, because the blocks hold memory this class owns.
     DestroyAliasedTransients();
+    if (m_rootMapped != nullptr) GetMemoryAllocator()->UnmapBuffer(m_rootAllocation);
+    if (m_rootBuffer != VK_NULL_HANDLE || m_rootAllocation != VK_NULL_HANDLE)
+    {
+        GetMemoryAllocator()->FreeBuffer(m_rootBuffer, m_rootAllocation);
+    }
     m_vkDevice = VK_NULL_HANDLE;
+}
+
+void RenderGraphBuilder::EnsureRootArena()
+{
+    if (m_rootBuffer != VK_NULL_HANDLE) return;
+    GetMemoryAllocator()->AllocateBuffer(m_rootCapacity,
+                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU, m_rootBuffer, m_rootAllocation);
+    GetMemoryAllocator()->MapBuffer(m_rootAllocation, reinterpret_cast<void**>(&m_rootMapped));
+    m_rootAddress = m_services.device->GetBufferDeviceAddress(m_rootBuffer);
+}
+
+RenderGraphRootSlice RenderGraphBuilder::AllocateRoot(size_t size, size_t alignment)
+{
+    if (size == 0 || alignment == 0) throw std::runtime_error("RenderGraphBuilder: invalid root allocation");
+    const VkDeviceSize aligned = (m_rootCursor + alignment - 1) / alignment * alignment;
+    if (aligned + size > m_rootCapacity)
+    {
+        throw std::runtime_error("RenderGraphBuilder: root arena exhausted");
+    }
+    RenderGraphRootSlice slice{};
+    slice.host = m_rootMapped + aligned;
+    slice.deviceAddress = m_rootAddress + aligned;
+    slice.size = size;
+    m_rootCursor = aligned + size;
+    return slice;
 }
 
 RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle, ResourceDesc desc)
@@ -354,6 +385,56 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                 throw std::runtime_error("Node '" + rgn.name +
                                          "' requests the descriptor heap but its shaders still declare descriptor "
                                          "bindings; convert them to a .heap.slang variant.");
+            }
+
+            const auto heapKey = [](const ResourceHandle& handle, ResourceUsage usage)
+            { return handle + "#" + std::to_string(static_cast<uint32_t>(usage)); };
+            for (const ResolvedResourceUse& use : result.resourceUses)
+            {
+                const IRenderResource* pResource = ResolveResource(use.handle);
+                if (pResource == nullptr) continue;
+                if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
+                {
+                    const auto* pImage = dynamic_cast<const ImageResource*>(pResource);
+                    if (pImage == nullptr) continue;
+                    const VkImageLayout layout = use.usage == ResourceUsage::SAMPLED
+                                                     ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                                     : VK_IMAGE_LAYOUT_GENERAL;
+                    const VkDescriptorType type = use.usage == ResourceUsage::SAMPLED
+                                                      ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                                                      : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                    result.heapIndices[heapKey(use.handle, use.usage)] =
+                        m_services.descriptorHeap->AcquireImage(pImage->GetImageViewCreateInfo(), layout, type).index;
+                }
+                else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER)
+                {
+                    const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource);
+                    if (pBuffer == nullptr) continue;
+                    VkDeviceSize offset = 0;
+                    VkDeviceSize size = pBuffer->GetSize();
+                    if (use.bufferRange.has_value())
+                    {
+                        offset = use.bufferRange->offset;
+                        size = use.bufferRange->size;
+                    }
+                    const VkDescriptorType type = use.usage == ResourceUsage::UNIFORM_BUFFER
+                                                      ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                                      : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    result.heapIndices[heapKey(use.handle, use.usage)] =
+                        m_services.descriptorHeap
+                            ->AcquireBuffer(m_services.device->GetBufferDeviceAddress(pBuffer->buffer()) + offset, size,
+                                            type)
+                            .index;
+                }
+                else if (use.usage == ResourceUsage::ACCEL_STRUCTURE)
+                {
+                    const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
+                    if (pAccelerationStructure == nullptr) continue;
+                    result.heapIndices[heapKey(use.handle, use.usage)] =
+                        m_services.descriptorHeap
+                            ->AcquireAccelerationStructure(pAccelerationStructure->GetDeviceAddress())
+                            .index;
+                }
             }
         }
         else
@@ -2098,6 +2179,8 @@ TraceScope RenderGraphBuilder::BuildTraceScope() const
 void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 {
     m_resourceAccessStates.clear();
+    EnsureRootArena();
+    m_rootCursor = 0;
 
     // A trace is recorded when a sink is installed or `MUYO_RG_TRACE` asks for one. The environment variable is
     // read once per process: it is a diagnostic switch, not a per-frame decision, and re-reading it per execution
@@ -2122,6 +2205,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
     // Nodes reach resources through the context, so it has to resolve the way the graph does - which now
     // includes transients the graph owns and the manager therefore does not.
     context.resolveResource = [this](const ResourceHandle& handle) { return ResolveResource(handle); };
+    context.allocateRoot = [this](size_t size, size_t alignment) { return AllocateRoot(size, alignment); };
 
     std::unordered_set<ResourceHandle> alreadyWritten;
     std::vector<VkRenderingAttachmentInfo> colorAttachments;
@@ -2194,6 +2278,12 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             context.pipeline = rgn.pipeline;
             context.pipelineLayout = rgn.pipelineLayout;
             context.descriptorHeap = rgn.useDescriptorHeap ? m_services.descriptorHeap : nullptr;
+            context.getHeapIndex = [&rgn](const ResourceHandle& handle, ResourceUsage usage) -> std::optional<uint32_t>
+            {
+                const auto it = rgn.heapIndices.find(handle + "#" + std::to_string(static_cast<uint32_t>(usage)));
+                if (it == rgn.heapIndices.end()) return std::nullopt;
+                return it->second;
+            };
             context.maxPushDataSize =
                 rgn.useDescriptorHeap ? m_services.descriptorHeap->GetProperties().maxPushDataSize : 0;
             context.bindingPoint = rgn.bindingPoint;

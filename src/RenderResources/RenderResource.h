@@ -299,6 +299,15 @@ public:
 
     virtual VkObjectType GetVkObjectType() const override { return VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR; }
 
+    /// @return The device address used to write this acceleration structure into a descriptor heap.
+    VkDeviceAddress GetDeviceAddress() const
+    {
+        VkAccelerationStructureDeviceAddressInfoKHR info{
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR};
+        info.accelerationStructure = m_accelerationStructure;
+        return VkExt::vkGetAccelerationStructureDeviceAddressKHR(GetRenderDevice()->GetDevice(), &info);
+    }
+
     virtual void SetDebugName(const std::string& sName) const override
     {
         m_accelerationStructureBuffer.SetDebugName(sName);

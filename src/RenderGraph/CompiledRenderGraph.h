@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "RenderGraphExecutionPlan.h"
@@ -47,6 +48,8 @@ struct CompiledRenderGraphNode
     VkExtent2D traceExtent = {0, 0};
     /// True when the node was compiled for the descriptor-heap path (B1b).
     bool useDescriptorHeap = false;
+    /// Resource use -> service index, for a heap node. Key is `handle#usage`.
+    std::unordered_map<std::string, uint32_t> heapIndices;
     /// Queue the node was compiled for.
     QueueType queueType = QueueType::GRAPHICS;
     /// Bind point of the compiled pipeline.

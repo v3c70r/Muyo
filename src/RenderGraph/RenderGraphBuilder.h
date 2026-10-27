@@ -272,6 +272,11 @@ private:
 
     CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
 
+    /// Create the per-execution root arena on first use; it is host-visible and device-addressable.
+    void EnsureRootArena();
+    /// @return A slice of the current execution's root arena, or throw when it does not fit.
+    RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment);
+
     // Build descriptor set layouts + allocate sets from a compute/RT node's merged shader reflection.
     // Resources declared with an explicit DescriptorBinding are written into the matching set/binding.
     void BuildReflectionDescriptorSets(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
@@ -413,6 +418,13 @@ private:
     std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> m_aliasedImages;
     /// The blocks those buffers are bound into. Freed after every resource above is destroyed.
     std::vector<VmaAllocation> m_aliasBlocks;
+    /// Host-visible root arena (B1b-4). Reset at the start of every execution; the host owns its layout.
+    VkBuffer m_rootBuffer = VK_NULL_HANDLE;
+    VmaAllocation m_rootAllocation = VK_NULL_HANDLE;
+    std::byte* m_rootMapped = nullptr;
+    VkDeviceAddress m_rootAddress = 0;
+    VkDeviceSize m_rootCapacity = 64ULL * 1024;
+    VkDeviceSize m_rootCursor = 0;
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
     TransientMemoryPlan m_transientMemoryPlan;
 

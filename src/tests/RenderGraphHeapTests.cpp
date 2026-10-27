@@ -43,11 +43,6 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
     const uint32_t outputValue = 0;
     pOutput->SetData(&outputValue, sizeof(outputValue));
 
-    const DescriptorSlot inputSlot = heap.AcquireBuffer(device->GetBufferDeviceAddress(pInput->buffer()),
-                                                        sizeof(uint32_t), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-    const DescriptorSlot outputSlot = heap.AcquireBuffer(device->GetBufferDeviceAddress(pOutput->buffer()),
-                                                         sizeof(uint32_t), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-
     RenderGraphServices services{.device = device,
                                  .resourceManager = GetRenderResourceManager(),
                                  .descriptorManager = GetDescriptorManager(),
@@ -71,14 +66,25 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
                                        },
                                    .shaderNames = {"graphHeapCopy.comp.heap"},
                                    .useDescriptorHeap = true,
-                                   .execute = [inputSlot, outputSlot, &heap](RenderGraphNodeContext& context)
+                                   .execute = [&heap](RenderGraphNodeContext& context)
                                    {
                                        struct Push
                                        {
                                            uint32_t inputIndex;
                                            uint32_t outputIndex;
                                        };
-                                       const Push push{inputSlot.index, outputSlot.index};
+                                       const std::optional<uint32_t> inputIndex =
+                                           context.GetHeapIndex("GraphHeapInput", ResourceUsage::STORAGE_BUFFER);
+                                       const std::optional<uint32_t> outputIndex =
+                                           context.GetHeapIndex("GraphHeapOutput", ResourceUsage::STORAGE_BUFFER);
+                                       REQUIRE(inputIndex.has_value());
+                                       REQUIRE(outputIndex.has_value());
+                                       const Push push{*inputIndex, *outputIndex};
+                                       RenderGraphRootSlice root = context.AllocateRoot(16, 8);
+                                       REQUIRE(root.host != nullptr);
+                                       CHECK(root.deviceAddress % 8 == 0);
+                                       context.WriteRootIndex(root, 0, *inputIndex);
+                                       context.FlushRoot();
                                        heap.Upload(context.commandBuffer);
                                        context.PushData(0, std::as_bytes(std::span{&push, 1}));
                                        vkCmdDispatch(context.commandBuffer, 1, 1, 1);
