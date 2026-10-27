@@ -14,6 +14,7 @@
 #include "Camera.h"
 #include "CaptureToolRecorder.h"
 #include "Debug/RenderDocCaptureTool.h"
+#include "DescriptorHeapService.h"
 #include "GraphicsTestEnv.h"
 #include "MeshVertex.h"
 #include "PerObjResourceManager.h"
@@ -206,8 +207,13 @@ static uint32_t CountPixelsMatching(const ImageResource* pTarget, const glm::vec
     return nCount;
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descriptor sets", "[RenderGraphBuilder]")
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descriptor sets",
+                 "[RenderGraphBuilder][DescriptorHeap]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; this case now exercises the B1b-2 heap path");
+    }
     // Create a small quad directly (do NOT use MeshResourceManager — its singleton
     // state is shared with the mazda scene test and would corrupt the mesh buffers).
     std::vector<Vertex> quadVertices = {
@@ -221,7 +227,13 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     auto* pQuadIB = GetRenderResourceManager()->GetIndexBuffer<uint32_t>("TestQuadIndexBuffer", quadIndices);
     const uint32_t nQuadIndexCount = static_cast<uint32_t>(quadIndices.size());
 
-    RenderGraphBuilder builder(GetRenderDevice());
+    DescriptorHeapService heap;
+    heap.Initialize(GetRenderDevice());
+    RenderGraphServices services{.device = GetRenderDevice(),
+                                 .resourceManager = GetRenderResourceManager(),
+                                 .descriptorManager = GetDescriptorManager(),
+                                 .descriptorHeap = &heap};
+    RenderGraphBuilder builder(services);
 
     // Graph-owned resources (allocated at Build()).
     builder.AddResource("TriangleOutput",
@@ -258,6 +270,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
                                        .blendEnable = false,
                                    }}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .useDescriptorHeap = true,
         .execute = [nQuadIndexCount](RenderGraphNodeContext& ctx)
         {
             // Render pass begin/end, pipeline, viewport/scissor and descriptor sets are handled by the graph.

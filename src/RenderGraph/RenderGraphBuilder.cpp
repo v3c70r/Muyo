@@ -343,11 +343,11 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                                          "' requests the descriptor heap, but RenderGraphServices::descriptorHeap "
                                          "is null.");
             }
-            if (rgn.queueType != QueueType::COMPUTE)
+            if (rgn.queueType == QueueType::RAY_TRACING)
             {
                 throw std::runtime_error("Node '" + rgn.name +
-                                         "' requests the descriptor heap; B1b-1 supports compute nodes only "
-                                         "(graphics/RT follow in the B1b shader conversion).");
+                                         "' requests the descriptor heap; RT heap pipelines follow in the "
+                                         "B1b shader conversion.");
             }
             if (!mergedReflection.descriptorBindings.empty())
             {
@@ -460,7 +460,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             result.bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
             // Create pipeline
             result.pipeline = CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, result.pipelineLayout,
-                                                        renderingInfo, pSpecializationInfo);
+                                                        renderingInfo, pSpecializationInfo, rgn.useDescriptorHeap);
         }
         else if (rgn.queueType == QueueType::COMPUTE)
         {

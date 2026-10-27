@@ -114,9 +114,18 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
 
     pipelineInfo.pDynamicState = &m_dynamicStatesInfo;
 
-    pipelineInfo.layout = m_pipelineLayout;
+    pipelineInfo.layout = m_bDescriptorHeap ? VK_NULL_HANDLE : m_pipelineLayout;
 
-    if (mRenderingInfo.sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO)
+    VkPipelineCreateFlags2CreateInfo heapFlags{VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO};
+    if (m_bDescriptorHeap)
+    {
+        heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+        heapFlags.pNext =
+            mRenderingInfo.sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO ? &mRenderingInfo : nullptr;
+        pipelineInfo.pNext = &heapFlags;
+        pipelineInfo.renderPass = mRenderPass;
+    }
+    else if (mRenderingInfo.sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO)
     {
         pipelineInfo.pNext = &mRenderingInfo;
         pipelineInfo.renderPass = mRenderPass;
