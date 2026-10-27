@@ -67,15 +67,17 @@ bool IsAABBVisible(WorldAABB aabb, float4 vPlanes[6])
     RWStructuredBuffer<DrawIndexedCommand> drawCommands =
         RWStructuredBuffer<DrawIndexedCommand>.Handle(push.drawCommands);
     RWStructuredBuffer<uint> drawCount = RWStructuredBuffer<uint>.Handle(push.drawCount);
-    // Read the six frustum planes as a float4 slice at PerViewData offset 320 (320 / 16 = element 20).
-    // A StructuredBuffer<PerViewData> read of the same bytes culls everything on NVIDIA while passing on
-    // RADV; this form avoids the large-stride structured read. The test has one view; a multi-view pass
-    // must add the view's plane offset here rather than pinning view 0.
-    StructuredBuffer<float4> perViewPlanes = StructuredBuffer<float4>.Handle(push.perView);
+    // Read the six frustum planes as 24 floats at PerViewData byte offset 320 (320 / 4 = element 80).
+    // A StructuredBuffer<PerViewData> member read drops the 320-byte offset on NVIDIA; the float4 slice
+    // fixed the generous-frustum scenarios but not the tight far plane, so this uses the smallest
+    // possible stride. The test has one view; a multi-view pass must add the view's element offset.
+    StructuredBuffer<float> perViewFloats = StructuredBuffer<float>.Handle(push.perView);
     float4 vPlanes[6];
     for (uint plane = 0; plane < 6; ++plane)
     {
-        vPlanes[plane] = perViewPlanes[20 + plane];
+        const uint base = 80 + plane * 4;
+        vPlanes[plane] = float4(perViewFloats[base], perViewFloats[base + 1], perViewFloats[base + 2],
+                                perViewFloats[base + 3]);
     }
     StructuredBuffer<PerObjData> perObjData = StructuredBuffer<PerObjData>.Handle(push.perObjData);
 
