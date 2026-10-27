@@ -1102,12 +1102,18 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffer after Build keeps its descriptor",
                  "[RenderGraphBuilder]")
 {
-    // #13. Descriptor sets are written at Build(), so a SetData that reallocated between Build() and
+    // #13. Descriptors are written at Build(), so a SetData that reallocated between Build() and
     // Execute() left the bound VkBuffer freed while the descriptor still named it - a stale handle read
     // as freed memory. A buffer now keeps its allocation and only reallocates past its capacity, so a
-    // grow inside it leaves the handle the descriptor names untouched.
+    // grow inside it leaves the handle the descriptor names untouched. The heap descriptor carries the
+    // buffer's device address, so the same staleness argument applies to it (B1b-5b-3).
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B1b-5b-3 copy node needs it");
+    }
     const std::array<uint32_t, 4> initial{1, 2, 3, 4};
-    BufferResource source(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    BufferResource source(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          VMA_MEMORY_USAGE_CPU_TO_GPU);
     source.SetData(initial.data(), sizeof(initial));
     const VkBuffer bufferBefore = source.buffer();
 
@@ -1116,33 +1122,47 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffe
     builder.AddResource(
         "Copied", BufferResourceDesc{.count = 4,
                                      .stride = sizeof(uint32_t),
-                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                     .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     uint32_t nByteCount = 4 * sizeof(uint32_t);
-    builder.AddNode(RenderGraphNodeCreateInfo{
-        .nodeName = "CopiesSource",
-        .queueType = QueueType::COMPUTE,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("Source"),
-                                     .io = ResourceIOType::READ,
-                                     .usage = ResourceUsage::STORAGE_BUFFER,
-                                     .kind = ResourceKind::BUFFER,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
-                         ResourceUse{.handle = ResourceHandle("Copied"),
-                                     .io = ResourceIOType::WRITE,
-                                     .usage = ResourceUsage::STORAGE_BUFFER,
-                                     .kind = ResourceKind::BUFFER,
-                                     .descriptorBinding = DescriptorBinding{.set = 1, .binding = 0}}},
-        .shaderNames = {"copyBuffer.comp.slang"},
-        .execute = [&nByteCount](RenderGraphNodeContext& ctx)
-        {
-            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0,
-                               sizeof(nByteCount), &nByteCount);
-            vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
-        }});
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "CopiesSource",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {ResourceUse{.handle = ResourceHandle("Source"),
+                                                                           .io = ResourceIOType::READ,
+                                                                           .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                           .kind = ResourceKind::BUFFER},
+                                                               ResourceUse{.handle = ResourceHandle("Copied"),
+                                                                           .io = ResourceIOType::WRITE,
+                                                                           .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                           .kind = ResourceKind::BUFFER}},
+                                              .shaderNames = {"copyBuffer.comp.heap"},
+                                              .useDescriptorHeap = true,
+                                              .execute = [&nByteCount](RenderGraphNodeContext& ctx)
+                                              {
+                                                  const std::optional<uint32_t> inputIndex =
+                                                      ctx.GetHeapIndex("Source", ResourceUsage::STORAGE_BUFFER);
+                                                  const std::optional<uint32_t> outputIndex =
+                                                      ctx.GetHeapIndex("Copied", ResourceUsage::STORAGE_BUFFER);
+                                                  REQUIRE(inputIndex.has_value());
+                                                  REQUIRE(outputIndex.has_value());
+                                                  struct Push
+                                                  {
+                                                      uint32_t byteCount;
+                                                      uint32_t input;
+                                                      uint32_t output;
+                                                  };
+                                                  const Push push{nByteCount, *inputIndex, *outputIndex};
+                                                  ctx.descriptorHeap->Upload(ctx.commandBuffer);
+                                                  ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+                                                  vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+                                              }});
 
-    // Build writes the descriptor set against source's current handle.
+    // Build writes the heap descriptor against source's current device address and handle.
     builder.Build();
+    // A heap node must not fall back to the reflection-derived descriptor-set path.
+    CHECK(builder.GetDescriptorSetCount() == 0);
 
     // Grow after the descriptor was written, within the allocation. The handle must not change, or the
     // descriptor written above would name a destroyed buffer.
