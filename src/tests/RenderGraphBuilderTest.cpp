@@ -207,7 +207,8 @@ static uint32_t CountPixelsMatching(const ImageResource* pTarget, const glm::vec
     return nCount;
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descriptor sets", "[RenderGraphBuilder]")
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descriptor sets",
+                 "[RenderGraphBuilder][DescriptorHeap]")
 {
     if (!GetRenderDevice()->IsDescriptorHeapEnabled())
     {

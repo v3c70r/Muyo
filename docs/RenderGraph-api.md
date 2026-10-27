@@ -883,7 +883,7 @@ The graph has already recorded the barriers, opened the render pass (graphics no
 | `VkPipeline pipeline` | Bound pipeline. |
 | `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
 | `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
-| `DescriptorHeapService * descriptorHeap` | Non-null for a node compiled with useDescriptorHeap. B1b-1 does not bind the heaps centrally: the node callback uploads/binds them (see DescriptorHeapProbeTests), and B1b-2 moves that to one bind per command buffer. Both heap and pipeline bind-point state precede the dispatch. |
+| `DescriptorHeapService * descriptorHeap` | Non-null for a node compiled with useDescriptorHeap. The graph does not bind the heaps centrally yet: the node callback uploads/binds them (see DescriptorHeapProbeTests); B1b-3 adds the central bind. Both heap and pipeline bind-point state precede the dispatch. |
 | `uint32_t maxPushDataSize` | The device's maxPushDataSize; zero for a legacy descriptor node. |
 | `void PushData(uint32_t offset, std::span< const std::byte > bytes)` | Record opaque root data for this node. Offsets are host-defined; the graph only bounds them by the device's push-data limit. The pipeline has no layout, so this backs the shader's push block. Throws: `std::runtime_error` - when the node is not a heap node or the range exceeds the device limit |
 | `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). Parameters: `T` - Concrete resource type (e.g. BufferResource, RenderTarget); `handle` - Resource name used in the node's resourceUses Returns: The resource, or nullptr if it is not of type T. |
