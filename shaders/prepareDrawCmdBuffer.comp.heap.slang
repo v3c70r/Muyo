@@ -66,8 +66,10 @@ bool IsAABBVisible(WorldAABB aabb, float4 vPlanes[6])
     StructuredBuffer<DrawSource> drawSources = StructuredBuffer<DrawSource>.Handle(push.drawSources);
     RWStructuredBuffer<DrawIndexedCommand> drawCommands =
         RWStructuredBuffer<DrawIndexedCommand>.Handle(push.drawCommands);
-    RWByteAddressBuffer drawCount = RWByteAddressBuffer.Handle(push.drawCount);
+    RWStructuredBuffer<uint> drawCount = RWStructuredBuffer<uint>.Handle(push.drawCount);
     StructuredBuffer<PerViewData> perViewBuffer = StructuredBuffer<PerViewData>.Handle(push.perView);
+    // The test's PreViewData has one view; a multi-view culling pass must select the view here rather
+    // than pinning index 0.
     PerViewData perView = perViewBuffer[0];
     StructuredBuffer<PerObjData> perObjData = StructuredBuffer<PerObjData>.Handle(push.perObjData);
 
@@ -80,7 +82,7 @@ bool IsAABBVisible(WorldAABB aabb, float4 vPlanes[6])
     if (!IsAABBVisible(worldAABB, perView.vFrustumPlanes)) return;
 
     uint slot = 0;
-    drawCount.InterlockedAdd(0, 1, slot);
+    InterlockedAdd(drawCount[0], 1, slot);
     if (slot >= push.params.maxDrawCommands) return;
 
     DrawIndexedCommand cmd;
