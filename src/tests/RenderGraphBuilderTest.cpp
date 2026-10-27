@@ -2965,13 +2965,13 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: GPU frustum cul
     // Scenario 3: same top-down view but with a reduced far plane, so the far half of the car is
     // clipped by the frustum. Some objects must survive and still draw, others must be culled.
     //
-    // The far plane is 5.8 rather than the tight 3.6 this scenario used before B1b-5b-2: NVIDIA's
-    // compiler produces a value-dependent result for this shader at 3.6 (all boxes rejected, while
-    // RADV keeps the near ones) and at 6.0 nothing is clipped. 5.8 keeps the partial-culling property
-    // (100/104 on RADV) with the widest plane that still clips. See #233.
+    // The far plane is 4.0 rather than the tight 3.6 this scenario used before B1b-5b-2: NVIDIA's
+    // compiler produces a value-dependent result for this shader. Measured on the 3090: 3.6 rejects all
+    // 104 boxes, 4.0 keeps a partial set (7/7 green runs), 4.5 and 5.8 keep all 104. RADV keeps 68/104
+    // at 4.0. See #233.
     {
         const glm::mat4 clippedProj =
-            glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 5.8F);
+            glm::perspective(glm::radians(80.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 4.0F);
         const glm::mat4 view = glm::lookAt(topDownEye, carCenter, up);
 
         ScopedRenderDocCapture capture("test_gpu_frustum_culling_partial");
