@@ -25,6 +25,9 @@ class ImageResource : public IRenderResource
 public:
     VkImageView getView() const { return m_view; }
     VkImage getImage() const { return m_image; }
+    /// @return The create-info used for the view, for descriptor-heap writes that need the view
+    ///         description rather than a VkImageView handle.
+    const VkImageViewCreateInfo& GetImageViewCreateInfo() const { return m_imageViewInfo; }
     virtual ~ImageResource()
     {
         vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
