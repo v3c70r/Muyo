@@ -454,7 +454,11 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             pushConstantRanges.push_back(
                 {.stageFlags = pcRange.stageFlags, .offset = pcRange.offset, .size = pcRange.size});
         }
-        if (!rgn.useDescriptorHeap)
+        if (rgn.useDescriptorHeap)
+        {
+            result.heapPushRanges = pushConstantRanges;
+        }
+        else
         {
             VkPipelineLayoutCreateInfo pipelineLayoutInfo{
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -2331,7 +2335,21 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             }
 
             // 4. User GPU work.
+            context.pushedRanges.clear();
             rgn.execute(context);
+            for (const VkPushConstantRange& range : rgn.heapPushRanges)
+            {
+                const uint32_t end = range.offset + range.size;
+                const bool covered =
+                    std::any_of(context.pushedRanges.begin(), context.pushedRanges.end(), [&](const auto& pushed)
+                                { return pushed.first <= range.offset && pushed.second >= end; });
+                if (!covered)
+                {
+                    throw std::runtime_error("Node '" + rgn.name + "' has a heap push-constant range [" +
+                                             std::to_string(range.offset) + ", " + std::to_string(end) +
+                                             ") not covered by PushData");
+                }
+            }
 
             // 4b. Ray tracing nodes issue the trace automatically; the SBT is graph-managed.
             if (rgn.isRayTracing && rgn.pipeline != VK_NULL_HANDLE && rgn.traceExtent.width > 0)

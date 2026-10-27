@@ -63,6 +63,8 @@ struct RenderGraphNodeContext
     DescriptorHeapService* descriptorHeap = nullptr;
     /// The device's `maxPushDataSize`; zero for a legacy descriptor node.
     uint32_t maxPushDataSize = 0;
+    /// Ranges pushed for the current node, for the builder's record-time coverage check.
+    std::vector<std::pair<uint32_t, uint32_t>> pushedRanges;
 
     /// Allocate root memory for this node from the execution's arena.
     /// @throws std::runtime_error when the node has no root allocator or the arena is exhausted.
@@ -109,7 +111,7 @@ struct RenderGraphNodeContext
     /// @throws std::runtime_error when the node is not a heap node or the range exceeds the device limit.
     void PushData(uint32_t offset, std::span<const std::byte> bytes)
     {
-        if (descriptorHeap == nullptr || VkExt::vkCmdPushDataEXT == nullptr)
+        if (descriptorHeap == nullptr)
         {
             throw std::runtime_error("RenderGraphNodeContext::PushData: the node is not a descriptor-heap node");
         }
@@ -117,11 +119,16 @@ struct RenderGraphNodeContext
         {
             throw std::runtime_error("RenderGraphNodeContext::PushData: offset + size exceeds maxPushDataSize");
         }
+        if (VkExt::vkCmdPushDataEXT == nullptr)
+        {
+            throw std::runtime_error("RenderGraphNodeContext::PushData: vkCmdPushDataEXT is not loaded");
+        }
         VkPushDataInfoEXT pushInfo{VK_STRUCTURE_TYPE_PUSH_DATA_INFO_EXT};
         pushInfo.offset = offset;
         pushInfo.data.address = bytes.data();
         pushInfo.data.size = bytes.size();
         VkExt::vkCmdPushDataEXT(commandBuffer, &pushInfo);
+        pushedRanges.emplace_back(offset, offset + static_cast<uint32_t>(bytes.size()));
     }
 
     /// Resolve a graph-declared resource to its concrete pointer (allocated at Build()).
