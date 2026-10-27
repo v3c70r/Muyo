@@ -110,7 +110,85 @@ void ConvertFillNode(RenderGraphNodeCreateInfo& node)
             uint32_t y;
         };
         const Push push{*outputIndex, 0};
-        context.descriptorHeap->Upload(context.commandBuffer);
+        context.PushData(0, std::as_bytes(std::span{&push, 1}));
+        if (originalExecute) originalExecute(context);
+    };
+}
+
+/// B1b-5b-4: per-view camera data as inline root data for the heap graphics variants.
+///
+/// A heap handle to `PerViewData` would make the vertex shader read `mProj` at byte 64 through a
+/// structured-buffer member access, which is the NVIDIA offset-drop class (#233). Pushing the two
+/// matrices instead is the host's root-data choice: the push-constant block is RowMajor/stride 16 at
+/// offsets 0/64 in both the legacy constant buffer and this push block, so the bytes and the shader's
+/// interpretation are identical. The per-object buffer stays a heap descriptor; `forward.vert.heap`
+/// reads its world matrix at offset 0, the case #233 does not affect.
+struct CameraPush
+{
+    GPU_MAT4 mView;
+    GPU_MAT4 mProj;
+    uint32_t perObjData[2];
+    uint32_t padding[2];
+    glm::vec4 solidColor;
+};
+static_assert(sizeof(CameraPush) == 160, "CameraPush must match the 160-byte heap push block");
+
+/// B1b-5b-4: turn an existing camera graphics node into its heap variant without rewriting its callback.
+/// `perObjHandle` is null for shaders that do not read the per-object buffer (testWorldPos).
+/// `fragmentShader` replaces the fragment stage; `solidColor` fills the block's tail for
+/// testSolidColor.frag.heap.
+void ConvertCameraNode(RenderGraphNodeCreateInfo& node, const char* cameraHandle, const char* perObjHandle,
+                       const char* vertexShader, const char* fragmentShader = nullptr,
+                       std::optional<glm::vec4> solidColor = std::nullopt)
+{
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B1b-5b-4 camera node needs it");
+    }
+    bool bCameraFound = false;
+    bool bPerObjFound = perObjHandle == nullptr;
+    for (ResourceUse& use : node.resourceUses)
+    {
+        if (use.handle == ResourceHandle(cameraHandle))
+        {
+            use.descriptorBinding.reset();
+            bCameraFound = true;
+        }
+        else if (perObjHandle != nullptr && use.handle == ResourceHandle(perObjHandle))
+        {
+            use.descriptorBinding.reset();
+            bPerObjFound = true;
+        }
+    }
+    REQUIRE(bCameraFound);
+    REQUIRE(bPerObjFound);
+
+    node.shaderNames[0] = vertexShader;
+    if (fragmentShader != nullptr) node.shaderNames[1] = fragmentShader;
+    node.useDescriptorHeap = true;
+    auto originalExecute = std::move(node.execute);
+    node.execute = [cameraHandle, perObjHandle, solidColor = std::move(solidColor),
+                    originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
+    {
+        REQUIRE(context.descriptorHeap != nullptr);
+        const auto* pCamera = context.GetResource<BufferResource>(cameraHandle);
+        REQUIRE(pCamera != nullptr);
+        auto* pWritableCamera = const_cast<BufferResource*>(pCamera);
+        const auto* pPerView = static_cast<const PerViewData*>(pWritableCamera->Map());
+        REQUIRE(pPerView != nullptr);
+        CameraPush push{};
+        push.mView = pPerView->mView;
+        push.mProj = pPerView->mProj;
+        push.solidColor = solidColor.value_or(glm::vec4(0.0F));
+        pWritableCamera->Unmap();
+
+        if (perObjHandle != nullptr)
+        {
+            const std::optional<uint32_t> perObjIndex =
+                context.GetHeapIndex(perObjHandle, ResourceUsage::STORAGE_BUFFER);
+            REQUIRE(perObjIndex.has_value());
+            push.perObjData[0] = *perObjIndex;
+        }
         context.PushData(0, std::as_bytes(std::span{&push, 1}));
         if (originalExecute) originalExecute(context);
     };
@@ -1154,7 +1232,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffe
                                                       uint32_t output;
                                                   };
                                                   const Push push{nByteCount, *inputIndex, *outputIndex};
-                                                  ctx.descriptorHeap->Upload(ctx.commandBuffer);
                                                   ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
                                                   vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
                                               }});
@@ -2803,7 +2880,6 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
             };
             const PushData push{params,          {*drawSources, 0}, {*drawCommands, 0},
                                 {*drawCount, 0}, {*perView, 0},     {*perObj, 0}};
-            ctx.descriptorHeap->Upload(ctx.commandBuffer);
             ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
             const uint32_t nThreads = 256;
@@ -2871,6 +2947,10 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
             vkCmdDrawIndexedIndirectCount(ctx.commandBuffer, pDrawCmdBuffer->buffer(), 0, pDrawCount->buffer(), 0,
                                           nSourceCount, sizeof(VkDrawIndexedIndirectCommand));
         }};
+
+    // B1b-5b-4: the graphics half of the GPU-driven path. The culling pass is already a heap node, so
+    // this makes the whole scenario run without a descriptor set; the CPU node still writes the camera.
+    ConvertCameraNode(cubePassCreateInfo, "PreViewData", "PerObjData", "forward.vert.heap");
 
     builder.AddNode(drawCommandPrepPass);
     builder.AddNode(cullingPass);
@@ -4495,7 +4575,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
                                                    VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     builder.AddResource("OverlayCamera", BufferResourceDesc{.count = 1,
                                                             .stride = sizeof(PerViewData),
-                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                             .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
@@ -4568,9 +4649,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
                                                      .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA}}}}},
         .execute = [&quadMesh](RenderGraphNodeContext& ctx)
         {
-            const glm::vec4 color(1.0F, 0.0F, 0.0F, 0.5F);  // 50%-alpha red
-            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(color),
-                               &color);
             const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
@@ -4581,6 +4659,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
 
     builder.AddNode(cameraPass);
     ConvertFillNode(fillPass);
+    // 50%-alpha red, pushed as the tail of the camera block (B1b-5b-4).
+    ConvertCameraNode(overlayPass, "OverlayCamera", nullptr, "testWorldPos.vert.heap", "testSolidColor.frag.heap",
+                      glm::vec4(1.0F, 0.0F, 0.0F, 0.5F));
     builder.AddNode(fillPass);
     builder.AddNode(overlayPass);
     builder.AddDependency(cameraPass.nodeName, overlayPass.nodeName);
@@ -4680,7 +4761,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     builder.AddResource("WawCamera", BufferResourceDesc{.count = 1,
                                                         .stride = sizeof(PerViewData),
-                                                        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                        .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                         .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
     builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
@@ -4710,7 +4792,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
 
     const auto makeWriteNode = [&quadMesh](const std::string& nodeName, const glm::vec4& color, bool bBlend)
     {
-        return RenderGraphNodeCreateInfo{
+        RenderGraphNodeCreateInfo node{
             .nodeName = nodeName,
             .queueType = QueueType::GRAPHICS,
             .resourceUses = {ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
@@ -4738,10 +4820,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
                                                          .srcColor = BlendFactor::SRC_ALPHA,
                                                          .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA}}}}},
             .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-            .execute = [&quadMesh, color](RenderGraphNodeContext& ctx)
+            .execute = [&quadMesh](RenderGraphNodeContext& ctx)
             {
-                vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                                   sizeof(color), &color);
                 const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
                 VkDeviceSize offset = 0;
                 VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
@@ -4749,11 +4829,13 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
                 vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
                 vkCmdDrawIndexed(ctx.commandBuffer, quadMesh.m_nIndexCount, 1, quadMesh.m_nIndexOffset, 0, 0);
             }};
+        ConvertCameraNode(node, "WawCamera", nullptr, "testWorldPos.vert.heap", "testSolidColor.frag.heap", color);
+        return node;
     };
 
     // First pass writes opaque red; second blends 50%-alpha green over it.
-    const RenderGraphNodeCreateInfo first = makeWriteNode("FirstWrite", {1.0F, 0.0F, 0.0F, 1.0F}, false);
-    const RenderGraphNodeCreateInfo second = makeWriteNode("SecondWrite", {0.0F, 1.0F, 0.0F, 0.5F}, true);
+    RenderGraphNodeCreateInfo first = makeWriteNode("FirstWrite", {1.0F, 0.0F, 0.0F, 1.0F}, false);
+    RenderGraphNodeCreateInfo second = makeWriteNode("SecondWrite", {0.0F, 1.0F, 0.0F, 0.5F}, true);
     builder.AddNode(cameraPass);
     builder.AddNode(first);
     builder.AddNode(second);
