@@ -2,7 +2,9 @@
 #include <vulkan/vulkan.h>
 
 #include <cstddef>
+#include <cstring>
 #include <functional>
+#include <optional>
 #include <span>
 #include <stdexcept>
 
@@ -13,6 +15,14 @@
 
 namespace Muyo::RenderGraph
 {
+/// Host-writable, device-addressable root slice for one node/execution.
+struct RenderGraphRootSlice
+{
+    std::byte* host = nullptr;          ///< Host mapping of the slice.
+    VkDeviceAddress deviceAddress = 0;  ///< Device address of the same bytes.
+    size_t size = 0;                    ///< Slice size in bytes.
+};
+
 /// Context handed to a node's execute callback.
 ///
 /// The graph has already recorded the barriers, opened the render pass (graphics nodes) and bound
@@ -40,12 +50,59 @@ struct RenderGraphNodeContext
     VkPipeline pipeline = VK_NULL_HANDLE;                                ///< Bound pipeline.
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;                    ///< Bound pipeline layout.
     VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;  ///< Bind point for the pipeline.
+    /// Allocator for optional root memory. B1b-4 gives each execution a host-visible, device-addressable
+    /// arena; the host owns the layout and the bytes.
+    std::function<RenderGraphRootSlice(size_t, size_t)> allocateRoot;
+    /// Resolve a graph-declared resource to its descriptor-heap index for this node, if the node was
+    /// compiled with `useDescriptorHeap` and the service registered the use.
+    std::function<std::optional<uint32_t>(const ResourceHandle&, ResourceUsage)> getHeapIndex;
+
     /// Non-null for a node compiled with `useDescriptorHeap`. The graph does not bind the heaps centrally
     /// yet: the node callback uploads/binds them (see the UI pass); a later B1b slice adds the central
     /// bind. Both heap and pipeline bind-point state precede the dispatch.
     DescriptorHeapService* descriptorHeap = nullptr;
     /// The device's `maxPushDataSize`; zero for a legacy descriptor node.
     uint32_t maxPushDataSize = 0;
+
+    /// Allocate root memory for this node from the execution's arena.
+    /// @throws std::runtime_error when the node has no root allocator or the arena is exhausted.
+    RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment)
+    {
+        if (!allocateRoot) throw std::runtime_error("RenderGraphNodeContext::AllocateRoot: no root arena");
+        return allocateRoot(size, alignment);
+    }
+
+    /// Write a 32-bit heap index into a root slice.
+    /// @throws std::runtime_error when the write would leave the slice.
+    void WriteRootIndex(RenderGraphRootSlice& slice, size_t offset, uint32_t index)
+    {
+        if (offset > slice.size || sizeof(uint32_t) > slice.size - offset)
+        {
+            throw std::runtime_error("RenderGraphNodeContext::WriteRootIndex: write leaves the root slice");
+        }
+        std::memcpy(slice.host + offset, &index, sizeof(index));
+    }
+
+    /// Make host root writes visible to this command buffer's shader reads.
+    void FlushRoot()
+    {
+        VkMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_MEMORY_BARRIER_2};
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_HOST_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_HOST_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependency.memoryBarrierCount = 1;
+        dependency.pMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(commandBuffer, &dependency);
+    }
+
+    /// @return The heap index for a use, if this node registered it.
+    std::optional<uint32_t> GetHeapIndex(const ResourceHandle& handle, ResourceUsage usage) const
+    {
+        if (!getHeapIndex) return std::nullopt;
+        return getHeapIndex(handle, usage);
+    }
 
     /// Record opaque root data for this node. Offsets are host-defined; the graph only bounds them by
     /// the device's push-data limit. The pipeline has no layout, so this backs the shader's push block.

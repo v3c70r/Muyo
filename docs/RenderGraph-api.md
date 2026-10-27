@@ -46,6 +46,7 @@ Immutable between builds: Execute() only reads it. The definition carries everyt
 | `std::array< VkStridedDeviceAddressRegionKHR, 3 > sbtRegions` | Shader binding table regions, for ray tracing nodes. |
 | `VkExtent2D traceExtent` | Extent the ray tracing trace call is issued over. |
 | `bool useDescriptorHeap` | True when the node was compiled for the descriptor-heap path (B1b). |
+| `std::unordered_map< std::string, uint32_t > heapIndices` | Resource use -> service index, for a heap node. Key is handle#usage. |
 | `QueueType queueType` | Queue the node was compiled for. |
 | `VkPipelineBindPoint bindingPoint` | Bind point of the compiled pipeline. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
@@ -883,10 +884,26 @@ The graph has already recorded the barriers, opened the render pass (graphics no
 | `VkPipeline pipeline` | Bound pipeline. |
 | `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
 | `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
+| `std::function< RenderGraphRootSlice(size_t, size_t)> allocateRoot` | Allocator for optional root memory. B1b-4 gives each execution a host-visible, device-addressable arena; the host owns the layout and the bytes. |
+| `std::function< std::optional< uint32_t >(const ResourceHandle &, ResourceUsage)> getHeapIndex` | Resolve a graph-declared resource to its descriptor-heap index for this node, if the node was compiled with useDescriptorHeap and the service registered the use. |
 | `DescriptorHeapService * descriptorHeap` | Non-null for a node compiled with useDescriptorHeap. The graph does not bind the heaps centrally yet: the node callback uploads/binds them (see the UI pass); a later B1b slice adds the central bind. Both heap and pipeline bind-point state precede the dispatch. |
 | `uint32_t maxPushDataSize` | The device's maxPushDataSize; zero for a legacy descriptor node. |
+| `RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment)` | Allocate root memory for this node from the execution's arena. Throws: `std::runtime_error` - when the node has no root allocator or the arena is exhausted |
+| `void WriteRootIndex(RenderGraphRootSlice &slice, size_t offset, uint32_t index)` | Write a 32-bit heap index into a root slice. Throws: `std::runtime_error` - when the write would leave the slice |
+| `void FlushRoot()` | Make host root writes visible to this command buffer's shader reads. |
+| `std::optional< uint32_t > GetHeapIndex(const ResourceHandle &handle, ResourceUsage usage) const` | Returns: The heap index for a use, if this node registered it. |
 | `void PushData(uint32_t offset, std::span< const std::byte > bytes)` | Record opaque root data for this node. Offsets are host-defined; the graph only bounds them by the device's push-data limit. The pipeline has no layout, so this backs the shader's push block. Throws: `std::runtime_error` - when the node is not a heap node or the range exceeds the device limit |
 | `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). Parameters: `T` - Concrete resource type (e.g. BufferResource, RenderTarget); `handle` - Resource name used in the node's resourceUses Returns: The resource, or nullptr if it is not of type T. |
+
+### `struct Muyo::RenderGraph::RenderGraphRootSlice`
+
+Host-writable, device-addressable root slice for one node/execution.
+
+| Member | Description |
+| --- | --- |
+| `std::byte * host` | Host mapping of the slice. |
+| `VkDeviceAddress deviceAddress` | Device address of the same bytes. |
+| `size_t size` | Slice size in bytes. |
 
 
 ## `RenderGraphNodeResource.h`
