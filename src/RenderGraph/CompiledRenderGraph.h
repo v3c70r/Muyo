@@ -50,6 +50,8 @@ struct CompiledRenderGraphNode
     bool useDescriptorHeap = false;
     /// Resource use -> service index, for a heap node. Key is `handle#usage`.
     std::unordered_map<std::string, uint32_t> heapIndices;
+    /// Push-constant ranges declared by a heap node's shaders; each must be covered by PushData.
+    std::vector<VkPushConstantRange> heapPushRanges;
     /// Queue the node was compiled for.
     QueueType queueType = QueueType::GRAPHICS;
     /// Bind point of the compiled pipeline.

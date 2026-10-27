@@ -47,6 +47,7 @@ Immutable between builds: Execute() only reads it. The definition carries everyt
 | `VkExtent2D traceExtent` | Extent the ray tracing trace call is issued over. |
 | `bool useDescriptorHeap` | True when the node was compiled for the descriptor-heap path (B1b). |
 | `std::unordered_map< std::string, uint32_t > heapIndices` | Resource use -> service index, for a heap node. Key is handle#usage. |
+| `std::vector< VkPushConstantRange > heapPushRanges` | Push-constant ranges declared by a heap node's shaders; each must be covered by PushData. |
 | `QueueType queueType` | Queue the node was compiled for. |
 | `VkPipelineBindPoint bindingPoint` | Bind point of the compiled pipeline. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
@@ -888,6 +889,7 @@ The graph has already recorded the barriers, opened the render pass (graphics no
 | `std::function< std::optional< uint32_t >(const ResourceHandle &, ResourceUsage)> getHeapIndex` | Resolve a graph-declared resource to its descriptor-heap index for this node, if the node was compiled with useDescriptorHeap and the service registered the use. |
 | `DescriptorHeapService * descriptorHeap` | Non-null for a node compiled with useDescriptorHeap. The graph does not bind the heaps centrally yet: the node callback uploads/binds them (see the UI pass); a later B1b slice adds the central bind. Both heap and pipeline bind-point state precede the dispatch. |
 | `uint32_t maxPushDataSize` | The device's maxPushDataSize; zero for a legacy descriptor node. |
+| `std::vector< std::pair< uint32_t, uint32_t > > pushedRanges` | Ranges pushed for the current node, for the builder's record-time coverage check. |
 | `RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment)` | Allocate root memory for this node from the execution's arena. Throws: `std::runtime_error` - when the node has no root allocator or the arena is exhausted |
 | `void WriteRootIndex(RenderGraphRootSlice &slice, size_t offset, uint32_t index)` | Write a 32-bit heap index into a root slice. Throws: `std::runtime_error` - when the write would leave the slice |
 | `void FlushRoot()` | Make host root writes visible to this command buffer's shader reads. |

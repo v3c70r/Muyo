@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include <span>
 
 #include "DescriptorHeapService.h"
@@ -99,4 +100,40 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
     REQUIRE(pMapped != nullptr);
     CHECK(*pMapped == 42);
     pOutput->Unmap();
+
+    // A heap node whose shader declares a push block but whose callback never pushes it is a named
+    // record-time error, not an undefined read at dispatch (#226).
+    RenderGraphBuilder badBuilder(services);
+    badBuilder.ImportResource("GraphHeapInput", pInput);
+    badBuilder.ImportResource("GraphHeapOutput", pOutput);
+    RenderGraphNodeCreateInfo badNode = node;
+    badNode.nodeName = "HeapCopyNoPush";
+    badNode.execute = [](RenderGraphNodeContext&) {};
+    badBuilder.AddNode(badNode);
+    badBuilder.Build();
+    bool bNamedCoverageError = false;
+    try
+    {
+        badBuilder.Execute();
+    }
+    catch (const std::runtime_error& error)
+    {
+        bNamedCoverageError = std::string(error.what()).find("not covered by PushData") != std::string::npos;
+    }
+    CHECK(bNamedCoverageError);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphNodeContext::PushData names its throws",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    RenderGraphNodeContext context{.queueType = QueueType::COMPUTE, .resourceManager = *GetRenderResourceManager()};
+    const uint32_t words[2]{0, 0};
+    CHECK_THROWS_WITH(context.PushData(0, std::as_bytes(std::span{words})),
+                      "RenderGraphNodeContext::PushData: the node is not a descriptor-heap node");
+
+    DescriptorHeapService heap;
+    context.descriptorHeap = &heap;
+    context.maxPushDataSize = 8;
+    CHECK_THROWS_WITH(context.PushData(8, std::as_bytes(std::span{words})),
+                      "RenderGraphNodeContext::PushData: offset + size exceeds maxPushDataSize");
 }

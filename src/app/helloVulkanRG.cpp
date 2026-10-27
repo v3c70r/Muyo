@@ -112,8 +112,6 @@ int main()
         GetRenderResourceManager()->GetTexture("ui_font_texture", pFontPixels, fontWidth, fontHeight);
     DescriptorHeapService uiHeap;
     uiHeap.Initialize(GetRenderDevice());
-    const DescriptorSlot fontImageSlot = uiHeap.AcquireImage(
-        pFont->GetImageViewCreateInfo(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
     VkSamplerCreateInfo uiSamplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     uiSamplerInfo.magFilter = VK_FILTER_LINEAR;
     uiSamplerInfo.minFilter = VK_FILTER_LINEAR;
@@ -276,8 +274,7 @@ int main()
                                                              .dstAlpha = BlendFactor::ZERO}}}}},
                 .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
                 .useDescriptorHeap = true,
-                .execute =
-                    [pUIVertices, pUIIndices, &uiHeap, fontImageSlot, fontSamplerSlot](RenderGraphNodeContext& ctx)
+                .execute = [pUIVertices, pUIIndices, &uiHeap, fontSamplerSlot](RenderGraphNodeContext& ctx)
                 {
                     ImDrawData* pDrawData = ImGui::GetDrawData();
                     if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
@@ -290,8 +287,10 @@ int main()
                         uint32_t fontSampler;
                     };
                     const ImGuiIO& io = ImGui::GetIO();
+                    const std::optional<uint32_t> fontImage = ctx.GetHeapIndex("Font", ResourceUsage::SAMPLED);
+                    if (!fontImage.has_value()) return;
                     const PushBlock push{glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y), glm::vec2(-1.0F),
-                                         fontImageSlot.index, fontSamplerSlot.index};
+                                         *fontImage, fontSamplerSlot.index};
                     uiHeap.Upload(ctx.commandBuffer);
                     ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
