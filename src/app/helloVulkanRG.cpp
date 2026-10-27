@@ -25,6 +25,7 @@
 #endif
 
 #include "Debug/RenderGraphTracePage.h"
+#include "DescriptorHeapService.h"
 #include "DescriptorManager.h"
 #include "FrameSync.h"
 #include "ImGuiControl.h"
@@ -109,6 +110,18 @@ int main()
     ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&pFontPixels, &fontWidth, &fontHeight);
     TextureResource* pFont =
         GetRenderResourceManager()->GetTexture("ui_font_texture", pFontPixels, fontWidth, fontHeight);
+    DescriptorHeapService uiHeap;
+    uiHeap.Initialize(GetRenderDevice());
+    const DescriptorSlot fontImageSlot = uiHeap.AcquireImage(
+        pFont->GetImageViewCreateInfo(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE);
+    VkSamplerCreateInfo uiSamplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    uiSamplerInfo.magFilter = VK_FILTER_LINEAR;
+    uiSamplerInfo.minFilter = VK_FILTER_LINEAR;
+    uiSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    uiSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    uiSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    uiSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    const DescriptorSlot fontSamplerSlot = uiHeap.AcquireSampler(uiSamplerInfo);
     // The UI shader samples one texture, so the id is only a placeholder.
     ImGui::GetIO().Fonts->SetTexID(static_cast<ImTextureID>(0));
 
@@ -236,8 +249,7 @@ int main()
                         ResourceUse{.handle = ResourceHandle("Font"),
                                     .io = ResourceIOType::READ,
                                     .usage = ResourceUsage::SAMPLED,
-                                    .kind = ResourceKind::IMAGE,
-                                    .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                                    .kind = ResourceKind::IMAGE},
                         ResourceUse{.handle = ResourceHandle("UIVertices"),
                                     .io = ResourceIOType::READ,
                                     .usage = ResourceUsage::VERTEX_BUFFER,
@@ -251,7 +263,7 @@ int main()
                                     .usage = ResourceUsage::PRESENT,
                                     .kind = ResourceKind::IMAGE},
                     },
-                .shaderNames = {"ui.vert.slang", "ui.frag"},
+                .shaderNames = {"ui.vert.slang", "ui.frag.heap"},
                 .psoDesc = {.vertexType = VertexType::UI,
                             .rasterState = {.cullMode = CullMode::NONE},
                             // Alpha blending, matching RenderPassUI: the font texture carries glyph
@@ -263,21 +275,25 @@ int main()
                                                              .srcAlpha = BlendFactor::ONE,
                                                              .dstAlpha = BlendFactor::ZERO}}}}},
                 .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
-                .execute = [pUIVertices, pUIIndices](RenderGraphNodeContext& ctx)
+                .useDescriptorHeap = true,
+                .execute =
+                    [pUIVertices, pUIIndices, &uiHeap, fontImageSlot, fontSamplerSlot](RenderGraphNodeContext& ctx)
                 {
                     ImDrawData* pDrawData = ImGui::GetDrawData();
                     if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
 
-                    struct PushConstBlock
+                    struct PushBlock
                     {
                         glm::vec2 scale;
                         glm::vec2 translate;
+                        uint32_t fontImage;
+                        uint32_t fontSampler;
                     };
                     const ImGuiIO& io = ImGui::GetIO();
-                    const PushConstBlock pushConstants{glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y),
-                                                       glm::vec2(-1.0F)};
-                    vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                                       sizeof(pushConstants), &pushConstants);
+                    const PushBlock push{glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y), glm::vec2(-1.0F),
+                                         fontImageSlot.index, fontSamplerSlot.index};
+                    uiHeap.Upload(ctx.commandBuffer);
+                    ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
                     VkDeviceSize offset = 0;
                     VkBuffer vertexBuffer = pUIVertices->buffer();
