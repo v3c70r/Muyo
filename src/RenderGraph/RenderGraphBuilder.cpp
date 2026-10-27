@@ -416,7 +416,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                     result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
                         m_services.descriptorHeap->AcquireImage(pImage->GetImageViewCreateInfo(), layout, type).index;
                 }
-                else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER)
+                else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER ||
+                         use.usage == ResourceUsage::DRAW_COMMAND_BUFFER)
                 {
                     const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource);
                     if (pBuffer == nullptr) continue;
