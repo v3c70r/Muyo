@@ -21,6 +21,12 @@
 
 namespace
 {
+/// One spelling for the node-local heap-index key: `handle#usage`. Kept in one place because a
+/// divergent edit in either writer/reader makes GetHeapIndex silently return nullopt.
+std::string HeapIndexKey(const Muyo::RenderGraph::ResourceHandle& handle, Muyo::RenderGraph::ResourceUsage usage)
+{
+    return handle + "#" + std::to_string(static_cast<uint32_t>(usage));
+}
 bool IsDepthFormat(VkFormat format)
 {
     switch (format)
@@ -387,8 +393,6 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                                          "bindings; convert them to a .heap.slang variant.");
             }
 
-            const auto heapKey = [](const ResourceHandle& handle, ResourceUsage usage)
-            { return handle + "#" + std::to_string(static_cast<uint32_t>(usage)); };
             for (const ResolvedResourceUse& use : result.resourceUses)
             {
                 const IRenderResource* pResource = ResolveResource(use.handle);
@@ -403,7 +407,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                     const VkDescriptorType type = use.usage == ResourceUsage::SAMPLED
                                                       ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
                                                       : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-                    result.heapIndices[heapKey(use.handle, use.usage)] =
+                    result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
                         m_services.descriptorHeap->AcquireImage(pImage->GetImageViewCreateInfo(), layout, type).index;
                 }
                 else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER)
@@ -420,7 +424,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                     const VkDescriptorType type = use.usage == ResourceUsage::UNIFORM_BUFFER
                                                       ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
                                                       : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                    result.heapIndices[heapKey(use.handle, use.usage)] =
+                    result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
                         m_services.descriptorHeap
                             ->AcquireBuffer(m_services.device->GetBufferDeviceAddress(pBuffer->buffer()) + offset, size,
                                             type)
@@ -430,7 +434,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                 {
                     const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
                     if (pAccelerationStructure == nullptr) continue;
-                    result.heapIndices[heapKey(use.handle, use.usage)] =
+                    result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
                         m_services.descriptorHeap
                             ->AcquireAccelerationStructure(pAccelerationStructure->GetDeviceAddress())
                             .index;
@@ -2280,7 +2284,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             context.descriptorHeap = rgn.useDescriptorHeap ? m_services.descriptorHeap : nullptr;
             context.getHeapIndex = [&rgn](const ResourceHandle& handle, ResourceUsage usage) -> std::optional<uint32_t>
             {
-                const auto it = rgn.heapIndices.find(handle + "#" + std::to_string(static_cast<uint32_t>(usage)));
+                const auto it = rgn.heapIndices.find(HeapIndexKey(handle, usage));
                 if (it == rgn.heapIndices.end()) return std::nullopt;
                 return it->second;
             };
