@@ -79,6 +79,14 @@ public:
     /// Retire a static slot after `timelineValue`; the slot returns to the free-list when
     /// `ResetExecution` observes a completed value at least this large.
     void Retire(DescriptorSlot slot, uint64_t timelineValue);
+    /// Release a static slot immediately. Only safe once every execution that recorded with it has
+    /// completed; a slot whose content is still needed by in-flight work must be `Retire`d instead.
+    /// Ring slots are released by the execution reset and are ignored here.
+    /// @param slot Slot returned by an Acquire* call.
+    void Release(DescriptorSlot slot)
+    {
+        if (!slot.bRing) ReleaseStaticSlot(slot);
+    }
 
     /// Select the execution slot that subsequent ring acquisitions use.
     void BeginExecution(uint32_t slot);

@@ -117,6 +117,163 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
     CHECK(bNamedCoverageError);
 }
 
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: repeated builds reuse descriptor slots",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // B2b-2. Build() acquires a static heap slot per resource use, and before the content cache every
+    // build took two new slots. The buffer region has 256 static slots, so an unchanged graph exhausted
+    // it after 128 builds - which is the per-frame Build case B2 exists to make cheap. The cache keys on
+    // the descriptor's content, so 140 builds of the same declaration must stay at two slots.
+    VkRenderDevice* device = GetRenderDevice();
+    if (!device->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2b-2 records the row as a gap, not a pass");
+    }
+
+    DescriptorHeapService heap;
+    heap.Initialize(device);
+
+    BufferResource* pInput = GetRenderResourceManager()->AllocateBuffer(
+        "BuildCacheInput", sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    BufferResource* pOutput = GetRenderResourceManager()->AllocateBuffer(
+        "BuildCacheOutput", sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    REQUIRE(pInput != nullptr);
+    REQUIRE(pOutput != nullptr);
+
+    RenderGraphServices services{
+        .device = device, .resourceManager = GetRenderResourceManager(), .descriptorHeap = &heap};
+    RenderGraphBuilder builder(services);
+    builder.ImportResource("BuildCacheInput", pInput);
+    builder.ImportResource("BuildCacheOutput", pOutput);
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "BuildCacheCopy",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {{.handle = ResourceHandle("BuildCacheInput"),
+                                                                .io = ResourceIOType::READ,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER},
+                                                               {.handle = ResourceHandle("BuildCacheOutput"),
+                                                                .io = ResourceIOType::WRITE,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER}},
+                                              .shaderNames = {"copyBuffer.comp.heap"},
+                                              .execute = [](RenderGraphNodeContext&) {}});
+
+    int nBuilt = 0;
+    std::string failure;
+    for (; nBuilt < 140; ++nBuilt)
+    {
+        try
+        {
+            builder.Build();
+        }
+        catch (const std::exception& error)
+        {
+            failure = error.what();
+            break;
+        }
+    }
+    INFO("build " << nBuilt << " failed: " << failure);
+    CHECK(nBuilt == 140);
+}
+
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a recreated resource releases its descriptor slots",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // The other half of the cache: a graph-owned resource whose declaration changes is recreated by
+    // B2a's path, and the slot that named the old resource must be released with it. Without the
+    // release, a resize per frame leaks one buffer slot per frame and exhausts the 256-slot region.
+    VkRenderDevice* device = GetRenderDevice();
+    if (!device->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2b-2 records the row as a gap, not a pass");
+    }
+
+    RenderGraphBuilder builder(device);
+    const auto declare = [&builder](uint64_t count)
+    {
+        builder.AddResource("RecreatedBuffer", BufferResourceDesc{.count = count,
+                                                                  .stride = sizeof(uint32_t),
+                                                                  .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                                                  .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                                  .lifetime = ResourceLifetime::Persistent});
+    };
+    declare(4);
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "RecreatedCopy",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {{.handle = ResourceHandle("RecreatedBuffer"),
+                                                                .io = ResourceIOType::READ,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER}},
+                                              .shaderNames = {"copyBuffer.comp.heap"},
+                                              .execute = [](RenderGraphNodeContext&) {}});
+
+    int nBuilt = 0;
+    std::string failure;
+    for (; nBuilt < 300; ++nBuilt)
+    {
+        declare(4 + nBuilt);
+        try
+        {
+            builder.Build();
+        }
+        catch (const std::exception& error)
+        {
+            failure = error.what();
+            break;
+        }
+    }
+    INFO("build " << nBuilt << " failed: " << failure);
+    CHECK(nBuilt == 300);
+}
+
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: repeated builds reuse image descriptor slots",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // The image half of the content key: view handle, format, extent/view type, subresources and layout.
+    // The image region has 256 static slots, so 300 builds of one unchanged storage image would exhaust
+    // it without the cache.
+    VkRenderDevice* device = GetRenderDevice();
+    if (!device->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2b-2 records the row as a gap, not a pass");
+    }
+
+    RenderGraphBuilder builder(device);
+    builder.AddResource("BuildCacheImage",
+                        ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
+                                          .extent = {16, 16},
+                                          .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                          .lifetime = ResourceLifetime::Persistent});
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "BuildCacheFill",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {{.handle = ResourceHandle("BuildCacheImage"),
+                                                                .io = ResourceIOType::READ_WRITE,
+                                                                .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                .kind = ResourceKind::IMAGE}},
+                                              .shaderNames = {"testFillColor.comp.heap"},
+                                              .execute = [](RenderGraphNodeContext&) {}});
+
+    int nBuilt = 0;
+    std::string failure;
+    for (; nBuilt < 300; ++nBuilt)
+    {
+        try
+        {
+            builder.Build();
+        }
+        catch (const std::exception& error)
+        {
+            failure = error.what();
+            break;
+        }
+    }
+    INFO("build " << nBuilt << " failed: " << failure);
+    CHECK(nBuilt == 300);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphNodeContext::PushData names its throws",
                  "[RenderGraphBuilder][DescriptorHeap]")
 {

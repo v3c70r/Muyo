@@ -185,6 +185,7 @@ RenderGraphBuilder::~RenderGraphBuilder()
     // this body, which is too late.
     m_executor.WaitIdle();
     m_compiledGraph.Destroy(m_vkDevice);
+    ReleaseCachedDescriptors();
     // After the compiled graph, because its descriptors and pipelines name these buffers, and before the
     // device goes away, because the blocks hold memory this class owns.
     DestroyAliasedTransients();
@@ -198,6 +199,74 @@ RenderGraphBuilder::~RenderGraphBuilder()
     }
     m_rootArenas.clear();
     m_vkDevice = VK_NULL_HANDLE;
+}
+
+namespace
+{
+/// @param seed  Running hash.
+/// @param value Field to mix in.
+/// @return The combined hash (the boost::hash_combine mix).
+std::size_t CombineDescriptorHash(std::size_t seed, std::size_t value)
+{
+    return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
+}
+}  // namespace
+
+bool RenderGraphBuilder::DescriptorKey::operator==(const DescriptorKey& other) const
+{
+    if (type != other.type || layout != other.layout || address != other.address || size != other.size)
+    {
+        return false;
+    }
+    const bool bImage = type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    if (!bImage) return true;
+    return view.flags == other.view.flags && view.image == other.view.image && view.viewType == other.view.viewType &&
+           view.format == other.view.format && view.components.r == other.view.components.r &&
+           view.components.g == other.view.components.g && view.components.b == other.view.components.b &&
+           view.components.a == other.view.components.a &&
+           view.subresourceRange.aspectMask == other.view.subresourceRange.aspectMask &&
+           view.subresourceRange.baseMipLevel == other.view.subresourceRange.baseMipLevel &&
+           view.subresourceRange.levelCount == other.view.subresourceRange.levelCount &&
+           view.subresourceRange.baseArrayLayer == other.view.subresourceRange.baseArrayLayer &&
+           view.subresourceRange.layerCount == other.view.subresourceRange.layerCount;
+}
+
+std::size_t RenderGraphBuilder::DescriptorKeyHash::operator()(const DescriptorKey& key) const
+{
+    std::size_t seed = std::hash<uint32_t>{}(static_cast<uint32_t>(key.type));
+    seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(static_cast<uint32_t>(key.layout)));
+    seed = CombineDescriptorHash(seed, std::hash<uint64_t>{}(key.address));
+    seed = CombineDescriptorHash(seed, std::hash<uint64_t>{}(key.size));
+    const bool bImage = key.type == VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE || key.type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    if (bImage)
+    {
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.flags));
+        seed = CombineDescriptorHash(seed, std::hash<uint64_t>{}(reinterpret_cast<uint64_t>(key.view.image)));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(static_cast<uint32_t>(key.view.viewType)));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(static_cast<uint32_t>(key.view.format)));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.subresourceRange.aspectMask));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.subresourceRange.baseMipLevel));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.subresourceRange.levelCount));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.subresourceRange.baseArrayLayer));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.subresourceRange.layerCount));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.components.r));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.components.g));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.components.b));
+        seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.components.a));
+    }
+    return seed;
+}
+
+void RenderGraphBuilder::ReleaseCachedDescriptors()
+{
+    if (m_services.descriptorHeap != nullptr)
+    {
+        for (const auto& entry : m_descriptorCache)
+        {
+            m_services.descriptorHeap->Release(entry.second);
+        }
+    }
+    m_descriptorCache.clear();
 }
 
 void RenderGraphBuilder::EnsureRootArena(uint32_t slot)
@@ -411,8 +480,16 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                                                  : VK_IMAGE_LAYOUT_GENERAL;
                 const VkDescriptorType type = use.usage == ResourceUsage::SAMPLED ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
                                                                                   : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-                result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
-                    m_services.descriptorHeap->AcquireImage(pImage->GetImageViewCreateInfo(), layout, type).index;
+                DescriptorKey key{};
+                key.type = type;
+                key.layout = layout;
+                key.view = pImage->GetImageViewCreateInfo();
+                const auto [it, inserted] = m_descriptorCache.try_emplace(key);
+                if (inserted)
+                {
+                    it->second = m_services.descriptorHeap->AcquireImage(key.view, layout, type);
+                }
+                result.heapIndices[HeapIndexKey(use.handle, use.usage)] = it->second.index;
             }
             else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER ||
                      use.usage == ResourceUsage::DRAW_COMMAND_BUFFER)
@@ -429,19 +506,30 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                 const VkDescriptorType type = use.usage == ResourceUsage::UNIFORM_BUFFER
                                                   ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
                                                   : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
-                    m_services.descriptorHeap
-                        ->AcquireBuffer(m_services.device->GetBufferDeviceAddress(pBuffer->buffer()) + offset, size,
-                                        type)
-                        .index;
+                DescriptorKey key{};
+                key.type = type;
+                key.address = m_services.device->GetBufferDeviceAddress(pBuffer->buffer()) + offset;
+                key.size = size;
+                const auto [it, inserted] = m_descriptorCache.try_emplace(key);
+                if (inserted)
+                {
+                    it->second = m_services.descriptorHeap->AcquireBuffer(key.address, key.size, type);
+                }
+                result.heapIndices[HeapIndexKey(use.handle, use.usage)] = it->second.index;
             }
             else if (use.usage == ResourceUsage::ACCEL_STRUCTURE)
             {
                 const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
                 if (pAccelerationStructure == nullptr) continue;
-                result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
-                    m_services.descriptorHeap->AcquireAccelerationStructure(pAccelerationStructure->GetDeviceAddress())
-                        .index;
+                DescriptorKey key{};
+                key.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+                key.address = pAccelerationStructure->GetDeviceAddress();
+                const auto [it, inserted] = m_descriptorCache.try_emplace(key);
+                if (inserted)
+                {
+                    it->second = m_services.descriptorHeap->AcquireAccelerationStructure(key.address);
+                }
+                result.heapIndices[HeapIndexKey(use.handle, use.usage)] = it->second.index;
             }
         }
 
@@ -1391,9 +1479,11 @@ void RenderGraphBuilder::Build()
         {
             if (ResourceMatchesDesc(*pExisting, desc)) continue;
             // The old resource may still be read by the previous execution: Build() can follow a
-            // non-blocking Execute(). Wait until the GPU is done before freeing it. #40 replaces this
-            // wait with a retire behind the execution timeline.
+            // non-blocking Execute(). Wait until the GPU is done before freeing it, then drop the
+            // descriptor cache so the next compile cannot hand out a slot that still names the old
+            // resource. #40 replaces the wait with a retire behind the execution timeline.
             m_executor.WaitIdle();
+            ReleaseCachedDescriptors();
             m_services.resourceManager->RemoveResource(handle);
         }
         AllocateResource(desc, *m_services.resourceManager, handle);
