@@ -1058,6 +1058,17 @@ How long a resource lives relative to the graph.
 | `Persistent` | Survives the frame boundary (e.g. TAA history, accumulation buffers). |
 | `Imported` | Externally owned (old pass system, swapchain images); graph does not allocate. |
 
+### `bool Muyo::RenderGraph::ResourceMatchesDesc(const IRenderResource &resource, const ResourceDesc &desc)`
+
+EffectiveImageUsageFlags derives from the format. Buffers compare usage, memory usage and capacity: a host write that grows a buffer's size within its capacity is not a declaration change, so it must not force a recreation.
+
+| Parameter | Description |
+| --- | --- |
+| `resource` | Existing resource to test. |
+| `desc` | Declaration from this Build(). |
+
+**Returns** — True when resource already has the characteristics desc declares, so Build() may reuse it. This is the descriptor-keyed half of the reuse rule (#209): a changed extent, format, usage or a size that no longer fits is a mismatch and the resource is recreated; a repeated Build() with the same declaration reuses the same object.
+
 
 ## `RenderGraphResourceHandle.h`
 

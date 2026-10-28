@@ -42,6 +42,13 @@ public:
     /// @return The image's extent, for a consumer that must know the render area (an imported render
     ///         target has no ResourceDesc to read it from).
     VkExtent2D GetImageExtent() const { return {m_imageInfo.extent.width, m_imageInfo.extent.height}; }
+    /// @return The image's usage flags as created, including the attachment bits the allocator adds for
+    ///         the format. Build() compares this against a declaration before reusing a resource (#209).
+    VkImageUsageFlags GetImageUsage() const { return m_imageInfo.usage; }
+    /// @return The created mip level count.
+    uint32_t GetImageMipCount() const { return m_imageInfo.mipLevels; }
+    /// @return The created array layer count.
+    uint32_t GetImageLayerCount() const { return m_imageInfo.arrayLayers; }
 
 protected:
     void CreateImageInternal(const VmaMemoryUsage& memoryUsage)
@@ -218,6 +225,10 @@ public:
     /// @return The bytes actually allocated, which is at least `GetSize()`: a buffer grown by `SetData`
     ///         keeps its allocation, so a repeat upload of the same order never re-creates the handle.
     size_t GetCapacity() const { return m_nCapacity; }
+    /// @return The Vulkan usage flags the buffer was created with.
+    VkBufferUsageFlags GetBufferUsage() const { return BUFFER_USAGE; }
+    /// @return The VMA memory usage the buffer was created with.
+    VmaMemoryUsage GetMemoryUsage() const { return MEMORY_USAGE; }
 
 protected:
     /// Allocate this resource's own storage and record its capacity, so a later `SetData` reuses the

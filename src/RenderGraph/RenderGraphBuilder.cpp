@@ -1367,10 +1367,26 @@ void RenderGraphBuilder::Build()
     // Allocate all graph-owned resources before compiling nodes. A buffer transient is skipped here and
     // created unbound below instead: its memory belongs to a block, and the manager's path would give it
     // memory of its own.
+    //
+    // Reuse is keyed on the declaration, not only the handle (#209): the manager returns an existing
+    // resource by name, so a repeated Build() with an unchanged desc keeps it, while a changed extent,
+    // format, usage or a size that differs is recreated. The manager remains the owner of a
+    // graph-owned resource (the builder destroys only aliased transients); the descriptor cache that
+    // follows in B2 will key on the resolved resource, not on this name.
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
         if (m_importedResources.find(handle) != m_importedResources.end()) continue;
         if (IsAliasedTransient(desc)) continue;
+        IRenderResource* pExisting = m_services.resourceManager->GetResource<IRenderResource>(handle);
+        if (pExisting != nullptr)
+        {
+            if (ResourceMatchesDesc(*pExisting, desc)) continue;
+            // The old resource may still be read by the previous execution: Build() can follow a
+            // non-blocking Execute(). Wait until the GPU is done before freeing it. #40 replaces this
+            // wait with a retire behind the execution timeline.
+            m_executor.WaitIdle();
+            m_services.resourceManager->RemoveResource(handle);
+        }
         AllocateResource(desc, *m_services.resourceManager, handle);
     }
     BuildAliasedTransients(executionOrder);
