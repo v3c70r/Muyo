@@ -11,6 +11,7 @@
 #include <vulkan/vulkan.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <glm/glm.hpp>
@@ -123,11 +124,13 @@ int main()
     // The UI shader samples one texture, so the id is only a placeholder.
     ImGui::GetIO().Fonts->SetTexID(static_cast<ImTextureID>(0));
 
+    // One vertex/index buffer pair per swapchain image: with two executions in flight, frame N+1 must
+    // not overwrite the UI data frame N's GPU work is still reading. The graph imports the pair for the
+    // acquired image and binds it per execution.
     const std::vector<ImDrawVert> dummyVertices = {ImDrawVert{{0.0F, 0.0F}, {0.0F, 0.0F}, 0}};
     const std::vector<ImDrawIdx> dummyIndices = {0};
-    VertexBuffer<ImDrawVert>* pUIVertices =
-        GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertexBuffer", dummyVertices, false);
-    IndexBuffer* pUIIndices = GetRenderResourceManager()->GetIndexBuffer("UIIndexBuffer", dummyIndices, false);
+    std::vector<VertexBuffer<ImDrawVert>*> pUIVertices;
+    std::vector<IndexBuffer*> pUIIndices;
 
     // Retains the last few hundred executions so the lane view can be scrubbed. Declared outside the swapchain scope
     // because the trace outlives any one swapchain: a resize rebuilds the swapchain but not the history.
@@ -146,6 +149,29 @@ int main()
             VkExtent2D{static_cast<uint32_t>(initialWidth), static_cast<uint32_t>(initialHeight)});
         FrameSync frameSync(GetRenderDevice(), &swapchain, kImagesInFlight);
 
+        // The driver may hand back more images than the requested count, so size the pairs from the
+        // swapchain after creation and after every recreation.
+        const auto ensureUIBuffers = [&]()
+        {
+            const uint32_t imageCount = swapchain.GetImageCount();
+            pUIVertices.resize(imageCount, nullptr);
+            pUIIndices.resize(imageCount, nullptr);
+            for (uint32_t i = 0; i < imageCount; ++i)
+            {
+                if (pUIVertices[i] == nullptr)
+                {
+                    pUIVertices[i] = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>(
+                        "UIVertexBuffer" + std::to_string(i), dummyVertices, false);
+                }
+                if (pUIIndices[i] == nullptr)
+                {
+                    pUIIndices[i] = GetRenderResourceManager()->GetIndexBuffer("UIIndexBuffer" + std::to_string(i),
+                                                                               dummyIndices, false);
+                }
+            }
+        };
+        ensureUIBuffers();
+
         // One builder for the process. Build() is per frame, and the resource, descriptor and pipeline
         // caches make an unchanged declaration cheap; a builder per frame would discard all three. The
         // acquired swapchain image rotates, so only that import changes per frame.
@@ -153,8 +179,10 @@ int main()
         // pass starts (the upload records vkCmdCopyBuffer). Inject the same service the UI sampler is
         // acquired from, or the pushed sampler index and the bound resource heap would be different
         // heaps.
-        RenderGraphBuilder builder(RenderGraphServices{
-            .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
+        RenderGraphBuilder builder(
+            RenderGraphServices{
+                .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap},
+            kImagesInFlight);
         // Record every execution for the lane view. The sink's presence is what turns tracing on, and it costs
         // one null check per node when the page is not shown.
         builder.SetTraceSink([page = pTracePage.get()](RenderGraph::RenderGraphTrace trace)
@@ -163,8 +191,8 @@ int main()
         // first Build; image 0 is only the declaration-time placeholder.
         builder.ImportResource("Present", swapchain.GetImageResource(0));
         builder.ImportResource("Font", pFont);
-        builder.ImportResource("UIVertices", pUIVertices);
-        builder.ImportResource("UIIndices", pUIIndices);
+        builder.ImportResource("UIVertices", pUIVertices[0]);
+        builder.ImportResource("UIIndices", pUIIndices[0]);
         builder.AddNode(RenderGraphNodeCreateInfo{
             .nodeName = "UI",
             .queueType = QueueType::GRAPHICS,
@@ -199,10 +227,15 @@ int main()
                                                          .srcAlpha = BlendFactor::ONE,
                                                          .dstAlpha = BlendFactor::ZERO}}}}},
             .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
-            .execute = [pUIVertices, pUIIndices, fontSamplerSlot](RenderGraphNodeContext& ctx)
+            .execute = [fontSamplerSlot](RenderGraphNodeContext& ctx)
             {
                 ImDrawData* pDrawData = ImGui::GetDrawData();
                 if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
+                // The import is per execution: with two frames in flight, each reads the buffer pair
+                // imported for its own acquired image.
+                const auto* pVertices = dynamic_cast<const BufferResource*>(ctx.resolveResource("UIVertices"));
+                const auto* pIndices = dynamic_cast<const BufferResource*>(ctx.resolveResource("UIIndices"));
+                if (pVertices == nullptr || pIndices == nullptr) return;
 
                 struct PushBlock
                 {
@@ -219,9 +252,9 @@ int main()
                 ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
                 VkDeviceSize offset = 0;
-                VkBuffer vertexBuffer = pUIVertices->buffer();
+                VkBuffer vertexBuffer = pVertices->buffer();
                 vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
-                vkCmdBindIndexBuffer(ctx.commandBuffer, pUIIndices->buffer(), 0, VK_INDEX_TYPE_UINT16);
+                vkCmdBindIndexBuffer(ctx.commandBuffer, pIndices->buffer(), 0, VK_INDEX_TYPE_UINT16);
 
                 int32_t vertexOffset = 0;
                 uint32_t indexOffset = 0;
@@ -258,6 +291,7 @@ int main()
                                       VK_PRESENT_MODE_FIFO_KHR, kImagesInFlight, /*bOwnSurface=*/false,
                                       VkExtent2D{static_cast<uint32_t>(width), static_cast<uint32_t>(height)});
             frameSync.OnSwapchainRecreated();
+            ensureUIBuffers();
             // The old images are gone and the device was idle, so the descriptors and pipelines that
             // named them can be released; the next Build recreates what the new swapchain needs.
             builder.ReleaseCachedDeviceObjects();
@@ -301,25 +335,6 @@ int main()
             pTracePage->Render();
             ImGui::Render();
 
-            ImDrawData* pDrawData = ImGui::GetDrawData();
-            if (pDrawData != nullptr && pDrawData->TotalVtxCount > 0)
-            {
-                pUIVertices->SetData(nullptr, pDrawData->TotalVtxCount * sizeof(ImDrawVert));
-                pUIIndices->SetData(nullptr, pDrawData->TotalIdxCount * sizeof(ImDrawIdx));
-                auto* pVertexDst = static_cast<ImDrawVert*>(pUIVertices->Map());
-                auto* pIndexDst = static_cast<ImDrawIdx*>(pUIIndices->Map());
-                for (int n = 0; n < pDrawData->CmdListsCount; ++n)
-                {
-                    const ImDrawList* pList = pDrawData->CmdLists[n];
-                    std::memcpy(pVertexDst, pList->VtxBuffer.Data, pList->VtxBuffer.size_in_bytes());
-                    std::memcpy(pIndexDst, pList->IdxBuffer.Data, pList->IdxBuffer.size_in_bytes());
-                    pVertexDst += pList->VtxBuffer.Size;
-                    pIndexDst += pList->IdxBuffer.Size;
-                }
-                pUIVertices->Unmap();
-                pUIIndices->Unmap();
-            }
-
             const std::optional<FrameSync::Frame> frame = frameSync.BeginFrame();
             if (!frame.has_value())
             {
@@ -328,9 +343,35 @@ int main()
                 continue;
             }
 
-            // The acquired image rotates; re-import it for this frame. The node declaration is fixed
-            // and Build() reuses the resource, descriptor and pipeline caches.
+            // Upload this frame's UI data into the pair belonging to the acquired image. The draw data
+            // was built before BeginFrame; the upload waits for the image's pair because the swapchain
+            // image itself is exclusive to this frame.
+            ImDrawData* pDrawData = ImGui::GetDrawData();
+            VertexBuffer<ImDrawVert>* pFrameVertices = pUIVertices[frame->imageIndex];
+            IndexBuffer* pFrameIndices = pUIIndices[frame->imageIndex];
+            if (pDrawData != nullptr && pDrawData->TotalVtxCount > 0)
+            {
+                pFrameVertices->SetData(nullptr, pDrawData->TotalVtxCount * sizeof(ImDrawVert));
+                pFrameIndices->SetData(nullptr, pDrawData->TotalIdxCount * sizeof(ImDrawIdx));
+                auto* pVertexDst = static_cast<ImDrawVert*>(pFrameVertices->Map());
+                auto* pIndexDst = static_cast<ImDrawIdx*>(pFrameIndices->Map());
+                for (int n = 0; n < pDrawData->CmdListsCount; ++n)
+                {
+                    const ImDrawList* pList = pDrawData->CmdLists[n];
+                    std::memcpy(pVertexDst, pList->VtxBuffer.Data, pList->VtxBuffer.size_in_bytes());
+                    std::memcpy(pIndexDst, pList->IdxBuffer.Data, pList->IdxBuffer.size_in_bytes());
+                    pVertexDst += pList->VtxBuffer.Size;
+                    pIndexDst += pList->IdxBuffer.Size;
+                }
+                pFrameVertices->Unmap();
+                pFrameIndices->Unmap();
+            }
+
+            // The acquired image rotates; re-import it and its UI buffer pair for this frame. The node
+            // declaration is fixed and Build() reuses the resource, descriptor and pipeline caches.
             builder.ImportResource("Present", swapchain.GetImageResource(frame->imageIndex));
+            builder.ImportResource("UIVertices", pFrameVertices);
+            builder.ImportResource("UIIndices", pFrameIndices);
             builder.Build();
             builder.Execute(frameSync.ExecuteInfo(*frame));
             const VkResult presentResult = frameSync.Present(*frame);
