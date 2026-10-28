@@ -69,7 +69,7 @@ several are currently on the wrong side of it.
 | Transient resources, aliasing, lifetimes | **graph** | allocator | The policy is the graph's; the memory is not. |
 | Barriers and layouts | **graph** | — | The reason the graph exists. |
 | Pipeline creation | **graph** | shader source provider, pipeline cache | It builds pipelines from node descriptions today. Keep that — but a client should be able to supply SPIR-V bytes and a cache, not only a file name on disk. |
-| Descriptor sets | **graph** | descriptor allocator | Per #15's content-addressed design. |
+| Descriptor heap and bindless binding | **graph** | descriptor-heap service | B1a/B1b replaced descriptor sets: the graph receives a `DescriptorHeapService`, writes no set layouts, pools or pipeline layouts, and exposes a use's heap index. |
 | Swapchain, present, frame pacing | **host** | — | Not the graph's, not the pipeline's. |
 | Validation-layer enablement | **host** | — | See below; this is currently the device's and should not be. |
 
@@ -95,10 +95,10 @@ Two ways to get a clean boundary:
 
 Choose the shared library, and revisit on the same trigger as the C ABI: a client that cannot use
 `muyo_device`. The current problem is not the *direction* of the dependency — it is that `muyo_rg` does
-not stand alone: 8 files under `src/RenderGraph/` include at least one header from outside the directory,
-2 code call sites reach for engine singletons (both in the transitional constructor), and the target
-links `muyo` publicly. The scan behind those numbers is in `Roadmap-Visual.md` section 7; #53 owns the
-remaining work. Fix the boundary, keep the direction.
+not stand alone: 9 files under `src/RenderGraph/` include at least one header from outside the directory,
+1 code call site reaches for an engine singleton (`GetRenderResourceManager()` in the transitional
+constructor's delegation), and the target links `muyo` publicly. The scans behind those numbers are in
+`Roadmap-Visual.md` section 7; #53 owns the remaining work. Fix the boundary, keep the direction.
 
 ### 3. Error reporting is unresolved, deliberately
 
@@ -303,10 +303,11 @@ follow-up question, and reads the message in a log. Three consequences, all chea
 small:
 
 **Fail at `Build()`, not at the GPU.** A graph can check its own declarations before recording anything:
-every read has a writer, no cycles, attachment extents agree, descriptor bindings match reflection, the
-queue families a node asks for exist. Each of those is a *declaration* error, and reporting it at
-`Build()` points at the line that is wrong instead of at a handle several frames later. The declaration
-checks landed in #55: the failure index in `docs/RenderGraph.md` lists each message with its cause and fix.
+every read has a writer, no cycles, attachment extents agree, a use's kind and usage agree with its
+resource, the queue families a node asks for exist. Each of those is a *declaration* error, and reporting
+it at `Build()` points at the line that is wrong instead of at a handle several frames later. The
+declaration checks landed in #55: the failure index in `docs/RenderGraph.md` lists each message with its
+cause and fix.
 
 **Name the graph entity, not the handle.** The validation layer can only say
 `VkBuffer 0x…`. The graph knows which node and which resource that is.

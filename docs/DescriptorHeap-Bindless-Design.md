@@ -1,12 +1,17 @@
 # Descriptor heap and direct bindless — design note
 
-**Status:** design draft, not implemented. Supersedes
+**Status:** implemented through B2. B0 (#213), B1a (#215), B1b (#216) and B2 (#217, merged as #254)
+landed; the graph path is heap-only, `Build()` is per frame with resource/pipeline/descriptor caches, and
+`inFlightCount > 1` works with per-execution transient arenas (#40) and per-execution bindings (#83).
+B3 (`VK_KHR_unified_image_layouts`) is deferred and driver-gated; B4 (GPU-written root data) is optional.
+Supersedes
 [`DescriptorSet-Lifecycle-Design.md`](DescriptorSet-Lifecycle-Design.md), which described the
 content-addressed descriptor-set cache. That cache was the right answer to the question it was asked;
 `VK_EXT_descriptor_heap` removes the question.
 
-This note is deliberately **not** in the Doxygen `INPUT` set. It describes a design the repository has
-not committed to yet, and `AGENTS.md` section 3 keeps unimplemented designs out of the API reference.
+This note remains deliberately **not** in the Doxygen `INPUT` set. It is a design record and the reasoning
+behind the shipped API, not the API reference itself; the public surface is documented from the headers
+(`docs/RenderGraph-api.md`).
 
 ## 1. Goal
 
@@ -719,9 +724,10 @@ This section is a proposal for `docs/Roadmap.md`; the roadmap PR applies it afte
 
 **New track `B Bindless (descriptor heap)`** alongside P0–P3 and L, with the B0–B4 gates above. There is no separate GPU-driven track: those are host renderer features, and the graph only has to stay out of their way.
 
-**Critical path:** `#17 → B0 → B1 → B2 → #20 (final) → #51`. #111 landed the UI pass before the freeze and
-is accepted double-conversion debt. #57 runs in parallel; the L chain is unchanged; #59 spans B2 and #20.
-P1 cannot close until B2 and #59; P2 cannot start its full port until B2.
+**Critical path:** `#17 → B0 → B1 → B2 → #20 (final) → #51`; #17 and B0–B2 have all landed, so the final
+`#20` port is unblocked. #111 landed the UI pass before the freeze and is accepted double-conversion debt.
+#57 landed alongside; the L chain is unchanged; #59 spans B2 and #20. P1 cannot close until #59; P2's full
+port is no longer gated by B2.
 
 **The documentation PRs.** #208 was closed as superseded; this note keeps its
 structure-at-`Build()`/handles-at-`Execute()` split. #210 has merged unchanged (`acc0e12`) as the
