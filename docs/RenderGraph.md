@@ -198,6 +198,40 @@ Nodes with no edges are still scheduled.
 - **Pipelines and descriptors** — built from the declared shaders, PSO and resource uses.
 - **Queue scheduling** — see *Async compute* below.
 
+## Pipeline caching
+
+`Build()` compiles a `VkPipeline` for every graphics and compute node. The cache key is the **full
+pipeline state** — the `PSODesc`, the shader SPIR-V content, the attachment formats, the specialization
+values and the queue type — as a byte string, not a hash of a subset. Two declarations that differ in
+anything the driver reads therefore get different pipelines; nothing descriptor- or layout-related is in
+the key, because the heap path passes `layout = VK_NULL_HANDLE` and binds no sets. Ray tracing pipelines
+are not cached: their shader binding table is per node.
+
+Without any extra object a builder caches its own pipelines for as long as it lives, which is what
+`helloVulkanRG` relies on: it keeps one builder and calls `Build()` per frame. To share pipelines
+**across builders and graphs** — a second graph, or a builder recreated after a swapchain change — inject
+a caller-owned `PipelineCache`:
+
+```cpp
+PipelineCache pipelines(GetRenderDevice());   // device-scoped, outlives the builders
+RenderGraphBuilder a(RenderGraphServices{
+    .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .pipelineCache = &pipelines});
+RenderGraphBuilder b(RenderGraphServices{
+    .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .pipelineCache = &pipelines});
+```
+
+The cache owns the entries and a builder only borrows them, so destroying one builder — or calling its
+`ReleaseCachedDeviceObjects()` on a swapchain recreation — does not invalidate a pipeline another graph
+is still recording with. Two rules follow from that ownership:
+
+- The cache must outlive every builder that refers to it, and the device must be idle before the cache
+  is destroyed or reset. Neither the builder nor the cache retains a reference count.
+- A cache belongs to one `VkDevice`. A builder given a cache created on another device rejects it at
+  construction rather than borrowing a handle the driver cannot use.
+
+A builder that is given no cache keeps its existing per-builder behaviour, so a small caller or a test
+pays for nothing it does not use.
+
 ## Descriptor binding
 
 Every node declares the resources it uses; the graph writes their heap descriptors at `Build()` and

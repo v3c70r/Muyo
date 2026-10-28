@@ -292,6 +292,7 @@ add_library(muyo STATIC ${muyo_SRC})
 add_library(muyo_rg
     "src/RenderGraph/RenderGraphBuilder.cpp"
     "src/RenderGraph/CompiledRenderGraph.cpp"
+    "src/RenderGraph/PipelineCache.cpp"
     "src/RenderGraph/RenderGraphExecutor.cpp"
     "src/RenderGraph/RenderGraphTrace.cpp"
 )
@@ -530,6 +531,7 @@ add_executable(tests
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
     src/tests/RenderGraphHeapTests.cpp
+    src/tests/RenderGraphPipelineCacheTests.cpp
     src/tests/PSODescTest.cpp
     src/tests/RenderGraphLaneLayoutTest.cpp
     src/tests/RenderGraphTraceTest.cpp
