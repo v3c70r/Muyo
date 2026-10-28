@@ -141,9 +141,12 @@ struct RenderGraphServices
 /// @endcode
 ///
 /// `Build()` is idempotent for a fixed declaration: it topologically sorts the nodes, allocates
-/// graph-owned resources, writes descriptor-heap slots, compiles pipelines and plans barriers.
-/// `Execute()` records and submits the frame, splitting work across queues when nodes opt into async
-/// compute.
+/// graph-owned resources, writes descriptor-heap slots, compiles pipelines and plans barriers. A repeated
+/// build reuses the allocations, the compiled pipelines, the descriptor slots and - crucially - the
+/// per-slot transient arenas, so a per-frame `Build()` does not reallocate a graph-owned transient. A
+/// changed transient declaration or plan drains every in-flight execution before the old arenas are
+/// destroyed; an unchanged plan never drains. `Execute()` records and submits the frame, splitting work
+/// across queues when nodes opt into async compute.
 class RenderGraphBuilder
 {
 public:
@@ -151,9 +154,12 @@ public:
     ///                 required; a missing one is reported by name rather than dereferenced later, and
     ///                 the check throws so it survives `NDEBUG`.
     /// @param inFlightCount How many executions may be in flight at once. The default of 1 serialises
-    ///                 them. Above 1, each slot owns its command buffers and root arena, but graph-owned
-    ///                 resources are still shared: a caller that overlaps resource-bearing executions
-    ///                 must keep their resources distinct or wait. B2b-2 makes the resource half safe.
+    ///                 them. Above 1, each slot owns its command buffers, root arena and a complete copy
+    ///                 of the graph's transients (see `GetTransientMemoryPlan()`), and imported resources
+    ///                 are bound per execution from that slot's descriptor ring. A graph-owned
+    ///                 `Persistent` resource is shared by every execution and is therefore rejected
+    ///                 above one slot; a caller that needs per-execution content imports it and
+    ///                 re-points the handle between executions (#83).
     explicit RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount = 1);
     /// Transitional: fills the remaining services from the engine's globals, for the callers that still
     /// use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is
@@ -209,14 +215,24 @@ public:
     /// graph-owned transient is deliberately **not** registered with the resource manager: its memory
     /// belongs to a block the graph frees, and a manager-owned copy would be a second resource under one
     /// name with a different lifetime and a different address.
+    ///
+    /// **A transient is per in-flight slot.** Each execution owns a complete copy of the graph's
+    /// transients, so the answer is the copy belonging to the most recent execution's slot; before the
+    /// first execution it is slot 0's. A caller reading back after `WaitIdle()` therefore sees what the
+    /// last execution used, while a node callback during `Execute()` sees the execution's own copy. A
+    /// caller that needs a *specific* past execution's content must copy it into an imported resource,
+    /// or keep at most one execution in flight.
     /// @param handle Resource handle.
     /// @return The resource, or nullptr when the handle names nothing the graph can see.
     const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
 
-    /// @return The last build's transient memory plan: the blocks, their slots, and the two byte totals.
-    ///         `reservedBytes < individualBytes` is what sharing memory looks like from outside, and
-    ///         `reservedBytes == individualBytes` is a legitimate answer for a graph whose transients all
-    ///         overlap in time. Empty before the first build.
+    /// @return The last build's transient memory plan: the blocks, their slots, and the two byte totals
+    ///         for **one in-flight slot**. The builder allocates one copy of this plan per slot, so the
+    ///         graph's total transient memory is `reservedBytes * inFlightCount`; the plan is shared
+    ///         because every slot binds the same resources at the same offsets. `reservedBytes <
+    ///         individualBytes` is what sharing memory looks like from outside, and `reservedBytes ==
+    ///         individualBytes` is a legitimate answer for a graph whose transients all overlap in time.
+    ///         Empty before the first build.
     const TransientMemoryPlan& GetTransientMemoryPlan() const { return m_transientMemoryPlan; }
 
     // ── Node declaration ─────────────────────────────────────────────────────
@@ -252,9 +268,14 @@ public:
     /// @param sink Called after each execution completes submission, with that execution's record.
     void SetTraceSink(std::function<void(RenderGraphTrace)> sink) { m_traceSink = std::move(sink); }
 
-    /// Record and submit without waiting for the GPU. Note this does **not** enable overlap: the
-    /// builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the
-    /// first completes. Overlap is an executor-API concern, see issue #11.
+    /// Record and submit without waiting for the GPU. With `inFlightCount > 1` a second call may record
+    /// and submit while the first is still in flight; its transients come from its own arena, and its
+    /// imported resources from its own descriptor ring. The builder is single-threaded: one `Execute()`
+    /// must return before the next begins, and `Build()` must not run concurrently with one.
+    ///
+    /// Every GPU node's use of an imported or transient resource acquires one slot per execution from
+    /// the injected heap's ring, so the heap's `Config::ringSlots` must cover the graph's per-execution
+    /// use count; `DescriptorHeapService` throws when a region's ring is exhausted.
     /// @param info External semaphores to wait on before, and signal after, this execution.
     void Execute(const RenderGraphExecuteInfo& info);
 
@@ -406,6 +427,29 @@ private:
     // produce - which is what declaring either of them means.
     void ValidateTransientLifetimes(const std::vector<std::string>& executionOrder);
 
+    /// One aliased transient's device-independent planning identity.
+    ///
+    /// Everything the memory plan depends on that the declaration and the execution order alone decide:
+    /// no `VkBuffer`/`VkImage` is created to gather it. That is what lets `Build()` decide whether the
+    /// arenas it already has still match before it destroys anything.
+    struct TransientPlanInput
+    {
+        ResourceHandle handle;                ///< Declaration handle.
+        const ResourceDesc* pDesc = nullptr;  ///< Its declaration; points into the registry.
+        TransientLiveRange liveRange;         ///< First/last execution-order use.
+        uint64_t sharingDomain = 0;           ///< Queue family, one-based; 0 means no GPU use.
+        bool canShareSlot = true;             ///< False when its uses span queue families.
+    };
+
+    /// @param executionOrder Node order used to derive live ranges and queue-family domains.
+    /// @return Every used aliased transient's planning identity, sorted by handle so the key and the
+    ///         plan are deterministic.
+    std::vector<TransientPlanInput> GatherTransientPlanInputs(const std::vector<std::string>& executionOrder) const;
+    /// @param inputs Output of `GatherTransientPlanInputs`.
+    /// @return A byte-string identity for the arena layout those inputs describe. Equal keys mean an
+    ///         unchanged plan, so a repeated `Build()` may keep the existing arenas.
+    std::string MakeTransientPlanKey(const std::vector<TransientPlanInput>& inputs) const;
+
     // Live ranges from the last `Build()`, keyed by handle. Nothing reads this until aliasing lands;
     // it is kept because re-deriving it later would mean re-walking the order for a fact this pass
     // already computed.
@@ -443,19 +487,26 @@ private:
     RenderGraphExecutor m_executor;
     uint64_t m_nextExecution = 0;                       ///< Execution counter a trace is labelled with.
     std::function<void(RenderGraphTrace)> m_traceSink;  ///< Set by SetTraceSink; empty means no trace is recorded.
-    /// Transient buffers whose memory the graph owns as aliasing blocks rather than per resource.
+    /// One in-flight slot's complete copy of the graph's transients.
     ///
-    /// Keyed by handle so `ResolveResource` finds them, and owned here rather than by the resource
-    /// manager, because their memory belongs to a block and the block's lifetime is the graph's. They are
-    /// destroyed before the blocks are freed, since a block cannot be released while something is still
-    /// bound to it, and they are recreated on every build - unlike manager-owned resources - because the
-    /// plan, and therefore the offsets, can differ between builds.
-    std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> m_aliasedBuffers;
-    /// Transient images bound into those same blocks. Separate map, same ownership and same teardown:
-    /// the two differ only in which allocator call binds them and whether they can be mapped.
-    std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> m_aliasedImages;
-    /// The blocks those buffers are bound into. Freed after every resource above is destroyed.
-    std::vector<VmaAllocation> m_aliasBlocks;
+    /// The plan is shared; the storage is not. Each slot owns its own unbound-then-bound buffers and
+    /// images, its own views, and its own aliasing blocks, so two executions that write the same handle
+    /// write different memory. The maps are keyed by handle so `ResolveResource` can find the current
+    /// slot's instance, and the resources are destroyed before the blocks are freed because a block
+    /// cannot be released while something is still bound to it.
+    struct TransientSlotStorage
+    {
+        std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> buffers;  ///< Transient buffers.
+        std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> images;    ///< Transient images.
+        std::vector<VmaAllocation> blocks;  ///< This slot's aliasing blocks, freed after its resources.
+    };
+    /// One entry per in-flight slot, rebuilt only when `m_transientPlanKey` changes.
+    std::vector<TransientSlotStorage> m_transientSlots;
+    /// Slot whose instance `ResolveResource` and the recording paths read: the execution being recorded.
+    uint32_t m_currentTransientSlot = 0;
+    /// Identity of the layout `m_transientSlots` currently holds. Empty before the first successful
+    /// build; a different key means the old arenas must be drained and rebuilt.
+    std::string m_transientPlanKey;
     /// Host-visible root arenas, one per in-flight slot (B1b-4 / B2b). The host owns each layout.
     static constexpr VkDeviceSize kRootCapacity = 64ULL * 1024;
     std::vector<RootArena> m_rootArenas;
@@ -498,13 +549,38 @@ private:
     /// Entries in an injected shared cache are never touched by this.
     void DestroyCachedPipelines();
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
+    /// One slot's plan: `m_transientSlots` holds `inFlightCount` copies bound at these offsets.
     TransientMemoryPlan m_transientMemoryPlan;
 
-    /// Create this build's aliased transients, plan their memory, and bind them into blocks.
-    /// @param executionOrder Node order, which is what the live ranges are indexed by.
-    void BuildAliasedTransients(const std::vector<std::string>& executionOrder);
-    /// Destroy the aliased resources and then free their blocks. Safe to call repeatedly.
+    /// Create one slot's unbound resources from `inputs`, and optionally the planner requests (which
+    /// need the device-queried requirements).
+    /// @param inputs   Planning identity of every used aliased transient.
+    /// @param pRequests When non-null, filled with one request per resource for `PlanTransientMemory`.
+    /// @return The slot's resources, unbound; the caller allocates blocks and binds them.
+    TransientSlotStorage CreateTransientSlotStorage(const std::vector<TransientPlanInput>& inputs,
+                                                    std::vector<TransientMemoryRequest>* pRequests);
+    /// Allocate `m_transientMemoryPlan`'s blocks for one slot and bind that slot's resources into them.
+    /// @param storage Slot whose resources are bound; the new blocks are appended to it.
+    void AllocateAndBindTransientBlocks(TransientSlotStorage& storage);
+
+    /// Create the per-slot transient arenas for `planKey`, or keep the existing ones when it matches.
+    /// The caller guarantees no execution is in flight when the key differs.
+    /// @param inputs  Planning identity of every used aliased transient.
+    /// @param planKey This build's identity; compared with `m_transientPlanKey`.
+    void BuildAliasedTransients(const std::vector<TransientPlanInput>& inputs, const std::string& planKey);
+    /// Destroy every slot's transient resources and then free its blocks. The caller must have drained
+    /// every execution: a block freed under in-flight work is a use-after-free. Safe to call repeatedly.
     void DestroyAliasedTransients();
+
+    /// Resolve a handle against one execution slot's transients, or the manager when it has none.
+    /// @param slot In-flight slot whose instance is wanted.
+    /// @param handle Resource handle.
+    /// @return The slot's instance, another owner's resource, or nullptr.
+    const IRenderResource* ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const;
+    /// @param handle Resource handle.
+    /// @return True when the handle is bound per execution (an import, or a graph-owned transient) and
+    ///         therefore cannot use a build-time static descriptor.
+    bool IsPerExecutionResource(const ResourceHandle& handle) const;
 
     /// Throw when a node callback returned with a graph-owned transient still host-mapped.
     ///

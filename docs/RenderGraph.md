@@ -16,19 +16,23 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.
 - **In-flight executions are opt-in.** `Execute()` records into a slot, submits, and waits for that
   execution's terminal timeline values; `Execute(RenderGraphExecuteInfo)` submits without waiting. The
-  builder defaults to one slot. Passing `inFlightCount = 2` gives each slot its own command buffers and
-  root arena, and **imported** resources are bound per execution from that slot's descriptor ring, so a
-  caller may re-point an imported handle between executions without a Build (#83). Graph-owned transients
-  and persistent resources are still single-instance: a graph that declares them must stay at one
-  in-flight execution, because two overlapping executions would alias them (#40).
+  builder defaults to one slot. Passing `inFlightCount = 2` gives each slot its own command buffers, root
+  arena and **complete copy of the graph's transients**, and binds imported resources and transient
+  descriptors per execution from that slot's descriptor ring, so a caller may re-point an imported handle
+  between executions without a Build (#83). A graph-owned **`Persistent`** resource is still single-instance:
+  it survives the frame boundary by definition, so a graph that declares one must stay at one in-flight
+  execution. Import it and re-point the handle between executions instead. `Build()` reuses the transient
+  arenas when the declaration and the derived plan are unchanged, so a per-frame build does not
+  reallocate; a changed declaration waits for every in-flight execution before the old arenas are freed.
 - **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
   only feed data into the graph; a GPU-to-CPU dependency is rejected.
 - **The graph path is descriptor-heap-only.** B1b removed descriptor sets, layouts, pools and pipeline
   layouts from `src/RenderGraph/`; every graphics, compute and ray-tracing pipeline is created with
   `VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT` and `layout = VK_NULL_HANDLE`. A node declares the
-  resources it uses (`ResourceUse`, with an optional buffer range); the graph writes their descriptors
-  into the injected `DescriptorHeapService` at `Build()` and exposes the slot through
-  `GetHeapIndex`. Root data and push data are opaque bytes: a node writes them with
+  resources it uses (`ResourceUse`, with an optional buffer range); the graph writes a persistent
+  graph-owned resource's descriptor into the injected `DescriptorHeapService` at `Build()`, and acquires
+  an imported or transient descriptor from the executing slot's ring during `Execute()`, exposing the slot
+  through `GetHeapIndex`. Root data and push data are opaque bytes: a node writes them with
   `RenderGraphNodeContext::PushData` (and optionally `AllocateRoot`). Nothing in the graph path calls
   `vkCmdBindDescriptorSets`, `vkCmdPushConstants`, `vkCreateDescriptorSetLayout` or
   `vkCreatePipelineLayout`; `scripts/check_descriptor_path.py` enforces that in CI. The legacy
@@ -121,10 +125,12 @@ usage all match; both
 the graph path and the resource-manager path take the usage flags from `EffectiveImageUsageFlags`, so the two
 cannot disagree about what an image is. An image's **view is created only after it is bound** - a view of an
 image with no memory bound is a validation error (`VUID-VkImageViewCreateInfo-image-01020`) - so the order is
-create unbound, query, plan, bind, view. `GetTransientMemoryPlan()` reports what a build did: `reservedBytes`
-is what will be allocated, `individualBytes` is the sum of the transients, and `SharesMemory()` is the
-comparison - it answers false for a graph whose transients all overlap, which is a legitimate result rather
-than a failure.
+create unbound, query, plan, bind, view. `GetTransientMemoryPlan()` reports what a build did **for one
+in-flight slot**: `reservedBytes` is what one slot allocates, `individualBytes` is the sum of the
+transients, and `SharesMemory()` is the comparison - it answers false for a graph whose transients all
+overlap, which is a legitimate result rather than a failure. With `inFlightCount > 1` the builder allocates
+one copy of that plan per slot, so total transient memory is `reservedBytes * inFlightCount`: the plan is
+shared, the storage is not, and two overlapping executions never write the same bytes.
 
 Two things to read correctly. **`reservedBytes` can exceed `individualBytes`** on a device with strict
 alignment: a slot's offset is aligned up to its widest member's alignment, and alignment limits are device
@@ -132,8 +138,15 @@ properties, so padding is real cost and not planner waste. And **a mapping must 
 use declared the resource** - a graph-owned transient is mapped through its block, so nothing else can be
 bound to those bytes while the pointer is held, which is exactly what the live range guarantees for that
 node and nothing beyond it. `Execute()` **enforces** this rather than only documenting it: after every node
-callback it scans the graph's aliased buffers, and one still host-mapped throws naming the node and the
-resource. Unmap before the callback returns.
+callback it scans the executing slot's aliased buffers, and one still host-mapped throws naming the node
+and the resource. Unmap before the callback returns.
+
+**Resolution is slot-aware.** A node reaches a transient through
+`RenderGraphNodeContext::GetResource`/`ResolveResource`, and during an execution that returns the slot's
+own copy. The public `RenderGraphBuilder::ResolveResource` answers for the most recent execution's slot
+(slot 0 before the first execution), so read-back after `WaitIdle()` sees what the last execution used. A
+caller that needs an older execution's content must copy it into an imported resource, or keep one
+execution in flight.
 
 ## Minimal example
 

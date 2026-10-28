@@ -440,29 +440,53 @@ std::optional<ResourceDesc> RenderGraphBuilder::GetResourceDesc(const ResourceHa
 
 const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle& handle) const
 {
-    if (auto it = m_importedResources.find(handle); it != m_importedResources.end())
-    {
-        return it->second;
-    }
-    // Before the manager: an aliased buffer is not in the manager at all, and looking there first would
-    // find a same-named resource from an earlier build if one ever existed.
-    if (auto it = m_aliasedBuffers.find(handle); it != m_aliasedBuffers.end())
-    {
-        return it->second.get();
-    }
-    if (auto it = m_aliasedImages.find(handle); it != m_aliasedImages.end())
-    {
-        return it->second.get();
-    }
-    return m_services.resourceManager->template GetResource<IRenderResource>(handle);
+    return ResolveResourceForSlot(m_currentTransientSlot, handle);
 }
 
 namespace
 {
 /// @param desc A resource declaration.
-/// @return True when this build gives the resource its own memory inside an aliasing block instead of
-///         letting the resource manager allocate one for it. Buffers only: images still take the
-///         manager's path, and the planner's image classes are ready for the slice that wires them.
+/// @return True when the declaration asks the graph to give it storage inside an aliasing block (a
+///         `Transient`), instead of letting the resource manager allocate one of its own.
+bool IsAliasedTransient(const ResourceDesc& desc);
+}  // namespace
+
+const IRenderResource* RenderGraphBuilder::ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const
+{
+    if (auto it = m_importedResources.find(handle); it != m_importedResources.end())
+    {
+        return it->second;
+    }
+    // Before the manager: an aliased buffer is not in the manager at all, and looking there first would
+    // find a same-named resource from an earlier build if one ever existed. The slot is the execution's
+    // own copy; a handle with no instance in this slot falls through to the manager like any other.
+    if (slot < m_transientSlots.size())
+    {
+        const TransientSlotStorage& storage = m_transientSlots[slot];
+        if (auto it = storage.buffers.find(handle); it != storage.buffers.end())
+        {
+            return it->second.get();
+        }
+        if (auto it = storage.images.find(handle); it != storage.images.end())
+        {
+            return it->second.get();
+        }
+    }
+    return m_services.resourceManager->template GetResource<IRenderResource>(handle);
+}
+
+bool RenderGraphBuilder::IsPerExecutionResource(const ResourceHandle& handle) const
+{
+    if (m_importedResources.find(handle) != m_importedResources.end()) return true;
+    const auto desc = m_resourceDescRegistry.find(handle);
+    return desc != m_resourceDescRegistry.end() && IsAliasedTransient(desc->second);
+}
+
+namespace
+{
+/// @param desc A resource declaration.
+/// @return True when the declaration asks the graph to give it storage inside an aliasing block (a
+///         `Transient`), instead of letting the resource manager allocate one of its own.
 bool IsAliasedTransient(const ResourceDesc& desc)
 {
     return std::visit([](const auto& d) { return d.lifetime == ResourceLifetime::Transient; }, desc);
@@ -594,10 +618,12 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
 
         for (const ResolvedResourceUse& use : result.resourceUses)
         {
-            // Imported resources are bound per execution from the slot's ring (see Execute): the caller
-            // may re-point one between executions without a Build (#83), and two in-flight executions
-            // must not share the descriptor. Graph-owned resources keep the static content cache.
-            if (m_importedResources.find(use.handle) != m_importedResources.end()) continue;
+            // Per-execution resources are bound from the slot's ring at Execute (see Execute): an import
+            // may be re-pointed between executions without a Build (#83), and a graph-owned transient has
+            // one instance per slot, so a static descriptor written here would name slot 0's memory and
+            // hand it to every other execution. Persistent graph-owned resources keep the static cache
+            // because they are genuinely shared.
+            if (IsPerExecutionResource(use.handle)) continue;
             const IRenderResource* pResource = ResolveResource(use.handle);
             if (pResource == nullptr) continue;
             if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
@@ -1496,20 +1522,25 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
 
 void RenderGraphBuilder::DestroyAliasedTransients()
 {
-    // Resources first, then their memory: a block cannot be released while a resource is still bound to
-    // it, which is the order VMA's own implementation uses (destroy the buffer, then free).
-    m_aliasedBuffers.clear();
-    m_aliasedImages.clear();
-    for (VmaAllocation& block : m_aliasBlocks) GetMemoryAllocator()->FreeAliasingBlock(block);
-    m_aliasBlocks.clear();
+    // The caller must have drained the executor: Build() waits when the plan changes, and the destructor
+    // waits before calling this. An execution in flight may still read these blocks through descriptors
+    // it already recorded. Resources first, then memory, per slot - a block cannot be released while a
+    // resource is still bound to it, which is the order VMA's own implementation uses.
+    for (TransientSlotStorage& storage : m_transientSlots)
+    {
+        storage.buffers.clear();
+        storage.images.clear();
+        for (VmaAllocation& block : storage.blocks) GetMemoryAllocator()->FreeAliasingBlock(block);
+        storage.blocks.clear();
+    }
+    m_transientSlots.clear();
     m_transientMemoryPlan = TransientMemoryPlan{};
+    m_transientPlanKey.clear();
 }
 
-void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& executionOrder)
+std::vector<RenderGraphBuilder::TransientPlanInput> RenderGraphBuilder::GatherTransientPlanInputs(
+    const std::vector<std::string>& executionOrder) const
 {
-    std::vector<TransientMemoryRequest> requests;
-    requests.reserve(m_resourceDescRegistry.size());
-
     // A resource may share a slot only with one whose uses run on the same queue family. Within a family
     // the graph's own barriers order the hand-over; across families nothing does, because the executor
     // inserts a wait only for a *shared handle* and an aliased pair is two handles. So each resource is
@@ -1529,6 +1560,8 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
         }
     }
 
+    std::vector<TransientPlanInput> inputs;
+    inputs.reserve(m_resourceDescRegistry.size());
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
         if (!IsAliasedTransient(desc)) continue;
@@ -1537,10 +1570,72 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
         const auto liveRange = m_transientLiveRanges.find(handle);
         if (liveRange == m_transientLiveRanges.end()) continue;
 
+        TransientPlanInput input;
+        input.handle = handle;
+        input.pDesc = &desc;
+        input.liveRange = liveRange->second;
+        // Domain 0 is "no GPU use", so a single family is stored one-based to keep the two apart.
+        const auto familyIt = transientFamily.find(handle);
+        input.sharingDomain = (familyIt == transientFamily.end()) ? 0u : static_cast<uint64_t>(1u) + familyIt->second;
+        input.canShareSlot = spansFamilies.find(handle) == spansFamilies.end();
+        inputs.push_back(input);
+    }
+
+    // Sorted by handle, not left in registry order: an unordered_map's iteration order is not part of the
+    // declaration, and the key must not change because a rehash happened.
+    std::sort(inputs.begin(), inputs.end(),
+              [](const TransientPlanInput& a, const TransientPlanInput& b) { return a.handle < b.handle; });
+    return inputs;
+}
+
+std::string RenderGraphBuilder::MakeTransientPlanKey(const std::vector<TransientPlanInput>& inputs) const
+{
+    // A byte string rather than a hash, like the pipeline key: two different declarations must not be able
+    // to collide into reusing the wrong arena.
+    std::string key;
+    AppendPipelineKey(key, m_executor.GetInFlightCount());
+    AppendPipelineKey(key, static_cast<uint64_t>(inputs.size()));
+    for (const TransientPlanInput& input : inputs)
+    {
+        AppendPipelineKey(key, static_cast<uint64_t>(input.handle.size()));
+        key.append(input.handle);
+        if (const auto* pBufferDesc = std::get_if<BufferResourceDesc>(input.pDesc))
+        {
+            AppendPipelineKey(key, uint8_t{0});
+            AppendPipelineKey(key, pBufferDesc->count);
+            AppendPipelineKey(key, pBufferDesc->stride);
+            AppendPipelineKey(key, static_cast<uint32_t>(pBufferDesc->usage));
+            AppendPipelineKey(key, static_cast<uint32_t>(pBufferDesc->memoryProperties));
+        }
+        else
+        {
+            const auto& imageDesc = std::get<ImageResourceDesc>(*input.pDesc);
+            AppendPipelineKey(key, uint8_t{1});
+            AppendPipelineKey(key, static_cast<uint32_t>(imageDesc.format));
+            AppendPipelineKey(key, imageDesc.extent.width);
+            AppendPipelineKey(key, imageDesc.extent.height);
+            AppendPipelineKey(key, imageDesc.mips);
+            AppendPipelineKey(key, imageDesc.layers);
+            AppendPipelineKey(key, static_cast<uint32_t>(imageDesc.usage));
+        }
+        AppendPipelineKey(key, static_cast<uint64_t>(input.liveRange.firstUse));
+        AppendPipelineKey(key, static_cast<uint64_t>(input.liveRange.lastUse));
+        AppendPipelineKey(key, input.sharingDomain);
+        AppendPipelineKey(key, static_cast<uint8_t>(input.canShareSlot));
+    }
+    return key;
+}
+
+RenderGraphBuilder::TransientSlotStorage RenderGraphBuilder::CreateTransientSlotStorage(
+    const std::vector<TransientPlanInput>& inputs, std::vector<TransientMemoryRequest>* pRequests)
+{
+    TransientSlotStorage storage;
+    for (const TransientPlanInput& input : inputs)
+    {
         VkMemoryRequirements requirements = {};
         TransientMemoryClass classKey;
 
-        if (const auto* pBufferDesc = std::get_if<BufferResourceDesc>(&desc))
+        if (const auto* pBufferDesc = std::get_if<BufferResourceDesc>(input.pDesc))
         {
             const VkDeviceSize nSize = pBufferDesc->count * pBufferDesc->stride;
             auto resource =
@@ -1549,12 +1644,12 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
             GetMemoryAllocator()->CreateUnboundBuffer(nSize, pBufferDesc->usage, buffer);
             resource->Adopt(buffer);
             requirements = GetMemoryAllocator()->QueryBufferRequirements(buffer);
-            classKey = ClassOf(desc, requirements.memoryTypeBits);
-            m_aliasedBuffers.emplace(handle, std::move(resource));
+            classKey = ClassOf(*input.pDesc, requirements.memoryTypeBits);
+            storage.buffers.emplace(input.handle, std::move(resource));
         }
         else
         {
-            const auto& imageDesc = std::get<ImageResourceDesc>(desc);
+            const auto& imageDesc = std::get<ImageResourceDesc>(*input.pDesc);
             // The same usage computation the resource manager uses, from the same function: an image's
             // aliasing class is its create info, so the two paths must not be able to disagree.
             const VkImageUsageFlags usage = EffectiveImageUsageFlags(imageDesc.format, imageDesc.usage);
@@ -1563,30 +1658,31 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
             GetMemoryAllocator()->CreateUnboundImage(resource->ImageInfoForCreate(), image);
             resource->Adopt(image);
             requirements = GetMemoryAllocator()->QueryImageRequirements(image);
-            classKey = ClassOf(desc, requirements.memoryTypeBits);
+            classKey = ClassOf(*input.pDesc, requirements.memoryTypeBits);
             // Images have no memory usage in their declaration, and a render target's storage is
             // device-local by definition, so the block's usage is not something the caller chose here.
             classKey.memoryUsage = VMA_MEMORY_USAGE_GPU_ONLY;
-            m_aliasedImages.emplace(handle, std::move(resource));
+            storage.images.emplace(input.handle, std::move(resource));
         }
 
+        if (pRequests == nullptr) continue;
         TransientMemoryRequest request;
-        request.handle = handle;
+        request.handle = input.handle;
         request.classKey = classKey;
         request.size = requirements.size;
         request.alignment = requirements.alignment;
         request.memoryTypeBits = requirements.memoryTypeBits;
-        request.firstUse = liveRange->second.firstUse;
-        request.lastUse = liveRange->second.lastUse;
-        // Domain 0 is "no GPU use", so a single family is stored one-based to keep the two apart.
-        const auto familyIt = transientFamily.find(handle);
-        request.sharingDomain = (familyIt == transientFamily.end()) ? 0u : static_cast<uint64_t>(1u) + familyIt->second;
-        request.canShareSlot = spansFamilies.find(handle) == spansFamilies.end();
-        requests.push_back(std::move(request));
+        request.firstUse = input.liveRange.firstUse;
+        request.lastUse = input.liveRange.lastUse;
+        request.sharingDomain = input.sharingDomain;
+        request.canShareSlot = input.canShareSlot;
+        pRequests->push_back(std::move(request));
     }
+    return storage;
+}
 
-    m_transientMemoryPlan = PlanTransientMemory(requests);
-
+void RenderGraphBuilder::AllocateAndBindTransientBlocks(TransientSlotStorage& storage)
+{
     for (const TransientMemoryBlock& block : m_transientMemoryPlan.blocks)
     {
         VkMemoryRequirements blockRequirements = {};
@@ -1596,7 +1692,7 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
 
         VmaAllocation allocation =
             GetMemoryAllocator()->AllocateAliasingBlock(blockRequirements, block.classKey.memoryUsage);
-        m_aliasBlocks.push_back(allocation);
+        storage.blocks.push_back(allocation);
 
         for (const TransientMemorySlot& slot : block.slots)
         {
@@ -1604,14 +1700,14 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
             {
                 if (block.classKey.isImage)
                 {
-                    TransientImageResource* pResource = m_aliasedImages.at(member).get();
+                    TransientImageResource* pResource = storage.images.at(member).get();
                     GetMemoryAllocator()->BindImageToBlock(pResource->getImage(), allocation, slot.offset);
                     // After the bind, never before: a view of an image with no memory bound is a validation
                     // error, and it is the one order this path has to get right.
                     pResource->CreateView();
                     continue;
                 }
-                TransientBufferResource* pResource = m_aliasedBuffers.at(member).get();
+                TransientBufferResource* pResource = storage.buffers.at(member).get();
                 GetMemoryAllocator()->BindBufferToBlock(pResource->buffer(), allocation, slot.offset);
                 // Told now rather than at creation: the offset is what the plan just decided, and it is
                 // what `Map` needs to find this resource's bytes inside the block.
@@ -1621,6 +1717,42 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<std::string>& 
     }
 }
 
+void RenderGraphBuilder::BuildAliasedTransients(const std::vector<TransientPlanInput>& inputs,
+                                                const std::string& planKey)
+{
+    const uint32_t slotCount = m_executor.GetInFlightCount();
+    if (planKey == m_transientPlanKey && m_transientSlots.size() == slotCount)
+    {
+        // The arenas already match this declaration. A per-frame Build() must reach here: recreating them
+        // would free memory a previous execution may still be reading, and would defeat the point of a
+        // build cache.
+        return;
+    }
+
+    // A changed plan invalidates storage that in-flight executions may still reference through recorded
+    // descriptors and barriers. Build() drains before it destroys the compiled graph; this is the same
+    // contract at the point the storage actually goes away.
+    DestroyAliasedTransients();
+
+    // Slot 0 is created first because the plan needs the resources' device-queried requirements. Every
+    // other slot then binds its own resources at the same planned offsets: the plan is shared, storage is
+    // not.
+    std::vector<TransientMemoryRequest> requests;
+    requests.reserve(inputs.size());
+    m_transientSlots.resize(slotCount);
+    m_transientSlots[0] = CreateTransientSlotStorage(inputs, &requests);
+    m_transientMemoryPlan = PlanTransientMemory(requests);
+    AllocateAndBindTransientBlocks(m_transientSlots[0]);
+    for (uint32_t slot = 1; slot < slotCount; ++slot)
+    {
+        m_transientSlots[slot] = CreateTransientSlotStorage(inputs, nullptr);
+        AllocateAndBindTransientBlocks(m_transientSlots[slot]);
+    }
+    // Set only after every slot is complete: a build that throws part-way leaves this empty, so the next
+    // Build cannot mistake a partial set of arenas for a match and reuse it.
+    m_transientPlanKey = planKey;
+}
+
 void RenderGraphBuilder::Build()
 {
     if (m_dependencyGraph.HasCycle())
@@ -1628,11 +1760,6 @@ void RenderGraphBuilder::Build()
         throw std::runtime_error("Render graph contains a cycle!");
     }
 
-    m_compiledGraph.Destroy(m_vkDevice);
-    // Before anything is created: a resource that is aliased into a block, or whose offsets may differ
-    // from the last build's, belongs to the build that planned it and not to the builder.
-    DestroyAliasedTransients();
-    m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())
     {
@@ -1642,6 +1769,24 @@ void RenderGraphBuilder::Build()
     // Before allocating anything: a declaration error should not cost an allocation, and this needs only
     // the order and the declarations.
     ValidateTransientLifetimes(executionOrder);
+
+    // Decide whether the transient arenas still match this declaration *before* tearing anything down.
+    // Both passes are pure: no resource is created to answer the question. An unchanged key is what lets
+    // a per-frame Build() keep the arenas a previous execution may still be reading; a changed key
+    // invalidates them, so every execution has to finish before the compiled graph or the storage is
+    // destroyed. The wait is explicit here rather than accidental inside the teardown.
+    const std::vector<TransientPlanInput> transientInputs = GatherTransientPlanInputs(executionOrder);
+    const std::string transientPlanKey = MakeTransientPlanKey(transientInputs);
+    if (transientPlanKey != m_transientPlanKey || m_transientSlots.size() != m_executor.GetInFlightCount())
+    {
+        m_executor.WaitIdle();
+    }
+
+    // TODO(#253): a compiled node's own pipeline (ray tracing today) is destroyed here even when an
+    // execution that bound it is still in flight; graphics and compute pipelines are cache-borrowed and
+    // survive. The drain above is about the transient storage, not about an owned pipeline.
+    m_compiledGraph.Destroy(m_vkDevice);
+    m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
 
     // The per-execution rings live in the heap service, whose slot count was fixed at Initialize;
     // a builder that runs further ahead than that would call BeginExecution on a slot the rings do not
@@ -1655,15 +1800,23 @@ void RenderGraphBuilder::Build()
                                  " execution slots; initialize the heap with at least that many.");
     }
 
-    // Graph-owned resources are single-instance; two overlapping executions would alias them. Imported
-    // resources are bound per execution from each slot's descriptor ring and are the caller's to
-    // keep distinct, so only those are allowed above one slot (#40).
-    if (m_executor.GetInFlightCount() > 1 && !m_resourceDescRegistry.empty())
+    // Transients are per execution now: each in-flight slot owns a complete copy of the plan. A graph-owned
+    // *Persistent* resource is different - it survives the frame boundary by definition, so there is no
+    // per-slot copy to make and two overlapping executions would race a shared write. Refuse it by name
+    // instead of letting the hazard reach the GPU; the per-execution alternative is to import the
+    // resource and re-point the handle between executions (#83).
+    if (m_executor.GetInFlightCount() > 1)
     {
-        const ResourceHandle& handle = m_resourceDescRegistry.begin()->first;
-        throw std::runtime_error("Graph declares graph-owned resource '" + handle +
-                                 "' while inFlightCount > 1; graph-owned resources are single-instance until "
-                                 "#40. Import per-execution resources or use inFlightCount = 1.");
+        for (const auto& [handle, desc] : m_resourceDescRegistry)
+        {
+            if (m_importedResources.find(handle) != m_importedResources.end()) continue;
+            if (IsAliasedTransient(desc)) continue;
+            throw std::runtime_error(
+                "Graph declares persistent graph-owned resource '" + handle +
+                "' while inFlightCount > 1; a persistent resource is shared by every execution, so "
+                "overlapping executions would write it concurrently. Import a per-execution resource and "
+                "re-point it between executions (#83), or use inFlightCount = 1.");
+        }
     }
 
     // Allocate all graph-owned resources before compiling nodes. A buffer transient is skipped here and
@@ -1673,8 +1826,8 @@ void RenderGraphBuilder::Build()
     // Reuse is keyed on the declaration, not only the handle (#209): the manager returns an existing
     // resource by name, so a repeated Build() with an unchanged desc keeps it, while a changed extent,
     // format, usage or a size that differs is recreated. The manager remains the owner of a
-    // graph-owned resource (the builder destroys only aliased transients); the descriptor cache that
-    // follows in B2 will key on the resolved resource, not on this name.
+    // graph-owned resource (the builder destroys only aliased transients); the descriptor cache keys on
+    // the resolved resource, not on this name.
     for (const auto& [handle, desc] : m_resourceDescRegistry)
     {
         if (m_importedResources.find(handle) != m_importedResources.end()) continue;
@@ -1694,7 +1847,7 @@ void RenderGraphBuilder::Build()
         }
         AllocateResource(desc, *m_services.resourceManager, handle);
     }
-    BuildAliasedTransients(executionOrder);
+    BuildAliasedTransients(transientInputs, transientPlanKey);
 
     try
     {
@@ -2040,7 +2193,12 @@ void RenderGraphBuilder::EnsureMappingsReleased(const std::string& nodeName) con
     // points into a block shared with other transients, so it must be released before the next node can
     // be bound to the same bytes. A Persistent or imported resource maps its own storage and is not this
     // rule's subject.
-    for (const auto& [handle, pBuffer] : m_aliasedBuffers)
+    //
+    // Only the executing slot's copy can alias this execution's bytes; another slot's buffer belongs to
+    // a different execution and cannot be overwritten by a later node of this one. Scanning the current
+    // slot is also what keeps the node named in the error accurate.
+    if (m_currentTransientSlot >= m_transientSlots.size()) return;
+    for (const auto& [handle, pBuffer] : m_transientSlots[m_currentTransientSlot].buffers)
     {
         if (!pBuffer->IsMapped()) continue;
         throw std::runtime_error(
@@ -2233,6 +2391,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
     // previous execution, which is what makes resetting its cursor safe.
     RenderGraphExecutor::ExecutionSlot slot = m_executor.AcquireSlot(plan);
     m_currentRootSlot = slot.index;
+    // The execution's transient instances are the ones every callback, barrier and descriptor below must
+    // see. Set before the first CPU node: a host-side callback can reach a transient too.
+    m_currentTransientSlot = slot.index;
     if (m_rootArenas.size() <= slot.index) m_rootArenas.resize(slot.index + 1);
     m_rootArenas[slot.index].cursor = 0;
     const std::vector<VkCommandBuffer>& segmentCmdBuffers = slot.segmentCommandBuffers;
@@ -2254,11 +2415,12 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 
     if (plan.IsEmpty()) return;
 
-    // Imported resources are bound per execution, from this slot's descriptor rings. AcquireSlot has
-    // waited for the slot, so ResetRing can recycle its rings; the acquisitions write the ring regions of
-    // the host staging buffer, which the segment-start Upload then copies. Two in-flight executions have
-    // disjoint ring slots, so neither overwrites the other's descriptors, and a caller can re-point an
-    // imported handle between executions without a Build (#83).
+    // Imported resources and graph-owned transients are bound per execution, from this slot's descriptor
+    // rings. AcquireSlot has waited for the slot, so ResetRing can recycle its rings; the acquisitions
+    // write the ring regions of the host staging buffer, which the segment-start Upload then copies. Two
+    // in-flight executions have disjoint ring slots, so neither overwrites the other's descriptors, a
+    // caller can re-point an imported handle between executions without a Build (#83), and a transient's
+    // descriptor names this execution's instance rather than slot 0's.
     std::vector<std::unordered_map<std::string, uint32_t>> executionHeapIndices(nodes.size());
     if (m_services.descriptorHeap != nullptr)
     {
@@ -2271,7 +2433,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             if (nodes[i].queueType == QueueType::CPU || nodes[i].pipeline == VK_NULL_HANDLE) continue;
             for (const ResolvedResourceUse& use : nodes[i].resourceUses)
             {
-                if (m_importedResources.find(use.handle) == m_importedResources.end()) continue;
+                if (!IsPerExecutionResource(use.handle)) continue;
                 const IRenderResource* pResource = ResolveResource(use.handle);
                 if (pResource == nullptr) continue;
                 std::optional<uint32_t> index;
