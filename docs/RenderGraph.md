@@ -232,6 +232,30 @@ is still recording with. Two rules follow from that ownership:
 A builder that is given no cache keeps its existing per-builder behaviour, so a small caller or a test
 pays for nothing it does not use.
 
+## Shader caching
+
+Loading a shader means reading its `.spv`, creating a `VkShaderModule` and running SPIR-V reflection;
+`Build()` needs the reflection to derive heap indices and push-constant ranges. Without a shared cache
+each builder repeats that work and owns its modules. Inject a caller-owned `ShaderCache` to share both:
+
+```cpp
+ShaderCache shaders(GetRenderDevice()->GetDevice());
+RenderGraphBuilder a(RenderGraphServices{
+    .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .shaderCache = &shaders});
+RenderGraphBuilder b(RenderGraphServices{
+    .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .shaderCache = &shaders});
+```
+
+An entry is keyed by the shader **name and a hash of its SPIR-V words**, not by the name alone. A `.spv`
+rebuilt while the process is running is therefore a new entry instead of a stale reflection with a new
+module, and a builder that still refers to the old entry keeps it alive. A hit creates no module and runs
+no reflection; `ShaderCache::GetModuleCreateCount()` is the observable reuse. The cache owns the modules
+and must outlive every builder that uses it. `ShaderCache::LoadShader()` still reads the file to identify
+its content, since that is the only way to know whether it changed.
+
+Both caches are independent: a builder may inject either, both, or neither. A `PipelineCache` caches the
+compiled result (keyed on shader content); a `ShaderCache` caches the loaded input.
+
 ## Descriptor binding
 
 Every node declares the resources it uses; the graph writes their heap descriptors at `Build()` and

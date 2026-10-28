@@ -16,6 +16,7 @@
 #include "PipelineCache.h"
 #include "PipelineStateBuilder.h"
 #include "RenderGraph/ResourceUseResolver.h"
+#include "ShaderCache.h"
 #include "ShaderReflectionFetcher.h"
 #include "VkExtFuncsLoader.h"
 #include "vulkan/vulkan_core.h"
@@ -156,6 +157,12 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint
             "RenderGraphBuilder: services.pipelineCache was created on a different VkDevice than "
             "services.device. A pipeline cache is device-scoped; create one per device.");
     }
+    if (m_services.shaderCache != nullptr && m_services.shaderCache->GetDevice() != m_vkDevice)
+    {
+        throw std::runtime_error(
+            "RenderGraphBuilder: services.shaderCache was created on a different VkDevice than "
+            "services.device. A shader module belongs to the device that created it; create one cache per device.");
+    }
     VkPhysicalDeviceProperties deviceProperties{};
     vkGetPhysicalDeviceProperties(m_services.device->GetPhysicalDevice(), &deviceProperties);
     m_minUniformBufferOffsetAlignment = deviceProperties.limits.minUniformBufferOffsetAlignment;
@@ -228,19 +235,6 @@ void AppendPipelineKey(std::string& key, const T& value)
 {
     static_assert(std::is_trivially_copyable_v<T>);
     key.append(reinterpret_cast<const char*>(&value), sizeof(T));
-}
-
-/// @param code Shader SPIR-V words.
-/// @return A word-wise FNV-1a hash, identifying the shader in the pipeline-cache key.
-std::uint64_t HashShaderSpirv(const std::vector<std::uint32_t>& code)
-{
-    std::uint64_t hash = 1469598103934665603ULL;
-    for (const std::uint32_t word : code)
-    {
-        hash ^= word;
-        hash *= 1099511628211ULL;
-    }
-    return hash;
 }
 
 /// @return The pipeline-cache key for one node. It contains every input that changes the created
@@ -504,6 +498,18 @@ private:
 };
 }  // namespace
 
+std::optional<ShaderAssetKey> RenderGraphBuilder::LoadShaderAsset(const std::string& shaderName)
+{
+    if (m_services.shaderCache != nullptr) return m_services.shaderCache->LoadShader(shaderName);
+    return m_shaderAssetManager.LoadShader(shaderName);
+}
+
+const ShaderAsset* RenderGraphBuilder::ResolveShaderAsset(const ShaderAssetKey& key) const
+{
+    if (m_services.shaderCache != nullptr) return m_services.shaderCache->GetShaderAsset(key);
+    return m_shaderAssetManager.GetShaderAsset(key);
+}
+
 CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderGraphBuilder::RenderGraphNode& rgn)
 {
     // Compile the pipeline and its descriptor-heap slots from the node
@@ -531,12 +537,12 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
     {
         if (shaderKey.IsValid())
         {
-            const auto* shaderAsset = m_shaderAssetManager.GetShaderAsset(shaderKey);
+            const auto* shaderAsset = ResolveShaderAsset(shaderKey);
             if (shaderAsset)
             {
                 shaderReflections.push_back(shaderAsset->shaderReflection);
                 shaderModules.push_back(shaderAsset->shaderModule);
-                shaderHashes.push_back(HashShaderSpirv(shaderAsset->spirv));
+                shaderHashes.push_back(HashSpirv(shaderAsset->spirv));
             }
         }
     }
@@ -546,7 +552,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
     {
         if (shaderKey.IsValid())
         {
-            const auto* shaderAsset = m_shaderAssetManager.GetShaderAsset(shaderKey);
+            const auto* shaderAsset = ResolveShaderAsset(shaderKey);
             if (shaderAsset)
             {
                 shaderReflections.push_back(shaderAsset->shaderReflection);
@@ -1301,7 +1307,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     int shaderIdx = 0;
     for (const auto& shaderName : nodeCreateInfo.shaderNames)
     {
-        auto key = m_shaderAssetManager.LoadShader(shaderName);
+        auto key = LoadShaderAsset(shaderName);
         if (!key)
         {
             // Skipping the stage here produced a pipeline compiled without it, which failed much later
@@ -1321,7 +1327,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     }
     for (size_t i = 0; i < nodeCreateInfo.rtShaderNames.size(); ++i)
     {
-        auto key = m_shaderAssetManager.LoadShader(nodeCreateInfo.rtShaderNames[i]);
+        auto key = LoadShaderAsset(nodeCreateInfo.rtShaderNames[i]);
         if (!key)
         {
             throw std::runtime_error("Ray tracing node '" + nodeName + "' declares shader '" +

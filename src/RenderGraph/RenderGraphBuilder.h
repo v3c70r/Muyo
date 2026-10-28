@@ -30,6 +30,7 @@
 namespace Muyo::RenderGraph
 {
 class PipelineCache;
+class ShaderCache;
 
 /// Map of every declared resource handle to its allocation description.
 using ResourceDescRegistry = std::unordered_map<ResourceHandle, ResourceDesc>;
@@ -114,6 +115,13 @@ struct RenderGraphServices
     /// outlive every builder that refers to it, and is validated against the builder's `VkDevice` at
     /// construction. See `PipelineCache`.
     PipelineCache* pipelineCache = nullptr;
+    /// Optional shader module/reflection cache shared by every builder that is given the same instance
+    /// (#17). When null, each builder loads and owns its shader modules as before.
+    ///
+    /// A shared entry is keyed by shader name and SPIR-V content and owns its `VkShaderModule`; the
+    /// builder only resolves it. The cache must outlive every builder that refers to it and is validated
+    /// against the builder's `VkDevice` at construction. See `ShaderCache`.
+    ShaderCache* shaderCache = nullptr;
 };
 
 /// Declares and runs a render graph.
@@ -279,9 +287,9 @@ private:
         QueueType queueType = QueueType::GRAPHICS;
         bool async = false;
         std::vector<ResolvedResourceUse> resourceUses;
-        std::array<ShaderKey, MAX_SHADER_STAGES> shaders;
+        std::array<ShaderAssetKey, MAX_SHADER_STAGES> shaders;
         // Ray tracing shader keys: [0] = raygen, [1] = miss, [2] = closest hit.
-        std::array<ShaderKey, 3> rtShaders;
+        std::array<ShaderAssetKey, 3> rtShaders;
         PSODesc psoDesc = {};
         uint32_t costHint = 1;
         std::vector<VkClearValue> attachmentClearValues;
@@ -417,6 +425,15 @@ private:
     /// opt into heap nodes without threading a service, and the descriptor lifetime follows the graph.
     std::unique_ptr<DescriptorHeapService> m_ownedDescriptorHeap;
     ShaderAssetManager m_shaderAssetManager;
+    /// Load a shader through the injected `ShaderCache` when there is one, otherwise through the
+    /// per-builder manager. AddNode and CompileRenderGraphNode both go through these two helpers so the
+    /// load and the resolve cannot disagree about which cache the key belongs to.
+    /// @param shaderName Shader name without the `.spv` suffix.
+    /// @return The loaded shader's identity, or `std::nullopt` when it could not be loaded.
+    std::optional<ShaderAssetKey> LoadShaderAsset(const std::string& shaderName);
+    /// @param key Key returned by the matching `LoadShaderAsset` call.
+    /// @return The module, words and reflection, or nullptr when the key is unknown.
+    const ShaderAsset* ResolveShaderAsset(const ShaderAssetKey& key) const;
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
     VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
