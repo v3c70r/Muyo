@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -8,6 +10,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -2109,13 +2112,14 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported r
     }
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight above one rejects graph-owned resources",
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight above one rejects persistent graph-owned resources",
                  "[RenderGraphBuilder]")
 {
-    // Two overlapping executions would write the same graph-owned buffer/image with no cross-execution
-    // barrier; the builder refuses the declaration rather than letting the race reach the GPU (#40).
-    // Imported resources are the per-execution path (bound from each slot's ring) and are not a
-    // graph-owned declaration, so they are allowed.
+    // Transients now get one arena per slot (#40), so a graph that declares them may overlap executions.
+    // A graph-owned *Persistent* resource is different: it survives the frame boundary by definition, so
+    // there is no per-slot copy to make and two overlapping executions would write the same memory with
+    // no cross-execution barrier. The builder refuses that declaration by name rather than racing it.
+    // Imported resources are the per-execution path (bound from each slot's ring) and are allowed.
     RenderGraphBuilder builder(GetRenderDevice(), 2);
     builder.AddResource("OwnedWhileOverlapping", BufferResourceDesc{.count = 1,
                                                                     .stride = sizeof(uint32_t),
@@ -2762,8 +2766,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get 
         VkDeviceAddress address = 0;
     };
     std::vector<RootCapture> captures;
-    // Opt in to two slots: the default still serialises executions until B2b-2 makes shared graph
-    // resources safe to overlap.
+    // Opt in to two slots. Root arenas were the first per-slot state; transients are per slot too now
+    // (#40), so this case and the transient cases below exercise independent per-execution arenas.
     RenderGraphBuilder builder(GetRenderDevice(), 2);
     builder.AddNode(RenderGraphNodeCreateInfo{
         .nodeName = "RootWriter",
@@ -2785,6 +2789,350 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get 
     CHECK(captures[0].address != captures[1].address);
     CHECK(*reinterpret_cast<const uint32_t*>(captures[0].host) == 1);
     CHECK(*reinterpret_cast<const uint32_t*>(captures[1].host) == 2);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get separate transient arenas",
+                 "[RenderGraphBuilder]")
+{
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the transient descriptors need it");
+    }
+    // #40. Every in-flight execution owns a complete copy of the graph's transients. A CPU node writes
+    // the execution's number into the transient and a compute node copies it into the execution's own
+    // imported destination. Execution 1 is held on an unsignalled timeline value while execution 2
+    // records, writes its transient and submits, so a serialising builder cannot pass: a single slot
+    // makes the second Execute() block in AcquireSlot, which the watchdog observes and releases instead
+    // of stopping the suite. With one shared arena, execution 2's host write would overwrite the bytes
+    // execution 1's GPU work has not read yet, and out A would read 2 rather than 1.
+    constexpr uint32_t kValueCount = 4;
+    BufferResource outA(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                        VMA_MEMORY_USAGE_CPU_TO_GPU, kValueCount * sizeof(uint32_t));
+    BufferResource outB(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                        VMA_MEMORY_USAGE_CPU_TO_GPU, kValueCount * sizeof(uint32_t));
+
+    RenderGraphBuilder builder(GetRenderDevice(), 2);
+    builder.AddResource(
+        "Scratch", BufferResourceDesc{.count = kValueCount,
+                                      .stride = sizeof(uint32_t),
+                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    // The destination is imported so each execution can name a different buffer; the graph binds imports
+    // per execution from that slot's ring (#83), so execution 1 keeps A while execution 2 uses B.
+    builder.ImportResource("Out", &outA);
+
+    std::vector<const BufferResource*> transientInstances;
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "HostWritesScratch",
+                                              .queueType = QueueType::CPU,
+                                              .resourceUses = {ResourceUse{.handle = ResourceHandle("Scratch"),
+                                                                           .io = ResourceIOType::HOST_WRITE,
+                                                                           .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                           .kind = ResourceKind::BUFFER}},
+                                              .execute = [&transientInstances](RenderGraphNodeContext& ctx)
+                                              {
+                                                  auto* pScratch = ctx.GetResource<BufferResource>("Scratch");
+                                                  REQUIRE(pScratch != nullptr);
+                                                  transientInstances.push_back(pScratch);
+                                                  // The record order is execution order: 1 for the first execution, 2
+                                                  // for the second.
+                                                  const uint32_t value =
+                                                      static_cast<uint32_t>(transientInstances.size());
+                                                  std::memcpy(pScratch->Map(), &value, sizeof(value));
+                                                  pScratch->Unmap();
+                                              }});
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "CopiesScratch",
+        .queueType = QueueType::COMPUTE,
+        .resourceUses = {ResourceUse{.handle = ResourceHandle("Scratch"),
+                                     .io = ResourceIOType::READ,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER},
+                         ResourceUse{.handle = ResourceHandle("Out"),
+                                     .io = ResourceIOType::WRITE,
+                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                     .kind = ResourceKind::BUFFER}},
+        .shaderNames = {"copyBuffer.comp.heap"},
+        .execute = [](RenderGraphNodeContext& ctx)
+        {
+            const std::optional<uint32_t> input = ctx.GetHeapIndex("Scratch", ResourceUsage::STORAGE_BUFFER);
+            const std::optional<uint32_t> output = ctx.GetHeapIndex("Out", ResourceUsage::STORAGE_BUFFER);
+            REQUIRE(input.has_value());
+            REQUIRE(output.has_value());
+            struct Push
+            {
+                uint32_t byteCount;
+                uint32_t input;
+                uint32_t output;
+            };
+            const Push push{kValueCount * static_cast<uint32_t>(sizeof(uint32_t)), *input, *output};
+            ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+            vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+        }});
+    builder.AddDependency("HostWritesScratch", "CopiesScratch");
+    builder.Build();
+
+    VkDevice device = GetRenderDevice()->GetDevice();
+    VkSemaphoreTypeCreateInfo typeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+    typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    typeInfo.initialValue = 0;
+    VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    semaphoreInfo.pNext = &typeInfo;
+    VkSemaphore gate = VK_NULL_HANDLE;
+    VK_ASSERT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &gate));
+
+    // Execution 1 is genuinely in flight: its first submission waits on a value only the host can signal.
+    builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = gate, .waitValue = 1});
+
+    // Execution 2 re-points the import, then must return without waiting for execution 1.
+    builder.ImportResource("Out", &outB);
+
+    std::atomic<bool> bSecondReturned{false};
+    std::atomic<bool> bWatchdogFired{false};
+    std::atomic<bool> bGateSignalled{false};
+    const auto signalGate = [&]
+    {
+        if (bGateSignalled.exchange(true)) return;
+        VkSemaphoreSignalInfo signalInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO};
+        signalInfo.semaphore = gate;
+        signalInfo.value = 1;
+        VK_ASSERT(vkSignalSemaphore(device, &signalInfo));
+    };
+    std::thread watchdog(
+        [&]
+        {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            while (!bSecondReturned.load() && std::chrono::steady_clock::now() < deadline)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            if (!bSecondReturned.load())
+            {
+                // A serialising builder is blocked in AcquireSlot. Release it so this case reports the
+                // failed property instead of hanging the suite; the flag below is the assertion.
+                bWatchdogFired.store(true);
+                signalGate();
+            }
+        });
+
+    std::exception_ptr secondFailure;
+    try
+    {
+        builder.Execute(RenderGraphExecuteInfo{});
+    }
+    catch (...)
+    {
+        secondFailure = std::current_exception();
+    }
+    bSecondReturned.store(true);
+    watchdog.join();
+    const bool bOverlapped = !bWatchdogFired.load();
+    signalGate();  // no-op when the watchdog already released execution 1
+    builder.WaitIdle();
+    if (secondFailure != nullptr) std::rethrow_exception(secondFailure);
+
+    INFO("second Execute returned before the gate: " << bOverlapped << "; graph-owned transient instances: "
+                                                     << transientInstances.size());
+    CHECK(bOverlapped);
+    REQUIRE(transientInstances.size() == 2);
+    // The slot-aware resolver gave each execution its own instance; a shared one would be the same
+    // pointer twice, which is the aliasing bug this case has teeth for.
+    CHECK(transientInstances[0] != transientInstances[1]);
+
+    // Each execution's GPU work must have read its own slot's bytes. A shared arena makes out A read 2.
+    const uint32_t* pA = static_cast<const uint32_t*>(outA.Map());
+    const uint32_t* pB = static_cast<const uint32_t*>(outB.Map());
+    REQUIRE(pA != nullptr);
+    REQUIRE(pB != nullptr);
+    INFO("out A = " << pA[0] << ", out B = " << pB[0]);
+    CHECK(pA[0] == 1);
+    CHECK(pB[0] == 2);
+    outA.Unmap();
+    outB.Unmap();
+
+    vkDestroySemaphore(device, gate, nullptr);
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get separate transient image views",
+                 "[RenderGraphBuilder]")
+{
+    // The image half of the arena change. A view cannot be created for an unbound image, so every slot's
+    // image must be created, planned, bound and viewed independently. No shader: the point is the storage
+    // and view lifetime, and this keeps the case runnable wherever a compute queue is.
+    std::vector<const ImageResource*> instances;
+    RenderGraphBuilder builder(GetRenderDevice(), 2);
+    builder.AddResource("Target", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                                    .extent = {WIDTH, HEIGHT},
+                                                    .usage = VK_IMAGE_USAGE_STORAGE_BIT});
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "UsesTarget",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {ResourceUse{.handle = ResourceHandle("Target"),
+                                                                           .io = ResourceIOType::READ_WRITE,
+                                                                           .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                           .kind = ResourceKind::IMAGE}},
+                                              .execute = [&instances](RenderGraphNodeContext& ctx)
+                                              {
+                                                  const auto* pImage = ctx.GetResource<ImageResource>("Target");
+                                                  REQUIRE(pImage != nullptr);
+                                                  CHECK(pImage->getView() != VK_NULL_HANDLE);
+                                                  instances.push_back(pImage);
+                                              }});
+    builder.Build();
+    builder.Execute(RenderGraphExecuteInfo{});
+    builder.Execute(RenderGraphExecuteInfo{});
+    builder.WaitIdle();
+
+    REQUIRE(instances.size() == 2);
+    // Distinct instances, images and views. A shared instance is the single-arena bug; a shared view
+    // would describe the wrong slot's image even if the storage were separate.
+    CHECK(instances[0] != instances[1]);
+    CHECK(instances[0]->getImage() != instances[1]->getImage());
+    CHECK(instances[0]->getView() != instances[1]->getView());
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv,
+                 "RenderGraphBuilder: transient arenas survive an unchanged Build and drain when the plan changes",
+                 "[RenderGraphBuilder]")
+{
+    // The per-frame Build rule (#40). The declaration and plan are the cache key: an unchanged build
+    // keeps the arenas a previous execution may still be reading, and a changed one waits for that
+    // execution before freeing them. Both halves hold an execution on a timeline value, so "did Build
+    // wait?" is decided by whether it returned while the gate was closed, not by a stopwatch.
+    RenderGraphBuilder builder(GetRenderDevice(), 2);
+
+    const auto declareScratch = [&builder](uint64_t count)
+    {
+        builder.AddResource("Scratch", BufferResourceDesc{.count = count,
+                                                          .stride = sizeof(uint32_t),
+                                                          .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                          .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    };
+    declareScratch(4);
+
+    uint32_t nWritten = 0;
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "HostWritesScratch",
+                                              .queueType = QueueType::CPU,
+                                              .resourceUses = {ResourceUse{.handle = ResourceHandle("Scratch"),
+                                                                           .io = ResourceIOType::HOST_WRITE,
+                                                                           .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                           .kind = ResourceKind::BUFFER}},
+                                              .execute = [&nWritten](RenderGraphNodeContext& ctx)
+                                              {
+                                                  auto* pScratch = ctx.GetResource<BufferResource>("Scratch");
+                                                  REQUIRE(pScratch != nullptr);
+                                                  const uint32_t value = ++nWritten;
+                                                  std::memcpy(pScratch->Map(), &value, sizeof(value));
+                                                  pScratch->Unmap();
+                                              }});
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "ReadsScratch",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {ResourceUse{.handle = ResourceHandle("Scratch"),
+                                                                           .io = ResourceIOType::READ,
+                                                                           .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                           .kind = ResourceKind::BUFFER}},
+                                              .execute = [](RenderGraphNodeContext&) {}});
+    builder.AddDependency("HostWritesScratch", "ReadsScratch");
+    builder.Build();
+
+    const auto* pOriginal = dynamic_cast<const BufferResource*>(builder.ResolveResource("Scratch"));
+    REQUIRE(pOriginal != nullptr);
+    CHECK(pOriginal->GetSize() == 4 * sizeof(uint32_t));
+
+    VkDevice device = GetRenderDevice()->GetDevice();
+    VkSemaphoreTypeCreateInfo typeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+    typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    typeInfo.initialValue = 0;
+    VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    semaphoreInfo.pNext = &typeInfo;
+    VkSemaphore gate = VK_NULL_HANDLE;
+    VK_ASSERT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &gate));
+
+    const auto signalGate = [&](uint64_t value)
+    {
+        VkSemaphoreSignalInfo signalInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO};
+        signalInfo.semaphore = gate;
+        signalInfo.value = value;
+        VK_ASSERT(vkSignalSemaphore(device, &signalInfo));
+    };
+
+    // ── Part 1: an unchanged Build must NOT drain ────────────────────────────────────────────────
+    builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = gate, .waitValue = 1});
+    std::atomic<bool> bBuildStarted{false};
+    std::atomic<bool> bBuildReturned{false};
+    std::exception_ptr buildFailure;
+    std::thread buildThread(
+        [&]
+        {
+            bBuildStarted.store(true);
+            try
+            {
+                builder.Build();
+            }
+            catch (...)
+            {
+                buildFailure = std::current_exception();
+            }
+            bBuildReturned.store(true);
+        });
+    while (!bBuildStarted.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    const auto unchangedDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!bBuildReturned.load() && std::chrono::steady_clock::now() < unchangedDeadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    const bool bReturnedWhileInFlight = bBuildReturned.load();
+    // Always open the gate: a serialising implementation is blocked on it, and this case must report a
+    // failed assertion rather than hang the suite.
+    signalGate(1);
+    buildThread.join();
+    if (buildFailure != nullptr) std::rethrow_exception(buildFailure);
+    CHECK(bReturnedWhileInFlight);
+    builder.WaitIdle();
+    CHECK(builder.ResolveResource("Scratch") == pOriginal);
+
+    // ── Part 2: a changed declaration must drain before it frees the old arenas ───────────────────
+    declareScratch(8);
+    builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = gate, .waitValue = 2});
+    std::atomic<bool> bResizeBuildStarted{false};
+    std::atomic<bool> bResizeBuildReturned{false};
+    std::exception_ptr resizeBuildFailure;
+    std::thread resizeBuildThread(
+        [&]
+        {
+            bResizeBuildStarted.store(true);
+            try
+            {
+                builder.Build();
+            }
+            catch (...)
+            {
+                resizeBuildFailure = std::current_exception();
+            }
+            bResizeBuildReturned.store(true);
+        });
+    while (!bResizeBuildStarted.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    // The Build has started and the gate is still closed, so a Build that drains cannot have returned.
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    const bool bReturnedBeforeDrain = bResizeBuildReturned.load();
+    signalGate(2);
+    const auto resizeDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!bResizeBuildReturned.load() && std::chrono::steady_clock::now() < resizeDeadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    const bool bReturnedAfterSignal = bResizeBuildReturned.load();
+    resizeBuildThread.join();
+    if (resizeBuildFailure != nullptr) std::rethrow_exception(resizeBuildFailure);
+    INFO("changed Build returned before the gate: " << bReturnedBeforeDrain << "; after it: " << bReturnedAfterSignal);
+    CHECK_FALSE(bReturnedBeforeDrain);
+    CHECK(bReturnedAfterSignal);
+    builder.WaitIdle();
+
+    const auto* pResized = dynamic_cast<const BufferResource*>(builder.ResolveResource("Scratch"));
+    REQUIRE(pResized != nullptr);
+    CHECK(pResized->GetSize() == 8 * sizeof(uint32_t));
+
+    vkDestroySemaphore(device, gate, nullptr);
 }
 
 TEST_CASE("RenderGraphExecutionPlan: a handover is recorded only across differing queue families", "[RenderGraph]")
