@@ -112,7 +112,9 @@ int main()
     TextureResource* pFont =
         GetRenderResourceManager()->GetTexture("ui_font_texture", pFontPixels, fontWidth, fontHeight);
     DescriptorHeapService uiHeap;
-    uiHeap.Initialize(GetRenderDevice());
+    // The builder's in-flight slots and the heap's per-execution rings must agree; configuring the heap
+    // from the same constant makes that a compile-time fact rather than a default that happens to match.
+    uiHeap.Initialize(GetRenderDevice(), DescriptorHeapService::Config{.inFlightCount = kImagesInFlight});
     VkSamplerCreateInfo uiSamplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     uiSamplerInfo.magFilter = VK_FILTER_LINEAR;
     uiSamplerInfo.minFilter = VK_FILTER_LINEAR;
