@@ -318,12 +318,15 @@ inline VertexInputLayout ToVertexLayout(VertexType vertexType)
 /// @param pSpecializationInfo Values for the shaders' specialization constants, applied to both stages,
 ///        or nullptr. Entries naming a constant a stage does not declare are ignored by Vulkan, so one
 ///        map can serve both.
+/// @param pipelineCache Optional driver pipeline cache to record this pipeline in, or `VK_NULL_HANDLE`.
+///        It is the caller's cache; this function neither keeps nor destroys it.
 /// @return The created pipeline (caller owns it). Always created with
 ///         VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and `layout = VK_NULL_HANDLE` (B1b).
 inline VkPipeline CreatePipelineFromPSODesc(const PSODesc& psoDesc, VkDevice vkDevice,
                                             const std::vector<VkShaderModule>& shaderModuels,
                                             VkPipelineRenderingCreateInfo renderingInfo,
-                                            const VkSpecializationInfo* pSpecializationInfo = nullptr)
+                                            const VkSpecializationInfo* pSpecializationInfo = nullptr,
+                                            VkPipelineCache pipelineCache = VK_NULL_HANDLE)
 {
     // Create pipeline
     PipelineStateBuilder psoBuilder;
@@ -381,7 +384,7 @@ inline VkPipeline CreatePipelineFromPSODesc(const PSODesc& psoDesc, VkDevice vkD
                               .setColorBlending(blendBuilder.Build())
                               .setDepthStencil(depthStencilBuilder.Build())
                               .setRenderingCreateInfo(renderingInfo)
-                              .Build(vkDevice);
+                              .Build(vkDevice, pipelineCache);
     return pipeline;
 }
 

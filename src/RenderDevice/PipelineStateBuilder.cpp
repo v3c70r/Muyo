@@ -78,7 +78,7 @@ PipelineStateBuilder& PipelineStateBuilder::setViewport(const VkViewport& viewpo
     return *this;
 }
 
-VkPipeline PipelineStateBuilder::Build(VkDevice device)
+VkPipeline PipelineStateBuilder::Build(VkDevice device, VkPipelineCache pipelineCache)
 {
     VkPipeline res = VK_NULL_HANDLE;
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
@@ -139,7 +139,7 @@ VkPipeline PipelineStateBuilder::Build(VkDevice device)
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;
 
-    VK_ASSERT(vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &res));
+    VK_ASSERT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineInfo, nullptr, &res));
     return res;
 }
 // Helper function

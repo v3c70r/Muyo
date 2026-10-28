@@ -3,11 +3,17 @@
 #include <stdexcept>
 #include <utility>
 
+#include "Debug.h"
 #include "VkRenderDevice.h"
 
 namespace Muyo::RenderGraph
 {
 PipelineCache::PipelineCache(VkRenderDevice* renderDevice)
+    : PipelineCache(renderDevice, std::span<const std::uint8_t>{})
+{
+}
+
+PipelineCache::PipelineCache(VkRenderDevice* renderDevice, std::span<const std::uint8_t> initialData)
 {
     if (renderDevice == nullptr)
     {
@@ -20,11 +26,22 @@ PipelineCache::PipelineCache(VkRenderDevice* renderDevice)
     {
         throw std::runtime_error("PipelineCache: renderDevice has no logical device.");
     }
+
+    VkPipelineCacheCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    createInfo.initialDataSize = initialData.size();
+    createInfo.pInitialData = initialData.empty() ? nullptr : initialData.data();
+    VK_ASSERT(vkCreatePipelineCache(m_device, &createInfo, nullptr, &m_vkPipelineCache));
 }
 
 PipelineCache::~PipelineCache()
 {
     Reset();
+    if (m_vkPipelineCache != VK_NULL_HANDLE)
+    {
+        vkDestroyPipelineCache(m_device, m_vkPipelineCache, nullptr);
+        m_vkPipelineCache = VK_NULL_HANDLE;
+    }
     m_device = VK_NULL_HANDLE;
 }
 
@@ -54,5 +71,21 @@ void PipelineCache::Reset()
         if (entry.second != VK_NULL_HANDLE) vkDestroyPipeline(m_device, entry.second, nullptr);
     }
     m_pipelines.clear();
+}
+
+std::vector<std::uint8_t> PipelineCache::GetSerializedData() const
+{
+    if (m_vkPipelineCache == VK_NULL_HANDLE) return {};
+
+    std::size_t size = 0;
+    VK_ASSERT(vkGetPipelineCacheData(m_device, m_vkPipelineCache, &size, nullptr));
+    if (size == 0) return {};
+
+    std::vector<std::uint8_t> data(size);
+    VK_ASSERT(vkGetPipelineCacheData(m_device, m_vkPipelineCache, &size, data.data()));
+    // The second call can shrink the size when the driver's cache changed between the two calls; keep
+    // only the bytes it actually wrote rather than whatever the vector happened to hold.
+    data.resize(size);
+    return data;
 }
 }  // namespace Muyo::RenderGraph

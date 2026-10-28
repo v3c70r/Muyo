@@ -93,7 +93,12 @@ public:
         return *this;
     }
 
-    VkPipeline Build(VkDevice device);
+    /// Create the pipeline.
+    /// @param device        Logical device to create it on.
+    /// @param pipelineCache Optional driver pipeline cache to record the pipeline in; `VK_NULL_HANDLE`
+    ///                      creates it without one.
+    /// @return The created pipeline.
+    VkPipeline Build(VkDevice device, VkPipelineCache pipelineCache = VK_NULL_HANDLE);
 
 private:
     std::vector<VkPipelineShaderStageCreateInfo> m_vShaderStageInfos;

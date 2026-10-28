@@ -232,6 +232,30 @@ is still recording with. Two rules follow from that ownership:
 A builder that is given no cache keeps its existing per-builder behaviour, so a small caller or a test
 pays for nothing it does not use.
 
+### Serializing the driver cache
+
+The pipeline cache also owns a `VkPipelineCache`, passed to every graphics, compute and ray-tracing
+creation, so the driver can reuse its own compiled state across runs. (A ray-tracing `VkPipeline` is still
+not kept in the graph's map — its shader binding table is per node — but the driver cache records that
+creation like any other.) The graph does not decide where those bytes live:
+
+```cpp
+PipelineCache pipelines(GetRenderDevice());
+// ... declare, Build(), Execute() ...
+const std::vector<std::uint8_t> blob = pipelines.GetSerializedData();
+// the caller writes blob wherever it likes
+
+// next run
+PipelineCache pipelines(GetRenderDevice(), blob);
+```
+
+`GetSerializedData()` returns what `vkGetPipelineCacheData` produces; the span constructor hands those
+bytes to `vkCreatePipelineCache`. Saving and loading the file is caller policy, exactly as it is in
+`src/app/PSOCompiler.cpp`. The bytes are meaningful only on the device that produced them — Vulkan's
+header carries the vendor, device and pipeline-cache UUID — and a reloaded cache starts with an empty map
+of `VkPipeline` handles: the driver's data is reused, the process-local handles are not. The device must
+be idle while data is read, like any other host access to a `VkPipelineCache`.
+
 ## Shader caching
 
 Loading a shader means reading its `.spv`, creating a `VkShaderModule` and running SPIR-V reflection;
