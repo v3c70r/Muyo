@@ -256,8 +256,21 @@ private:
 
     CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
 
-    /// Create the per-execution root arena on first use; it is host-visible and device-addressable.
-    void EnsureRootArena();
+    /// One in-flight execution's host-visible, device-addressable root arena.
+    ///
+    /// Owned per executor slot rather than per builder: two executions can be recording at once, and a
+    /// shared arena would let the later execution overwrite root data the earlier one's GPU work has
+    /// not read yet. A slot's cursor is reset only after AcquireSlot has waited for that slot.
+    struct RootArena
+    {
+        VkBuffer buffer = VK_NULL_HANDLE;           ///< Host-visible root buffer.
+        VmaAllocation allocation = VK_NULL_HANDLE;  ///< Its VMA allocation.
+        std::byte* mapped = nullptr;                ///< Persistent mapping.
+        VkDeviceAddress address = 0;                ///< Device address of offset 0.
+        VkDeviceSize cursor = 0;                    ///< Next free byte in this execution.
+    };
+    /// Create the root arena for `slot` on first use; it is host-visible and device-addressable.
+    void EnsureRootArena(uint32_t slot);
     /// @return A slice of the current execution's root arena, or throw when it does not fit.
     RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment);
 
@@ -389,13 +402,12 @@ private:
     std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> m_aliasedImages;
     /// The blocks those buffers are bound into. Freed after every resource above is destroyed.
     std::vector<VmaAllocation> m_aliasBlocks;
-    /// Host-visible root arena (B1b-4). Reset at the start of every execution; the host owns its layout.
-    VkBuffer m_rootBuffer = VK_NULL_HANDLE;
-    VmaAllocation m_rootAllocation = VK_NULL_HANDLE;
-    std::byte* m_rootMapped = nullptr;
-    VkDeviceAddress m_rootAddress = 0;
-    VkDeviceSize m_rootCapacity = 64ULL * 1024;
-    VkDeviceSize m_rootCursor = 0;
+    /// Executions the graph keeps in flight: each owns a command-buffer slot and a root arena.
+    static constexpr uint32_t kInFlightCount = 2;
+    /// Host-visible root arenas, one per in-flight slot (B1b-4 / B2b). The host owns each layout.
+    static constexpr VkDeviceSize kRootCapacity = 64ULL * 1024;
+    std::vector<RootArena> m_rootArenas;
+    uint32_t m_currentRootSlot = 0;
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
     TransientMemoryPlan m_transientMemoryPlan;
 

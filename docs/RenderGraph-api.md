@@ -776,6 +776,7 @@ The executor owns the command buffers, because they cannot be recycled while an 
 | --- | --- |
 | `RenderGraphExecutor(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | Parameters: `renderDevice` - Device whose queues executions are submitted to; `inFlightCount` - How many executions may be in flight at once. 1 serialises them: the next AcquireSlot() blocks until the previous submission completes. A windowed caller passes its frame count; a headless caller can pass 1 and wait explicitly |
 | `~RenderGraphExecutor()` | Waits for outstanding work, then releases every slot's objects. |
+| `uint32_t GetInFlightCount() const` | Returns: How many executions this executor may have in flight at once. |
 | `RenderGraphExecutor(const RenderGraphExecutor &)=delete` | Owns raw Vulkan handles and frees them on destruction, so copying would double-destroy. |
 | `RenderGraphExecutor & operator=(const RenderGraphExecutor &)=delete` | Deleted for the same reason as the copy constructor. |
 | `ExecutionSlot AcquireSlot(const RenderGraphExecutionPlan &plan)` | Acquire a slot to record into, blocking while every slot is still in flight. Parameters: `plan` - Plan this execution will use; its segments size and type the command buffers Returns: The slot to record into. |

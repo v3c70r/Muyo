@@ -91,6 +91,9 @@ public:
     /// Waits for outstanding work, then releases every slot's objects.
     ~RenderGraphExecutor();
 
+    /// @return How many executions this executor may have in flight at once.
+    uint32_t GetInFlightCount() const { return static_cast<uint32_t>(m_slots.size()); }
+
     /// Owns raw Vulkan handles and frees them on destruction, so copying would double-destroy.
     RenderGraphExecutor(const RenderGraphExecutor&) = delete;
     /// Deleted for the same reason as the copy constructor.
