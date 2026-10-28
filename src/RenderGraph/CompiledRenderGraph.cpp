@@ -8,12 +8,13 @@ namespace Muyo::RenderGraph
 {
 void CompiledRenderGraphNode::Destroy(VkDevice device)
 {
-    if (pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, pipeline, nullptr);
+    if (pipeline != VK_NULL_HANDLE && bOwnsPipeline) vkDestroyPipeline(device, pipeline, nullptr);
 
     // Cleared rather than merely destroyed, because this is documented as safe to call repeatedly and one
     // of its callers acts while the node still exists: the compile guard that runs when compilation throws.
     // A destroyed handle left in place would be freed a second time by whoever destroys the graph next.
     pipeline = VK_NULL_HANDLE;
+    bOwnsPipeline = true;
 }
 
 void CompiledRenderGraph::RebuildExecutionPlan(const RenderGraphQueueFamilies& families)

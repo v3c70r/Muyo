@@ -31,6 +31,9 @@ struct CompiledRenderGraphNode
     /// Compiled pipeline, or `VK_NULL_HANDLE` for CPU nodes. Every graph pipeline is created with
     /// `VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT` and `layout = VK_NULL_HANDLE` (B1b).
     VkPipeline pipeline = VK_NULL_HANDLE;
+    /// True when this node owns `pipeline`. False for a pipeline reused from the builder's pipeline
+    /// cache: Destroy() must then leave it alive, because another node or the next Build still uses it.
+    bool bOwnsPipeline = true;
     /// True when this node dispatches a ray tracing pipeline.
     bool isRayTracing = false;
     /// Shader binding table regions, for ray tracing nodes.

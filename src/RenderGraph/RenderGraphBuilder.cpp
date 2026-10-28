@@ -185,6 +185,7 @@ RenderGraphBuilder::~RenderGraphBuilder()
     // this body, which is too late.
     m_executor.WaitIdle();
     m_compiledGraph.Destroy(m_vkDevice);
+    DestroyCachedPipelines();
     ReleaseCachedDescriptors();
     // After the compiled graph, because its descriptors and pipelines name these buffers, and before the
     // device goes away, because the blocks hold memory this class owns.
@@ -209,6 +210,94 @@ namespace
 std::size_t CombineDescriptorHash(std::size_t seed, std::size_t value)
 {
     return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2));
+}
+
+/// Append a scalar field to a pipeline-cache key. The key is a byte string rather than a hash so two
+/// different declarations cannot collide into the wrong pipeline.
+template <typename T>
+void AppendPipelineKey(std::string& key, const T& value)
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+    key.append(reinterpret_cast<const char*>(&value), sizeof(T));
+}
+
+/// @param code Shader SPIR-V words.
+/// @return A word-wise FNV-1a hash, identifying the shader in the pipeline-cache key.
+std::uint64_t HashShaderSpirv(const std::vector<std::uint32_t>& code)
+{
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (const std::uint32_t word : code)
+    {
+        hash ^= word;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+/// @return The pipeline-cache key for one node. It contains every input that changes the created
+///         pipeline — shader hashes, PSODesc, attachment formats and specialization values — and no
+///         descriptor or layout state, which the heap path keeps out of the pipeline (#17).
+std::string MakePipelineKey(QueueType queueType, const std::vector<std::uint64_t>& shaderHashes, const PSODesc& pso,
+                            const std::vector<VkFormat>& colorFormats, VkFormat depthFormat,
+                            const std::vector<SpecializationValue>& specializationConstants)
+{
+    std::string key;
+    AppendPipelineKey(key, static_cast<uint32_t>(queueType));
+    AppendPipelineKey(key, static_cast<uint32_t>(shaderHashes.size()));
+    for (const std::uint64_t hash : shaderHashes) AppendPipelineKey(key, hash);
+
+    AppendPipelineKey(key, static_cast<uint32_t>(pso.vertexType));
+    AppendPipelineKey(key, static_cast<uint32_t>(pso.inputAssembly.topology));
+    AppendPipelineKey(key, static_cast<uint8_t>(pso.inputAssembly.primitiveRestart));
+    AppendPipelineKey(key, static_cast<uint32_t>(pso.rasterState.fillMode));
+    AppendPipelineKey(key, static_cast<uint32_t>(pso.rasterState.cullMode));
+    AppendPipelineKey(key, static_cast<uint32_t>(pso.rasterState.frontFace));
+    AppendPipelineKey(key, static_cast<uint8_t>(pso.rasterState.depthClamp));
+    AppendPipelineKey(key, static_cast<uint8_t>(pso.rasterState.depthBias));
+    AppendPipelineKey(key, pso.rasterState.depthBiasConstant);
+    AppendPipelineKey(key, pso.rasterState.depthBiasSlope);
+    AppendPipelineKey(key, static_cast<uint8_t>(pso.depthStencilState.depthTestEnable));
+    AppendPipelineKey(key, static_cast<uint8_t>(pso.depthStencilState.depthWriteEnable));
+    AppendPipelineKey(key, static_cast<uint32_t>(pso.depthStencilState.depthCompare));
+    AppendPipelineKey(key, static_cast<uint8_t>(pso.depthStencilState.stencilEnable));
+    if (pso.depthStencilState.stencilEnable)
+    {
+        for (const StencilOpState* pStencil : {&pso.depthStencilState.front, &pso.depthStencilState.back})
+        {
+            AppendPipelineKey(key, pStencil->failOp);
+            AppendPipelineKey(key, pStencil->passOp);
+            AppendPipelineKey(key, pStencil->depthFailOp);
+            AppendPipelineKey(key, static_cast<uint32_t>(pStencil->compareOp));
+        }
+    }
+    AppendPipelineKey(key, pso.blendState.attachmentCount);
+    for (uint32_t i = 0; i < pso.blendState.attachmentCount && i < MAX_COLOR_ATTACHMENTS; ++i)
+    {
+        const ColorBlendAttachment& attachment = pso.blendState.attachments[i];
+        AppendPipelineKey(key, static_cast<uint8_t>(attachment.blendEnable));
+        AppendPipelineKey(key, static_cast<uint32_t>(attachment.srcColor));
+        AppendPipelineKey(key, static_cast<uint32_t>(attachment.dstColor));
+        AppendPipelineKey(key, static_cast<uint32_t>(attachment.colorOp));
+        AppendPipelineKey(key, static_cast<uint32_t>(attachment.srcAlpha));
+        AppendPipelineKey(key, static_cast<uint32_t>(attachment.dstAlpha));
+        AppendPipelineKey(key, static_cast<uint32_t>(attachment.alphaOp));
+        AppendPipelineKey(key, attachment.colorWriteMask);
+    }
+    AppendPipelineKey(key, pso.multisampleState.sampleCount);
+    AppendPipelineKey(key, static_cast<uint8_t>(pso.multisampleState.sampleShadingEnable));
+    AppendPipelineKey(key, pso.multisampleState.minSampleShading);
+
+    AppendPipelineKey(key, static_cast<uint32_t>(colorFormats.size()));
+    for (const VkFormat format : colorFormats) AppendPipelineKey(key, static_cast<uint32_t>(format));
+    AppendPipelineKey(key, static_cast<uint32_t>(depthFormat));
+
+    AppendPipelineKey(key, static_cast<uint32_t>(specializationConstants.size()));
+    for (const SpecializationValue& constant : specializationConstants)
+    {
+        AppendPipelineKey(key, constant.id);
+        AppendPipelineKey(key, constant.value);
+    }
+    return key;
 }
 }  // namespace
 
@@ -255,6 +344,15 @@ std::size_t RenderGraphBuilder::DescriptorKeyHash::operator()(const DescriptorKe
         seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(key.view.components.a));
     }
     return seed;
+}
+
+void RenderGraphBuilder::DestroyCachedPipelines()
+{
+    for (const auto& entry : m_pipelineCache)
+    {
+        if (entry.second != VK_NULL_HANDLE) vkDestroyPipeline(m_vkDevice, entry.second, nullptr);
+    }
+    m_pipelineCache.clear();
 }
 
 void RenderGraphBuilder::ReleaseCachedDescriptors()
@@ -409,6 +507,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
     // Retrive and merge shader reflections
     std::vector<ShaderReflection> shaderReflections;
     std::vector<VkShaderModule> shaderModules;
+    std::vector<std::uint64_t> shaderHashes;
     for (const auto& shaderKey : rgn.shaders)
     {
         if (shaderKey.IsValid())
@@ -418,6 +517,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             {
                 shaderReflections.push_back(shaderAsset->shaderReflection);
                 shaderModules.push_back(shaderAsset->shaderModule);
+                shaderHashes.push_back(HashShaderSpirv(shaderAsset->spirv));
             }
         }
     }
@@ -616,14 +716,30 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             .depthAttachmentFormat = depthAttachmentFormat,
         };
 
-        if (rgn.queueType == QueueType::GRAPHICS)
+        // Graphics and compute pipelines are cached on every input that changes their creation and on
+        // nothing that is descriptor or layout state (#17). A hit is still owned by the builder, so the
+        // compiled node must not destroy it.
+        const bool bCacheable = rgn.queueType == QueueType::GRAPHICS || rgn.queueType == QueueType::COMPUTE;
+        std::string pipelineKey;
+        if (bCacheable)
+        {
+            pipelineKey = MakePipelineKey(rgn.queueType, shaderHashes, rgn.psoDesc, colorAttachmentFormats,
+                                          depthAttachmentFormat, rgn.specializationConstants);
+            const auto it = m_pipelineCache.find(pipelineKey);
+            if (it != m_pipelineCache.end())
+            {
+                result.pipeline = it->second;
+                result.bOwnsPipeline = false;
+            }
+        }
+
+        if (result.pipeline == VK_NULL_HANDLE && rgn.queueType == QueueType::GRAPHICS)
         {
             result.bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-            // Create pipeline
             result.pipeline =
                 CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, renderingInfo, pSpecializationInfo);
         }
-        else if (rgn.queueType == QueueType::COMPUTE)
+        else if (result.pipeline == VK_NULL_HANDLE && rgn.queueType == QueueType::COMPUTE)
         {
             result.bindingPoint = VK_PIPELINE_BIND_POINT_COMPUTE;
             VkPipelineShaderStageCreateInfo stageInfo{};
@@ -642,7 +758,12 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             VK_ASSERT(
                 vkCreateComputePipelines(m_vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &result.pipeline));
         }
-        else if (rgn.queueType == QueueType::RAY_TRACING)
+        if (bCacheable && result.pipeline != VK_NULL_HANDLE && result.bOwnsPipeline)
+        {
+            m_pipelineCache.emplace(std::move(pipelineKey), result.pipeline);
+            result.bOwnsPipeline = false;
+        }
+        if (result.pipeline == VK_NULL_HANDLE && rgn.queueType == QueueType::RAY_TRACING)
         {
             // Refused rather than ignored: the ray tracing pipeline path does not apply specialization
             // constants yet, and silently keeping the baked defaults is the failure this whole change
@@ -1483,6 +1604,7 @@ void RenderGraphBuilder::Build()
             // descriptor cache so the next compile cannot hand out a slot that still names the old
             // resource. #40 replaces the wait with a retire behind the execution timeline.
             m_executor.WaitIdle();
+            DestroyCachedPipelines();
             ReleaseCachedDescriptors();
             m_services.resourceManager->RemoveResource(handle);
         }
