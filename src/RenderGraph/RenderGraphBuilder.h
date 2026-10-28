@@ -29,6 +29,8 @@
 
 namespace Muyo::RenderGraph
 {
+class PipelineCache;
+
 /// Map of every declared resource handle to its allocation description.
 using ResourceDescRegistry = std::unordered_map<ResourceHandle, ResourceDesc>;
 
@@ -91,10 +93,9 @@ struct RenderGraphNodeCreateInfo
 /// the renderer. `RenderGraphBuilder(VkRenderDevice*)` still fills the other two from those globals for
 /// in-tree callers that have not moved, and is marked as the transition rather than the shape.
 ///
-/// Deliberately not here yet: a shader source provider (the graph still loads `.spv` by file name) and a
-/// pipeline cache (there is no channel for one at all). Both are capabilities rather than
-/// de-globalisation, and each belongs with the guarantee it closes - "a client can supply SPIR-V bytes"
-/// and the cost work.
+/// Deliberately not here yet: a shader source provider (the graph still loads `.spv` by file name).
+/// That is a capability rather than de-globalisation, and it belongs with the guarantee it closes -
+/// "a client can supply SPIR-V bytes".
 struct RenderGraphServices
 {
     /// Device the graph creates pipelines, command buffers and synchronisation with. Required.
@@ -104,6 +105,15 @@ struct RenderGraphServices
     /// The B-track heap service. Required for every GPU node since B1b; the graph rejects a missing
     /// service by name. The descriptor-set allocator is no longer a graph service.
     DescriptorHeapService* descriptorHeap = nullptr;
+    /// Optional pipeline cache shared by every builder that is given the same instance (#17).
+    ///
+    /// When null, each builder keeps the per-builder cache it has always had and owns its entries. When
+    /// set, a cached pipeline belongs to this object and the builder only borrows it: destroying one
+    /// builder, or calling its `ReleaseCachedDeviceObjects()` for a swapchain recreation, therefore does
+    /// not invalidate a pipeline another builder or graph still uses. The cache is device-scoped, must
+    /// outlive every builder that refers to it, and is validated against the builder's `VkDevice` at
+    /// construction. See `PipelineCache`.
+    PipelineCache* pipelineCache = nullptr;
 };
 
 /// Declares and runs a render graph.
@@ -141,7 +151,8 @@ public:
     /// @param renderDevice Device used to create pipelines, command buffers and synchronisation.
     /// @param inFlightCount See the services constructor; the default serialises executions.
     explicit RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount = 1);
-    /// Releases compiled pipelines and command buffers; the heaps belong to the injected service.
+    /// Releases the pipelines this builder created and its command buffers. A pipeline borrowed from an
+    /// injected `PipelineCache` is not released: that cache owns it and may still serve another builder.
     ~RenderGraphBuilder();
 
     /// @return The graph compiled by the last successful Build(); empty before the first and after a
@@ -152,11 +163,15 @@ public:
     /// before reading back an imported resource written by a non-blocking Execute().
     void WaitIdle();
 
-    /// Release the descriptor slots and pipelines cached from earlier Builds. Call only when every
-    /// execution that used them has completed - the app's swapchain recreation does this right after
-    /// `vkDeviceWaitIdle`. The next Build recreates what it needs; graph-owned resources are untouched.
-    /// Use this when the resources behind the cached descriptors are destroyed outside the graph (a
-    /// swapchain recreation) and the builder is kept across the change.
+    /// Release the descriptor slots and the pipelines this builder owns from earlier Builds. Call only
+    /// when every execution that used them has completed - the app's swapchain recreation does this right
+    /// after `vkDeviceWaitIdle`. The next Build recreates what it needs; graph-owned resources are
+    /// untouched.
+    ///
+    /// A pipeline borrowed from an injected `PipelineCache` is deliberately left alone: another graph may
+    /// still be using it, and the cache is the thing that knows when it is safe to release entries. The
+    /// swapchain's formats are part of the pipeline key, so a recreated swapchain with a different format
+    /// compiles a new pipeline on the next Build rather than reusing one built for the old format.
     void ReleaseCachedDeviceObjects();
 
     // ── Resource declaration (data) ──────────────────────────────────────────
@@ -455,10 +470,13 @@ private:
     std::unordered_map<DescriptorKey, DescriptorSlot, DescriptorKeyHash> m_descriptorCache;
     /// Release every cached static slot; only after the GPU is known idle.
     void ReleaseCachedDescriptors();
-    /// Pipelines reused across builds, keyed on every input that changes the created pipeline but not on
-    /// any descriptor or layout state (B2c/#17). Owned here; compiled nodes do not destroy them.
+    /// Pipelines reused across builds when no shared `PipelineCache` is injected, keyed on every input
+    /// that changes the created pipeline but not on any descriptor or layout state (B2c/#17). Owned here;
+    /// compiled nodes do not destroy them. With a shared cache injected this map stays empty and the
+    /// cache's entries are borrowed instead.
     std::unordered_map<std::string, VkPipeline> m_pipelineCache;
-    /// Destroy every cached pipeline; only after the GPU is known idle.
+    /// Destroy every pipeline in the per-builder fallback cache; only after the GPU is known idle.
+    /// Entries in an injected shared cache are never touched by this.
     void DestroyCachedPipelines();
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
     TransientMemoryPlan m_transientMemoryPlan;

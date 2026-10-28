@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "Debug.h"
+#include "PipelineCache.h"
 #include "PipelineStateBuilder.h"
 #include "RenderGraph/ResourceUseResolver.h"
 #include "ShaderReflectionFetcher.h"
@@ -146,6 +147,14 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint
         m_ownedDescriptorHeap = std::make_unique<DescriptorHeapService>();
         m_ownedDescriptorHeap->Initialize(m_services.device);
         m_services.descriptorHeap = m_ownedDescriptorHeap.get();
+    }
+    if (m_services.pipelineCache != nullptr && m_services.pipelineCache->GetDevice() != m_vkDevice)
+    {
+        // A cache from another device holds handles this driver cannot use, and borrowing one would
+        // surface as an invalid-handle VUID at bind time instead of at the call that mixed them.
+        throw std::runtime_error(
+            "RenderGraphBuilder: services.pipelineCache was created on a different VkDevice than "
+            "services.device. A pipeline cache is device-scoped; create one per device.");
     }
     VkPhysicalDeviceProperties deviceProperties{};
     vkGetPhysicalDeviceProperties(m_services.device->GetPhysicalDevice(), &deviceProperties);
@@ -356,6 +365,8 @@ void RenderGraphBuilder::ReleaseCachedDeviceObjects()
 
 void RenderGraphBuilder::DestroyCachedPipelines()
 {
+    // Only the fallback map. A shared cache's entries belong to a caller-owned object that may serve
+    // another builder or graph, so this builder must never destroy them.
     for (const auto& entry : m_pipelineCache)
     {
         if (entry.second != VK_NULL_HANDLE) vkDestroyPipeline(m_vkDevice, entry.second, nullptr);
@@ -729,18 +740,27 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         };
 
         // Graphics and compute pipelines are cached on every input that changes their creation and on
-        // nothing that is descriptor or layout state (#17). A hit is still owned by the builder, so the
-        // compiled node must not destroy it.
+        // nothing that is descriptor or layout state (#17). A hit is borrowed either from the injected
+        // shared cache or from the per-builder fallback map, so the compiled node must not destroy it.
         const bool bCacheable = rgn.queueType == QueueType::GRAPHICS || rgn.queueType == QueueType::COMPUTE;
+        PipelineCache* pSharedPipelineCache = m_services.pipelineCache;
         std::string pipelineKey;
         if (bCacheable)
         {
             pipelineKey = MakePipelineKey(rgn.queueType, shaderHashes, rgn.psoDesc, colorAttachmentFormats,
                                           depthAttachmentFormat, rgn.specializationConstants);
-            const auto it = m_pipelineCache.find(pipelineKey);
-            if (it != m_pipelineCache.end())
+            VkPipeline cached = VK_NULL_HANDLE;
+            if (pSharedPipelineCache != nullptr)
             {
-                result.pipeline = it->second;
+                cached = pSharedPipelineCache->Find(pipelineKey);
+            }
+            else if (const auto it = m_pipelineCache.find(pipelineKey); it != m_pipelineCache.end())
+            {
+                cached = it->second;
+            }
+            if (cached != VK_NULL_HANDLE)
+            {
+                result.pipeline = cached;
                 result.bOwnsPipeline = false;
             }
         }
@@ -772,7 +792,26 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         }
         if (bCacheable && result.pipeline != VK_NULL_HANDLE && result.bOwnsPipeline)
         {
-            m_pipelineCache.emplace(std::move(pipelineKey), result.pipeline);
+            if (pSharedPipelineCache != nullptr)
+            {
+                // The cache owns the entry from here. A duplicate can only come from a concurrent Build
+                // on another thread (the builder and the cache are single-threaded contracts), and the
+                // duplicate we just created is ours to release.
+                if (!pSharedPipelineCache->Insert(pipelineKey, result.pipeline))
+                {
+                    vkDestroyPipeline(m_vkDevice, result.pipeline, nullptr);
+                    result.pipeline = pSharedPipelineCache->Find(pipelineKey);
+                    if (result.pipeline == VK_NULL_HANDLE)
+                    {
+                        throw std::runtime_error("Node '" + rgn.name +
+                                                 "' lost a pipeline-cache race for a key that then had no entry.");
+                    }
+                }
+            }
+            else
+            {
+                m_pipelineCache.emplace(std::move(pipelineKey), result.pipeline);
+            }
             result.bOwnsPipeline = false;
         }
         if (result.pipeline == VK_NULL_HANDLE && rgn.queueType == QueueType::RAY_TRACING)

@@ -357,6 +357,37 @@ Which vertex layout a graphics node's pipeline expects.
 | `COUNT` | Number of values; not a valid value, only the bound for the layout table. |
 
 
+## `PipelineCache.h`
+
+### `class Muyo::RenderGraph::PipelineCache`
+
+A caller-owned cache of VkPipeline objects, shared across render graph builders.
+
+A RenderGraphBuilder caches the pipelines it compiles, but that cache belongs to the builder. Two builders - a second graph, or a builder recreated after a swapchain change - therefore compile identical pipelines independently, and a builder's teardown releases only the pipelines it created. This type moves ownership out of the builder: entries live until Reset() or the cache's own destruction, and a builder that is given one borrows entries instead of owning them.
+
+Inject it through RenderGraphServices::pipelineCache. When the field is null the builder keeps its existing per-builder cache, so a caller that never shares anything needs no extra object.
+
+Lifetime. The cache is device-scoped and must outlive every builder that uses it. It is not safe to destroy it while a builder or a submitted execution still names one of its entries; the device must be idle before the cache is destroyed or Reset() is called. A builder validates that the cache belongs to the same VkDevice at construction, because an entry created on another device is a handle the driver cannot use.
+
+Key. The key is opaque to this type. RenderGraphBuilder builds it from the full pipeline state (the PSODesc, shader content, attachment formats, specialization values and queue type) as a byte string, using the same function as the per-builder fallback, so the two paths cannot disagree about what "the same pipeline" means. Different declarations therefore miss even when they produce compatible drivers state: correctness comes before a higher hit rate.
+
+Threading. One thread at a time, like the builder and the device objects it borrows. The map is not synchronized.
+
+| Member | Description |
+| --- | --- |
+| `PipelineCache(VkRenderDevice *renderDevice)` | Parameters: `renderDevice` - Device the cached pipelines are created on. Must be non-null; it has to outlive the cache, because destroying a cached pipeline goes through its VkDevice Throws: `std::runtime_error` - when renderDevice is null or has no logical device |
+| `~PipelineCache()` | Destroy every cached pipeline. The device must be idle, and no builder or execution may still refer to an entry - the same requirement as Reset(). |
+| `PipelineCache(const PipelineCache &)=delete` | Owns raw Vulkan handles and destroys them, so copying would double-destroy a pipeline. |
+| `PipelineCache & operator=(const PipelineCache &)=delete` | Deleted for the same reason as the copy constructor. |
+| `PipelineCache(PipelineCache &&)=delete` | Deleted because a moved-from cache would leave the old object with no entries to destroy. |
+| `PipelineCache & operator=(PipelineCache &&)=delete` | Deleted for the same reason as the move constructor. |
+| `VkPipeline Find(std::string_view key) const` | Parameters: `key` - Byte-string key produced by the builder's full-state pipeline key Returns: The cached pipeline, or VK_NULL_HANDLE when key has no entry. |
+| `bool Insert(std::string_view key, VkPipeline pipeline)` | Take ownership of a pipeline and cache it under key. Parameters: `key` - Byte-string key produced by the builder's full-state pipeline key; `pipeline` - Pipeline created on GetDevice(); ownership transfers only on success Returns: True when the entry was stored and is now owned by the cache; false when key was taken. |
+| `void Reset()` | Destroy every cached pipeline and clear the cache. Safe to call repeatedly. |
+| `std::size_t GetPipelineCount() const` | Returns: How many pipelines the cache currently owns. Used by tests and diagnostics to observe reuse across builders; it is not a frame-cost metric. |
+| `VkDevice GetDevice() const` | Returns: The logical device the entries were created on. A builder compares this to its own device before borrowing, so a cache shared with the wrong device is a named error. |
+
+
 ## `RenderGraphBarrier.h`
 
 ### `void Muyo::RenderGraph::AppendAcquireTransfer(QueueTransferBarriers &out, const std::string &handle, ResourceKind kind, VkImage image, VkBuffer buffer, VkImageAspectFlags aspect, const BarrierMasks &masks)`
@@ -597,10 +628,10 @@ Build() is idempotent for a fixed declaration: it topologically sorts the nodes,
 | --- | --- |
 | `RenderGraphBuilder(const RenderGraphServices &services, uint32_t inFlightCount=1)` | Parameters: `services` - The device, resource allocator and descriptor allocator the graph uses. Each is required; a missing one is reported by name rather than dereferenced later, and the check throws so it survives NDEBUG; `inFlightCount` - How many executions may be in flight at once. The default of 1 serialises them. Above 1, each slot owns its command buffers and root arena, but graph-owned resources are still shared: a caller that overlaps resource-bearing executions must keep their resources distinct or wait. B2b-2 makes the resource half safe |
 | `RenderGraphBuilder(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | Transitional: fills the remaining services from the engine's globals, for the callers that still use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is why it is documented as the transition rather than as an equal alternative. Parameters: `renderDevice` - Device used to create pipelines, command buffers and synchronisation; `inFlightCount` - See the services constructor; the default serialises executions |
-| `~RenderGraphBuilder()` | Releases compiled pipelines and command buffers; the heaps belong to the injected service. |
+| `~RenderGraphBuilder()` | Releases the pipelines this builder created and its command buffers. A pipeline borrowed from an injected PipelineCache is not released: that cache owns it and may still serve another builder. |
 | `const CompiledRenderGraph & GetCompiledGraph() const` | Returns: The graph compiled by the last successful Build(); empty before the first and after a failed Build. Exposed for diagnostics and tests that inspect the compiled pipelines. |
 | `void WaitIdle()` | Block until every submitted execution has completed. Does not record or submit work; use it before reading back an imported resource written by a non-blocking Execute(). |
-| `void ReleaseCachedDeviceObjects()` | Release the descriptor slots and pipelines cached from earlier Builds. Call only when every execution that used them has completed - the app's swapchain recreation does this right after vkDeviceWaitIdle. The next Build recreates what it needs; graph-owned resources are untouched. Use this when the resources behind the cached descriptors are destroyed outside the graph (a swapchain recreation) and the builder is kept across the change. |
+| `void ReleaseCachedDeviceObjects()` | Release the descriptor slots and the pipelines this builder owns from earlier Builds. Call only when every execution that used them has completed - the app's swapchain recreation does this right after vkDeviceWaitIdle. The next Build recreates what it needs; graph-owned resources are untouched. |
 | `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. Parameters: `handle` - Name the graph and the nodes use for it; `desc` - Allocation: buffer size, or image format/extent/usage, plus its lifetime Returns: *this for chaining. Throws: `std::runtime_error` - if desc cannot describe an allocation - a zero count/stride, a zero extent, VK_FORMAT_UNDEFINED, zero mips/layers, or usage == 0 - or if it asks for ResourceLifetime::Imported; use ImportResource for a resource the graph does not own |
 | `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. Returns: *this for chaining. |
 | `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | Returns: The allocation description for a graph-owned resource, if any. |
@@ -641,13 +672,14 @@ The services a graph is given, rather than looking up as globals (#53).
 
 The split follows the design document: the graph owns the policy - transient lifetimes, barriers, scheduling, descriptor content - while the mechanism belongs to the host. The device, the memory and the descriptors are the host's, so they arrive by construction. A caller that supplies all three runs a graph without the engine's globals, which is what lets a compute-only consumer use it without the renderer. RenderGraphBuilder(VkRenderDevice*) still fills the other two from those globals for in-tree callers that have not moved, and is marked as the transition rather than the shape.
 
-Deliberately not here yet: a shader source provider (the graph still loads .spv by file name) and a pipeline cache (there is no channel for one at all). Both are capabilities rather than de-globalisation, and each belongs with the guarantee it closes - "a client can supply SPIR-V bytes" and the cost work.
+Deliberately not here yet: a shader source provider (the graph still loads .spv by file name). That is a capability rather than de-globalisation, and it belongs with the guarantee it closes - "a client can supply SPIR-V bytes".
 
 | Member | Description |
 | --- | --- |
 | `VkRenderDevice * device` | Device the graph creates pipelines, command buffers and synchronisation with. Required. |
 | `RenderResourceManager * resourceManager` | Allocates and owns the graph's declared resources. Required. |
 | `DescriptorHeapService * descriptorHeap` | The B-track heap service. Required for every GPU node since B1b; the graph rejects a missing service by name. The descriptor-set allocator is no longer a graph service. |
+| `PipelineCache * pipelineCache` | Optional pipeline cache shared by every builder that is given the same instance (#17). |
 
 ### `std::unordered_map< ResourceHandle, ResourceDesc > ResourceDescRegistry`
 
