@@ -44,10 +44,8 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
     const uint32_t outputValue = 0;
     pOutput->SetData(&outputValue, sizeof(outputValue));
 
-    RenderGraphServices services{.device = device,
-                                 .resourceManager = GetRenderResourceManager(),
-                                 .descriptorManager = GetDescriptorManager(),
-                                 .descriptorHeap = &heap};
+    RenderGraphServices services{
+        .device = device, .resourceManager = GetRenderResourceManager(), .descriptorHeap = &heap};
     RenderGraphBuilder builder(services);
     builder.ImportResource("GraphHeapInput", pInput);
     builder.ImportResource("GraphHeapOutput", pOutput);
@@ -66,7 +64,6 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
                                             .kind = ResourceKind::BUFFER},
                                        },
                                    .shaderNames = {"graphHeapCopy.comp.heap"},
-                                   .useDescriptorHeap = true,
                                    .execute = [](RenderGraphNodeContext& context)
                                    {
                                        struct Push
@@ -93,8 +90,6 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
     builder.AddNode(node);
     builder.Build();
     builder.Execute();
-
-    CHECK(builder.GetDescriptorSetCount() == 0);
     auto* pMapped = static_cast<const uint32_t*>(pOutput->Map());
     REQUIRE(pMapped != nullptr);
     CHECK(*pMapped == 42);

@@ -11,6 +11,7 @@
 #   scripts/sanity.sh              docs coverage, formatting and tidy on the lines this branch changed
 #                                  (tidy needs a configured build: cmake -S . -B build)
 #   scripts/sanity.sh docs         documentation coverage + generated markdown
+#   scripts/sanity.sh descriptor-path  no descriptor-set/layout/pool/push-constant calls in src/RenderGraph
 #   scripts/sanity.sh format       clang-format on the lines this branch changed
 #   scripts/sanity.sh tidy         clang-tidy on the lines this branch changed (fails on a finding)
 #   scripts/sanity.sh static       Clang static analyzer over a dedicated build (slow)
@@ -55,6 +56,16 @@ cmd_docs() {
         ok "docs OK"
     else
         bad "docs FAILED"
+        fail=1
+    fi
+}
+
+cmd_descriptor_path() {
+    bold "descriptor-path: no descriptor sets/layouts/pools/push constants in src/RenderGraph"
+    if python3 scripts/check_descriptor_path.py; then
+        ok "descriptor-path OK"
+    else
+        bad "descriptor-path FAILED"
         fail=1
     fi
 }
@@ -360,14 +371,15 @@ cmd_analyzer() {
 }
 
 targets=("$@")
-[ ${#targets[@]} -eq 0 ] && targets=(docs format tidy)
+[ ${#targets[@]} -eq 0 ] && targets=(docs descriptor-path format tidy)
 if printf '%s\n' "${targets[@]}" | grep -qx all; then
-    targets=(docs format tidy static sanitize warnings analyzer)
+    targets=(docs descriptor-path format tidy static sanitize warnings analyzer)
 fi
 
 for t in "${targets[@]}"; do
     case "$t" in
         docs) cmd_docs ;;
+        descriptor-path) cmd_descriptor_path ;;
         format) cmd_format ;;
         tidy) cmd_tidy ;;
         static) cmd_static ;;

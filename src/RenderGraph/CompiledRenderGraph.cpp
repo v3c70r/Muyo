@@ -6,30 +6,14 @@
 
 namespace Muyo::RenderGraph
 {
-void CompiledRenderGraphNode::Destroy(VkDevice device, VkDescriptorPool descriptorPool)
+void CompiledRenderGraphNode::Destroy(VkDevice device)
 {
-    if (ownsDescriptorSets && !descriptorSets.empty() && descriptorPool != VK_NULL_HANDLE)
-    {
-        vkFreeDescriptorSets(device, descriptorPool, static_cast<uint32_t>(descriptorSets.size()),
-                             descriptorSets.data());
-    }
-    if (ownsDescriptorSetLayouts)
-    {
-        for (VkDescriptorSetLayout layout : descriptorSetLayouts)
-        {
-            if (layout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, layout, nullptr);
-        }
-    }
-    if (pipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     if (pipeline != VK_NULL_HANDLE) vkDestroyPipeline(device, pipeline, nullptr);
 
     // Cleared rather than merely destroyed, because this is documented as safe to call repeatedly and one
     // of its callers acts while the node still exists: the compile guard that runs when compilation throws.
     // A destroyed handle left in place would be freed a second time by whoever destroys the graph next.
     pipeline = VK_NULL_HANDLE;
-    pipelineLayout = VK_NULL_HANDLE;
-    descriptorSets.clear();
-    descriptorSetLayouts.clear();
 }
 
 void CompiledRenderGraph::RebuildExecutionPlan(const RenderGraphQueueFamilies& families)
@@ -114,11 +98,11 @@ void CompiledRenderGraph::RebuildExecutionPlan(const RenderGraphQueueFamilies& f
               });
 }
 
-void CompiledRenderGraph::Destroy(VkDevice device, VkDescriptorPool descriptorPool)
+void CompiledRenderGraph::Destroy(VkDevice device)
 {
     for (CompiledRenderGraphNode& rgn : m_nodes)
     {
-        rgn.Destroy(device, descriptorPool);
+        rgn.Destroy(device);
     }
     m_nodes.clear();
     // The plan holds indices into m_nodes; leaving it populated would make a later Execute() index

@@ -138,6 +138,5 @@ TEST_CASE("PSODesc: a vertex type outside the enum throws rather than building a
     desc.vertexType = static_cast<VertexType>(200);
     VkPipelineRenderingCreateInfo renderingInfo{};
     renderingInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    CHECK_THROWS_AS(CreatePipelineFromPSODesc(desc, VK_NULL_HANDLE, {}, VK_NULL_HANDLE, renderingInfo),
-                    std::invalid_argument);
+    CHECK_THROWS_AS(CreatePipelineFromPSODesc(desc, VK_NULL_HANDLE, {}, renderingInfo), std::invalid_argument);
 }

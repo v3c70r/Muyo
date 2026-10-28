@@ -28,26 +28,15 @@ struct CompiledRenderGraphNode
     /// True when the node opted into the dedicated async compute queue.
     bool async = false;
 
-    /// Compiled pipeline, or `VK_NULL_HANDLE` for CPU nodes.
+    /// Compiled pipeline, or `VK_NULL_HANDLE` for CPU nodes. Every graph pipeline is created with
+    /// `VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT` and `layout = VK_NULL_HANDLE` (B1b).
     VkPipeline pipeline = VK_NULL_HANDLE;
-    /// Pipeline layout the pipeline was created with.
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    /// Descriptor set layouts used by this node's pipeline layout.
-    std::vector<VkDescriptorSetLayout> descriptorSetLayouts;
-    /// Descriptor sets bound for this node.
-    std::vector<VkDescriptorSet> descriptorSets;
-    /// True when the node owns (and must free) its descriptor sets.
-    bool ownsDescriptorSets = false;
-    /// True when the node owns its descriptor set layouts.
-    bool ownsDescriptorSetLayouts = false;
     /// True when this node dispatches a ray tracing pipeline.
     bool isRayTracing = false;
     /// Shader binding table regions, for ray tracing nodes.
     std::array<VkStridedDeviceAddressRegionKHR, 3> sbtRegions{};
     /// Extent the ray tracing trace call is issued over.
     VkExtent2D traceExtent = {0, 0};
-    /// True when the node was compiled for the descriptor-heap path (B1b).
-    bool useDescriptorHeap = false;
     /// Resource use -> service index, for a heap node. Key is `handle#usage`.
     std::unordered_map<std::string, uint32_t> heapIndices;
     /// Push-constant ranges declared by a heap node's shaders; each must be covered by PushData.
@@ -59,13 +48,11 @@ struct CompiledRenderGraphNode
     /// Destroy this node's GPU objects and clear the handles. Safe to call repeatedly.
     ///
     /// Used in two places, and the second is the one that matters: destroying a built graph, and
-    /// releasing a node whose compilation threw part-way through. A compile creates its pipeline layout,
-    /// descriptor set layouts and sets, and pipeline in that order, while its declaration checks are
-    /// interleaved between them - so a rejected declaration can throw with objects already created, and a
-    /// caller that never sees them is a caller that cannot destroy them.
+    /// releasing a node whose compilation threw part-way through. A compile creates its pipeline while its
+    /// declaration checks are interleaved around it - so a rejected declaration can throw with the
+    /// pipeline already created, and a caller that never sees it is a caller that cannot destroy it.
     /// @param device Device the objects were created on.
-    /// @param descriptorPool Pool the node's descriptor sets were allocated from.
-    void Destroy(VkDevice device, VkDescriptorPool descriptorPool);
+    void Destroy(VkDevice device);
 
     /// Records the node's work.
     RenderGraphNodeCallback execute;
@@ -100,8 +87,7 @@ public:
 
     /// Destroy every node's GPU objects and clear the node list. Safe to call repeatedly.
     /// @param device Device the objects were created on.
-    /// @param descriptorPool Pool the per-node descriptor sets were allocated from.
-    void Destroy(VkDevice device, VkDescriptorPool descriptorPool);
+    void Destroy(VkDevice device);
 
 private:
     std::vector<CompiledRenderGraphNode> m_nodes;

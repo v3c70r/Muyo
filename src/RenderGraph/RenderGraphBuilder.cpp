@@ -131,12 +131,6 @@ const RenderGraphServices& RequireServices(const RenderGraphServices& services)
             "RenderGraphBuilder: services.resourceManager is null. The graph allocates its declared "
             "resources through it.");
     }
-    if (services.descriptorManager == nullptr)
-    {
-        throw std::runtime_error(
-            "RenderGraphBuilder: services.descriptorManager is null. The graph allocates descriptor set "
-            "layouts and sets through it.");
-    }
     return services;
 }
 }  // namespace
@@ -146,7 +140,6 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
     , m_shaderAssetManager(m_services.device->GetDevice())
     , m_vkDevice(m_services.device->GetDevice())
     , m_executor(m_services.device)
-    , m_descriptorSetCache(m_vkDevice, *m_services.descriptorManager)
 {
     if (m_services.descriptorHeap == nullptr && m_services.device->IsDescriptorHeapEnabled())
     {
@@ -161,9 +154,7 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
 }
 
 RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
-    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice,
-                                             .resourceManager = GetRenderResourceManager(),
-                                             .descriptorManager = GetDescriptorManager()})
+    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice, .resourceManager = GetRenderResourceManager()})
 {
 }
 
@@ -188,11 +179,11 @@ RenderGraphBuilder::~RenderGraphBuilder()
 {
     // Before destroying anything the GPU may still be using. `Execute(RenderGraphExecuteInfo)` submits
     // without waiting, so a builder destroyed right after a non-blocking Execute would free its pipelines
-    // and descriptor sets while its command buffers are still pending
+    // while its command buffers are still pending
     // (`VUID-vkDestroyPipeline-pipeline-00765`). The executor's own destructor waits, but it runs after
     // this body, which is too late.
     m_executor.WaitIdle();
-    m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
+    m_compiledGraph.Destroy(m_vkDevice);
     // After the compiled graph, because its descriptors and pipelines name these buffers, and before the
     // device goes away, because the blocks hold memory this class owns.
     DestroyAliasedTransients();
@@ -299,13 +290,10 @@ bool IsAliasedTransient(const ResourceDesc& desc)
 class HalfCompiledNodeGuard
 {
 public:
-    HalfCompiledNodeGuard(CompiledRenderGraphNode& node, VkDevice device, VkDescriptorPool descriptorPool)
-        : m_node(node), m_device(device), m_descriptorPool(descriptorPool)
-    {
-    }
+    HalfCompiledNodeGuard(CompiledRenderGraphNode& node, VkDevice device) : m_node(node), m_device(device) {}
     ~HalfCompiledNodeGuard()
     {
-        if (!m_committed) m_node.Destroy(m_device, m_descriptorPool);
+        if (!m_committed) m_node.Destroy(m_device);
     }
 
     /// Hand the node to the caller: it is no longer destroyed when this scope exits.
@@ -317,18 +305,17 @@ public:
 private:
     CompiledRenderGraphNode& m_node;
     VkDevice m_device;
-    VkDescriptorPool m_descriptorPool;
     bool m_committed = false;
 };
 }  // namespace
 
 CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderGraphBuilder::RenderGraphNode& rgn)
 {
-    // Compile pipeline and pipeline layout from node
+    // Compile the pipeline and its descriptor-heap slots from the node
     CompiledRenderGraphNode result;
     // From here on the node is owed to this scope: if any declaration check below rejects it, the objects
     // already created for it are destroyed before the exception leaves.
-    HalfCompiledNodeGuard releaseOnThrow(result, m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
+    HalfCompiledNodeGuard releaseOnThrow(result, m_vkDevice);
     // Copy the node's metadata: the compiled node carries everything needed at record time, so it
     // does not point back at the authoring structures.
     result.name = rgn.name;
@@ -372,96 +359,81 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         }
     }
     result.execute = rgn.execute;
-    result.useDescriptorHeap = rgn.useDescriptorHeap;
-
     if (shaderReflections.size() > 0)
     {
         ShaderReflection mergedReflection = MergeShaderReflections(shaderReflections);
 
-        if (rgn.useDescriptorHeap)
+        if (m_services.descriptorHeap == nullptr)
         {
-            if (m_services.descriptorHeap == nullptr)
-            {
-                throw std::runtime_error("Node '" + rgn.name +
-                                         "' requests the descriptor heap, but RenderGraphServices::descriptorHeap "
-                                         "is null.");
-            }
-            if (rgn.queueType == QueueType::RAY_TRACING &&
-                !m_services.descriptorHeap->CanUseDirectAccelerationStructure())
-            {
-                // Slang lowers RaytracingAccelerationStructure.Handle to an 8-byte value; the heap
-                // descriptor is sized by the implementation's AS descriptor size. A mismatch needs the
-                // mapping path, which B1b does not implement, so reject by name instead of feeding the
-                // shader a descriptor representation it cannot read (#223).
-                throw std::runtime_error(
-                    "Node '" + rgn.name +
-                    "' requests the descriptor heap, but the device's acceleration-structure descriptor is " +
-                    std::to_string(
-                        m_services.device->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)) +
-                    " bytes while Slang's direct RaytracingAccelerationStructure handle is 8; the mapping path "
-                    "is not implemented (B1b, #223).");
-            }
-            if (!mergedReflection.descriptorBindings.empty())
-            {
-                throw std::runtime_error("Node '" + rgn.name +
-                                         "' requests the descriptor heap but its shaders still declare descriptor "
-                                         "bindings; convert them to a .heap.slang variant.");
-            }
-
-            for (const ResolvedResourceUse& use : result.resourceUses)
-            {
-                const IRenderResource* pResource = ResolveResource(use.handle);
-                if (pResource == nullptr) continue;
-                if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
-                {
-                    const auto* pImage = dynamic_cast<const ImageResource*>(pResource);
-                    if (pImage == nullptr) continue;
-                    const VkImageLayout layout = use.usage == ResourceUsage::SAMPLED
-                                                     ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                                                     : VK_IMAGE_LAYOUT_GENERAL;
-                    const VkDescriptorType type = use.usage == ResourceUsage::SAMPLED
-                                                      ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
-                                                      : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-                    result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
-                        m_services.descriptorHeap->AcquireImage(pImage->GetImageViewCreateInfo(), layout, type).index;
-                }
-                else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER ||
-                         use.usage == ResourceUsage::DRAW_COMMAND_BUFFER)
-                {
-                    const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource);
-                    if (pBuffer == nullptr) continue;
-                    VkDeviceSize offset = 0;
-                    VkDeviceSize size = pBuffer->GetSize();
-                    if (use.bufferRange.has_value())
-                    {
-                        offset = use.bufferRange->offset;
-                        size = use.bufferRange->size;
-                    }
-                    const VkDescriptorType type = use.usage == ResourceUsage::UNIFORM_BUFFER
-                                                      ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
-                                                      : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-                    result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
-                        m_services.descriptorHeap
-                            ->AcquireBuffer(m_services.device->GetBufferDeviceAddress(pBuffer->buffer()) + offset, size,
-                                            type)
-                            .index;
-                }
-                else if (use.usage == ResourceUsage::ACCEL_STRUCTURE)
-                {
-                    const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
-                    if (pAccelerationStructure == nullptr) continue;
-                    result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
-                        m_services.descriptorHeap
-                            ->AcquireAccelerationStructure(pAccelerationStructure->GetDeviceAddress())
-                            .index;
-                }
-            }
+            throw std::runtime_error("Node '" + rgn.name +
+                                     "' needs the descriptor heap, but RenderGraphServices::descriptorHeap "
+                                     "is null (the graph path is heap-only since B1b).");
         }
-        else
+        if (rgn.queueType == QueueType::RAY_TRACING && !m_services.descriptorHeap->CanUseDirectAccelerationStructure())
         {
-            // Legacy descriptor path: descriptor set layouts, derived from the shader reflection for
-            // every node, and one pipeline layout per node.
-            BuildReflectionDescriptorSets(result, rgn, mergedReflection);
+            // Slang lowers RaytracingAccelerationStructure.Handle to an 8-byte value; the heap
+            // descriptor is sized by the implementation's AS descriptor size. A mismatch needs the
+            // mapping path, which B1b does not implement, so reject by name instead of feeding the
+            // shader a descriptor representation it cannot read (#223).
+            throw std::runtime_error(
+                "Node '" + rgn.name +
+                "' requests the descriptor heap, but the device's acceleration-structure descriptor is " +
+                std::to_string(m_services.device->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)) +
+                " bytes while Slang's direct RaytracingAccelerationStructure handle is 8; the mapping path "
+                "is not implemented (B1b, #223).");
+        }
+        if (!mergedReflection.descriptorBindings.empty())
+        {
+            throw std::runtime_error("Node '" + rgn.name +
+                                     "' declares descriptor bindings; the graph path is heap-only since B1b. "
+                                     "Convert the shaders to a .heap.slang variant.");
+        }
+
+        for (const ResolvedResourceUse& use : result.resourceUses)
+        {
+            const IRenderResource* pResource = ResolveResource(use.handle);
+            if (pResource == nullptr) continue;
+            if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
+            {
+                const auto* pImage = dynamic_cast<const ImageResource*>(pResource);
+                if (pImage == nullptr) continue;
+                const VkImageLayout layout = use.usage == ResourceUsage::SAMPLED
+                                                 ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                                 : VK_IMAGE_LAYOUT_GENERAL;
+                const VkDescriptorType type = use.usage == ResourceUsage::SAMPLED ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                                                                                  : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
+                    m_services.descriptorHeap->AcquireImage(pImage->GetImageViewCreateInfo(), layout, type).index;
+            }
+            else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER ||
+                     use.usage == ResourceUsage::DRAW_COMMAND_BUFFER)
+            {
+                const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource);
+                if (pBuffer == nullptr) continue;
+                VkDeviceSize offset = 0;
+                VkDeviceSize size = pBuffer->GetSize();
+                if (use.bufferRange.has_value())
+                {
+                    offset = use.bufferRange->offset;
+                    size = use.bufferRange->size;
+                }
+                const VkDescriptorType type = use.usage == ResourceUsage::UNIFORM_BUFFER
+                                                  ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                                  : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
+                    m_services.descriptorHeap
+                        ->AcquireBuffer(m_services.device->GetBufferDeviceAddress(pBuffer->buffer()) + offset, size,
+                                        type)
+                        .index;
+            }
+            else if (use.usage == ResourceUsage::ACCEL_STRUCTURE)
+            {
+                const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
+                if (pAccelerationStructure == nullptr) continue;
+                result.heapIndices[HeapIndexKey(use.handle, use.usage)] =
+                    m_services.descriptorHeap->AcquireAccelerationStructure(pAccelerationStructure->GetDeviceAddress())
+                        .index;
+            }
         }
 
         std::vector<VkPushConstantRange> pushConstantRanges;
@@ -470,20 +442,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             pushConstantRanges.push_back(
                 {.stageFlags = pcRange.stageFlags, .offset = pcRange.offset, .size = pcRange.size});
         }
-        if (rgn.useDescriptorHeap)
-        {
-            result.heapPushRanges = pushConstantRanges;
-        }
-        else
-        {
-            VkPipelineLayoutCreateInfo pipelineLayoutInfo{
-                .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                .setLayoutCount = static_cast<uint32_t>(result.descriptorSetLayouts.size()),
-                .pSetLayouts = result.descriptorSetLayouts.empty() ? nullptr : result.descriptorSetLayouts.data(),
-                .pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size()),
-                .pPushConstantRanges = pushConstantRanges.empty() ? nullptr : pushConstantRanges.data()};
-            VK_ASSERT(vkCreatePipelineLayout(m_vkDevice, &pipelineLayoutInfo, nullptr, &result.pipelineLayout));
-        }
+        result.heapPushRanges = pushConstantRanges;
 
         // Inspect the node's resolved resource uses to determine attachment formats.
         std::vector<VkFormat> colorAttachmentFormats;
@@ -564,8 +523,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         {
             result.bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
             // Create pipeline
-            result.pipeline = CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, result.pipelineLayout,
-                                                        renderingInfo, pSpecializationInfo, rgn.useDescriptorHeap);
+            result.pipeline =
+                CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, renderingInfo, pSpecializationInfo);
         }
         else if (rgn.queueType == QueueType::COMPUTE)
         {
@@ -580,9 +539,9 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
             VkComputePipelineCreateInfo pipelineInfo{};
             pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-            pipelineInfo.pNext = rgn.useDescriptorHeap ? &heapFlags : nullptr;
+            pipelineInfo.pNext = &heapFlags;
             pipelineInfo.stage = stageInfo;
-            pipelineInfo.layout = rgn.useDescriptorHeap ? VK_NULL_HANDLE : result.pipelineLayout;
+            pipelineInfo.layout = VK_NULL_HANDLE;
             VK_ASSERT(
                 vkCreateComputePipelines(m_vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &result.pipeline));
         }
@@ -616,160 +575,6 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
     return result;
 }
 
-void RenderGraphBuilder::BuildReflectionDescriptorSets(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
-                                                       const ShaderReflection& mergedReflection)
-{
-    if (mergedReflection.descriptorBindings.empty()) return;
-
-    // Group the reflected bindings by set index.
-    uint32_t maxSet = 0;
-    for (const auto& binding : mergedReflection.descriptorBindings)
-    {
-        maxSet = std::max(maxSet, binding.set);
-    }
-    const uint32_t setCount = maxSet + 1;
-
-    std::vector<std::vector<VkDescriptorSetLayoutBinding>> bindingsPerSet(setCount);
-    for (const auto& binding : mergedReflection.descriptorBindings)
-    {
-        bindingsPerSet[binding.set].push_back({.binding = binding.binding,
-                                               .descriptorType = binding.type,
-                                               .descriptorCount = binding.count,
-                                               .stageFlags = binding.stageFlags,
-                                               .pImmutableSamplers = nullptr});
-    }
-    // Canonical order, so the cache key is stable: reflection does not promise one.
-    for (auto& bindings : bindingsPerSet)
-    {
-        std::sort(bindings.begin(), bindings.end(),
-                  [](const VkDescriptorSetLayoutBinding& a, const VkDescriptorSetLayoutBinding& b)
-                  { return a.binding < b.binding; });
-    }
-
-    rgn.descriptorSetLayouts.resize(setCount, VK_NULL_HANDLE);
-    rgn.descriptorSets.resize(setCount, VK_NULL_HANDLE);
-    // The cache owns the layouts and sets now, so the node must not free them.
-    rgn.ownsDescriptorSets = false;
-    rgn.ownsDescriptorSetLayouts = false;
-
-    // Bind each set by content: two nodes with the same reflected layout and the same bound resources
-    // share one set, so a bindless array is paid once rather than once per node (#15, #16 criterion 4).
-    for (uint32_t set = 0; set < setCount; ++set)
-    {
-        std::vector<DescriptorSetKey::Bound> bound;
-        for (const auto& use : logicalNode.resourceUses)
-        {
-            if (!use.descriptorBinding.has_value() || use.descriptorBinding->set != set) continue;
-            const IRenderResource* pResource = ResolveResource(use.handle);
-            if (pResource == nullptr) continue;
-
-            // The descriptor type comes from the reflection entry that matches this set/binding.
-            VkDescriptorType descriptorType = VK_DESCRIPTOR_TYPE_MAX_ENUM;
-            for (const auto& reflected : mergedReflection.descriptorBindings)
-            {
-                if (reflected.set == set && reflected.binding == use.descriptorBinding->binding)
-                {
-                    descriptorType = reflected.type;
-                    break;
-                }
-            }
-            if (descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM) continue;
-
-            DescriptorSetKey::Bound b{
-                .binding = use.descriptorBinding->binding, .type = descriptorType, .resource = pResource};
-            if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
-            {
-                const auto [nOffset, nRange] = ResolveBufferRange(logicalNode.name, use, *pBuffer, descriptorType);
-                b.bufferOffset = nOffset;
-                b.bufferRange = nRange;
-            }
-            else if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
-            {
-                b.imageLayout = (descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                                    ? VK_IMAGE_LAYOUT_GENERAL
-                                    : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                if (descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                {
-                    // A combined image sampler needs a sampler, which a plain ImageResource does not carry.
-                    // Only a TextureResource has one, and a combined binding to anything else is a
-                    // declaration error rather than a descriptor written with a null sampler.
-                    const auto* pTexture = dynamic_cast<const TextureResource*>(pImage);
-                    if (pTexture == nullptr)
-                    {
-                        throw std::runtime_error("Node '" + logicalNode.name + "' binds image '" + use.handle +
-                                                 "' to a combined image sampler, but the resource carries no "
-                                                 "sampler. Import a TextureResource, or bind a sampled image instead.");
-                    }
-                    b.sampler = pTexture->getSamper();
-                }
-            }
-            else if (dynamic_cast<const AccelerationStructure*>(pResource) == nullptr)
-            {
-                continue;
-            }
-            bound.push_back(b);
-        }
-        std::sort(bound.begin(), bound.end());
-
-        const DescriptorSetKey key{.set = set, .layout = bindingsPerSet[set], .bound = bound};
-        const DescriptorSetCache::Entry entry = m_descriptorSetCache.Acquire(
-            key, [this, &bound](VkDescriptorSet descriptorSet) { WriteDescriptorSetBindings(descriptorSet, bound); });
-        rgn.descriptorSetLayouts[set] = entry.layout;
-        rgn.descriptorSets[set] = entry.set;
-    }
-}
-
-void RenderGraphBuilder::WriteDescriptorSetBindings(VkDescriptorSet descriptorSet,
-                                                    const std::vector<DescriptorSetKey::Bound>& bound)
-{
-    if (bound.empty()) return;
-
-    // Every pNext/pBufferInfo/pImageInfo below points into these vectors, which stay put for the single
-    // vkUpdateDescriptorSets call. Reserving up front means the addresses are stable even if a push
-    // would otherwise reallocate.
-    std::vector<VkWriteDescriptorSet> writes(bound.size());
-    std::vector<VkDescriptorBufferInfo> bufferInfos(bound.size());
-    std::vector<VkDescriptorImageInfo> imageInfos(bound.size());
-    std::vector<VkWriteDescriptorSetAccelerationStructureKHR> asWrites(
-        bound.size(), VkWriteDescriptorSetAccelerationStructureKHR{
-                          VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR});
-
-    for (size_t i = 0; i < bound.size(); ++i)
-    {
-        const DescriptorSetKey::Bound& b = bound[i];
-        VkWriteDescriptorSet& write = writes[i];
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = descriptorSet;
-        write.dstBinding = b.binding;
-        write.dstArrayElement = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = b.type;
-
-        if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(b.resource))
-        {
-            asWrites[i].accelerationStructureCount = 1;
-            asWrites[i].pAccelerationStructures = &pAccel->GetAccelerationStructure();
-            write.pNext = &asWrites[i];
-        }
-        else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(b.resource))
-        {
-            bufferInfos[i].buffer = pBuffer->buffer();
-            bufferInfos[i].offset = b.bufferOffset;
-            bufferInfos[i].range = b.bufferRange;
-            write.pBufferInfo = &bufferInfos[i];
-        }
-        else if (const auto* pImage = dynamic_cast<const ImageResource*>(b.resource))
-        {
-            imageInfos[i].imageView = pImage->getView();
-            imageInfos[i].imageLayout = b.imageLayout;
-            imageInfos[i].sampler = b.sampler;
-            write.pImageInfo = &imageInfos[i];
-        }
-    }
-
-    vkUpdateDescriptorSets(m_vkDevice, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-}
-
 void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
                                                  const std::vector<VkShaderModule>& shaderModules)
 {
@@ -784,16 +589,13 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
         .AddShaderModule(shaderModules[1], VK_SHADER_STAGE_MISS_BIT_KHR)
         .AddShaderModule(shaderModules[2], VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
-    builder.SetPipelineLayout(rgn.useDescriptorHeap ? VK_NULL_HANDLE : rgn.pipelineLayout).SetMaxRecursionDepth(1);
+    builder.SetPipelineLayout(VK_NULL_HANDLE).SetMaxRecursionDepth(1);
     VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
+    // D11: an RT heap pipeline takes the heap flag and a null layout, like the graphics/compute ones.
     VkPipelineCreateFlags2CreateInfo heapFlags{VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO};
-    if (rgn.useDescriptorHeap)
-    {
-        // D11: an RT heap pipeline takes the heap flag and a null layout, like the graphics/compute ones.
-        heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
-        createInfo.pNext = &heapFlags;
-        createInfo.layout = VK_NULL_HANDLE;
-    }
+    heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+    createInfo.pNext = &heapFlags;
+    createInfo.layout = VK_NULL_HANDLE;
     VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(m_vkDevice, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr,
                                                     &rgn.pipeline));
 
@@ -1218,7 +1020,6 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     auto& rgn = m_renderGraphNodes.at(nodeName);
     rgn.queueType = nodeCreateInfo.queueType;
     rgn.async = nodeCreateInfo.async;
-    rgn.useDescriptorHeap = nodeCreateInfo.useDescriptorHeap;
     rgn.costHint = nodeCreateInfo.costHint;
     rgn.attachmentClearValues = nodeCreateInfo.attachmentClearValues;
     rgn.specializationConstants = nodeCreateInfo.specializationConstants;
@@ -1274,9 +1075,8 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
             resourceDesc.has_value() ? nullptr : m_importedResources.at(resourceUse.handle);
         ValidateUseAgainstResource(nodeName, resourceUse, resourceDesc, pImportedResource, nodeCreateInfo.queueType);
         ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
-        // A range on a buffer bound into a descriptor is validated in
-        // `BuildReflectionDescriptorSets`, which knows the descriptor type from reflection; that runs
-        // at Build() too, so a bad range still fails there rather than mid-record in Execute.
+        // A range on a buffer bound by the heap descriptor is validated at Build(), which knows the
+        // descriptor type from the use, so a bad range fails there rather than mid-record in Execute.
         // Fill in allocation-time properties (format / extent) so pipeline + barrier generation can use them.
         if (const auto desc = GetResourceDesc(resourceUse.handle))
         {
@@ -1410,145 +1210,6 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
             else
             {
                 it->second.lastUse = nNode;
-            }
-        }
-    }
-}
-
-namespace
-{
-/// @param type A reflected descriptor type.
-/// @return The resource kind that can satisfy it, or nothing for types the graph does not bind directly
-///         (a standalone sampler, an inline uniform block).
-std::optional<ResourceKind> KindForDescriptorType(VkDescriptorType type)
-{
-    switch (type)
-    {
-        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-            return ResourceKind::BUFFER;
-        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-            return ResourceKind::IMAGE;
-        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-            return ResourceKind::ACCELERATION_STRUCTURE;
-        default:
-            return std::nullopt;
-    }
-}
-
-/// @param type A reflected descriptor type.
-/// @return Its symbolic Vulkan name, so a message matches the header rather than a number the reader has
-///         to look up.
-const char* NameOfDescriptorType(VkDescriptorType type)
-{
-    switch (type)
-    {
-        case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-            return "VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE";
-        case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-            return "VK_DESCRIPTOR_TYPE_STORAGE_IMAGE";
-        case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-            return "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER";
-        case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-            return "VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT";
-        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-            return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER";
-        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-            return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER";
-        case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-            return "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC";
-        case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-            return "VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC";
-        case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
-            return "VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER";
-        case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
-            return "VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER";
-        case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-            return "VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR";
-        default:
-            return "an unsupported VkDescriptorType";
-    }
-}
-}  // namespace
-
-void RenderGraphBuilder::ValidateDescriptorBindings(const std::vector<std::string>& executionOrder)
-{
-    for (const std::string& nodeName : executionOrder)
-    {
-        const RenderGraphNode& node = m_renderGraphNodes.at(nodeName);
-
-        // Merge the node's reflected bindings. AddNode already loaded the shader assets, so this needs no
-        // device and can run before any resource exists.
-        std::vector<ShaderReflection> reflections;
-        const auto collectReflections = [&](const auto& shaderKeys)
-        {
-            for (const ShaderKey& shaderKey : shaderKeys)
-            {
-                if (!shaderKey.IsValid()) continue;
-                if (const auto* pAsset = m_shaderAssetManager.GetShaderAsset(shaderKey))
-                {
-                    reflections.push_back(pAsset->shaderReflection);
-                }
-            }
-        };
-        collectReflections(node.shaders);
-        collectReflections(node.rtShaders);
-        const ShaderReflection merged = MergeShaderReflections(reflections);
-
-        std::vector<std::pair<uint32_t, uint32_t>> boundSlots;
-        for (const ResolvedResourceUse& use : node.resourceUses)
-        {
-            if (!use.descriptorBinding.has_value()) continue;
-            const uint32_t nSet = use.descriptorBinding->set;
-            const uint32_t nBinding = use.descriptorBinding->binding;
-
-            // One use per binding: two uses would each pass the existence check and write the same
-            // descriptor, with the later write winning silently.
-            if (std::find(boundSlots.begin(), boundSlots.end(), std::make_pair(nSet, nBinding)) != boundSlots.end())
-            {
-                throw std::runtime_error("Node '" + nodeName + "' binds more than one resource at set " +
-                                         std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
-                                         "; a binding holds one resource.");
-            }
-            boundSlots.emplace_back(nSet, nBinding);
-
-            const auto reflected = std::find_if(merged.descriptorBindings.begin(), merged.descriptorBindings.end(),
-                                                [nSet, nBinding](const ShaderReflection::DescriptorBinding& b)
-                                                { return b.set == nSet && b.binding == nBinding; });
-            if (reflected == merged.descriptorBindings.end())
-            {
-                // Name the binding and list what the shader does declare: the whole value of the check is
-                // telling the author which line is wrong, without a history search or a debugger.
-                std::string declared;
-                for (const auto& candidate : merged.descriptorBindings)
-                {
-                    if (!declared.empty()) declared += ", ";
-                    declared +=
-                        "set " + std::to_string(candidate.set) + " binding " + std::to_string(candidate.binding);
-                }
-                throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
-                                         std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
-                                         ", but its shader declares no descriptor there. Declared bindings: " +
-                                         (declared.empty() ? std::string("none") : declared) + ".");
-            }
-
-            // The write takes its type from reflection, so a resource whose kind does not fit that type would
-            // be written as the shader's type - a mismatch that only shows at draw. Checked here, where both
-            // the declaration and the reflection are known.
-            const std::optional<ResourceKind> requiredKind = KindForDescriptorType(reflected->type);
-            if (requiredKind.has_value() && use.kind != *requiredKind)
-            {
-                throw std::runtime_error("Node '" + nodeName + "' binds resource '" + use.handle + "' at set " +
-                                         std::to_string(nSet) + ", binding " + std::to_string(nBinding) +
-                                         ", which the shader declares as " + NameOfDescriptorType(reflected->type) +
-                                         ", but the graph binds " + NameOfKind(use.kind) + " there.");
             }
         }
     }
@@ -1688,14 +1349,10 @@ void RenderGraphBuilder::Build()
         throw std::runtime_error("Render graph contains a cycle!");
     }
 
-    m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
+    m_compiledGraph.Destroy(m_vkDevice);
     // Before anything is created: a resource that is aliased into a block, or whose offsets may differ
     // from the last build's, belongs to the build that planned it and not to the builder.
     DestroyAliasedTransients();
-    // And the descriptor sets are rebuilt from this build's resources: a rebuild can resolve a resource
-    // to a new handle, so a set from the previous build would hold a stale view. Frees them, because the
-    // cache owns them now and a node only references the handles.
-    m_descriptorSetCache.Clear();
     m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
     std::vector<std::string> executionOrder = m_dependencyGraph.TopologicalSort();
     if (executionOrder.size() != m_renderGraphNodes.size())
@@ -1706,7 +1363,6 @@ void RenderGraphBuilder::Build()
     // Before allocating anything: a declaration error should not cost an allocation, and this needs only
     // the order and the declarations.
     ValidateTransientLifetimes(executionOrder);
-    ValidateDescriptorBindings(executionOrder);
 
     // Allocate all graph-owned resources before compiling nodes. A buffer transient is skipped here and
     // created unbound below instead: its memory belongs to a block, and the manager's path would give it
@@ -1763,7 +1419,7 @@ void RenderGraphBuilder::Build()
         // holding half a pass list is one Execute() would run with a plan that was never derived, and the
         // objects in it would otherwise still be alive when the device is destroyed, which is exactly the
         // leaked-object error that erases the diagnostic this issue exists to deliver.
-        m_compiledGraph.Destroy(m_vkDevice, m_services.descriptorManager->GetDescriptorPool());
+        m_compiledGraph.Destroy(m_vkDevice);
         throw;
     }
 }
@@ -2290,9 +1946,12 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         bool bSegmentUsesHeap = false;
         for (size_t i = segments[s].begin; i < segments[s].end && !bSegmentUsesHeap; ++i)
         {
-            bSegmentUsesHeap = nodes[i].useDescriptorHeap;
+            bSegmentUsesHeap = nodes[i].queueType != QueueType::CPU;
         }
-        if (bSegmentUsesHeap)
+        // A graph whose GPU nodes have no shaders (a present-only or copy-only frame) needs no heap:
+        // the service is null on a heap-less device and there is nothing acquired to upload. A node
+        // with shaders would have been rejected at Build on such a device.
+        if (bSegmentUsesHeap && m_services.descriptorHeap != nullptr)
         {
             m_services.descriptorHeap->Upload(cmdBuf);
         }
@@ -2323,8 +1982,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             context.queueType = rgn.queueType;
             context.commandBuffer = cmdBuf;
             context.pipeline = rgn.pipeline;
-            context.pipelineLayout = rgn.pipelineLayout;
-            context.descriptorHeap = rgn.useDescriptorHeap ? m_services.descriptorHeap : nullptr;
+            context.descriptorHeap = m_services.descriptorHeap;
             context.getHeapIndex = [&rgn](const ResourceHandle& handle, ResourceUsage usage) -> std::optional<uint32_t>
             {
                 const auto it = rgn.heapIndices.find(HeapIndexKey(handle, usage));
@@ -2332,7 +1990,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
                 return it->second;
             };
             context.maxPushDataSize =
-                rgn.useDescriptorHeap ? m_services.descriptorHeap->GetProperties().maxPushDataSize : 0;
+                m_services.descriptorHeap != nullptr ? m_services.descriptorHeap->GetProperties().maxPushDataSize : 0;
             context.bindingPoint = rgn.bindingPoint;
 
             // Bracket the node so a capture or validation tool attributes the commands and anything it reports to this
@@ -2357,20 +2015,10 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
                 rendering = BeginRendering(cmdBuf, rgn, context, alreadyWritten, colorAttachments, clearValues);
             }
 
-            // 3. Bind pipeline + descriptor sets.
+            // 3. Bind the pipeline. The heaps were bound at the start of the segment.
             if (rgn.pipeline != VK_NULL_HANDLE)
             {
                 vkCmdBindPipeline(cmdBuf, rgn.bindingPoint, rgn.pipeline);
-
-                if (!rgn.descriptorSetLayouts.empty())
-                {
-                    // Every node's sets were written at Build() from the reflection-derived layout,
-                    // so recording only binds the handles. There is no per-node write here any more,
-                    // and no semantic/reflection branch.
-                    vkCmdBindDescriptorSets(cmdBuf, rgn.bindingPoint, rgn.pipelineLayout, 0,
-                                            static_cast<uint32_t>(rgn.descriptorSets.size()), rgn.descriptorSets.data(),
-                                            0, nullptr);
-                }
             }
 
             // 4. User GPU work.

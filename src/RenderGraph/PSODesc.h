@@ -314,19 +314,16 @@ inline VertexInputLayout ToVertexLayout(VertexType vertexType)
 /// @param psoDesc        Pipeline state.
 /// @param vkDevice       Logical device.
 /// @param shaderModuels  Vertex shader module followed by the fragment shader module.
-/// @param pipelineLayout Legacy descriptor layout, or VK_NULL_HANDLE when `bDescriptorHeap` is true.
 /// @param renderingInfo  Dynamic-rendering attachment formats.
 /// @param pSpecializationInfo Values for the shaders' specialization constants, applied to both stages,
 ///        or nullptr. Entries naming a constant a stage does not declare are ignored by Vulkan, so one
 ///        map can serve both.
-/// @param bDescriptorHeap Create with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and no pipeline layout.
-/// @return The created pipeline (caller owns it).
+/// @return The created pipeline (caller owns it). Always created with
+///         VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and `layout = VK_NULL_HANDLE` (B1b).
 inline VkPipeline CreatePipelineFromPSODesc(const PSODesc& psoDesc, VkDevice vkDevice,
                                             const std::vector<VkShaderModule>& shaderModuels,
-                                            VkPipelineLayout pipelineLayout,
                                             VkPipelineRenderingCreateInfo renderingInfo,
-                                            const VkSpecializationInfo* pSpecializationInfo = nullptr,
-                                            bool bDescriptorHeap = false)
+                                            const VkSpecializationInfo* pSpecializationInfo = nullptr)
 {
     // Create pipeline
     PipelineStateBuilder psoBuilder;
@@ -375,14 +372,13 @@ inline VkPipeline CreatePipelineFromPSODesc(const PSODesc& psoDesc, VkDevice vkD
     const std::vector<VkVertexInputAttributeDescription> attributeDescs = layout.attributes;
     psoBuilder.setVertextInfo(indexDescs, attributeDescs);
 
-    if (bDescriptorHeap) psoBuilder.setDescriptorHeap();
+    psoBuilder.setDescriptorHeap();
     VkPipeline pipeline = psoBuilder.setShaderModules(shaderModuels, pSpecializationInfo)
                               .setAssembly(iaBuilder.Build())
                               .setDynamicStates(dynamicStates)
                               .setRasterizer(rsBuilder.Build())
                               .setMSAA(msBuilder.Build())
                               .setColorBlending(blendBuilder.Build())
-                              .setPipelineLayout(pipelineLayout)
                               .setDepthStencil(depthStencilBuilder.Build())
                               .setRenderingCreateInfo(renderingInfo)
                               .Build(vkDevice);

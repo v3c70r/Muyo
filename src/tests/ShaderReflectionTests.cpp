@@ -12,40 +12,27 @@ namespace Muyo
 namespace fs = std::filesystem;
 TEST_CASE("ShaderReflectionFetcher: SPIR-V Reflection from file", "[ShaderReflectionFetcher]")
 {
-    // Path to the compiled SPIR-V file
-    fs::path spirvPath = fs::path("shaders") / "copyBuffer.comp.slang.spv";
+    // B1b: the graph path is descriptor-heap-only. Reflection still supplies the push range and
+    // workgroup size, but a heap module declares no bindings; a module that does is rejected at Build.
+    fs::path spirvPath = fs::path("shaders") / "testSpecConstant.comp.heap.spv";
     auto spirvCode = ReadSpv(spirvPath);
 
     ShaderReflection reflection = Muyo::FetchShaderReflection(spirvCode);
 
-    // Check that descriptor sets are extracted
-    REQUIRE(reflection.descriptorBindings.size() == 2);
+    REQUIRE(reflection.descriptorBindings.empty());
 
-    // Check descriptor set/binding and types
-    // gInput: set 0, binding 0, likely VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
-    REQUIRE(reflection.descriptorBindings[0].name == "gInput");
-    REQUIRE(reflection.descriptorBindings[0].set == 0);
-    REQUIRE(reflection.descriptorBindings[0].binding == 0);
-    REQUIRE(reflection.descriptorBindings[0].type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-
-    // gOutput: set 1, binding 0, likely VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
-    REQUIRE(reflection.descriptorBindings[1].name == "gOutput");
-    REQUIRE(reflection.descriptorBindings[1].set == 1);
-    REQUIRE(reflection.descriptorBindings[1].binding == 0);
-    REQUIRE(reflection.descriptorBindings[1].type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
-
-    // Check push constant range
+    // The heap module's push block is Push{ uint2 output }.
     REQUIRE(reflection.pushConstantRanges.size() == 1);
-    REQUIRE(reflection.pushConstantRanges[0].size == sizeof(uint32_t));
+    REQUIRE(reflection.pushConstantRanges[0].size == 2 * sizeof(uint32_t));
 
     // Check entry point
     REQUIRE(reflection.entryPoints.size() == 1);
     REQUIRE(reflection.entryPoints[0].name == "main");
     REQUIRE(reflection.entryPoints[0].stage == VK_SHADER_STAGE_COMPUTE_BIT);
 
-    // Check workgroup size (from [numthreads(256,1,1)])
+    // Check workgroup size (from [numthreads(1,1,1)])
     REQUIRE(reflection.entryPoints[0].workgroupSize.has_value());
-    REQUIRE(reflection.entryPoints[0].workgroupSize->x == 256);
+    REQUIRE(reflection.entryPoints[0].workgroupSize->x == 1);
     REQUIRE(reflection.entryPoints[0].workgroupSize->y == 1);
     REQUIRE(reflection.entryPoints[0].workgroupSize->z == 1);
 };

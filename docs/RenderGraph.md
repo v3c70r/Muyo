@@ -19,20 +19,27 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
   generates the correct cross-queue synchronisation, but work does not yet overlap across frames.
   `Execute(RenderGraphExecuteInfo)` submits without waiting, and the executor supports several
   in-flight slots - but the builder runs one (`inFlightCount == 1`), so a second call blocks until the
-  first completes. Raising that count needs more than a slot number: descriptor sets are written at
-  `Build()` now, so the record-time write hazard is gone, but transient resources are still
-  single-instance, so two in-flight executions would alias them.
+  first completes. Raising that count needs more than a slot number: the descriptor and root rings move
+  into the per-execution slot (B2, #217), and transient resources are still single-instance, so two
+  in-flight executions would alias them.
 - **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
   only feed data into the graph; a GPU-to-CPU dependency is rejected.
-- **Descriptor sets are derived from shader reflection and content-addressed.** Graphics, compute and
-  ray tracing all take one path: a `ResourceUse` names its `(set, binding)`, reflection supplies the
-  layout and descriptor type, and the set is keyed on the *concrete views* bound into it. Nodes binding
-  the same resources therefore share one set, so a material-binding node no longer costs a bindless array
-  each. Sets are rebuilt per `Build()`; frame retention and `framesInFlight` are the design note's next
-  step ([DescriptorSet-Lifecycle-Design.md](DescriptorSet-Lifecycle-Design.md)).
-- **Device floor.** The engine requires Vulkan 1.3 and enables `synchronization2` and
+- **The graph path is descriptor-heap-only.** B1b removed descriptor sets, layouts, pools and pipeline
+  layouts from `src/RenderGraph/`; every graphics, compute and ray-tracing pipeline is created with
+  `VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT` and `layout = VK_NULL_HANDLE`. A node declares the
+  resources it uses (`ResourceUse`, with an optional buffer range); the graph writes their descriptors
+  into the injected `DescriptorHeapService` at `Build()` and exposes the slot through
+  `GetHeapIndex`. Root data and push data are opaque bytes: a node writes them with
+  `RenderGraphNodeContext::PushData` (and optionally `AllocateRoot`). Nothing in the graph path calls
+  `vkCmdBindDescriptorSets`, `vkCmdPushConstants`, `vkCreateDescriptorSetLayout` or
+  `vkCreatePipelineLayout`; `scripts/check_descriptor_path.py` enforces that in CI. The legacy
+  `RenderPassManager` keeps its descriptor-set path outside the graph. The historical descriptor-set
+  design (`DescriptorSet-Lifecycle-Design.md`) is kept in the repository, outside this reference.
+- **Device floor.** The engine requires Vulkan 1.4 and enables `synchronization2` and
   `timelineSemaphore` at device creation; both are verified against `vkGetPhysicalDeviceFeatures2`
-  and device creation fails with a named error if either is missing. The executor **uses** timeline
+  and device creation fails with a named error if either is missing. The descriptor-heap path also
+  requires `VK_EXT_descriptor_heap` (`descriptorHeap`) and `VK_KHR_shader_untyped_pointers`
+  (`shaderUntypedPointers`), verified at device creation; there is no descriptor-set fallback. The executor **uses** timeline
   semaphores rather than merely requiring them: completion is a value on a per-queue timeline, so
   `RenderGraphExecuteInfo` carries `waitSemaphore`/`waitValue` and
   `signalSemaphore`/`signalValue`/`signalFence`. A caller can therefore chain one execution onto
@@ -45,7 +52,7 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
 | --- | --- | --- |
 | Resource handle | `ResourceHandle` | A stable string name for a resource. |
 | Resource desc | `ResourceDesc` | `BufferResourceDesc` / `ImageResourceDesc`; how a graph-owned resource is allocated. |
-| Resource use | `ResourceUse` | A node's declaration that it reads/writes a resource (usage, binding, optional explicit descriptor location). |
+| Resource use | `ResourceUse` | A node's declaration that it reads/writes a resource (usage, optional buffer range). |
 | Node | `RenderGraphNodeCreateInfo` | A pass: queue, shaders, resources, PSO, execute callback. |
 | Builder | `RenderGraphBuilder` | Declares the graph, `Build()` compiles it, `Execute()` runs it. |
 
@@ -132,16 +139,19 @@ resource. Unmap before the callback returns.
 ## Minimal example
 
 ```cpp
-// The graph is given its device, resource allocator and descriptor allocator - it does not look them up.
+// The graph is given its device, resource allocator and descriptor-heap service - it does not look
+// them up.
+DescriptorHeapService heap;
+heap.Initialize(GetRenderDevice());
 RenderGraphBuilder builder(RenderGraphServices{
-    .device            = GetRenderDevice(),
-    .resourceManager   = GetRenderResourceManager(),
-    .descriptorManager = GetDescriptorManager(),
+    .device          = GetRenderDevice(),
+    .resourceManager = GetRenderResourceManager(),
+    .descriptorHeap  = &heap,
 });
 
-// There is also RenderGraphBuilder(VkRenderDevice*), which fills the other two from the engine's
-// globals. It exists so the in-tree callers that still use them keep working; a consumer that wants to
-// run a graph without the renderer's singletons uses the form above.
+// There is also RenderGraphBuilder(VkRenderDevice*), which fills the resource manager from the engine's
+// globals and creates an owned heap service when the device supports the extension. A consumer that
+// wants to run a graph without the renderer's singletons uses the form above.
 
 // Graph-owned resources.
 builder.AddResource("Color", ImageResourceDesc{
@@ -161,10 +171,10 @@ builder.AddNode({
         {.handle = "Indices",  .io = ResourceIOType::READ,  .usage = ResourceUsage::INDEX_BUFFER,  .kind = ResourceKind::BUFFER},
         {.handle = "Color",    .io = ResourceIOType::WRITE, .usage = ResourceUsage::COLOR_ATTACHMENT, .kind = ResourceKind::IMAGE},
     },
-    .shaderNames = {"forward.vert.slang", "forward.frag.slang"},
+    .shaderNames = {"forward.vert.heap", "forward.frag"},
     .psoDesc = {.depthStencilState = {.depthTestEnable = false}},
     .execute = [](RenderGraphNodeContext& ctx) {
-        // The graph has already bound the pipeline, descriptor sets and render pass.
+        // The graph has already bound the pipeline, the heaps and the render pass.
         vkCmdDrawIndexed(ctx.commandBuffer, indexCount, 1, 0, 0, 0);
     }});
 
@@ -172,9 +182,9 @@ builder.Build();
 builder.Execute();
 ```
 
-`Build()` topologically sorts the nodes, allocates every graph-owned resource, compiles pipelines
-and descriptor sets, and plans the barriers. `Execute()` records and submits the frame. Nodes with
-no edges are still scheduled.
+`Build()` topologically sorts the nodes, allocates every graph-owned resource, writes the heap
+descriptors, compiles pipelines and plans the barriers. `Execute()` records and submits the frame.
+Nodes with no edges are still scheduled.
 
 ## What the graph handles for you
 
@@ -191,19 +201,23 @@ no edges are still scheduled.
 
 ## Descriptor binding
 
-Every node binds resources into descriptors by **explicit set/binding** declared on the
-`ResourceUse`; the graph builds each node's set layouts from the shader reflection:
+Every node declares the resources it uses; the graph writes their heap descriptors at `Build()` and
+resolves the slot for the current execution. The node puts the slot in its own root data:
 
 ```cpp
-{.handle = "TLAS",
- .io = ResourceIOType::READ,
- .usage = ResourceUsage::ACCEL_STRUCTURE,
- .kind = ResourceKind::ACCELERATION_STRUCTURE,
- .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+const std::optional<uint32_t> tlas = ctx.GetHeapIndex("TLAS", ResourceUsage::ACCEL_STRUCTURE);
+REQUIRE(tlas.has_value());
+struct Push
+{
+    uint2 tlas;
+};
+const Push push{*tlas, 0};
+ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 ```
 
-The engine's built-in sets (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) are a *consumer* convention now,
-kept in `src/RenderGraphSemanticBindings.h`, not something the library knows about.
+The graph imposes no set or binding convention; the root layout is the host's. The engine's built-in
+sets (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) are a legacy `RenderPassManager` convention, kept in
+`shaders/shared/RenderGraph/bindings.h`, not something the library knows about.
 
 To bind part of a buffer rather than all of it, add a `bufferRange` to the use:
 
@@ -212,14 +226,13 @@ To bind part of a buffer rather than all of it, add a `bufferRange` to the use:
  .io = ResourceIOType::READ,
  .usage = ResourceUsage::STORAGE_BUFFER,
  .kind = ResourceKind::BUFFER,
- .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0},
  .bufferRange = BufferRange{.offset = 4096, .size = 1024}},   // bytes
 ```
 
-That becomes the descriptor's `offset` and `range`, so a shader sees one tensor of a packed weights
-buffer, or one row of a KV cache, as if it were the whole buffer. Three things bound the feature:
+That becomes the heap descriptor's `offset` and `range`, so a shader sees one tensor of a packed
+weights buffer, or one row of a KV cache, as if it were the whole buffer. Three things bound the feature:
 
-- **It is resolved at `Build()`.** The range is written into the descriptor set once, so changing it
+- **It is resolved at `Build()`.** The range is written into the heap descriptor once, so changing it
   means rebuilding the graph. A base that is only known per execution is a different mechanism, not a
   different value of this one — see issue #81 for the options and their costs.
 - **Alignment is the device's.** `offset` must be a multiple of
@@ -286,9 +299,8 @@ for a later check therefore has to satisfy the earlier ones (usually by declarin
 | `... is a CPU node and declares WRITE of image 'R'` | host write | There is no host image write; stage it and copy with `TRANSFER_DEST`. |
 | `... declares HOST_WRITE of image 'R'` | host write | There is no host image write; stage it and copy with `TRANSFER_DEST`. |
 | `... declares HOST_WRITE of buffer 'R', which was declared with device-only memory` | host write | Declare the buffer `VMA_MEMORY_USAGE_CPU_TO_GPU` or `CPU_ONLY`. |
-| `Node 'N' binds resource 'R' at set S, binding B, but its shader declares no descriptor there` | binding | Fix the `descriptorBinding`, or the shader; the message lists what it declares. |
-| `... which the shader declares as descriptor type T, but the graph binds …` | binding type | Bind a resource of the type the shader reflects. |
-| `... binds more than one resource at set S, binding B` | duplicate | One resource per binding. |
+| `Node 'N' needs the descriptor heap, but RenderGraphServices::descriptorHeap is null` | heap | Inject a `DescriptorHeapService`; the graph path is heap-only since B1b. |
+| `Node 'N' declares descriptor bindings; the graph path is heap-only since B1b` | heap | Convert the shaders to a `.heap.slang` variant. |
 | `Node 'N' reads transient resource 'R' with nothing writing it first` | lifetime | Add the writer, or declare the resource `Persistent`. |
 | `Node 'N' … is a GPU node with no execute callback` | shape | Give the node an `execute` callback. |
 | `Graphics node 'N' declares K shader(s)` / `Compute node 'N' declares K shader(s)` | shape | A graphics node takes vertex + fragment, a compute node exactly one. A node with no shader is allowed. |

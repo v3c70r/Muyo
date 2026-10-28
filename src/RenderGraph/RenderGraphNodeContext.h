@@ -26,7 +26,7 @@ struct RenderGraphRootSlice
 /// Context handed to a node's execute callback.
 ///
 /// The graph has already recorded the barriers, opened the render pass (graphics nodes) and bound
-/// the pipeline and descriptor sets, so most callbacks only issue draw/dispatch/trace commands.
+/// the pipeline and heaps, so most callbacks only issue draw/dispatch/trace commands.
 struct RenderGraphNodeContext
 {
     QueueType queueType = QueueType::GRAPHICS;  ///< Queue this node is running on.
@@ -48,20 +48,18 @@ struct RenderGraphNodeContext
     // GPU-side fields (valid only for GPU nodes)
     VkCommandBuffer commandBuffer = VK_NULL_HANDLE;                      ///< Command buffer to record into.
     VkPipeline pipeline = VK_NULL_HANDLE;                                ///< Bound pipeline.
-    VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;                    ///< Bound pipeline layout.
     VkPipelineBindPoint bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;  ///< Bind point for the pipeline.
     /// Allocator for optional root memory. B1b-4 gives each execution a host-visible, device-addressable
     /// arena; the host owns the layout and the bytes.
     std::function<RenderGraphRootSlice(size_t, size_t)> allocateRoot;
-    /// Resolve a graph-declared resource to its descriptor-heap index for this node, if the node was
-    /// compiled with `useDescriptorHeap` and the service registered the use.
+    /// Resolve a graph-declared resource to its descriptor-heap index for this node, if the service
+    /// registered the use.
     std::function<std::optional<uint32_t>(const ResourceHandle&, ResourceUsage)> getHeapIndex;
 
-    /// Non-null for a node compiled with `useDescriptorHeap`. The graph does not bind the heaps centrally
-    /// yet: the node callback uploads/binds them (see the UI pass); a later B1b slice adds the central
-    /// bind. Both heap and pipeline bind-point state precede the dispatch.
+    /// Non-null for every GPU node. The executor uploads and binds the heaps once per segment command
+    /// buffer, before any render pass starts (B1b-5b-4).
     DescriptorHeapService* descriptorHeap = nullptr;
-    /// The device's `maxPushDataSize`; zero for a legacy descriptor node.
+    /// The device's `maxPushDataSize`; zero for a CPU node.
     uint32_t maxPushDataSize = 0;
     /// Ranges pushed for the current node, for the builder's record-time coverage check.
     std::vector<std::pair<uint32_t, uint32_t>> pushedRanges;
