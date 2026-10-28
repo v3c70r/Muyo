@@ -230,7 +230,14 @@ int main()
 
             // A graph per frame, because the acquired image rotates and the graph fixes its imports at
             // Build. One graph per swapchain image is the optimisation and belongs with #40.
-            RenderGraphBuilder builder(GetRenderDevice());
+            // The graph owns the heap binding: it uploads the service once per segment, before any render
+            // pass starts (the upload records vkCmdCopyBuffer). Inject the same service the UI sampler is
+            // acquired from, or the pushed sampler index and the bound resource heap would be different
+            // heaps.
+            RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
+                                                           .resourceManager = GetRenderResourceManager(),
+                                                           .descriptorManager = GetDescriptorManager(),
+                                                           .descriptorHeap = &uiHeap});
             // Record every execution for the lane view. The sink's presence is what turns tracing on, and it costs
             // one null check per node when the page is not shown.
             builder.SetTraceSink([page = pTracePage.get()](RenderGraph::RenderGraphTrace trace)
@@ -274,7 +281,7 @@ int main()
                                                              .dstAlpha = BlendFactor::ZERO}}}}},
                 .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
                 .useDescriptorHeap = true,
-                .execute = [pUIVertices, pUIIndices, &uiHeap, fontSamplerSlot](RenderGraphNodeContext& ctx)
+                .execute = [pUIVertices, pUIIndices, fontSamplerSlot](RenderGraphNodeContext& ctx)
                 {
                     ImDrawData* pDrawData = ImGui::GetDrawData();
                     if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
@@ -291,7 +298,6 @@ int main()
                     if (!fontImage.has_value()) return;
                     const PushBlock push{glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y), glm::vec2(-1.0F),
                                          *fontImage, fontSamplerSlot.index};
-                    uiHeap.Upload(ctx.commandBuffer);
                     ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
                     VkDeviceSize offset = 0;

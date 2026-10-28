@@ -67,7 +67,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
                                        },
                                    .shaderNames = {"graphHeapCopy.comp.heap"},
                                    .useDescriptorHeap = true,
-                                   .execute = [&heap](RenderGraphNodeContext& context)
+                                   .execute = [](RenderGraphNodeContext& context)
                                    {
                                        struct Push
                                        {
@@ -86,7 +86,6 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
                                        CHECK(root.deviceAddress % 8 == 0);
                                        context.WriteRootIndex(root, 0, *inputIndex);
                                        context.FlushRoot();
-                                       heap.Upload(context.commandBuffer);
                                        context.PushData(0, std::as_bytes(std::span{&push, 1}));
                                        vkCmdDispatch(context.commandBuffer, 1, 1, 1);
                                    }};

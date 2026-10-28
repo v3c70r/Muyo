@@ -2265,6 +2265,21 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         VK_ASSERT(vkBeginCommandBuffer(cmdBuf, &beginInfo));
 
+        // Heap descriptors were written into the service's host staging buffer at Build(). Copy them into
+        // the device heaps and bind both heaps once, before this segment records any node. The upload is
+        // a vkCmdCopyBuffer and is therefore illegal inside a render pass; a graphics node's callback
+        // runs inside BeginRendering, so the graph cannot leave this to the callback. Binding once per
+        // command buffer is also what the design requires (DescriptorHeap-Bindless-Design.md §9).
+        bool bSegmentUsesHeap = false;
+        for (size_t i = segments[s].begin; i < segments[s].end && !bSegmentUsesHeap; ++i)
+        {
+            bSegmentUsesHeap = nodes[i].useDescriptorHeap;
+        }
+        if (bSegmentUsesHeap)
+        {
+            m_services.descriptorHeap->Upload(cmdBuf);
+        }
+
         // Before anything is recorded for this segment: a release barrier is emitted here, before the first node,
         // and it belongs to this segment just as much as the per-node barriers do.
         if (pRecorder != nullptr)
