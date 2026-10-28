@@ -510,6 +510,15 @@ void DescriptorHeapService::BeginExecution(uint32_t slot)
     m_bHasExecution = true;
 }
 
+void DescriptorHeapService::ResetRing(uint32_t slot)
+{
+    if (slot >= m_inFlightCount) throw std::runtime_error("DescriptorHeapService: execution slot out of range");
+    m_regions[REGION_IMAGE].ringCursor[slot] = 0;
+    m_regions[REGION_BUFFER].ringCursor[slot] = 0;
+    m_regions[REGION_ACCELERATION].ringCursor[slot] = 0;
+    m_regions[REGION_SAMPLER].ringCursor[slot] = 0;
+}
+
 void DescriptorHeapService::ReleaseStaticSlot(DescriptorSlot slot)
 {
     Region& region = GetRegion(static_cast<RegionId>(slot.region));

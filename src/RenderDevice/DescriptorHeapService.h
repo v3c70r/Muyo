@@ -57,6 +57,8 @@ public:
     /// Destroy the heaps and any registered custom-border indices. Safe to call repeatedly.
     void Shutdown();
     bool IsInitialized() const { return m_device != nullptr; }
+    /// @return How many execution slots the rings and staging layout were configured for.
+    uint32_t GetInFlightCount() const { return m_inFlightCount; }
 
     DescriptorSlot AcquireImage(const VkImageViewCreateInfo& view, VkImageLayout layout,
                                 VkDescriptorType type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, bool bRing = false);
@@ -90,6 +92,10 @@ public:
 
     /// Select the execution slot that subsequent ring acquisitions use.
     void BeginExecution(uint32_t slot);
+    /// Reset `slot`'s ring cursors without processing retires. Only safe once every execution that used
+    /// the slot has completed (the graph calls it after AcquireSlot waited for that slot).
+    /// @param slot Execution slot whose rings are recycled.
+    void ResetRing(uint32_t slot);
     /// Reset the ring for `slot` and release retired static slots whose timeline has completed.
     void ResetExecution(uint32_t slot, uint64_t completedTimeline);
 

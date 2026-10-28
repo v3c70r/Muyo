@@ -2109,6 +2109,37 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported r
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight above one rejects graph-owned resources",
+                 "[RenderGraphBuilder]")
+{
+    // Two overlapping executions would write the same graph-owned buffer/image with no cross-execution
+    // barrier; the builder refuses the declaration rather than letting the race reach the GPU (#40).
+    // Imported resources are the per-execution path (bound from each slot's ring) and are not a
+    // graph-owned declaration, so they are allowed.
+    RenderGraphBuilder builder(GetRenderDevice(), 2);
+    builder.AddResource("OwnedWhileOverlapping", BufferResourceDesc{.count = 1,
+                                                                    .stride = sizeof(uint32_t),
+                                                                    .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                                    .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                                    .lifetime = ResourceLifetime::Persistent});
+    CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'OwnedWhileOverlapping'") &&
+                                           Catch::Matchers::ContainsSubstring("inFlightCount"));
+}
+
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight above the heap's slots is rejected",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // The rings are sized when the heap is initialized; a builder that runs further ahead than the
+    // heap's configured slots would otherwise fail later, from BeginExecution inside Execute.
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2d records the row as a gap, not a pass");
+    }
+    RenderGraphBuilder builder(GetRenderDevice(), 3);
+    CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("exceeds the descriptor heap's") &&
+                                           Catch::Matchers::ContainsSubstring("execution slots"));
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a rebuild recreates a resource whose declaration changed",
                  "[RenderGraphBuilder]")
 {

@@ -346,6 +346,8 @@ std::size_t RenderGraphBuilder::DescriptorKeyHash::operator()(const DescriptorKe
     return seed;
 }
 
+void RenderGraphBuilder::WaitIdle() { m_executor.WaitIdle(); }
+
 void RenderGraphBuilder::ReleaseCachedDeviceObjects()
 {
     DestroyCachedPipelines();
@@ -575,6 +577,10 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
 
         for (const ResolvedResourceUse& use : result.resourceUses)
         {
+            // Imported resources are bound per execution from the slot's ring (see Execute): the caller
+            // may re-point one between executions without a Build (#83), and two in-flight executions
+            // must not share the descriptor. Graph-owned resources keep the static content cache.
+            if (m_importedResources.find(use.handle) != m_importedResources.end()) continue;
             const IRenderResource* pResource = ResolveResource(use.handle);
             if (pResource == nullptr) continue;
             if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
@@ -1588,6 +1594,29 @@ void RenderGraphBuilder::Build()
     // the order and the declarations.
     ValidateTransientLifetimes(executionOrder);
 
+    // The per-execution rings live in the heap service, whose slot count was fixed at Initialize;
+    // a builder that runs further ahead than that would call BeginExecution on a slot the rings do not
+    // have. Report the mismatch at Build rather than from a node's Execute.
+    if (m_services.descriptorHeap != nullptr &&
+        m_executor.GetInFlightCount() > m_services.descriptorHeap->GetInFlightCount())
+    {
+        throw std::runtime_error("RenderGraphBuilder: inFlightCount " + std::to_string(m_executor.GetInFlightCount()) +
+                                 " exceeds the descriptor heap's " +
+                                 std::to_string(m_services.descriptorHeap->GetInFlightCount()) +
+                                 " execution slots; initialize the heap with at least that many.");
+    }
+
+    // Graph-owned resources are single-instance; two overlapping executions would alias them. Imported
+    // resources are bound per execution from each slot's descriptor ring and are the caller's to
+    // keep distinct, so only those are allowed above one slot (#40).
+    if (m_executor.GetInFlightCount() > 1 && !m_resourceDescRegistry.empty())
+    {
+        const ResourceHandle& handle = m_resourceDescRegistry.begin()->first;
+        throw std::runtime_error("Graph declares graph-owned resource '" + handle +
+                                 "' while inFlightCount > 1; graph-owned resources are single-instance until "
+                                 "#40. Import per-execution resources or use inFlightCount = 1.");
+    }
+
     // Allocate all graph-owned resources before compiling nodes. A buffer transient is skipped here and
     // created unbound below instead: its memory belongs to a block, and the manager's path would give it
     // memory of its own.
@@ -2170,6 +2199,77 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 
     if (plan.IsEmpty()) return;
 
+    // Imported resources are bound per execution, from this slot's descriptor rings. AcquireSlot has
+    // waited for the slot, so ResetRing can recycle its rings; the acquisitions write the ring regions of
+    // the host staging buffer, which the segment-start Upload then copies. Two in-flight executions have
+    // disjoint ring slots, so neither overwrites the other's descriptors, and a caller can re-point an
+    // imported handle between executions without a Build (#83).
+    std::vector<std::unordered_map<std::string, uint32_t>> executionHeapIndices(nodes.size());
+    if (m_services.descriptorHeap != nullptr)
+    {
+        m_services.descriptorHeap->BeginExecution(slot.index);
+        m_services.descriptorHeap->ResetRing(slot.index);
+        for (size_t i = 0; i < nodes.size(); ++i)
+        {
+            // A node with no pipeline has no shader to read a descriptor index; acquiring one for it
+            // would consume a ring slot for nothing.
+            if (nodes[i].queueType == QueueType::CPU || nodes[i].pipeline == VK_NULL_HANDLE) continue;
+            for (const ResolvedResourceUse& use : nodes[i].resourceUses)
+            {
+                if (m_importedResources.find(use.handle) == m_importedResources.end()) continue;
+                const IRenderResource* pResource = ResolveResource(use.handle);
+                if (pResource == nullptr) continue;
+                std::optional<uint32_t> index;
+                if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
+                {
+                    const auto* pImage = dynamic_cast<const ImageResource*>(pResource);
+                    if (pImage == nullptr) continue;
+                    const VkImageLayout layout = use.usage == ResourceUsage::SAMPLED
+                                                     ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                                     : VK_IMAGE_LAYOUT_GENERAL;
+                    const VkDescriptorType type = use.usage == ResourceUsage::SAMPLED
+                                                      ? VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE
+                                                      : VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                    index =
+                        m_services.descriptorHeap->AcquireImage(pImage->GetImageViewCreateInfo(), layout, type, true)
+                            .index;
+                }
+                else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER ||
+                         use.usage == ResourceUsage::DRAW_COMMAND_BUFFER)
+                {
+                    const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource);
+                    if (pBuffer == nullptr) continue;
+                    VkDeviceSize offset = 0;
+                    VkDeviceSize size = pBuffer->GetSize();
+                    if (use.bufferRange.has_value())
+                    {
+                        offset = use.bufferRange->offset;
+                        size = use.bufferRange->size;
+                    }
+                    const VkDescriptorType type = use.usage == ResourceUsage::UNIFORM_BUFFER
+                                                      ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER
+                                                      : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                    index = m_services.descriptorHeap
+                                ->AcquireBuffer(m_services.device->GetBufferDeviceAddress(pBuffer->buffer()) + offset,
+                                                size, type, true)
+                                .index;
+                }
+                else if (use.usage == ResourceUsage::ACCEL_STRUCTURE)
+                {
+                    const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
+                    if (pAccelerationStructure == nullptr) continue;
+                    index = m_services.descriptorHeap
+                                ->AcquireAccelerationStructure(pAccelerationStructure->GetDeviceAddress(), true)
+                                .index;
+                }
+                if (index.has_value())
+                {
+                    executionHeapIndices[i][HeapIndexKey(use.handle, use.usage)] = *index;
+                }
+            }
+        }
+    }
+
     // Queue segments and cross-queue transfers were derived from the compiled graph at Build().
     const std::vector<RenderGraphQueueSegment>& segments = plan.segments;
     const std::vector<RenderGraphQueueTransfer>& transfers = plan.transfers;
@@ -2232,10 +2332,13 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             context.commandBuffer = cmdBuf;
             context.pipeline = rgn.pipeline;
             context.descriptorHeap = m_services.descriptorHeap;
-            context.getHeapIndex = [&rgn](const ResourceHandle& handle, ResourceUsage usage) -> std::optional<uint32_t>
+            context.getHeapIndex = [&rgn, &executionHeapIndices, i](const ResourceHandle& handle,
+                                                                    ResourceUsage usage) -> std::optional<uint32_t>
             {
-                const auto it = rgn.heapIndices.find(HeapIndexKey(handle, usage));
-                if (it == rgn.heapIndices.end()) return std::nullopt;
+                const std::string key = HeapIndexKey(handle, usage);
+                if (const auto it = rgn.heapIndices.find(key); it != rgn.heapIndices.end()) return it->second;
+                const auto it = executionHeapIndices[i].find(key);
+                if (it == executionHeapIndices[i].end()) return std::nullopt;
                 return it->second;
             };
             context.maxPushDataSize =
