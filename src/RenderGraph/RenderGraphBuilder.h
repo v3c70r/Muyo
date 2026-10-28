@@ -148,6 +148,10 @@ public:
     ///         failed Build. Exposed for diagnostics and tests that inspect the compiled pipelines.
     const CompiledRenderGraph& GetCompiledGraph() const { return m_compiledGraph; }
 
+    /// Block until every submitted execution has completed. Does not record or submit work; use it
+    /// before reading back an imported resource written by a non-blocking Execute().
+    void WaitIdle();
+
     /// Release the descriptor slots and pipelines cached from earlier Builds. Call only when every
     /// execution that used them has completed - the app's swapchain recreation does this right after
     /// `vkDeviceWaitIdle`. The next Build recreates what it needs; graph-owned resources are untouched.

@@ -14,14 +14,13 @@ The RenderGraph currently drives the **tests**; `helloVulkan` still renders thro
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.
-- **The builder serialises executions.** `Execute()` records into an in-flight slot, submits, and waits
-  for that execution's terminal timeline values before returning. The `async` flag expresses intent and
-  generates the correct cross-queue synchronisation, but work does not yet overlap across frames.
-  `Execute(RenderGraphExecuteInfo)` submits without waiting, and the executor supports several
-  in-flight slots - but the builder runs one (`inFlightCount == 1`), so a second call blocks until the
-  first completes. Raising that count needs more than a slot number: the descriptor and root rings move
-  into the per-execution slot (B2, #217), and transient resources are still single-instance, so two
-  in-flight executions would alias them.
+- **In-flight executions are opt-in.** `Execute()` records into a slot, submits, and waits for that
+  execution's terminal timeline values; `Execute(RenderGraphExecuteInfo)` submits without waiting. The
+  builder defaults to one slot. Passing `inFlightCount = 2` gives each slot its own command buffers and
+  root arena, and **imported** resources are bound per execution from that slot's descriptor ring, so a
+  caller may re-point an imported handle between executions without a Build (#83). Graph-owned transients
+  and persistent resources are still single-instance: a graph that declares them must stay at one
+  in-flight execution, because two overlapping executions would alias them (#40).
 - **CPU nodes are producers.** They run host-side before any GPU segment is submitted, so they may
   only feed data into the graph; a GPU-to-CPU dependency is rejected.
 - **The graph path is descriptor-heap-only.** B1b removed descriptor sets, layouts, pools and pipeline

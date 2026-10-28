@@ -174,6 +174,90 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a persistent builde
     }
 }
 
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: an imported binding can be re-pointed per execution",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // #83's imported half and B2d-1's ring path: the caller imports a different output between
+    // executions and does not Build again. The compiled node's static heap index for an imported
+    // resource is empty; Execute resolves the current import and acquires a ring descriptor in the
+    // execution's own slot, so the first frame keeps writing the first output while the second writes
+    // the second. A Build-time binding would send both executions to the first output.
+    VkRenderDevice* device = GetRenderDevice();
+    if (!device->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2d records the row as a gap, not a pass");
+    }
+
+    BufferResource* pInput = GetRenderResourceManager()->AllocateBuffer(
+        "PerExecutionInput", sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    BufferResource* pOutput0 = GetRenderResourceManager()->AllocateBuffer(
+        "PerExecutionOutput0", sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    BufferResource* pOutput1 = GetRenderResourceManager()->AllocateBuffer(
+        "PerExecutionOutput1", sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    REQUIRE(pInput != nullptr);
+    REQUIRE(pOutput0 != nullptr);
+    REQUIRE(pOutput1 != nullptr);
+    const uint32_t inputValue = 42;
+    pInput->SetData(&inputValue, sizeof(inputValue));
+    const uint32_t zero = 0;
+    pOutput0->SetData(&zero, sizeof(zero));
+    pOutput1->SetData(&zero, sizeof(zero));
+
+    // Two slots so the second execution is recorded and submitted while the first is in flight.
+    RenderGraphBuilder builder(device, 2);
+    builder.ImportResource("PerExecutionInput", pInput);
+    builder.ImportResource("PerExecutionOutput", pOutput0);
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "PerExecutionCopy",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {{.handle = ResourceHandle("PerExecutionInput"),
+                                                                .io = ResourceIOType::READ,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER},
+                                                               {.handle = ResourceHandle("PerExecutionOutput"),
+                                                                .io = ResourceIOType::WRITE,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER}},
+                                              .shaderNames = {"copyBuffer.comp.heap"},
+                                              .execute = [](RenderGraphNodeContext& ctx)
+                                              {
+                                                  const std::optional<uint32_t> input = ctx.GetHeapIndex(
+                                                      "PerExecutionInput", ResourceUsage::STORAGE_BUFFER);
+                                                  const std::optional<uint32_t> output = ctx.GetHeapIndex(
+                                                      "PerExecutionOutput", ResourceUsage::STORAGE_BUFFER);
+                                                  REQUIRE(input.has_value());
+                                                  REQUIRE(output.has_value());
+                                                  struct Push
+                                                  {
+                                                      uint32_t byteCount;
+                                                      uint32_t inputIndex;
+                                                      uint32_t outputIndex;
+                                                  };
+                                                  const Push push{sizeof(uint32_t), *input, *output};
+                                                  ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+                                                  vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+                                              }});
+    builder.Build();
+
+    builder.Execute(RenderGraphExecuteInfo{});
+    // No Build: re-point the imported handle and execute it again.
+    builder.ImportResource("PerExecutionOutput", pOutput1);
+    builder.Execute(RenderGraphExecuteInfo{});
+    builder.WaitIdle();
+
+    const auto readOutput = [](BufferResource* pBuffer)
+    {
+        const auto* pMapped = static_cast<const uint32_t*>(pBuffer->Map());
+        const uint32_t value = pMapped != nullptr ? *pMapped : 0;
+        pBuffer->Unmap();
+        return value;
+    };
+    CHECK(readOutput(pOutput0) == inputValue);
+    CHECK(readOutput(pOutput1) == inputValue);
+}
+
 TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses the descriptor heap with no layout",
                  "[RenderGraphBuilder][DescriptorHeap]")
 {
@@ -288,20 +372,21 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: repeated builds reu
     DescriptorHeapService heap;
     heap.Initialize(device);
 
-    BufferResource* pInput = GetRenderResourceManager()->AllocateBuffer(
-        "BuildCacheInput", sizeof(uint32_t),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-    BufferResource* pOutput = GetRenderResourceManager()->AllocateBuffer(
-        "BuildCacheOutput", sizeof(uint32_t),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-    REQUIRE(pInput != nullptr);
-    REQUIRE(pOutput != nullptr);
-
-    RenderGraphServices services{
-        .device = device, .resourceManager = GetRenderResourceManager(), .descriptorHeap = &heap};
-    RenderGraphBuilder builder(services);
-    builder.ImportResource("BuildCacheInput", pInput);
-    builder.ImportResource("BuildCacheOutput", pOutput);
+    // Graph-owned, not imported: imported descriptors are bound per execution from the ring (B2d-1),
+    // and this test is specifically the static content cache.
+    RenderGraphBuilder builder(device);
+    builder.AddResource("BuildCacheInput", BufferResourceDesc{.count = 1,
+                                                              .stride = sizeof(uint32_t),
+                                                              .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                                              .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                              .lifetime = ResourceLifetime::Persistent});
+    builder.AddResource("BuildCacheOutput", BufferResourceDesc{.count = 1,
+                                                               .stride = sizeof(uint32_t),
+                                                               .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                        VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                                               .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                               .lifetime = ResourceLifetime::Persistent});
     builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "BuildCacheCopy",
                                               .queueType = QueueType::COMPUTE,
                                               .resourceUses = {{.handle = ResourceHandle("BuildCacheInput"),
