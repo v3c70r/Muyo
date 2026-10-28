@@ -231,14 +231,6 @@ int main()
             .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
             .execute = [fontSamplerSlot](RenderGraphNodeContext& ctx)
             {
-                ImDrawData* pDrawData = ImGui::GetDrawData();
-                if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
-                // The import is per execution: with two frames in flight, each reads the buffer pair
-                // imported for its own acquired image.
-                const auto* pVertices = dynamic_cast<const BufferResource*>(ctx.resolveResource("UIVertices"));
-                const auto* pIndices = dynamic_cast<const BufferResource*>(ctx.resolveResource("UIIndices"));
-                if (pVertices == nullptr || pIndices == nullptr) return;
-
                 struct PushBlock
                 {
                     glm::vec2 scale;
@@ -247,11 +239,34 @@ int main()
                     uint32_t fontSampler;
                 };
                 const ImGuiIO& io = ImGui::GetIO();
+                const glm::vec2 scale = (io.DisplaySize.x > 0.0F && io.DisplaySize.y > 0.0F)
+                                            ? glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y)
+                                            : glm::vec2(0.0F);
+                // The graph requires every heap shader's push block to be covered on every recorded
+                // execution, even one that ends up drawing nothing (an empty first frame, or a missing
+                // imported buffer). Push first, then decide whether there is work; the values are never
+                // read without a draw.
+                ImDrawData* pDrawData = ImGui::GetDrawData();
+                const auto* pVertices = dynamic_cast<const BufferResource*>(ctx.resolveResource("UIVertices"));
+                const auto* pIndices = dynamic_cast<const BufferResource*>(ctx.resolveResource("UIIndices"));
                 const std::optional<uint32_t> fontImage = ctx.GetHeapIndex("Font", ResourceUsage::SAMPLED);
-                if (!fontImage.has_value()) return;
-                const PushBlock push{glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y), glm::vec2(-1.0F),
-                                     *fontImage, fontSamplerSlot.index};
+                const PushBlock push{scale, glm::vec2(-1.0F), fontImage.value_or(0), fontSamplerSlot.index};
                 ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+
+                if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
+                if (pVertices == nullptr || pIndices == nullptr || !fontImage.has_value())
+                {
+                    static bool s_warned = false;
+                    if (!s_warned)
+                    {
+                        s_warned = true;
+                        std::cerr << "[helloVulkanRG] UI draw skipped: "
+                                  << (pVertices == nullptr ? "UIVertices missing " : "")
+                                  << (pIndices == nullptr ? "UIIndices missing " : "")
+                                  << (!fontImage.has_value() ? "Font heap index missing" : "") << std::endl;
+                    }
+                    return;
+                }
 
                 VkDeviceSize offset = 0;
                 VkBuffer vertexBuffer = pVertices->buffer();

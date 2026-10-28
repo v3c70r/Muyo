@@ -4485,6 +4485,116 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
     REQUIRE(CountNonBlackPixels(pTarget) > 0);
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an imported attachment may shrink under a persistent node",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // The app's pattern: one builder, one node declaration, and a swapchain target imported per frame.
+    // AddNode records the imported image's extent, so after a shrink the stored use extent is larger
+    // than the new image. The render area must come from the attachment image; taking it from the stored
+    // extent produced renderArea 32x24 over a 16x16 view
+    // (VUID-VkRenderingInfo-pNext-06079), which is what running helloVulkanRG hit.
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the UI heap pass needs it");
+    }
+
+    uint32_t whitePixel = 0xFFFFFFFFu;
+    TextureResource* pFont = GetRenderResourceManager()->GetTexture("ui_font_texture_resize", &whitePixel, 1, 1);
+    REQUIRE(pFont != nullptr);
+    DescriptorHeapService uiHeap;
+    uiHeap.Initialize(GetRenderDevice());
+    VkSamplerCreateInfo uiSamplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    uiSamplerInfo.magFilter = VK_FILTER_LINEAR;
+    uiSamplerInfo.minFilter = VK_FILTER_LINEAR;
+    uiSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    uiSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    const DescriptorSlot fontSamplerSlot = uiHeap.AcquireSampler(uiSamplerInfo);
+
+    const std::vector<ImDrawVert> vertices = {
+        ImDrawVert{{-1.0F, -1.0F}, {0.0F, 0.0F}, IM_COL32(255, 255, 255, 255)},
+        ImDrawVert{{1.0F, -1.0F}, {1.0F, 0.0F}, IM_COL32(255, 255, 255, 255)},
+        ImDrawVert{{0.0F, 1.0F}, {0.5F, 1.0F}, IM_COL32(255, 255, 255, 255)},
+    };
+    const std::vector<ImDrawIdx> indices = {0, 1, 2};
+    auto* pVertices = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("ResizeUIVertexBuffer", vertices, false);
+    auto* pIndices = GetRenderResourceManager()->GetIndexBuffer("ResizeUIIndexBuffer", indices, false);
+
+    RenderTarget* pLarge = GetRenderResourceManager()->GetRenderTarget(
+        "ResizeTargetLarge", VkExtent2D{32, 24}, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    RenderTarget* pSmall = GetRenderResourceManager()->GetRenderTarget(
+        "ResizeTargetSmall", VkExtent2D{16, 16}, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+    REQUIRE(pLarge != nullptr);
+    REQUIRE(pSmall != nullptr);
+
+    RenderGraphBuilder builder(RenderGraphServices{
+        .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
+    builder.ImportResource("Font", pFont);
+    builder.ImportResource("UIVertices", pVertices);
+    builder.ImportResource("UIIndices", pIndices);
+    builder.ImportResource("UITarget", pLarge);
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "ResizeUI",
+        .queueType = QueueType::GRAPHICS,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("Font"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::SAMPLED,
+                            .kind = ResourceKind::IMAGE},
+                ResourceUse{.handle = ResourceHandle("UIVertices"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::VERTEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("UIIndices"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::INDEX_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("UITarget"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .shaderNames = {"ui.vert.slang", "ui.frag.heap"},
+        .psoDesc = {.vertexType = VertexType::UI,
+                    .rasterState = {.cullMode = CullMode::NONE},
+                    .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+        .execute = [fontSamplerSlot](RenderGraphNodeContext& ctx)
+        {
+            struct PushConstBlock
+            {
+                glm::vec2 scale;
+                glm::vec2 translate;
+                uint32_t fontImage;
+                uint32_t fontSampler;
+            };
+            const std::optional<uint32_t> fontImage = ctx.GetHeapIndex("Font", ResourceUsage::SAMPLED);
+            REQUIRE(fontImage.has_value());
+            const PushConstBlock pushConstants{glm::vec2(1.0F, 1.0F), glm::vec2(0.0F, 0.0F), *fontImage,
+                                               fontSamplerSlot.index};
+            ctx.PushData(0, std::as_bytes(std::span{&pushConstants, 1}));
+            const auto* pVB = ctx.GetResource<BufferResource>("UIVertices");
+            const auto* pIB = ctx.GetResource<BufferResource>("UIIndices");
+            VkDeviceSize offset = 0;
+            VkBuffer vertexBuffer = pVB->buffer();
+            vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+            vkCmdBindIndexBuffer(ctx.commandBuffer, pIB->buffer(), 0, VK_INDEX_TYPE_UINT16);
+            vkCmdDrawIndexed(ctx.commandBuffer, 3, 1, 0, 0, 0);
+        }});
+
+    builder.Build();
+    builder.Execute();
+
+    // Shrink the imported target and rebuild the same declaration, as the app does after a resize.
+    builder.ImportResource("UITarget", pSmall);
+    builder.Build();
+    builder.Execute();
+    CHECK(pSmall->GetImageExtent().width == 16);
+    CHECK(pSmall->GetImageExtent().height == 16);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment keeps earlier content",
                  "[RenderGraphBuilder]")
 {
