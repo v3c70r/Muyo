@@ -2109,6 +2109,79 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported r
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a rebuild recreates a resource whose declaration changed",
+                 "[RenderGraphBuilder]")
+{
+    // #209. Build() used to return any manager resource with the handle's name *before* looking at the
+    // declaration, so resizing a graph-owned target kept the old extent and the mismatch surfaced at
+    // record time. The declaration is compared now; an unchanged one still reuses the same object, which
+    // is the build-cost property a per-frame Build() depends on.
+    // Device-independent: this case adds no node, so the heap-only graph path is not entered and it
+    // runs on CI's heap-less device as well.
+    RenderGraphBuilder builder(GetRenderDevice());
+    const auto declareTarget = [&builder](VkExtent2D extent, VkFormat format)
+    {
+        builder.AddResource("ResizeTarget", ImageResourceDesc{.format = format,
+                                                              .extent = extent,
+                                                              .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                                                       VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                                              .lifetime = ResourceLifetime::Persistent});
+    };
+
+    declareTarget({16, 16}, VK_FORMAT_R8G8B8A8_UNORM);
+    builder.Build();
+    const auto* pFirst = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    REQUIRE(pFirst != nullptr);
+    CHECK(pFirst->GetImageExtent().width == 16);
+    CHECK(pFirst->GetImageExtent().height == 16);
+    CHECK(pFirst->GetImageFormat() == VK_FORMAT_R8G8B8A8_UNORM);
+
+    // Unchanged declaration: the same object, not a new allocation.
+    builder.Build();
+    const auto* pReused = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    REQUIRE(pReused != nullptr);
+    CHECK(pReused == pFirst);
+
+    // Changed extent: a new image with the new extent, not the stale one.
+    declareTarget({32, 24}, VK_FORMAT_R8G8B8A8_UNORM);
+    builder.Build();
+    const auto* pResized = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    REQUIRE(pResized != nullptr);
+    CHECK(pResized->GetImageExtent().width == 32);
+    CHECK(pResized->GetImageExtent().height == 24);
+
+    // Changed format at the same extent: likewise a new image.
+    declareTarget({32, 24}, VK_FORMAT_R16G16B16A16_SFLOAT);
+    builder.Build();
+    const auto* pReformatted = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    REQUIRE(pReformatted != nullptr);
+    CHECK(pReformatted->GetImageFormat() == VK_FORMAT_R16G16B16A16_SFLOAT);
+
+    // Buffers take the same path; their declared size is count * stride.
+    const auto declareBuffer = [&builder](uint64_t count)
+    {
+        builder.AddResource("ResizeBuffer", BufferResourceDesc{.count = count,
+                                                               .stride = sizeof(uint32_t),
+                                                               .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                               .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
+                                                               .lifetime = ResourceLifetime::Persistent});
+    };
+    declareBuffer(4);
+    builder.Build();
+    const auto* pBuffer = dynamic_cast<const BufferResource*>(builder.ResolveResource("ResizeBuffer"));
+    REQUIRE(pBuffer != nullptr);
+    CHECK(pBuffer->GetSize() == 4 * sizeof(uint32_t));
+
+    builder.Build();
+    CHECK(dynamic_cast<const BufferResource*>(builder.ResolveResource("ResizeBuffer")) == pBuffer);
+
+    declareBuffer(16);
+    builder.Build();
+    const auto* pGrownBuffer = dynamic_cast<const BufferResource*>(builder.ResolveResource("ResizeBuffer"));
+    REQUIRE(pGrownBuffer != nullptr);
+    CHECK(pGrownBuffer->GetSize() == 16 * sizeof(uint32_t));
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a declared resource cannot ask to be Imported",
                  "[RenderGraphBuilder]")
 {
