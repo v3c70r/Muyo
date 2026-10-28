@@ -234,10 +234,8 @@ int main()
             // pass starts (the upload records vkCmdCopyBuffer). Inject the same service the UI sampler is
             // acquired from, or the pushed sampler index and the bound resource heap would be different
             // heaps.
-            RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
-                                                           .resourceManager = GetRenderResourceManager(),
-                                                           .descriptorManager = GetDescriptorManager(),
-                                                           .descriptorHeap = &uiHeap});
+            RenderGraphBuilder builder(RenderGraphServices{
+                .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
             // Record every execution for the lane view. The sink's presence is what turns tracing on, and it costs
             // one null check per node when the page is not shown.
             builder.SetTraceSink([page = pTracePage.get()](RenderGraph::RenderGraphTrace trace)
@@ -280,7 +278,6 @@ int main()
                                                              .srcAlpha = BlendFactor::ONE,
                                                              .dstAlpha = BlendFactor::ZERO}}}}},
                 .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
-                .useDescriptorHeap = true,
                 .execute = [pUIVertices, pUIIndices, fontSamplerSlot](RenderGraphNodeContext& ctx)
                 {
                     ImDrawData* pDrawData = ImGui::GetDrawData();

@@ -22,7 +22,7 @@ Owns the per-node GPU objects and the metadata an executor needs. It is immutabl
 | `void ReserveNodes(std::size_t count)` | Reserve room for count nodes, to avoid reallocation while compiling. Parameters: `count` - Number of nodes expected |
 | `void RebuildExecutionPlan(const RenderGraphQueueFamilies &families)` | Recompute the scheduling plan from the current nodes. Called by RenderGraphBuilder::Build() after the nodes are compiled. Parameters: `families` - Queue family indices used to decide which resources cross a queue family |
 | `const RenderGraphExecutionPlan & GetExecutionPlan() const` | Returns: The scheduling plan for the current nodes. Read-only during execution. |
-| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy every node's GPU objects and clear the node list. Safe to call repeatedly. Parameters: `device` - Device the objects were created on; `descriptorPool` - Pool the per-node descriptor sets were allocated from |
+| `void Destroy(VkDevice device)` | Destroy every node's GPU objects and clear the node list. Safe to call repeatedly. Parameters: `device` - Device the objects were created on |
 
 ### `struct Muyo::RenderGraph::CompiledRenderGraphNode`
 
@@ -36,22 +36,16 @@ Immutable between builds: Execute() only reads it. The definition carries everyt
 | `std::vector< ResolvedResourceUse > resourceUses` | Resolved resource accesses, used to emit barriers between nodes. |
 | `std::vector< VkClearValue > attachmentClearValues` | Clear values for the node's attachments, in attachment declaration order. |
 | `bool async` | True when the node opted into the dedicated async compute queue. |
-| `VkPipeline pipeline` | Compiled pipeline, or VK_NULL_HANDLE for CPU nodes. |
-| `VkPipelineLayout pipelineLayout` | Pipeline layout the pipeline was created with. |
-| `std::vector< VkDescriptorSetLayout > descriptorSetLayouts` | Descriptor set layouts used by this node's pipeline layout. |
-| `std::vector< VkDescriptorSet > descriptorSets` | Descriptor sets bound for this node. |
-| `bool ownsDescriptorSets` | True when the node owns (and must free) its descriptor sets. |
-| `bool ownsDescriptorSetLayouts` | True when the node owns its descriptor set layouts. |
+| `VkPipeline pipeline` | Compiled pipeline, or VK_NULL_HANDLE for CPU nodes. Every graph pipeline is created with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and layout = VK_NULL_HANDLE (B1b). |
 | `bool isRayTracing` | True when this node dispatches a ray tracing pipeline. |
 | `std::array< VkStridedDeviceAddressRegionKHR, 3 > sbtRegions` | Shader binding table regions, for ray tracing nodes. |
 | `VkExtent2D traceExtent` | Extent the ray tracing trace call is issued over. |
-| `bool useDescriptorHeap` | True when the node was compiled for the descriptor-heap path (B1b). |
 | `std::unordered_map< std::string, uint32_t > heapIndices` | Resource use -> service index, for a heap node. Key is handle#usage. |
 | `std::vector< VkPushConstantRange > heapPushRanges` | Push-constant ranges declared by a heap node's shaders; each must be covered by PushData. |
 | `QueueType queueType` | Queue the node was compiled for. |
 | `VkPipelineBindPoint bindingPoint` | Bind point of the compiled pipeline. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
-| `void Destroy(VkDevice device, VkDescriptorPool descriptorPool)` | Destroy this node's GPU objects and clear the handles. Safe to call repeatedly. Parameters: `device` - Device the objects were created on; `descriptorPool` - Pool the node's descriptor sets were allocated from |
+| `void Destroy(VkDevice device)` | Destroy this node's GPU objects and clear the handles. Safe to call repeatedly. Parameters: `device` - Device the objects were created on |
 
 
 ## `DependencyGraph.h`
@@ -75,66 +69,6 @@ Edges are from -> to ("`to` depends on `from`"). AddNode registers isolated node
 | `bool Muyo::DependencyGraph< T >::IsAdjacentTo(const T &from, const T &to) const` | Returns: true if a direct edge from -> to exists. |
 | `bool Muyo::DependencyGraph< T >::HasCycle() const` | Returns: true if the graph currently contains a cycle. |
 | `size_t Muyo::DependencyGraph< T >::NodeCount() const` | Returns: Number of registered nodes. |
-
-
-## `DescriptorSetCache.h`
-
-### `class Muyo::RenderGraph::DescriptorSetCache`
-
-Owns graph descriptor sets and reuses one per distinct set of contents.
-
-Set allocation charges the pool a set's declared descriptor counts, and a bindless array is 1024 of them. Allocating one set per node duplicated that; this allocates one set per content instead, so a material-binding node that binds the same material buffer as another pays once. The cache owns every set and layout it creates and frees them together.
-
-The cache is cleared between builds, because a rebuild may resolve a resource to a new handle and the old set would then be stale. Retaining frame-invariant sets across builds is a later step (see docs/DescriptorSet-Lifecycle-Design.md).
-
-| Member | Description |
-| --- | --- |
-| `DescriptorSetCache(VkDevice device, DescriptorManager &descManager)` | Parameters: `device` - Device the sets are created on; `descManager` - Manager owning the pool and layout creation |
-| `~DescriptorSetCache()` | Frees every set and layout this cache owns. |
-| `DescriptorSetCache(const DescriptorSetCache &)=delete` | The cache owns raw Vulkan handles, so copying would double-free. |
-| `DescriptorSetCache & operator=(const DescriptorSetCache &)=delete` | Deleted for the same reason as the copy constructor. |
-| `Entry Acquire(const DescriptorSetKey &key, const std::function< void(VkDescriptorSet)> &write)` | Return the set for a key, allocating and writing it on first use. Parameters: `key` - What the set must contain; `write` - Called with a freshly allocated set to fill it; never called on a cache hit Returns: The layout and set for that content. |
-| `void Clear()` | Free every set and layout. Called between builds, so a rebuild cannot reuse a stale view. |
-| `std::size_t SetCount() const` | Returns: How many distinct sets the cache holds; the dedup observable for tests. |
-
-### `struct Muyo::RenderGraph::DescriptorSetCache::Entry`
-
-One cache entry: the layout a set was allocated from and the set itself.
-
-| Member | Description |
-| --- | --- |
-| `VkDescriptorSetLayout layout` | Shared layout, freed by the cache. |
-| `VkDescriptorSet set` | Shared set, freed by the cache. |
-
-### `struct Muyo::RenderGraph::DescriptorSetKey`
-
-Everything that decides a descriptor set's contents, so two nodes that would write the same set share one.
-
-A descriptor set holds concrete views - a VkBuffer handle, a VkImageView handle - so its identity is the set of resources bound into it, not the declaration that named them. Two nodes binding the same buffer at the same (set, binding) therefore have the same key and share one VkDescriptorSet; two nodes binding different buffers (including two aliased transients over one block, which are different VkImages) have different keys and get different sets. That is what makes a content-addressed cache safe under aliasing: it cannot hand one node another node's view.
-
-The reflected layout is part of the key, so two nodes that bind different descriptor types at the same set index never share either. The layout and the bound resources are stored in a canonical order (by binding), because reflection does not promise one.
-
-| Member | Description |
-| --- | --- |
-| `uint32_t set` | Descriptor set index. |
-| `std::vector< VkDescriptorSetLayoutBinding > layout` | Reflected bindings, sorted by binding. |
-| `std::vector< Bound > bound` | Bound resources, sorted by binding. |
-| `bool operator<(const DescriptorSetKey &other) const` | Parameters: `other` - Key to compare against Returns: A strict weak ordering, so a key set can be a std::map. |
-
-### `struct Muyo::RenderGraph::DescriptorSetKey::Bound`
-
-One resource bound into a binding, with everything the write needs.
-
-| Member | Description |
-| --- | --- |
-| `uint32_t binding` | Binding within the set. |
-| `VkDescriptorType type` | Descriptor type, from reflection. |
-| `const IRenderResource * resource` | Bound resource, by identity. |
-| `VkDeviceSize bufferOffset` | Buffer bind offset, already resolved. |
-| `VkDeviceSize bufferRange` | Buffer bind range, already resolved. |
-| `VkImageLayout imageLayout` | Image layout the descriptor samples in. |
-| `VkSampler sampler` | Sampler for a combined image sampler, else null. |
-| `bool operator<(const Bound &other) const` | Parameters: `other` - Binding to compare against Returns: A strict weak ordering, so the bound set can key a std::map. |
 
 
 ## `PSODesc.h`
@@ -201,7 +135,7 @@ Comparison operation used by depth/stencil state.
 | `ALWAYS` | Always passes. |
 | `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
-### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineLayout pipelineLayout, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr, bool bDescriptorHeap=false)`
+### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr)`
 
 Build a graphics pipeline from a PSODesc using dynamic rendering.
 
@@ -210,12 +144,10 @@ Build a graphics pipeline from a PSODesc using dynamic rendering.
 | `psoDesc` | Pipeline state. |
 | `vkDevice` | Logical device. |
 | `shaderModuels` | Vertex shader module followed by the fragment shader module. |
-| `pipelineLayout` | Legacy descriptor layout, or VK_NULL_HANDLE when bDescriptorHeap is true. |
 | `renderingInfo` | Dynamic-rendering attachment formats. |
 | `pSpecializationInfo` | Values for the shaders' specialization constants, applied to both stages, or nullptr. Entries naming a constant a stage does not declare are ignored by Vulkan, so one map can serve both. |
-| `bDescriptorHeap` | Create with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and no pipeline layout. |
 
-**Returns** — The created pipeline (caller owns it).
+**Returns** — The created pipeline (caller owns it). Always created with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and layout = VK_NULL_HANDLE (B1b).
 
 ### `enum CullMode`
 
@@ -656,24 +588,23 @@ Maximum number of shader stages a node may declare (vertex + fragment, or raygen
 
 Declares and runs a render graph.
 
-Typical use: RenderGraphBuilderbuilder(RenderGraphServices{.device=GetRenderDevice(), .resourceManager=GetRenderResourceManager(), .descriptorManager=GetDescriptorManager()}); builder.AddResource("Color",ImageResourceDesc{.format=...,.extent=...,.usage=...}); builder.ImportResource("Vertices",meshManager.m_pVertexBuffer); builder.AddNode({.nodeName="Opaque",.queueType=QueueType::GRAPHICS,...}); builder.Build(); builder.Execute();
+Typical use: RenderGraphBuilderbuilder(RenderGraphServices{.device=GetRenderDevice(), .resourceManager=GetRenderResourceManager(), .descriptorHeap=&heap}); builder.AddResource("Color",ImageResourceDesc{.format=...,.extent=...,.usage=...}); builder.ImportResource("Vertices",meshManager.m_pVertexBuffer); builder.AddNode({.nodeName="Opaque",.queueType=QueueType::GRAPHICS,...}); builder.Build(); builder.Execute();
 
-Build() is idempotent for a fixed declaration: it topologically sorts the nodes, allocates graph-owned resources, compiles pipelines/descriptor sets and plans barriers. Execute() records and submits the frame, splitting work across queues when nodes opt into async compute.
+Build() is idempotent for a fixed declaration: it topologically sorts the nodes, allocates graph-owned resources, writes descriptor-heap slots, compiles pipelines and plans barriers. Execute() records and submits the frame, splitting work across queues when nodes opt into async compute.
 
 | Member | Description |
 | --- | --- |
 | `RenderGraphBuilder(const RenderGraphServices &services)` | Parameters: `services` - The device, resource allocator and descriptor allocator the graph uses. Each is required; a missing one is reported by name rather than dereferenced later, and the check throws so it survives NDEBUG |
 | `RenderGraphBuilder(VkRenderDevice *renderDevice)` | Transitional: fills the remaining services from the engine's globals, for the callers that still use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is why it is documented as the transition rather than as an equal alternative. Parameters: `renderDevice` - Device used to create pipelines, command buffers and synchronisation |
-| `~RenderGraphBuilder()` | Releases compiled pipelines, descriptor sets and command buffers. |
+| `~RenderGraphBuilder()` | Releases compiled pipelines and command buffers; the heaps belong to the injected service. |
 | `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. Parameters: `handle` - Name the graph and the nodes use for it; `desc` - Allocation: buffer size, or image format/extent/usage, plus its lifetime Returns: *this for chaining. Throws: `std::runtime_error` - if desc cannot describe an allocation - a zero count/stride, a zero extent, VK_FORMAT_UNDEFINED, zero mips/layers, or usage == 0 - or if it asks for ResourceLifetime::Imported; use ImportResource for a resource the graph does not own |
 | `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. Returns: *this for chaining. |
 | `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | Returns: The allocation description for a graph-owned resource, if any. |
 | `const IRenderResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. Parameters: `handle` - Resource handle Returns: The resource, or nullptr when the handle names nothing the graph can see. |
 | `const TransientMemoryPlan & GetTransientMemoryPlan() const` | Returns: The last build's transient memory plan: the blocks, their slots, and the two byte totals. reservedBytes < individualBytes is what sharing memory looks like from outside, and reservedBytes == individualBytes is a legitimate answer for a graph whose transients all overlap in time. Empty before the first build. |
-| `std::size_t GetDescriptorSetCount() const` | Returns: How many distinct descriptor sets the last build allocated. A graph whose nodes bind the same resources at the same sets shares one set across them, so this is below the number of descriptor-bound nodes exactly when the cache deduplicated; it is the descriptor analogue of GetTransientMemoryPlan(). Zero before the first build. |
 | `void AddNode(const RenderGraphNodeCreateInfo &nodeCreateInfo)` | Declare a node. Throws: `std::runtime_error` - if the name is already used; a resource use names something neither declared with AddResource nor imported; a use's kind or usage does not agree with the resource it names (a sampled-only image bound as STORAGE_IMAGE, an image role on a buffer); a node's shader count does not match its queue type; a non-CPU node has no execute callback; or its attachments resolve to different extents |
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
-| `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. Throws: `std::runtime_error` - for a declaration error, naming the node and resource: a dependency cycle; a transient read with no writer; a descriptorBinding the shader does not declare, a binding whose reflected type does not fit the resource, or two uses at one binding; and anything CompileRenderGraphNode rejects (shader load, specialization ids, buffer range). docs/RenderGraph.md has the failure index |
+| `void Build()` | Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation and barrier planning. Call after all resources and nodes are declared. Throws: `std::runtime_error` - for a declaration error, naming the node and resource: a dependency cycle; a transient read with no writer; and anything CompileRenderGraphNode rejects (shader load, specialization ids, buffer range, a missing heap service). docs/RenderGraph.md has the failure index |
 | `void Execute()` | Run every node once in execution order, inserting barriers between nodes and synchronising cross-queue handovers. |
 | `void SetTraceSink(std::function< void(RenderGraphTrace)> sink)` | Receive a trace of every execution from now on. Parameters: `sink` - Called after each execution completes submission, with that execution's record |
 | `void Execute(const RenderGraphExecuteInfo &info)` | Record and submit without waiting for the GPU. Note this does not enable overlap: the builder owns a single in-flight slot, so a second call blocks in AcquireSlot until the first completes. Overlap is an executor-API concern, see issue #11. Parameters: `info` - External semaphores to wait on before, and signal after, this execution |
@@ -694,11 +625,10 @@ User-facing declaration of a single render graph node (pass).
 | `std::vector< ResourceUse > resourceUses` | Resources the node reads/writes. |
 | `std::vector< std::string > shaderNames` | Shader names for graphics (vert+frag) or compute. |
 | `std::vector< SpecializationValue > specializationConstants` | Values for this node's shader specialization constants, by constant_id. |
-| `std::vector< std::string > rtShaderNames` | Ray tracing only: ray generation / miss / closest-hit shader names, in that order. When queueType == RAY_TRACING these are compiled into a ray tracing pipeline (with a graph-managed shader binding table) and the node automatically issues vkCmdTraceRaysKHR over the extent of its first STORAGE_IMAGE resource. Resources are bound by their explicit DescriptorBinding (reflection-derived set/binding), so a node can bind the TLAS, storage images and uniform buffers it declares. |
+| `std::vector< std::string > rtShaderNames` | Ray tracing only: ray generation / miss / closest-hit shader names, in that order. When queueType == RAY_TRACING these are compiled into a heap-flagged ray tracing pipeline (with a graph-managed shader binding table) and the node automatically issues vkCmdTraceRaysKHR over the extent of its first STORAGE_IMAGE resource. The TLAS, storage image and buffer handles reach the shaders through PushData, like every other heap node. |
 | `PSODesc psoDesc` | Graphics pipeline state (ignored for compute/RT). |
 | `uint32_t costHint` | Reserved for the future scheduler. |
 | `std::vector< VkClearValue > attachmentClearValues` | Optional clear values for the node's attachments, in attachment declaration order. |
-| `bool useDescriptorHeap` | Opt-in B1b path: create the pipeline with VkPipelineCreateFlags2CreateInfo + VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and layout = VK_NULL_HANDLE instead of a reflection-derived pipeline layout. The node's shaders must not declare descriptor bindings; use RenderGraphNodeContext::PushData for its root data. B1b-1 supports compute only. |
 | `RenderGraphNodeCallback execute` | Records the node's work. |
 
 ### `struct Muyo::RenderGraph::RenderGraphServices`
@@ -713,8 +643,7 @@ Deliberately not here yet: a shader source provider (the graph still loads .spv 
 | --- | --- |
 | `VkRenderDevice * device` | Device the graph creates pipelines, command buffers and synchronisation with. Required. |
 | `RenderResourceManager * resourceManager` | Allocates and owns the graph's declared resources. Required. |
-| `DescriptorManager * descriptorManager` | Allocates descriptor set layouts and sets. Required for the legacy descriptor path. |
-| `DescriptorHeapService * descriptorHeap` | The B-track heap service. Required for a node that sets useDescriptorHeap. |
+| `DescriptorHeapService * descriptorHeap` | The B-track heap service. Required for every GPU node since B1b; the graph rejects a missing service by name. The descriptor-set allocator is no longer a graph service. |
 
 ### `std::unordered_map< ResourceHandle, ResourceDesc > ResourceDescRegistry`
 
@@ -874,7 +803,7 @@ Callback a node provides to record its GPU or host work.
 
 Context handed to a node's execute callback.
 
-The graph has already recorded the barriers, opened the render pass (graphics nodes) and bound the pipeline and descriptor sets, so most callbacks only issue draw/dispatch/trace commands.
+The graph has already recorded the barriers, opened the render pass (graphics nodes) and bound the pipeline and heaps, so most callbacks only issue draw/dispatch/trace commands.
 
 | Member | Description |
 | --- | --- |
@@ -883,12 +812,11 @@ The graph has already recorded the barriers, opened the render pass (graphics no
 | `std::function< const IRenderResource *(const ResourceHandle &)> resolveResource` | Resolve a handle the way the graph does: its own transients first (whose memory belongs to an aliasing block and which are therefore deliberately not registered with the manager), then ones the caller imported, then the manager's. Set by whoever executes; a context built without it falls back to the manager alone. |
 | `VkCommandBuffer commandBuffer` | Command buffer to record into. |
 | `VkPipeline pipeline` | Bound pipeline. |
-| `VkPipelineLayout pipelineLayout` | Bound pipeline layout. |
 | `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
 | `std::function< RenderGraphRootSlice(size_t, size_t)> allocateRoot` | Allocator for optional root memory. B1b-4 gives each execution a host-visible, device-addressable arena; the host owns the layout and the bytes. |
-| `std::function< std::optional< uint32_t >(const ResourceHandle &, ResourceUsage)> getHeapIndex` | Resolve a graph-declared resource to its descriptor-heap index for this node, if the node was compiled with useDescriptorHeap and the service registered the use. |
-| `DescriptorHeapService * descriptorHeap` | Non-null for a node compiled with useDescriptorHeap. The graph does not bind the heaps centrally yet: the node callback uploads/binds them (see the UI pass); a later B1b slice adds the central bind. Both heap and pipeline bind-point state precede the dispatch. |
-| `uint32_t maxPushDataSize` | The device's maxPushDataSize; zero for a legacy descriptor node. |
+| `std::function< std::optional< uint32_t >(const ResourceHandle &, ResourceUsage)> getHeapIndex` | Resolve a graph-declared resource to its descriptor-heap index for this node, if the service registered the use. |
+| `DescriptorHeapService * descriptorHeap` | Non-null for every GPU node. The executor uploads and binds the heaps once per segment command buffer, before any render pass starts (B1b-5b-4). |
+| `uint32_t maxPushDataSize` | The device's maxPushDataSize; zero for a CPU node. |
 | `std::vector< std::pair< uint32_t, uint32_t > > pushedRanges` | Ranges pushed for the current node, for the builder's record-time coverage check. |
 | `RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment)` | Allocate root memory for this node from the execution's arena. Throws: `std::runtime_error` - when the node has no root allocator or the arena is exhausted |
 | `void WriteRootIndex(RenderGraphRootSlice &slice, size_t offset, uint32_t index)` | Write a 32-bit heap index into a root slice. Throws: `std::runtime_error` - when the write would leave the slice |
@@ -922,17 +850,6 @@ The range is resolved at Build(): it is written into VkDescriptorBufferInfo once
 | --- | --- |
 | `uint64_t offset` | Byte offset from the start of the buffer. |
 | `uint64_t size` | Byte length of the range. Must not be zero. |
-
-### `struct Muyo::RenderGraph::DescriptorBinding`
-
-Explicit shader descriptor location (set + binding) for a resource.
-
-The graph derives a node's set layouts from the shader reflection and takes each resource's location from its ResourceUse, so a descriptor-bound resource must name its (set, binding). The engine's built-in set convention lives outside the library, in RenderGraphSemanticBindings.h.
-
-| Member | Description |
-| --- | --- |
-| `uint32_t set` | Descriptor set index. |
-| `uint32_t binding` | Binding index within the set. |
 
 ### `constexpr bool Muyo::RenderGraph::IsWrite(ResourceIOType io)`
 
@@ -995,8 +912,7 @@ Produced by ResolveResourceUse(); mostly consumed internally by RenderGraphBuild
 | `VkImageLayout imageLayout` | Image layout (images only). |
 | `VkFormat format` | Optional format (validation / pipeline creation). |
 | `VkExtent3D extent` | Optional extent (validation / trace dispatch). |
-| `std::optional< DescriptorBinding > descriptorBinding` | Descriptor location. |
-| `std::optional< BufferRange > bufferRange` | Byte range of a buffer resource to bind, carried through from the declaration. |
+| `std::optional< BufferRange > bufferRange` | Byte range of a buffer resource bound by the heap descriptor, carried through from the declaration. The barrier path deliberately ignores it - a range is a binding claim, not a claim that two uses touch disjoint bytes, so hazards stay per-resource and conservative. |
 
 ### `enum ResourceIOType`
 
@@ -1060,7 +976,6 @@ A node's declaration that it uses a resource (the interface passed to RenderGrap
 | `ResourceIOType io` | Read / write / read-write. |
 | `ResourceUsage usage` | Semantic role. |
 | `ResourceKind kind` | Concrete resource kind. |
-| `std::optional< DescriptorBinding > descriptorBinding` | Descriptor location (set + binding), when the resource is bound into a descriptor set. The shader reflection supplies the layout and the descriptor type; this names the slot. |
 | `std::optional< BufferRange > bufferRange` | Optional byte range of a buffer resource to bind. Absent binds the whole buffer. |
 
 ### `uint64_t ResourceVersion`

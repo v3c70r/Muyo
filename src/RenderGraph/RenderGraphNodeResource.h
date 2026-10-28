@@ -197,17 +197,6 @@ constexpr const char* NameOf(ResourceUsage usage)
     return "(unknown usage)";
 }
 
-/// Explicit shader descriptor location (set + binding) for a resource.
-///
-/// The graph derives a node's set layouts from the shader reflection and takes each resource's
-/// location from its `ResourceUse`, so a descriptor-bound resource must name its (set, binding). The
-/// engine's built-in set convention lives outside the library, in RenderGraphSemanticBindings.h.
-struct DescriptorBinding
-{
-    uint32_t set = 0;      ///< Descriptor set index.
-    uint32_t binding = 0;  ///< Binding index within the set.
-};
-
 /// A byte range inside a buffer resource - a view of part of it.
 ///
 /// Declared on a `ResourceUse` to bind only `[offset, offset + size)`, which is what one tensor of a
@@ -268,13 +257,10 @@ inline void ValidateBufferRange(const ResourceHandle& nodeName, const ResourceHa
 /// A node's declaration that it uses a resource (the interface passed to RenderGraphBuilder).
 struct ResourceUse
 {
-    ResourceHandle handle;                                                    ///< Name of the resource.
-    ResourceIOType io;                                                        ///< Read / write / read-write.
-    ResourceUsage usage;                                                      ///< Semantic role.
-    ResourceKind kind;                                                        ///< Concrete resource kind.
-    /// Descriptor location (set + binding), when the resource is bound into a descriptor set. The
-    /// shader reflection supplies the layout and the descriptor type; this names the slot.
-    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;
+    ResourceHandle handle;  ///< Name of the resource.
+    ResourceIOType io;      ///< Read / write / read-write.
+    ResourceUsage usage;    ///< Semantic role.
+    ResourceKind kind;      ///< Concrete resource kind.
     /// Optional byte range of a buffer resource to bind. Absent binds the whole buffer.
     std::optional<BufferRange> bufferRange = std::nullopt;
 };
@@ -300,12 +286,9 @@ struct ResolvedResourceUse
     VkFormat format;            ///< Optional format (validation / pipeline creation).
     VkExtent3D extent;          ///< Optional extent (validation / trace dispatch).
 
-    std::optional<DescriptorBinding> descriptorBinding = std::nullopt;  ///< Descriptor location.
-    /// Byte range of a buffer resource to bind, carried through from the declaration.
-    ///
-    /// Kept here because both consumers read this struct: the descriptor write needs it, and the
-    /// barrier path deliberately ignores it - a range is a *binding* claim, not a claim that two uses
-    /// touch disjoint bytes, so hazards stay per-resource and conservative.
+    /// Byte range of a buffer resource bound by the heap descriptor, carried through from the
+    /// declaration. The barrier path deliberately ignores it - a range is a *binding* claim, not a
+    /// claim that two uses touch disjoint bytes, so hazards stay per-resource and conservative.
     std::optional<BufferRange> bufferRange = std::nullopt;
 };
 

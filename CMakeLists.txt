@@ -292,7 +292,6 @@ add_library(muyo STATIC ${muyo_SRC})
 add_library(muyo_rg
     "src/RenderGraph/RenderGraphBuilder.cpp"
     "src/RenderGraph/CompiledRenderGraph.cpp"
-    "src/RenderGraph/DescriptorSetCache.cpp"
     "src/RenderGraph/RenderGraphExecutor.cpp"
     "src/RenderGraph/RenderGraphTrace.cpp"
 )

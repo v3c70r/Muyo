@@ -27,7 +27,6 @@
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderGraph/RenderGraphResourceDesc.h"
 #include "RenderGraph/ResourceUseResolver.h"
-#include "RenderGraphSemanticBindings.h"
 #include "RenderResources/Geometry.h"
 #include "RenderResources/RenderTargetResource.h"
 #include "Scene/RayTracingSceneManager.h"
@@ -95,9 +94,7 @@ void ConvertFillNode(RenderGraphNodeCreateInfo& node)
     }
     REQUIRE(node.resourceUses.size() == 1);
     const ResourceHandle handle = node.resourceUses.front().handle;
-    node.useDescriptorHeap = true;
     node.shaderNames = {"testFillColor.comp.heap"};
-    node.resourceUses.front().descriptorBinding.reset();
     auto originalExecute = std::move(node.execute);
     node.execute = [handle, originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
     {
@@ -151,12 +148,10 @@ void ConvertCameraNode(RenderGraphNodeCreateInfo& node, const char* cameraHandle
     {
         if (use.handle == ResourceHandle(cameraHandle))
         {
-            use.descriptorBinding.reset();
             bCameraFound = true;
         }
         else if (perObjHandle != nullptr && use.handle == ResourceHandle(perObjHandle))
         {
-            use.descriptorBinding.reset();
             bPerObjFound = true;
         }
     }
@@ -165,7 +160,6 @@ void ConvertCameraNode(RenderGraphNodeCreateInfo& node, const char* cameraHandle
 
     node.shaderNames[0] = vertexShader;
     if (fragmentShader != nullptr) node.shaderNames[1] = fragmentShader;
-    node.useDescriptorHeap = true;
     auto originalExecute = std::move(node.execute);
     node.execute = [cameraHandle, perObjHandle, solidColor = std::move(solidColor),
                     originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
@@ -194,6 +188,7 @@ void ConvertCameraNode(RenderGraphNodeCreateInfo& node, const char* cameraHandle
     };
 }
 
+#ifdef FEATURE_RAY_TRACING
 /// B1b-5b-5: per-view inverse matrices for the RT heap variants, plus the TLAS and output heap indices.
 /// The inverses live at bytes 128/192 of PerViewData in the legacy constant buffer; pushing them in the
 /// same order with the same RowMajor/stride-16 layout reproduces the bytes the shader reads. The rgen then
@@ -227,17 +222,14 @@ void ConvertRayTracingNode(RenderGraphNodeCreateInfo& node, const char* cameraHa
     {
         if (use.handle == ResourceHandle(cameraHandle))
         {
-            use.descriptorBinding.reset();
             bCameraFound = true;
         }
         else if (use.handle == ResourceHandle(tlasHandle))
         {
-            use.descriptorBinding.reset();
             bTlasFound = true;
         }
         else if (use.handle == ResourceHandle(outputHandle))
         {
-            use.descriptorBinding.reset();
             bOutputFound = true;
         }
     }
@@ -246,7 +238,6 @@ void ConvertRayTracingNode(RenderGraphNodeCreateInfo& node, const char* cameraHa
     REQUIRE(bOutputFound);
 
     node.rtShaderNames[0] = "testPrimary.rgen.heap";
-    node.useDescriptorHeap = true;
     auto originalExecute = std::move(node.execute);
     node.execute = [cameraHandle, tlasHandle, outputHandle,
                     originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
@@ -272,6 +263,7 @@ void ConvertRayTracingNode(RenderGraphNodeCreateInfo& node, const char* cameraHa
         if (originalExecute) originalExecute(context);
     };
 }
+#endif  // FEATURE_RAY_TRACING
 }  // namespace
 
 // Copies the (already rendered) color target back to the host and returns how many
@@ -417,10 +409,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
 
     DescriptorHeapService heap;
     heap.Initialize(GetRenderDevice());
-    RenderGraphServices services{.device = GetRenderDevice(),
-                                 .resourceManager = GetRenderResourceManager(),
-                                 .descriptorManager = GetDescriptorManager(),
-                                 .descriptorHeap = &heap};
+    RenderGraphServices services{
+        .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &heap};
     RenderGraphBuilder builder(services);
 
     // Graph-owned resources (allocated at Build()).
@@ -458,7 +448,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
                                        .blendEnable = false,
                                    }}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-        .useDescriptorHeap = true,
         .execute = [nQuadIndexCount](RenderGraphNodeContext& ctx)
         {
             // Render pass begin/end, pipeline, viewport/scissor and descriptor sets are handled by the graph.
@@ -572,18 +561,16 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builde
     // Async compute node filling the same image: with a dedicated compute family this gives the plan
     // a compute segment handing a resource to the graphics segment, i.e. one transfer and one
     // handover semaphore.
-    RenderGraphNodeCreateInfo fillPass = {
-        .nodeName = "TwiceFill",
-        .queueType = QueueType::COMPUTE,
-        .async = true,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("TwiceOutput"),
-                                     .io = ResourceIOType::READ_WRITE,
-                                     .usage = ResourceUsage::STORAGE_IMAGE,
-                                     .kind = ResourceKind::IMAGE,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-        .shaderNames = {"testFillColor.comp.slang"},
-        .execute = [](RenderGraphNodeContext& ctx)
-        { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+    RenderGraphNodeCreateInfo fillPass = {.nodeName = "TwiceFill",
+                                          .queueType = QueueType::COMPUTE,
+                                          .async = true,
+                                          .resourceUses = {ResourceUse{.handle = ResourceHandle("TwiceOutput"),
+                                                                       .io = ResourceIOType::READ_WRITE,
+                                                                       .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                       .kind = ResourceKind::IMAGE}},
+                                          .shaderNames = {"testFillColor.comp.slang"},
+                                          .execute = [](RenderGraphNodeContext& ctx)
+                                          { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
 
     ConvertFillNode(fillPass);
     builder.AddNode(fillPass);
@@ -674,18 +661,16 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains exec
             vkCmdDrawIndexed(ctx.commandBuffer, nQuadIndexCount, 1, 0, 0, 0);
         }};
 
-    RenderGraphNodeCreateInfo fillPass = {
-        .nodeName = "ChainFill",
-        .queueType = QueueType::COMPUTE,
-        .async = true,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("ChainOutput"),
-                                     .io = ResourceIOType::READ_WRITE,
-                                     .usage = ResourceUsage::STORAGE_IMAGE,
-                                     .kind = ResourceKind::IMAGE,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-        .shaderNames = {"testFillColor.comp.slang"},
-        .execute = [](RenderGraphNodeContext& ctx)
-        { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+    RenderGraphNodeCreateInfo fillPass = {.nodeName = "ChainFill",
+                                          .queueType = QueueType::COMPUTE,
+                                          .async = true,
+                                          .resourceUses = {ResourceUse{.handle = ResourceHandle("ChainOutput"),
+                                                                       .io = ResourceIOType::READ_WRITE,
+                                                                       .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                       .kind = ResourceKind::IMAGE}},
+                                          .shaderNames = {"testFillColor.comp.slang"},
+                                          .execute = [](RenderGraphNodeContext& ctx)
+                                          { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
 
     ConvertFillNode(fillPass);
     builder.AddNode(fillPass);
@@ -809,6 +794,10 @@ void RecordEmptyCommandBuffers(const RenderGraphExecutor::ExecutionSlot& slot)
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants reach the compiled pipeline",
                  "[RenderGraphBuilder]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the heap-only graph needs it");
+    }
     // #62. The graph reflected a shader's specialization constants and never applied them, so every
     // constant kept the value baked into its SPIR-V. That is invisible to the renderer, whose shaders do
     // not use them, and fatal to a consumer that does: llama.cpp's compute shaders make the workgroup
@@ -823,26 +812,37 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     // one an end-to-end case covers. The remaining cases take the transitional constructor, which fills
     // the same three services from the engine's globals - both paths are therefore exercised, and #53's
     // claim that no internal site reaches for a global is closed by grepping the directory.
-    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
-                                                   .resourceManager = GetRenderResourceManager(),
-                                                   .descriptorManager = GetDescriptorManager()});
+    RenderGraphBuilder builder(
+        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
     builder.AddResource(
         "SpecOut", BufferResourceDesc{.count = 2,
                                       .stride = sizeof(uint32_t),
-                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                       .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
-    RenderGraphNodeCreateInfo node{
-        .nodeName = "SpecConstantNode",
-        .queueType = QueueType::COMPUTE,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("SpecOut"),
-                                     .io = ResourceIOType::WRITE,
-                                     .usage = ResourceUsage::STORAGE_BUFFER,
-                                     .kind = ResourceKind::BUFFER,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-        .shaderNames = {"testSpecConstant.comp.slang"},
-        .specializationConstants = {{.id = 0, .value = 7}, {.id = 1, .value = 3}},
-        .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
+    RenderGraphNodeCreateInfo node{.nodeName = "SpecConstantNode",
+                                   .queueType = QueueType::COMPUTE,
+                                   .resourceUses = {ResourceUse{.handle = ResourceHandle("SpecOut"),
+                                                                .io = ResourceIOType::WRITE,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER}},
+                                   .shaderNames = {"testSpecConstant.comp.heap"},
+                                   .specializationConstants = {{.id = 0, .value = 7}, {.id = 1, .value = 3}},
+                                   .execute = [](RenderGraphNodeContext& ctx)
+                                   {
+                                       const std::optional<uint32_t> output =
+                                           ctx.GetHeapIndex("SpecOut", ResourceUsage::STORAGE_BUFFER);
+                                       REQUIRE(output.has_value());
+                                       struct Push
+                                       {
+                                           uint32_t x;
+                                           uint32_t y;
+                                       };
+                                       const Push push{*output, 0};
+                                       ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+                                       vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+                                   }};
 
     builder.AddNode(node);
     builder.Build();
@@ -889,6 +889,10 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps its message and leaves the device clean",
                  "[RenderGraphBuilder]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the heap-only graph needs it");
+    }
     // #55. A Build() precondition failure used to reach the caller as a process abort with its message
     // erased: the throw unwound out of a partially compiled node, the objects that compilation had
     // already created were never destroyed, and device teardown then reported
@@ -905,13 +909,13 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps it
     // names the node and the constant, and the process is alive to read it. The second is the teardown
     // the fixture performs after this case returns - were the node's objects still alive, destroying the
     // device would raise the leaked-object VUID and abort the run instead of failing a case.
-    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
-                                                   .resourceManager = GetRenderResourceManager(),
-                                                   .descriptorManager = GetDescriptorManager()});
+    RenderGraphBuilder builder(
+        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
     builder.AddResource(
         "SpecOut", BufferResourceDesc{.count = 2,
                                       .stride = sizeof(uint32_t),
-                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                               VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                       .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     RenderGraphNodeCreateInfo node{
@@ -920,9 +924,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps it
         .resourceUses = {ResourceUse{.handle = ResourceHandle("SpecOut"),
                                      .io = ResourceIOType::WRITE,
                                      .usage = ResourceUsage::STORAGE_BUFFER,
-                                     .kind = ResourceKind::BUFFER,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-        .shaderNames = {"testSpecConstant.comp.slang"},
+                                     .kind = ResourceKind::BUFFER}},
+        .shaderNames = {"testSpecConstant.comp.heap"},
         // The shader declares ids 0 and 1. 42 is a typo, and it has to be reported as one.
         .specializationConstants = {{.id = 42, .value = 7}},
         .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
@@ -933,12 +936,12 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps it
 
     // A second builder against the same device, because "the failure cost the graph, not the device" is
     // the part a long-running service depends on.
-    RenderGraphBuilder recovered(RenderGraphServices{.device = GetRenderDevice(),
-                                                     .resourceManager = GetRenderResourceManager(),
-                                                     .descriptorManager = GetDescriptorManager()});
+    RenderGraphBuilder recovered(
+        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
     recovered.AddResource("RecoveredOut", BufferResourceDesc{.count = 1,
                                                              .stride = sizeof(uint32_t),
-                                                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                              .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     recovered.AddNode(RenderGraphNodeCreateInfo{
         .nodeName = "RecoveredNode",
@@ -946,9 +949,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps it
         .resourceUses = {ResourceUse{.handle = ResourceHandle("RecoveredOut"),
                                      .io = ResourceIOType::WRITE,
                                      .usage = ResourceUsage::STORAGE_BUFFER,
-                                     .kind = ResourceKind::BUFFER,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-        .shaderNames = {"testSpecConstant.comp.slang"},
+                                     .kind = ResourceKind::BUFFER}},
+        .shaderNames = {"testSpecConstant.comp.heap"},
         .specializationConstants = {{.id = 0, .value = 5}, {.id = 1, .value = 1}},
         .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }});
     recovered.Build();
@@ -960,9 +962,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: transients that are never
     // #16's observable, on a graph built for it rather than borrowed. Two host-written buffers, used
     // strictly one after the other, so their live ranges do not overlap and the planner has nothing to be
     // careful about - which is what makes the saving real rather than incidental.
-    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
-                                                   .resourceManager = GetRenderResourceManager(),
-                                                   .descriptorManager = GetDescriptorManager()});
+    RenderGraphBuilder builder(
+        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
     for (const char* name : {"AliasFirst", "AliasSecond"})
     {
         builder.AddResource(name, BufferResourceDesc{.count = 4,
@@ -1074,9 +1075,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never liv
     // Persistent, so nothing else in the suite drives the whole aliased-image path - create unbound, query,
     // plan, bind, then create the view. Validation is on, so a wrong order (the view before the bind) or a
     // leaked image shows up as a validation error rather than silently.
-    RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
-                                                   .resourceManager = GetRenderResourceManager(),
-                                                   .descriptorManager = GetDescriptorManager()});
+    RenderGraphBuilder builder(
+        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
     for (const char* name : {"ImageAliasFirst", "ImageAliasSecond"})
     {
         builder.AddResource(name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -1095,8 +1095,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never liv
                                          // immaterial to the live range this case is about.
                                          .io = ResourceIOType::READ_WRITE,
                                          .usage = ResourceUsage::STORAGE_IMAGE,
-                                         .kind = ResourceKind::IMAGE,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+                                         .kind = ResourceKind::IMAGE}},
             .shaderNames = {"testFillColor.comp.slang"},
             .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
         ConvertFillNode(fillNode);
@@ -1139,17 +1138,15 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async and a graphics t
 
     const auto addWriter = [&builder](const char* nodeName, const char* handle, bool bAsync)
     {
-        RenderGraphNodeCreateInfo fillNode{
-            .nodeName = nodeName,
-            .queueType = QueueType::COMPUTE,
-            .async = bAsync,
-            .resourceUses = {ResourceUse{.handle = ResourceHandle(handle),
-                                         .io = ResourceIOType::READ_WRITE,
-                                         .usage = ResourceUsage::STORAGE_IMAGE,
-                                         .kind = ResourceKind::IMAGE,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-            .shaderNames = {"testFillColor.comp.slang"},
-            .execute = [](RenderGraphNodeContext&) {}};
+        RenderGraphNodeCreateInfo fillNode{.nodeName = nodeName,
+                                           .queueType = QueueType::COMPUTE,
+                                           .async = bAsync,
+                                           .resourceUses = {ResourceUse{.handle = ResourceHandle(handle),
+                                                                        .io = ResourceIOType::READ_WRITE,
+                                                                        .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                        .kind = ResourceKind::IMAGE}},
+                                           .shaderNames = {"testFillColor.comp.slang"},
+                                           .execute = [](RenderGraphNodeContext&) {}};
         ConvertFillNode(fillNode);
         builder.AddNode(fillNode);
     };
@@ -1173,6 +1170,10 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async and a graphics t
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only that byte range",
                  "[RenderGraphBuilder]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the heap-only graph needs it");
+    }
     // #81. The node binds a byte range partway into the buffer, and this shader writes gOut[0] and
     // gOut[1] - so with the range honoured the values land on the first two elements *of the range*.
     // Without it the binding starts at zero: the shader still runs and still writes, which is why the
@@ -1198,7 +1199,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
     builder.AddResource(
         "RangedOut", BufferResourceDesc{.count = nElementCount,
                                         .stride = sizeof(uint32_t),
-                                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                        .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                         .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     RenderGraphNodeCreateInfo node{
@@ -1209,10 +1211,21 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
             .io = ResourceIOType::WRITE,
             .usage = ResourceUsage::STORAGE_BUFFER,
             .kind = ResourceKind::BUFFER,
-            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0},
             .bufferRange = BufferRange{.offset = nOffsetElements * sizeof(uint32_t), .size = 2 * sizeof(uint32_t)}}},
-        .shaderNames = {"testSpecConstant.comp.slang"},
-        .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
+        .shaderNames = {"testSpecConstant.comp.heap"},
+        .execute = [](RenderGraphNodeContext& ctx)
+        {
+            const std::optional<uint32_t> output = ctx.GetHeapIndex("RangedOut", ResourceUsage::STORAGE_BUFFER);
+            REQUIRE(output.has_value());
+            struct Push
+            {
+                uint32_t x;
+                uint32_t y;
+            };
+            const Push push{*output, 0};
+            ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+            vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+        }};
 
     builder.AddNode(node);
     builder.Build();
@@ -1295,7 +1308,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffe
                                                                            .usage = ResourceUsage::STORAGE_BUFFER,
                                                                            .kind = ResourceKind::BUFFER}},
                                               .shaderNames = {"copyBuffer.comp.heap"},
-                                              .useDescriptorHeap = true,
                                               .execute = [&nByteCount](RenderGraphNodeContext& ctx)
                                               {
                                                   const std::optional<uint32_t> inputIndex =
@@ -1318,7 +1330,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffe
     // Build writes the heap descriptor against source's current device address and handle.
     builder.Build();
     // A heap node must not fall back to the reflection-derived descriptor-set path.
-    CHECK(builder.GetDescriptorSetCount() == 0);
 
     // Grow after the descriptor was written, within the allocation. The handle must not change, or the
     // descriptor written above would name a destroyed buffer.
@@ -1367,17 +1378,14 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffe
 
 TEST_CASE("RenderGraphBuilder: a missing service is named and never dereferenced", "[RenderGraphBuilder]")
 {
-    // #53. The graph takes its device, resource allocator and descriptor allocator by construction, and a
-    // missing one has to be a message rather than a null dereference inside a member initialiser - which
-    // is why m_services is declared before the members that dereference it, and why this throws rather
-    // than asserting. Device-independent: every rejection happens before anything touches Vulkan.
+    // #53. The graph takes its device and resource allocator by construction, and a missing one has to be
+    // a message rather than a null dereference inside a member initialiser - which is why m_services is
+    // declared before the members that dereference it, and why this throws rather than asserting.
+    // Device-independent: every rejection happens before anything touches Vulkan.
     CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{}),
                       Catch::Matchers::ContainsSubstring("services.device is null"));
     CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{.device = GetRenderDevice()}),
                       Catch::Matchers::ContainsSubstring("services.resourceManager is null"));
-    CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{.device = GetRenderDevice(),
-                                                             .resourceManager = GetRenderResourceManager()}),
-                      Catch::Matchers::ContainsSubstring("services.descriptorManager is null"));
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: reading a transient nothing writes fails at Build",
@@ -1393,55 +1401,27 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: reading a transient nothi
                                                            .stride = sizeof(uint32_t),
                                                            .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
-    builder.AddNode(RenderGraphNodeCreateInfo{
-        .nodeName = "ReadsIt",
-        .queueType = QueueType::COMPUTE,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("NeverWritten"),
-                                     .io = ResourceIOType::READ,
-                                     .usage = ResourceUsage::STORAGE_BUFFER,
-                                     .kind = ResourceKind::BUFFER,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-        .shaderNames = {"copyBuffer.comp.slang"},
-        .execute = [](RenderGraphNodeContext&) {}});
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "ReadsIt",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {ResourceUse{.handle = ResourceHandle("NeverWritten"),
+                                                                           .io = ResourceIOType::READ,
+                                                                           .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                           .kind = ResourceKind::BUFFER}},
+                                              .shaderNames = {"copyBuffer.comp.slang"},
+                                              .execute = [](RenderGraphNodeContext&) {}});
 
     CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'ReadsIt'") &&
                                            Catch::Matchers::ContainsSubstring("'NeverWritten'") &&
                                            Catch::Matchers::ContainsSubstring("Persistent"));
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a descriptor binding the shader does not declare fails at Build",
-                 "[RenderGraphBuilder]")
-{
-    // #55. A use whose descriptorBinding matches no reflected binding used to be skipped silently while the
-    // set was built, leaving a descriptor that was never written and surfacing at dispatch as a validation
-    // error naming a handle. It is a declaration error and has to name the node and the binding at Build.
-    RenderGraphBuilder builder(GetRenderDevice());
-    builder.AddResource("Out", BufferResourceDesc{.count = 4,
-                                                  .stride = sizeof(uint32_t),
-                                                  .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                  .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                  .lifetime = ResourceLifetime::Persistent});
-
-    // copyBuffer.comp.slang declares gInput at set 0 binding 0 and gOutput at binding 0 set 1; binding at
-    // set 0 binding 7 is a mistake, not a descriptor to write.
-    builder.AddNode(RenderGraphNodeCreateInfo{
-        .nodeName = "WrongBinding",
-        .queueType = QueueType::COMPUTE,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("Out"),
-                                     .io = ResourceIOType::READ,
-                                     .usage = ResourceUsage::STORAGE_BUFFER,
-                                     .kind = ResourceKind::BUFFER,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 7}}},
-        .shaderNames = {"copyBuffer.comp.slang"},
-        .execute = [](RenderGraphNodeContext&) {}});
-
-    CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("WrongBinding") &&
-                                           Catch::Matchers::ContainsSubstring("binding 7"));
-}
-
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async node keeps its own compute segment on any topology",
                  "[RenderGraphBuilder]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the heap-only graph needs it");
+    }
     // #133. `async` is a request, not a guarantee: it is accepted on every device. Without a dedicated
     // compute family the node still gets its own compute segment, but on the graphics family, so the plan
     // serialises it. `GetExecutionPlan()` exposes that shape and `IsComputeQueueDedicated()` is the query an
@@ -1452,7 +1432,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an async node keeps its o
         return RenderGraphNodeCreateInfo{.nodeName = name,
                                          .queueType = QueueType::COMPUTE,
                                          .async = bAsync,
-                                         .shaderNames = {"copyBuffer.comp.slang"},
+                                         .shaderNames = {"copyBuffer.comp.heap"},
                                          .execute = [](RenderGraphNodeContext&) {}};
     };
     builder.AddNode(makeNode("Async", true));
@@ -1523,68 +1503,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node's shape and its at
     }
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a binding's type and occupancy are checked at Build",
-                 "[RenderGraphBuilder]")
-{
-    // #131. The descriptor type comes from reflection when the write is built, so a resource whose kind
-    // does not fit it would be written as the shader's type and only show at draw; two uses at one binding
-    // would double-write it. Both are declaration errors and are rejected at Build.
-    const auto image = ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
-                                         .extent = {16, 16},
-                                         .usage = VK_IMAGE_USAGE_SAMPLED_BIT,
-                                         .lifetime = ResourceLifetime::Persistent};
-
-    SECTION("a resource whose kind does not fit the reflected type is rejected")
-    {
-        RenderGraphBuilder builder(GetRenderDevice());
-        builder.AddResource("Image", image);
-        builder.AddNode(RenderGraphNodeCreateInfo{
-            .nodeName = "WrongType",
-            .queueType = QueueType::COMPUTE,
-            .resourceUses = {ResourceUse{.handle = ResourceHandle("Image"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::SAMPLED,
-                                         .kind = ResourceKind::IMAGE,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-            .shaderNames = {"copyBuffer.comp.slang"},
-            .execute = [](RenderGraphNodeContext&) {}});
-
-        // copyBuffer's gInput at set 0 binding 0 is a ByteAddressBuffer, i.e. a storage buffer.
-        CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'WrongType'") &&
-                                               Catch::Matchers::ContainsSubstring("binds image"));
-    }
-    SECTION("two uses at one binding are rejected")
-    {
-        RenderGraphBuilder builder(GetRenderDevice());
-        const auto storageBuffer = BufferResourceDesc{.count = 4,
-                                                      .stride = 4,
-                                                      .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                      .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                      .lifetime = ResourceLifetime::Persistent};
-        builder.AddResource("First", storageBuffer);
-        builder.AddResource("Second", storageBuffer);
-        builder.AddNode(RenderGraphNodeCreateInfo{
-            .nodeName = "DoubleBind",
-            .queueType = QueueType::COMPUTE,
-            .resourceUses = {ResourceUse{.handle = ResourceHandle("First"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::STORAGE_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
-                             ResourceUse{.handle = ResourceHandle("Second"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::STORAGE_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-            .shaderNames = {"copyBuffer.comp.slang"},
-            .execute = [](RenderGraphNodeContext&) {}});
-
-        CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("'DoubleBind'") &&
-                                               Catch::Matchers::ContainsSubstring("binding 0") &&
-                                               Catch::Matchers::ContainsSubstring("one resource"));
-    }
-}
-
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a use's kind and usage must agree with its resource",
                  "[RenderGraphBuilder]")
 {
@@ -1603,7 +1521,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a use's kind and usage mu
         return RenderGraphNodeCreateInfo{.nodeName = name,
                                          .queueType = QueueType::COMPUTE,
                                          .resourceUses = {use},
-                                         .shaderNames = {"copyBuffer.comp.slang"},
+                                         .shaderNames = {"copyBuffer.comp.heap"},
                                          .execute = [](RenderGraphNodeContext&) {}};
     };
 
@@ -2142,6 +2060,10 @@ TEST_CASE("RenderGraphBuilder: a use the device cannot enable is reported, not s
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported resources may be read unwritten",
                  "[RenderGraphBuilder]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the heap-only graph needs it");
+    }
     // The two exempt cases, which are the reason the check cannot simply demand a writer. A Persistent
     // resource carries content from an earlier execution and an imported one from outside the graph, so
     // demanding a write for either would reject exactly the graphs that declare them correctly.
@@ -2150,38 +2072,36 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Persistent and imported r
         RenderGraphBuilder builder(GetRenderDevice());
         builder.AddResource("History", BufferResourceDesc{.count = 4,
                                                           .stride = sizeof(uint32_t),
-                                                          .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                          .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                   VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                           .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
                                                           .lifetime = ResourceLifetime::Persistent});
-        builder.AddNode(RenderGraphNodeCreateInfo{
-            .nodeName = "ReadsHistory",
-            .queueType = QueueType::COMPUTE,
-            .resourceUses = {ResourceUse{.handle = ResourceHandle("History"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::STORAGE_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-            .shaderNames = {"copyBuffer.comp.slang"},
-            .execute = [](RenderGraphNodeContext&) {}});
+        builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "ReadsHistory",
+                                                  .queueType = QueueType::COMPUTE,
+                                                  .resourceUses = {ResourceUse{.handle = ResourceHandle("History"),
+                                                                               .io = ResourceIOType::READ,
+                                                                               .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                               .kind = ResourceKind::BUFFER}},
+                                                  .shaderNames = {"copyBuffer.comp.heap"},
+                                                  .execute = [](RenderGraphNodeContext&) {}});
 
         CHECK_NOTHROW(builder.Build());
     }
 
     SECTION("imported, so the graph never allocates it")
     {
-        BufferResource imported(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 4 * sizeof(uint32_t));
+        BufferResource imported(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                VMA_MEMORY_USAGE_CPU_TO_GPU, 4 * sizeof(uint32_t));
         RenderGraphBuilder builder(GetRenderDevice());
         builder.ImportResource("Outside", &imported);
-        builder.AddNode(RenderGraphNodeCreateInfo{
-            .nodeName = "ReadsOutside",
-            .queueType = QueueType::COMPUTE,
-            .resourceUses = {ResourceUse{.handle = ResourceHandle("Outside"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::STORAGE_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-            .shaderNames = {"copyBuffer.comp.slang"},
-            .execute = [](RenderGraphNodeContext&) {}});
+        builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "ReadsOutside",
+                                                  .queueType = QueueType::COMPUTE,
+                                                  .resourceUses = {ResourceUse{.handle = ResourceHandle("Outside"),
+                                                                               .io = ResourceIOType::READ,
+                                                                               .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                               .kind = ResourceKind::BUFFER}},
+                                                  .shaderNames = {"copyBuffer.comp.heap"},
+                                                  .execute = [](RenderGraphNodeContext&) {}});
 
         CHECK_NOTHROW(builder.Build());
     }
@@ -2246,8 +2166,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
         .resourceUses = {ResourceUse{.handle = ResourceHandle("TransferImageIn"),
                                      .io = ResourceIOType::READ_WRITE,
                                      .usage = ResourceUsage::STORAGE_IMAGE,
-                                     .kind = ResourceKind::IMAGE,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
+                                     .kind = ResourceKind::IMAGE}},
         .shaderNames = {"testFillColor.comp.slang"},
         .execute = [](RenderGraphNodeContext& ctx) { vkCmdDispatch(ctx.commandBuffer, 1, 1, 1); }};
     ConvertFillNode(writeGreen);
@@ -2423,6 +2342,10 @@ TEST_CASE("BufferRange: an unusable range is rejected with the reason named", "[
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants reach a graphics pipeline",
                  "[RenderGraphBuilder]")
 {
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the heap-only graph needs it");
+    }
     // The graphics counterpart of the compute test above, and a different code path: that stage info is
     // built inline in the graph, while this one goes through CreatePipelineFromPSODesc and
     // PipelineStateBuilder, where a single map is applied to both the vertex and fragment stages and the
@@ -2913,7 +2836,6 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                             .kind = ResourceKind::BUFFER},
             },
         .shaderNames = {"prepareDrawCmdBuffer.comp.heap"},
-        .useDescriptorHeap = true,
         .execute = [&nSourceCount](RenderGraphNodeContext& ctx)
         {
             const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
@@ -2982,13 +2904,11 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
                 ResourceUse{.handle = ResourceHandle("PreViewData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("PerObjData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerObj},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("GBuffer draw commands"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
@@ -3577,13 +3497,11 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                 ResourceUse{.handle = ResourceHandle("RTParityCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("RTParityPerObjData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerObj},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("RTParityRasterOutput"),
                             .io = ResourceIOType::WRITE,
                             .usage = ResourceUsage::COLOR_ATTACHMENT,
@@ -3617,18 +3535,15 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                 ResourceUse{.handle = ResourceHandle("RTParityCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("RTParityTLAS"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::ACCEL_STRUCTURE,
-                            .kind = ResourceKind::ACCELERATION_STRUCTURE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE},
                 ResourceUse{.handle = ResourceHandle("RTParityRayOutput"),
                             .io = ResourceIOType::READ_WRITE,
                             .usage = ResourceUsage::STORAGE_IMAGE,
-                            .kind = ResourceKind::IMAGE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                            .kind = ResourceKind::IMAGE},
             },
         .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
         .execute = [](RenderGraphNodeContext&) {}};
@@ -3805,18 +3720,15 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and 
                 ResourceUse{.handle = ResourceHandle("ASBuildCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("ASBuildTLAS"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::ACCEL_STRUCTURE,
-                            .kind = ResourceKind::ACCELERATION_STRUCTURE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE},
                 ResourceUse{.handle = ResourceHandle("ASBuildOutput"),
                             .io = ResourceIOType::READ_WRITE,
                             .usage = ResourceUsage::STORAGE_IMAGE,
-                            .kind = ResourceKind::IMAGE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                            .kind = ResourceKind::IMAGE},
             },
         .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
         .execute = [](RenderGraphNodeContext&) {}};
@@ -3976,18 +3888,15 @@ TEST_CASE_METHOD(GraphicsTestEnv,
                 ResourceUse{.handle = ResourceHandle("XQCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("XQTLAS"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::ACCEL_STRUCTURE,
-                            .kind = ResourceKind::ACCELERATION_STRUCTURE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE},
                 ResourceUse{.handle = ResourceHandle("XQOutput"),
                             .io = ResourceIOType::READ_WRITE,
                             .usage = ResourceUsage::STORAGE_IMAGE,
-                            .kind = ResourceKind::IMAGE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                            .kind = ResourceKind::IMAGE},
             },
         .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
         .execute = [](RenderGraphNodeContext&) {}};
@@ -4136,13 +4045,11 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
                 ResourceUse{.handle = ResourceHandle("RTMazdaCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("PerObjData"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerObj},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("RTMazdaDrawCommands"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::DRAW_COMMAND_BUFFER,
@@ -4182,18 +4089,15 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
                 ResourceUse{.handle = ResourceHandle("RTMazdaCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                            .kind = ResourceKind::BUFFER},
                 ResourceUse{.handle = ResourceHandle("RTMazdaTLAS"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::ACCEL_STRUCTURE,
-                            .kind = ResourceKind::ACCELERATION_STRUCTURE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE},
                 ResourceUse{.handle = ResourceHandle("RTMazdaRayOutput"),
                             .io = ResourceIOType::READ_WRITE,
                             .usage = ResourceUsage::STORAGE_IMAGE,
-                            .kind = ResourceKind::IMAGE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+                            .kind = ResourceKind::IMAGE},
             },
         .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
         .execute = [](RenderGraphNodeContext&) {}};
@@ -4330,118 +4234,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: rejects undeclared resour
     REQUIRE_THROWS(builder.AddDependency("Gpu", "Cpu"));
 }
 
-TEST_CASE_METHOD(GraphicsTestEnv,
-                 "RenderGraphBuilder: a graphics node may use a set the built-in convention does not define",
-                 "[RenderGraphBuilder]")
-{
-    // Before the reflection unification, `CompileRenderGraphNode` rejected any reflected binding with
-    // set >= 3: graphics nodes were restricted to the engine's three built-in sets. Every node now
-    // derives its layout from reflection, so an arbitrary set index is accepted. The fragment shader
-    // declares set 3 binding 0, which the old table could not express, and the build is otherwise the
-    // minimum a graphics node needs.
-    RenderGraphBuilder builder(GetRenderDevice());
-    builder.AddResource("Color", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                                   .extent = {WIDTH, HEIGHT},
-                                                   .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
-    // Persistent, so the read-only uses need no writer and the case is about the descriptor path.
-    builder.AddResource("Camera", BufferResourceDesc{.count = 1,
-                                                     .stride = sizeof(PerViewData),
-                                                     .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                     .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                     .lifetime = ResourceLifetime::Persistent});
-    builder.AddResource("Extra", BufferResourceDesc{.count = 1,
-                                                    .stride = sizeof(float) * 4,
-                                                    .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                                    .memoryProperties = VMA_MEMORY_USAGE_GPU_ONLY,
-                                                    .lifetime = ResourceLifetime::Persistent});
-
-    builder.AddNode(RenderGraphNodeCreateInfo{
-        .nodeName = "ArbitrarySets",
-        .queueType = QueueType::GRAPHICS,
-        .resourceUses =
-            {
-                ResourceUse{.handle = ResourceHandle("Camera"),
-                            .io = ResourceIOType::READ,
-                            .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
-                ResourceUse{.handle = ResourceHandle("Extra"),
-                            .io = ResourceIOType::READ,
-                            .usage = ResourceUsage::STORAGE_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = DescriptorBinding{.set = 3, .binding = 0}},
-                ResourceUse{.handle = ResourceHandle("Color"),
-                            .io = ResourceIOType::WRITE,
-                            .usage = ResourceUsage::COLOR_ATTACHMENT,
-                            .kind = ResourceKind::IMAGE},
-            },
-        .shaderNames = {"testWorldPos.vert.slang", "testExplicitSet.frag.slang"},
-        .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
-                    .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
-        .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-        .execute = [](RenderGraphNodeContext&) {}});
-
-    // The old restriction was a Build()-time throw; accepting set 3 is the whole assertion here.
-    REQUIRE_NOTHROW(builder.Build());
-}
-
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: nodes that bind the same resources share one descriptor set",
-                 "[RenderGraphBuilder]")
-{
-    // #15 increment 2 / #16 criterion 4. Two graphics nodes binding the same camera at the same
-    // (set, binding) have identical descriptor *content*, so they must share one VkDescriptorSet - the
-    // dedup that makes the MATERIAL bindless array cost once rather than once per node. Different
-    // resources at the same slot must not share, which is what keeps the cache safe under aliasing: a
-    // set holds concrete views, so a shared set can never be handed a different image.
-    const auto buildTwoNodes = [](bool bSameCamera)
-    {
-        auto builder = std::make_unique<RenderGraphBuilder>(GetRenderDevice());
-        builder->AddResource("Color", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                                        .extent = {WIDTH, HEIGHT},
-                                                        .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
-        for (const char* name : {"CameraA", "CameraB"})
-        {
-            builder->AddResource(name, BufferResourceDesc{.count = 1,
-                                                          .stride = sizeof(PerViewData),
-                                                          .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                          .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU,
-                                                          .lifetime = ResourceLifetime::Persistent});
-        }
-        const auto addNode = [&builder](const char* nodeName, const char* camera)
-        {
-            builder->AddNode(RenderGraphNodeCreateInfo{
-                .nodeName = nodeName,
-                .queueType = QueueType::GRAPHICS,
-                .resourceUses =
-                    {
-                        ResourceUse{.handle = ResourceHandle(camera),
-                                    .io = ResourceIOType::READ,
-                                    .usage = ResourceUsage::UNIFORM_BUFFER,
-                                    .kind = ResourceKind::BUFFER,
-                                    .descriptorBinding = RenderGraphSemanticBindings::PerView},
-                        ResourceUse{.handle = ResourceHandle("Color"),
-                                    .io = ResourceIOType::WRITE,
-                                    .usage = ResourceUsage::COLOR_ATTACHMENT,
-                                    .kind = ResourceKind::IMAGE},
-                    },
-                .shaderNames = {"testWorldPos.vert.slang", "testWorldPos.frag.slang"},
-                .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
-                            .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
-                .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-                .execute = [](RenderGraphNodeContext&) {}});
-        };
-        addNode("NodeA", "CameraA");
-        addNode("NodeB", bSameCamera ? "CameraA" : "CameraB");
-        builder->Build();
-        return builder;
-    };
-
-    // Same content at the same slot: the two nodes share the one set.
-    CHECK(buildTwoNodes(true)->GetDescriptorSetCount() == 1);
-    // Different resource at the same slot: two sets, because a set names a concrete view.
-    CHECK(buildTwoNodes(false)->GetDescriptorSetCount() == 2);
-}
-
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders through a graph node",
                  "[RenderGraphBuilder]")
 {
@@ -4452,6 +4244,21 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
     uint32_t whitePixel = 0xFFFFFFFFu;
     TextureResource* pFont = GetRenderResourceManager()->GetTexture("ui_font_texture", &whitePixel, 1, 1);
     REQUIRE(pFont != nullptr);
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; the UI heap pass needs it");
+    }
+
+    DescriptorHeapService uiHeap;
+    uiHeap.Initialize(GetRenderDevice());
+    VkSamplerCreateInfo uiSamplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    uiSamplerInfo.magFilter = VK_FILTER_LINEAR;
+    uiSamplerInfo.minFilter = VK_FILTER_LINEAR;
+    uiSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    uiSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    uiSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    uiSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    const DescriptorSlot fontSamplerSlot = uiHeap.AcquireSampler(uiSamplerInfo);
 
     const std::vector<ImDrawVert> vertices = {
         ImDrawVert{{-1.0F, -1.0F}, {0.0F, 0.0F}, IM_COL32(255, 255, 255, 255)},
@@ -4462,7 +4269,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
     auto* pVertices = GetRenderResourceManager()->GetVertexBuffer<ImDrawVert>("UIVertexBuffer", vertices, false);
     auto* pIndices = GetRenderResourceManager()->GetIndexBuffer("UIIndexBuffer", indices, false);
 
-    RenderGraphBuilder builder(GetRenderDevice());
+    RenderGraphBuilder builder(RenderGraphServices{
+        .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
     builder.AddResource(
         "UITarget", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                       .extent = {WIDTH, HEIGHT},
@@ -4479,8 +4287,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
                 ResourceUse{.handle = ResourceHandle("Font"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::SAMPLED,
-                            .kind = ResourceKind::IMAGE,
-                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                            .kind = ResourceKind::IMAGE},
                 ResourceUse{.handle = ResourceHandle("UIVertices"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::VERTEX_BUFFER,
@@ -4494,21 +4301,25 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
                             .usage = ResourceUsage::COLOR_ATTACHMENT,
                             .kind = ResourceKind::IMAGE},
             },
-        .shaderNames = {"ui.vert.slang", "ui.frag"},
+        .shaderNames = {"ui.vert.slang", "ui.frag.heap"},
         .psoDesc = {.vertexType = VertexType::UI,
                     .rasterState = {.cullMode = CullMode::NONE},
                     .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-        .execute = [](RenderGraphNodeContext& ctx)
+        .execute = [fontSamplerSlot](RenderGraphNodeContext& ctx)
         {
             struct PushConstBlock
             {
                 glm::vec2 scale;
                 glm::vec2 translate;
+                uint32_t fontImage;
+                uint32_t fontSampler;
             };
-            const PushConstBlock pushConstants{glm::vec2(1.0F, 1.0F), glm::vec2(0.0F, 0.0F)};
-            vkCmdPushConstants(ctx.commandBuffer, ctx.pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0,
-                               sizeof(pushConstants), &pushConstants);
+            const std::optional<uint32_t> fontImage = ctx.GetHeapIndex("Font", ResourceUsage::SAMPLED);
+            REQUIRE(fontImage.has_value());
+            const PushConstBlock pushConstants{glm::vec2(1.0F, 1.0F), glm::vec2(0.0F, 0.0F), *fontImage,
+                                               fontSamplerSlot.index};
+            ctx.PushData(0, std::as_bytes(std::span{&pushConstants, 1}));
 
             const auto* pVB = ctx.GetResource<BufferResource>("UIVertices");
             const auto* pIB = ctx.GetResource<BufferResource>("UIIndices");
@@ -4527,136 +4338,6 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
     // The white texture times the white vertex colours fills the triangle; a null sampler or a missing
     // descriptor would instead be a validation error or a black readback.
     REQUIRE(CountNonBlackPixels(pTarget) > 0);
-}
-
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: graphics nodes rebind semantic sets independently",
-                 "[RenderGraphBuilder]")
-{
-    // Two graphics nodes bind *different* PER_VIEW buffers. They must each get their own descriptor
-    // set, otherwise the single submitted command buffer would run both with whichever camera was
-    // written last (regression: the three semantic sets used to be shared per builder).
-    GetMeshResourceManager()->PrepareSimpleMeshes();
-    GetMeshResourceManager()->UploadMeshData();
-    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
-
-    RenderGraphBuilder builder(GetRenderDevice());
-    for (const char* name : {"CameraA", "CameraB"})
-    {
-        builder.AddResource(name, BufferResourceDesc{.count = 1,
-                                                     .stride = sizeof(PerViewData),
-                                                     .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                     .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
-    }
-    for (const char* name : {"TargetA", "TargetB"})
-    {
-        // Persistent, not the default Transient: this test reads both images back after Execute() to see
-        // which camera each node used, and a transient's content is promised only from its first write to
-        // its last read *within* one execution. With a single write and no in-graph read, TargetA's
-        // declared range is one node wide, so the planner is free to bind TargetB over it - which it did,
-        // and TargetA read back black (the two targets were aliased at one offset). Nothing about aliasing
-        // is under test here; the subject is that two graphics nodes each get their own PER_VIEW set.
-        builder.AddResource(
-            name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
-                                    .extent = {WIDTH, HEIGHT},
-                                    .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                                    .lifetime = ResourceLifetime::Persistent});
-    }
-
-    const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
-    builder.ImportResource("MeshVertexBuffer", meshResources.m_pVertexBuffer);
-    builder.ImportResource("MeshIndexBuffer", meshResources.m_pIndexBuffer);
-
-    RenderGraphNodeCreateInfo cameraPass = {
-        .nodeName = "CameraPrep",
-        .queueType = QueueType::CPU,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("CameraA"),
-                                     .io = ResourceIOType::HOST_WRITE,
-                                     .usage = ResourceUsage::UNIFORM_BUFFER,
-                                     .kind = ResourceKind::BUFFER},
-                         ResourceUse{.handle = ResourceHandle("CameraB"),
-                                     .io = ResourceIOType::HOST_WRITE,
-                                     .usage = ResourceUsage::UNIFORM_BUFFER,
-                                     .kind = ResourceKind::BUFFER}},
-        .execute = [](RenderGraphNodeContext& ctx)
-        {
-            const auto makePerView = [](const glm::vec3& eye, const glm::vec3& center)
-            {
-                const glm::mat4 proj = glm::perspective(
-                    glm::radians(60.0F), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1F, 100.0F);
-                const glm::mat4 view = glm::lookAt(eye, center, glm::vec3(0.0F, 1.0F, 0.0F));
-                PerViewData perView;
-                perView.mProj = proj;
-                perView.mView = view;
-                perView.mProjInv = glm::inverse(proj);
-                perView.mViewInv = glm::inverse(view);
-                perView.vScreenExtent = {WIDTH, HEIGHT};
-                return perView;
-            };
-
-            // CameraA looks at the quad (at the origin); CameraB looks away from it.
-            const PerViewData a = makePerView({0.0F, 0.0F, -3.0F}, {0.0F, 0.0F, 0.0F});
-            const PerViewData b = makePerView({0.0F, 0.0F, 3.0F}, {0.0F, 0.0F, 6.0F});
-            ctx.GetResource<BufferResource>("CameraA")->SetData(&a, sizeof(a));
-            ctx.GetResource<BufferResource>("CameraB")->SetData(&b, sizeof(b));
-        }};
-
-    const auto makeRasterNode =
-        [&quadMesh](const std::string& nodeName, const std::string& camera, const std::string& target)
-    {
-        return RenderGraphNodeCreateInfo{
-            .nodeName = nodeName,
-            .queueType = QueueType::GRAPHICS,
-            .resourceUses = {ResourceUse{.handle = ResourceHandle("MeshVertexBuffer"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::VERTEX_BUFFER,
-                                         .kind = ResourceKind::BUFFER},
-                             ResourceUse{.handle = ResourceHandle("MeshIndexBuffer"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::INDEX_BUFFER,
-                                         .kind = ResourceKind::BUFFER},
-                             ResourceUse{.handle = ResourceHandle(camera),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::UNIFORM_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = RenderGraphSemanticBindings::PerView},
-                             ResourceUse{.handle = ResourceHandle(target),
-                                         .io = ResourceIOType::WRITE,
-                                         .usage = ResourceUsage::COLOR_ATTACHMENT,
-                                         .kind = ResourceKind::IMAGE}},
-            .shaderNames = {"testWorldPos.vert.slang", "testWorldPos.frag.slang"},
-            .psoDesc = {.rasterState = {.cullMode = CullMode::NONE},
-                        .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
-            .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
-            .execute = [&quadMesh](RenderGraphNodeContext& ctx)
-            {
-                const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
-                VkDeviceSize offset = 0;
-                VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
-                vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
-                vkCmdBindIndexBuffer(ctx.commandBuffer, meshManager.m_pIndexBuffer->buffer(), 0, VK_INDEX_TYPE_UINT32);
-                vkCmdDrawIndexed(ctx.commandBuffer, quadMesh.m_nIndexCount, 1, quadMesh.m_nIndexOffset, 0, 0);
-            }};
-    };
-
-    builder.AddNode(cameraPass);
-    const RenderGraphNodeCreateInfo nodeA = makeRasterNode("NodeA", "CameraA", "TargetA");
-    const RenderGraphNodeCreateInfo nodeB = makeRasterNode("NodeB", "CameraB", "TargetB");
-    builder.AddNode(nodeA);
-    builder.AddNode(nodeB);
-    builder.AddDependency(cameraPass.nodeName, nodeA.nodeName);
-    builder.AddDependency(cameraPass.nodeName, nodeB.nodeName);
-    builder.Build();
-    builder.Execute();
-
-    auto* pTargetA = dynamic_cast<const ImageResource*>(builder.ResolveResource("TargetA"));
-    auto* pTargetB = dynamic_cast<const ImageResource*>(builder.ResolveResource("TargetB"));
-    REQUIRE(pTargetA != nullptr);
-    REQUIRE(pTargetB != nullptr);
-
-    // NodeA sees the quad; NodeB looks away. If the two nodes shared PER_VIEW, both would run with
-    // the last-written camera and one of these assertions would fail.
-    REQUIRE(CountNonBlackPixels(pTargetA) > 0);
-    REQUIRE(CountNonBlackPixels(pTargetB) == 0);
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment keeps earlier content",
@@ -4708,17 +4389,15 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
             ctx.GetResource<BufferResource>("OverlayCamera")->SetData(&perView, sizeof(perView));
         }};
 
-    RenderGraphNodeCreateInfo fillPass = {
-        .nodeName = "FillGreen",
-        .queueType = QueueType::COMPUTE,
-        .resourceUses = {ResourceUse{.handle = ResourceHandle("Overlay"),
-                                     .io = ResourceIOType::READ_WRITE,
-                                     .usage = ResourceUsage::STORAGE_IMAGE,
-                                     .kind = ResourceKind::IMAGE,
-                                     .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}}},
-        .shaderNames = {"testFillColor.comp.slang"},
-        .execute = [](RenderGraphNodeContext& ctx)
-        { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
+    RenderGraphNodeCreateInfo fillPass = {.nodeName = "FillGreen",
+                                          .queueType = QueueType::COMPUTE,
+                                          .resourceUses = {ResourceUse{.handle = ResourceHandle("Overlay"),
+                                                                       .io = ResourceIOType::READ_WRITE,
+                                                                       .usage = ResourceUsage::STORAGE_IMAGE,
+                                                                       .kind = ResourceKind::IMAGE}},
+                                          .shaderNames = {"testFillColor.comp.slang"},
+                                          .execute = [](RenderGraphNodeContext& ctx)
+                                          { vkCmdDispatch(ctx.commandBuffer, (WIDTH + 7) / 8, (HEIGHT + 7) / 8, 1); }};
 
     RenderGraphNodeCreateInfo overlayPass = {
         .nodeName = "RedOverlay",
@@ -4736,8 +4415,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
                 ResourceUse{.handle = ResourceHandle("OverlayCamera"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::UNIFORM_BUFFER,
-                            .kind = ResourceKind::BUFFER,
-                            .descriptorBinding = RenderGraphSemanticBindings::PerView},
+                            .kind = ResourceKind::BUFFER},
                 // Read-write: blend this pass over whatever is already in the attachment.
                 ResourceUse{.handle = ResourceHandle("Overlay"),
                             .io = ResourceIOType::READ_WRITE,
@@ -4806,8 +4484,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: CPU node between GPU node
         return ResourceUse{.handle = ResourceHandle(handle),
                            .io = ResourceIOType::READ_WRITE,
                            .usage = ResourceUsage::STORAGE_IMAGE,
-                           .kind = ResourceKind::IMAGE,
-                           .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}};
+                           .kind = ResourceKind::IMAGE};
     };
 
     RenderGraphNodeCreateInfo firstGpu = {.nodeName = "AGpu",
@@ -4909,8 +4586,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
                              ResourceUse{.handle = ResourceHandle("WawCamera"),
                                          .io = ResourceIOType::READ,
                                          .usage = ResourceUsage::UNIFORM_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = RenderGraphSemanticBindings::PerView},
+                                         .kind = ResourceKind::BUFFER},
                              // Same declared usage in both nodes: only the WAW hazard differs.
                              ResourceUse{.handle = ResourceHandle("WawTarget"),
                                          .io = ResourceIOType::WRITE,

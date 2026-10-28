@@ -67,6 +67,9 @@ jobs:
       - name: Documentation coverage and the checked-in reference
         run: python3 scripts/render_graph_docs.py --check
 
+      - name: No descriptor-set path on the graph path
+        run: python3 scripts/check_descriptor_path.py
+
       - name: Format the lines this change touched
         run: |
           git fetch --no-tags origin master:refs/remotes/origin/master

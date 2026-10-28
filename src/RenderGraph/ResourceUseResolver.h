@@ -240,7 +240,6 @@ inline ResolvedResourceUse ResolveResourceUse(const ResourceUse& use)
     resolved.usage = use.usage;
     resolved.stages = policy->stages;
     resolved.access = policy->access;
-    resolved.descriptorBinding = use.descriptorBinding;
     resolved.bufferRange = use.bufferRange;
 
     if (use.kind == ResourceKind::IMAGE)
