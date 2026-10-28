@@ -63,6 +63,11 @@ The counts are each tree's `*.cpp` and `*.h` concatenated and `wc -l`-ed —
 than a target. They rotted once already: the graph gained roughly 400 lines while this document sat still,
 from `#18`, `#85`, `#90`, `#92` and `#94` alone.
 
+The other two boundary measurements below are commands, not prose:
+`grep -rnE 'GetRenderDevice\(\)|GetRenderResourceManager\(\)|GetDescriptorManager\(\)' --include=*.cpp src/RenderGraph/ | wc -l`
+counts the singleton call sites, and the external-include scan is the Python block in
+[`Roadmap-Visual.md`](Roadmap-Visual.md) section 7. Both were re-run at this head.
+
 The single fact that matters: **the graph has zero adoption in the in-repo renderer.** `helloVulkan` still
 renders through `RenderPassManager`, which keeps its own frame-sync bugs (`m_imageAvailable` reused every
 frame, per-swapchain-image fences). The asymmetry is now partial rather than total: the suite,
@@ -119,7 +124,7 @@ state, and neither should try to carry the other's half.
 | Constraint | Why it is expensive to retrofit |
 | --- | --- |
 | **No frame boundary in the library** | An inference client submits work that outlives many display frames. `Execute()` draining at frame end is a convenience to keep, not the model: completion has to be expressible as a timeline value the client can chain across frames. |
-| **Device, allocator and descriptor allocation injected, not global** | The injection (#85) replaced the singleton lookups inside `src/RenderGraph/`; 2 transitional call sites remain. A library cannot own the engine's singletons. |
+| **Device, allocator and descriptor allocation injected, not global** | The injection (#85) replaced the singleton lookups inside `src/RenderGraph/`; 1 transitional call site remains (`GetRenderResourceManager()` in the `RenderGraphBuilder(VkRenderDevice*)` delegation). A library cannot own the engine's singletons. |
 | **Compute-only is a first-class profile** | No surface, no present, possibly no colour attachments. Nothing on the execution path may require a graphics family or a swapchain. |
 | **Long-lived resources are first-class** | Weights and a KV cache live for the process, not a frame. The transient/persistent split (`#15`, `#16`) has to serve that, not only per-frame render targets. |
 | **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
@@ -146,13 +151,14 @@ Measured, not estimated:
 - **`muyo_rg` is already a separate target, but a library in name only.** It now declares a dependency -
   `target_link_libraries(muyo_rg PUBLIC muyo)` - but that is the engine, not a standalone set of
   dependencies, and it still compiles inside the engine's include scope.
-- **8 of its files include at least one header from outside `src/RenderGraph/`**, largest in
+- **9 of its files include at least one header from outside `src/RenderGraph/`**, largest in
   `RenderGraphBuilder.cpp` (`Debug.h`, `PipelineStateBuilder.h`, `ShaderReflectionFetcher.h`,
-  `VkExtFuncsLoader.h`) and `RenderGraphBuilder.h` (`DescriptorManager.h`, `PerObjResourceManager.h`,
-  `ShaderAsset.h`). The scan is in `Roadmap-Visual.md` section 7.
-- **2 code call sites reach for engine singletons** rather than receiving them, both in the transitional
-  `RenderGraphBuilder(VkRenderDevice*)` constructor. The services constructor (#85) is the path the
-  consumer uses; the remaining work is making the transitional form unnecessary.
+  `VkExtFuncsLoader.h`), `RenderGraphBuilder.h` (`DescriptorHeapService.h`, `PerObjResourceManager.h`,
+  `ShaderAsset.h`) and `RenderGraphNodeContext.h` (3). The scan is in `Roadmap-Visual.md` section 7.
+- **1 code call site reaches for an engine singleton** rather than receiving it:
+  `GetRenderResourceManager()` in the transitional `RenderGraphBuilder(VkRenderDevice*)` delegation. The
+  services constructor (#85) is the path the consumer uses; the remaining work is making the transitional
+  form unnecessary.
 
 None of that blocks the first consumer; all of it blocks a second one.
 
