@@ -19,6 +19,81 @@
 using namespace Muyo;
 using namespace Muyo::RenderGraph;
 
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a repeated build reuses the compiled pipeline",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // B2c/#17. The pipeline cache is keyed on the shader hashes, PSODesc, attachment formats and
+    // specialization values and owns the pipelines, so a second Build must return the same handle and
+    // the compiled node must not destroy it. Execute() after that Build proves the handle is still valid:
+    // a destroyed cached pipeline is an invalid-handle VUID, not a silent miss.
+    VkRenderDevice* device = GetRenderDevice();
+    if (!device->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2c records the row as a gap, not a pass");
+    }
+
+    BufferResource* pOut = GetRenderResourceManager()->AllocateBuffer("PipelineCacheOut", 2 * sizeof(uint32_t),
+                                                                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                                                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                                                      VMA_MEMORY_USAGE_CPU_TO_GPU);
+    REQUIRE(pOut != nullptr);
+
+    RenderGraphBuilder builder(device);
+    builder.ImportResource("PipelineCacheOut", pOut);
+    RenderGraphNodeCreateInfo node{.nodeName = "PipelineCacheNode",
+                                   .queueType = QueueType::COMPUTE,
+                                   .resourceUses = {{.handle = ResourceHandle("PipelineCacheOut"),
+                                                     .io = ResourceIOType::WRITE,
+                                                     .usage = ResourceUsage::STORAGE_BUFFER,
+                                                     .kind = ResourceKind::BUFFER}},
+                                   .shaderNames = {"testSpecConstant.comp.heap"},
+                                   .specializationConstants = {{.id = 0, .value = 7}, {.id = 1, .value = 3}},
+                                   .execute = [](RenderGraphNodeContext& ctx)
+                                   {
+                                       const std::optional<uint32_t> output =
+                                           ctx.GetHeapIndex("PipelineCacheOut", ResourceUsage::STORAGE_BUFFER);
+                                       REQUIRE(output.has_value());
+                                       struct Push
+                                       {
+                                           uint32_t x;
+                                           uint32_t y;
+                                       };
+                                       const Push push{*output, 0};
+                                       ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+                                       vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+                                   }};
+    builder.AddNode(node);
+    builder.Build();
+    const VkPipeline first = builder.GetCompiledGraph().GetNodes().front().pipeline;
+    REQUIRE(first != VK_NULL_HANDLE);
+
+    // Unchanged declaration: the same pipeline handle, still owned by the cache.
+    builder.Build();
+    CHECK(builder.GetCompiledGraph().GetNodes().front().pipeline == first);
+
+    // Execute the cached pipeline. If the second Build destroyed it and the cache returned a dangling
+    // handle, the debug callback aborts here on the invalid handle.
+    builder.Execute();
+
+    // A different specialization value is a different pipeline; the original node keeps the cached one.
+    RenderGraphNodeCreateInfo other = node;
+    other.nodeName = "PipelineCacheNode2";
+    other.specializationConstants[0].value = 9;
+    builder.AddNode(other);
+    builder.Build();
+    VkPipeline otherPipeline = VK_NULL_HANDLE;
+    VkPipeline originalPipeline = VK_NULL_HANDLE;
+    for (const CompiledRenderGraphNode& compiled : builder.GetCompiledGraph().GetNodes())
+    {
+        if (compiled.name == "PipelineCacheNode") originalPipeline = compiled.pipeline;
+        if (compiled.name == "PipelineCacheNode2") otherPipeline = compiled.pipeline;
+    }
+    REQUIRE(otherPipeline != VK_NULL_HANDLE);
+    CHECK(otherPipeline != first);
+    CHECK(originalPipeline == first);
+}
+
 TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses the descriptor heap with no layout",
                  "[RenderGraphBuilder][DescriptorHeap]")
 {

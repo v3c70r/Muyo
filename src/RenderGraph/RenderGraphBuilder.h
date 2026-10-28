@@ -144,6 +144,10 @@ public:
     /// Releases compiled pipelines and command buffers; the heaps belong to the injected service.
     ~RenderGraphBuilder();
 
+    /// @return The graph compiled by the last successful Build(); empty before the first and after a
+    ///         failed Build. Exposed for diagnostics and tests that inspect the compiled pipelines.
+    const CompiledRenderGraph& GetCompiledGraph() const { return m_compiledGraph; }
+
     // ── Resource declaration (data) ──────────────────────────────────────────
     /// Declare a graph-owned resource. It is allocated at `Build()` from `desc`.
     /// @param handle Name the graph and the nodes use for it.
@@ -440,6 +444,11 @@ private:
     std::unordered_map<DescriptorKey, DescriptorSlot, DescriptorKeyHash> m_descriptorCache;
     /// Release every cached static slot; only after the GPU is known idle.
     void ReleaseCachedDescriptors();
+    /// Pipelines reused across builds, keyed on every input that changes the created pipeline but not on
+    /// any descriptor or layout state (B2c/#17). Owned here; compiled nodes do not destroy them.
+    std::unordered_map<std::string, VkPipeline> m_pipelineCache;
+    /// Destroy every cached pipeline; only after the GPU is known idle.
+    void DestroyCachedPipelines();
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
     TransientMemoryPlan m_transientMemoryPlan;
 
