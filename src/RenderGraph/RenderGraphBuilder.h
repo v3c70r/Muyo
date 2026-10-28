@@ -130,12 +130,17 @@ public:
     /// @param services The device, resource allocator and descriptor allocator the graph uses. Each is
     ///                 required; a missing one is reported by name rather than dereferenced later, and
     ///                 the check throws so it survives `NDEBUG`.
-    explicit RenderGraphBuilder(const RenderGraphServices& services);
+    /// @param inFlightCount How many executions may be in flight at once. The default of 1 serialises
+    ///                 them. Above 1, each slot owns its command buffers and root arena, but graph-owned
+    ///                 resources are still shared: a caller that overlaps resource-bearing executions
+    ///                 must keep their resources distinct or wait. B2b-2 makes the resource half safe.
+    explicit RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount = 1);
     /// Transitional: fills the remaining services from the engine's globals, for the callers that still
     /// use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is
     /// why it is documented as the transition rather than as an equal alternative.
     /// @param renderDevice Device used to create pipelines, command buffers and synchronisation.
-    explicit RenderGraphBuilder(VkRenderDevice* renderDevice);
+    /// @param inFlightCount See the services constructor; the default serialises executions.
+    explicit RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount = 1);
     /// Releases compiled pipelines and command buffers; the heaps belong to the injected service.
     ~RenderGraphBuilder();
 
@@ -402,8 +407,6 @@ private:
     std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> m_aliasedImages;
     /// The blocks those buffers are bound into. Freed after every resource above is destroyed.
     std::vector<VmaAllocation> m_aliasBlocks;
-    /// Executions the graph keeps in flight: each owns a command-buffer slot and a root arena.
-    static constexpr uint32_t kInFlightCount = 2;
     /// Host-visible root arenas, one per in-flight slot (B1b-4 / B2b). The host owns each layout.
     static constexpr VkDeviceSize kRootCapacity = 64ULL * 1024;
     std::vector<RootArena> m_rootArenas;

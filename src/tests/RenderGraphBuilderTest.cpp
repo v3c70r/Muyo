@@ -2731,7 +2731,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get 
         VkDeviceAddress address = 0;
     };
     std::vector<RootCapture> captures;
-    RenderGraphBuilder builder(GetRenderDevice());
+    // Opt in to two slots: the default still serialises executions until B2b-2 makes shared graph
+    // resources safe to overlap.
+    RenderGraphBuilder builder(GetRenderDevice(), 2);
     builder.AddNode(RenderGraphNodeCreateInfo{
         .nodeName = "RootWriter",
         .queueType = QueueType::COMPUTE,

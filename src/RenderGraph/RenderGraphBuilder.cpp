@@ -135,11 +135,11 @@ const RenderGraphServices& RequireServices(const RenderGraphServices& services)
 }
 }  // namespace
 
-RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
+RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount)
     : m_services(RequireServices(services))
     , m_shaderAssetManager(m_services.device->GetDevice())
     , m_vkDevice(m_services.device->GetDevice())
-    , m_executor(m_services.device, kInFlightCount)
+    , m_executor(m_services.device, inFlightCount)
 {
     if (m_services.descriptorHeap == nullptr && m_services.device->IsDescriptorHeapEnabled())
     {
@@ -153,8 +153,9 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
     m_minStorageBufferOffsetAlignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
 }
 
-RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
-    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice, .resourceManager = GetRenderResourceManager()})
+RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount)
+    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice, .resourceManager = GetRenderResourceManager()},
+                         inFlightCount)
 {
 }
 
