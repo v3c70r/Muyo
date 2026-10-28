@@ -69,7 +69,7 @@ several are currently on the wrong side of it.
 | Transient resources, aliasing, lifetimes | **graph** | allocator | The policy is the graph's; the memory is not. |
 | Barriers and layouts | **graph** | — | The reason the graph exists. |
 | Pipeline creation | **graph** | shader source provider, pipeline cache | It builds pipelines from node descriptions today. Keep that — but a client should be able to supply SPIR-V bytes and a cache, not only a file name on disk. |
-| Descriptor sets | **graph** | descriptor allocator | Per #15's content-addressed design. |
+| Descriptor heap and bindless binding | **graph** | descriptor-heap service | B1a/B1b replaced descriptor sets: the graph receives a `DescriptorHeapService`, writes no set layouts, pools or pipeline layouts, and exposes a use's heap index. |
 | Swapchain, present, frame pacing | **host** | — | Not the graph's, not the pipeline's. |
 | Validation-layer enablement | **host** | — | See below; this is currently the device's and should not be. |
 
@@ -303,10 +303,11 @@ follow-up question, and reads the message in a log. Three consequences, all chea
 small:
 
 **Fail at `Build()`, not at the GPU.** A graph can check its own declarations before recording anything:
-every read has a writer, no cycles, attachment extents agree, descriptor bindings match reflection, the
-queue families a node asks for exist. Each of those is a *declaration* error, and reporting it at
-`Build()` points at the line that is wrong instead of at a handle several frames later. The declaration
-checks landed in #55: the failure index in `docs/RenderGraph.md` lists each message with its cause and fix.
+every read has a writer, no cycles, attachment extents agree, a use's kind and usage agree with its
+resource, the queue families a node asks for exist. Each of those is a *declaration* error, and reporting
+it at `Build()` points at the line that is wrong instead of at a handle several frames later. The
+declaration checks landed in #55: the failure index in `docs/RenderGraph.md` lists each message with its
+cause and fix.
 
 **Name the graph entity, not the handle.** The validation layer can only say
 `VkBuffer 0x…`. The graph knows which node and which resource that is.
