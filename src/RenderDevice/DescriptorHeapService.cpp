@@ -351,6 +351,16 @@ DescriptorSlot DescriptorHeapService::AcquireBuffer(VkDeviceAddress address, VkD
 
 DescriptorSlot DescriptorHeapService::AcquireAccelerationStructure(VkDeviceAddress address, bool bRing)
 {
+    // VUID-VkResourceDescriptorInfoEXT-type-11454: an acceleration-structure descriptor's address must be
+    // a multiple of 256. Name the requirement here rather than letting the write call report a VUID; the
+    // structure's allocation is what has to satisfy it (AccelerationStructure aligns its BVH allocation).
+    constexpr VkDeviceAddress kAccelerationStructureDescriptorAlignment = 256;
+    if ((address % kAccelerationStructureDescriptorAlignment) != 0)
+    {
+        throw std::runtime_error(
+            "DescriptorHeapService: acceleration-structure address is not 256-byte aligned; a heap AS "
+            "descriptor requires it (VUID-VkResourceDescriptorInfoEXT-type-11454)");
+    }
     VkDeviceAddressRangeEXT range{};
     range.address = address;
     range.size = 0;

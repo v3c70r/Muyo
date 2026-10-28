@@ -386,11 +386,20 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                                          "' requests the descriptor heap, but RenderGraphServices::descriptorHeap "
                                          "is null.");
             }
-            if (rgn.queueType == QueueType::RAY_TRACING)
+            if (rgn.queueType == QueueType::RAY_TRACING &&
+                !m_services.descriptorHeap->CanUseDirectAccelerationStructure())
             {
-                throw std::runtime_error("Node '" + rgn.name +
-                                         "' requests the descriptor heap; RT heap pipelines follow in the "
-                                         "B1b shader conversion.");
+                // Slang lowers RaytracingAccelerationStructure.Handle to an 8-byte value; the heap
+                // descriptor is sized by the implementation's AS descriptor size. A mismatch needs the
+                // mapping path, which B1b does not implement, so reject by name instead of feeding the
+                // shader a descriptor representation it cannot read (#223).
+                throw std::runtime_error(
+                    "Node '" + rgn.name +
+                    "' requests the descriptor heap, but the device's acceleration-structure descriptor is " +
+                    std::to_string(
+                        m_services.device->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)) +
+                    " bytes while Slang's direct RaytracingAccelerationStructure handle is 8; the mapping path "
+                    "is not implemented (B1b, #223).");
             }
             if (!mergedReflection.descriptorBindings.empty())
             {
@@ -775,8 +784,16 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
         .AddShaderModule(shaderModules[1], VK_SHADER_STAGE_MISS_BIT_KHR)
         .AddShaderModule(shaderModules[2], VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
-    builder.SetPipelineLayout(rgn.pipelineLayout).SetMaxRecursionDepth(1);
+    builder.SetPipelineLayout(rgn.useDescriptorHeap ? VK_NULL_HANDLE : rgn.pipelineLayout).SetMaxRecursionDepth(1);
     VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
+    VkPipelineCreateFlags2CreateInfo heapFlags{VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO};
+    if (rgn.useDescriptorHeap)
+    {
+        // D11: an RT heap pipeline takes the heap flag and a null layout, like the graphics/compute ones.
+        heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+        createInfo.pNext = &heapFlags;
+        createInfo.layout = VK_NULL_HANDLE;
+    }
     VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(m_vkDevice, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr,
                                                     &rgn.pipeline));
 

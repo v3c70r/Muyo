@@ -282,12 +282,18 @@ public:
 class AccelerationStructure : public IRenderResource
 {
 public:
+    /// A heap acceleration-structure descriptor requires the structure's device address to be a multiple
+    /// of 256 (`VUID-VkResourceDescriptorInfoEXT-type-11454`), and the AS create-info offset must itself be
+    /// a multiple of 256 (`VUID-VkAccelerationStructureCreateInfoKHR-offset-03734`). The device's
+    /// `minAccelerationStructureScratchOffsetAlignment` can be smaller (llvmpipe reports 8), so the BVH
+    /// allocation in `VkMemoryAllocator` requests 256-byte alignment and the structure sits at offset 0.
     AccelerationStructure(VkDeviceSize size, VkAccelerationStructureTypeKHR type) : m_accelerationStructureBuffer(size)
     {
         VkAccelerationStructureCreateInfoKHR createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         createInfo.type = type;
         createInfo.size = size;
+        createInfo.offset = 0;
         createInfo.buffer = m_accelerationStructureBuffer.buffer();
         VkExt::vkCreateAccelerationStructureKHR(GetRenderDevice()->GetDevice(), &createInfo, nullptr,
                                                 &m_accelerationStructure);

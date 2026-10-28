@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cassert>
 #include <stdexcept>
 #include <string>
@@ -65,7 +66,10 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     VK_ASSERT(
         vmaFindMemoryTypeIndexForBufferInfo(m_allocator, &bufferCreateInfo, &sampleAllocCreateInfo, &memTypeIndex));
     poolCreateInfo.memoryTypeIndex = memTypeIndex;
-    poolCreateInfo.minAllocationAlignment = bvhProperty.minAccelerationStructureScratchOffsetAlignment;
+    // A heap acceleration-structure descriptor requires a 256-byte-aligned address, while this property
+    // can be smaller (llvmpipe reports 8); the pool and its allocations must meet the stricter bound.
+    poolCreateInfo.minAllocationAlignment =
+        std::max<uint32_t>(bvhProperty.minAccelerationStructureScratchOffsetAlignment, 256);
     VK_ASSERT(vmaCreatePool(m_allocator, &poolCreateInfo, &m_BVHPool));
 #endif
 }
@@ -114,6 +118,9 @@ void VkMemoryAllocator::AllocateBuffer(VkDeviceSize nSize, VkBufferUsageFlags nB
             break;
         case PoolType::BVH:
             allocInfo.pool = m_BVHPool;
+            // A heap acceleration-structure descriptor requires a 256-byte-aligned structure
+            // address even where the scratch bound is smaller (see AccelerationStructure).
+            allocInfo.minAlignment = 256;
             break;
         default:
             break;

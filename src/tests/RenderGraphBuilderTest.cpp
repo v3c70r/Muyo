@@ -193,6 +193,85 @@ void ConvertCameraNode(RenderGraphNodeCreateInfo& node, const char* cameraHandle
         if (originalExecute) originalExecute(context);
     };
 }
+
+/// B1b-5b-5: per-view inverse matrices for the RT heap variants, plus the TLAS and output heap indices.
+/// The inverses live at bytes 128/192 of PerViewData in the legacy constant buffer; pushing them in the
+/// same order with the same RowMajor/stride-16 layout reproduces the bytes the shader reads. The rgen then
+/// addresses the TLAS and output image through heap handles.
+struct RayPush
+{
+    GPU_MAT4 mViewInv;
+    GPU_MAT4 mProjInv;
+    uint32_t tlas[2];
+    uint32_t output[2];
+};
+static_assert(sizeof(RayPush) == 144, "RayPush must match the 144-byte RT push block");
+
+/// B1b-5b-5: convert an existing RT trace node to the heap rgen. The miss/closest-hit shaders declare no
+/// descriptors and stay on their legacy modules, which is legal in a heap-flagged pipeline.
+void ConvertRayTracingNode(RenderGraphNodeCreateInfo& node, const char* cameraHandle, const char* tlasHandle,
+                           const char* outputHandle)
+{
+    const VkDeviceSize asDescriptorSize =
+        GetRenderDevice()->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled() || asDescriptorSize != 8)
+    {
+        SKIP("descriptor heap with an 8-byte AS descriptor is needed for the RT heap path; this device reports " +
+             std::to_string(asDescriptorSize) + " bytes");
+    }
+
+    bool bCameraFound = false;
+    bool bTlasFound = false;
+    bool bOutputFound = false;
+    for (ResourceUse& use : node.resourceUses)
+    {
+        if (use.handle == ResourceHandle(cameraHandle))
+        {
+            use.descriptorBinding.reset();
+            bCameraFound = true;
+        }
+        else if (use.handle == ResourceHandle(tlasHandle))
+        {
+            use.descriptorBinding.reset();
+            bTlasFound = true;
+        }
+        else if (use.handle == ResourceHandle(outputHandle))
+        {
+            use.descriptorBinding.reset();
+            bOutputFound = true;
+        }
+    }
+    REQUIRE(bCameraFound);
+    REQUIRE(bTlasFound);
+    REQUIRE(bOutputFound);
+
+    node.rtShaderNames[0] = "testPrimary.rgen.heap";
+    node.useDescriptorHeap = true;
+    auto originalExecute = std::move(node.execute);
+    node.execute = [cameraHandle, tlasHandle, outputHandle,
+                    originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
+    {
+        REQUIRE(context.descriptorHeap != nullptr);
+        const auto* pCamera = context.GetResource<BufferResource>(cameraHandle);
+        REQUIRE(pCamera != nullptr);
+        auto* pWritableCamera = const_cast<BufferResource*>(pCamera);
+        const auto* pPerView = static_cast<const PerViewData*>(pWritableCamera->Map());
+        REQUIRE(pPerView != nullptr);
+        RayPush push{};
+        push.mViewInv = pPerView->mViewInv;
+        push.mProjInv = pPerView->mProjInv;
+        pWritableCamera->Unmap();
+
+        const std::optional<uint32_t> tlasIndex = context.GetHeapIndex(tlasHandle, ResourceUsage::ACCEL_STRUCTURE);
+        const std::optional<uint32_t> outputIndex = context.GetHeapIndex(outputHandle, ResourceUsage::STORAGE_IMAGE);
+        REQUIRE(tlasIndex.has_value());
+        REQUIRE(outputIndex.has_value());
+        push.tlas[0] = *tlasIndex;
+        push.output[0] = *outputIndex;
+        context.PushData(0, std::as_bytes(std::span{&push, 1}));
+        if (originalExecute) originalExecute(context);
+    };
+}
 }  // namespace
 
 // Copies the (already rendered) color target back to the host and returns how many
@@ -3422,7 +3501,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
 
     builder.AddResource("RTParityCamera", BufferResourceDesc{.count = 1,
                                                              .stride = sizeof(PerViewData),
-                                                             .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                             .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                              .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     builder.AddResource("RTParityRasterOutput", ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
                                                                   .extent = {WIDTH, HEIGHT},
@@ -3437,7 +3517,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                                           .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     builder.AddResource("RTParityPerObjData", BufferResourceDesc{.count = 1,
                                                                  .stride = sizeof(PerObjData),
-                                                                 .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                                                 .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                                  .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
@@ -3551,6 +3632,12 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
             },
         .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
         .execute = [](RenderGraphNodeContext&) {}};
+
+    // B1b-5b-5: both halves of the parity test use the heap path. The raster pass reads the per-object
+    // world matrix at offset 0; the RT pass pushes the inverse camera matrices and addresses the TLAS and
+    // output through heap indices.
+    ConvertCameraNode(rasterPass, "RTParityCamera", "RTParityPerObjData", "forward.vert.heap");
+    ConvertRayTracingNode(rayTracingPass, "RTParityCamera", "RTParityTLAS", "RTParityRayOutput");
 
     builder.AddNode(cameraPass);
     builder.AddNode(rasterPass);
@@ -3672,7 +3759,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and 
     RenderGraphBuilder builder(GetRenderDevice());
     builder.AddResource("ASBuildCamera", BufferResourceDesc{.count = 1,
                                                             .stride = sizeof(PerViewData),
-                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                             .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     builder.AddResource("ASBuildOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
@@ -3709,28 +3797,31 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and 
                      .execute = [&buildInfo, &pRange](RenderGraphNodeContext& ctx)
                      { VkExt::vkCmdBuildAccelerationStructuresKHR(ctx.commandBuffer, 1, &buildInfo, &pRange); }});
 
-    builder.AddNode({.nodeName = "ASBuildTrace",
-                     .queueType = QueueType::RAY_TRACING,
-                     .resourceUses =
-                         {
-                             ResourceUse{.handle = ResourceHandle("ASBuildCamera"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::UNIFORM_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
-                             ResourceUse{.handle = ResourceHandle("ASBuildTLAS"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::ACCEL_STRUCTURE,
-                                         .kind = ResourceKind::ACCELERATION_STRUCTURE,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
-                             ResourceUse{.handle = ResourceHandle("ASBuildOutput"),
-                                         .io = ResourceIOType::READ_WRITE,
-                                         .usage = ResourceUsage::STORAGE_IMAGE,
-                                         .kind = ResourceKind::IMAGE,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
-                         },
-                     .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
-                     .execute = [](RenderGraphNodeContext&) {}});
+    RenderGraphNodeCreateInfo asBuildTrace = {
+        .nodeName = "ASBuildTrace",
+        .queueType = QueueType::RAY_TRACING,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("ASBuildCamera"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                ResourceUse{.handle = ResourceHandle("ASBuildTLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                ResourceUse{.handle = ResourceHandle("ASBuildOutput"),
+                            .io = ResourceIOType::READ_WRITE,
+                            .usage = ResourceUsage::STORAGE_IMAGE,
+                            .kind = ResourceKind::IMAGE,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+            },
+        .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
+        .execute = [](RenderGraphNodeContext&) {}};
+    ConvertRayTracingNode(asBuildTrace, "ASBuildCamera", "ASBuildTLAS", "ASBuildOutput");
+    builder.AddNode(asBuildTrace);
 
     builder.AddDependency("ASBuildTLASBuild", "ASBuildTrace");
     builder.Build();
@@ -3838,7 +3929,8 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     RenderGraphBuilder builder(GetRenderDevice());
     builder.AddResource("XQCamera", BufferResourceDesc{.count = 1,
                                                        .stride = sizeof(PerViewData),
-                                                       .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                       .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                        .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     builder.AddResource("XQOutput",
                         ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
@@ -3876,28 +3968,31 @@ TEST_CASE_METHOD(GraphicsTestEnv,
                      .execute = [&buildInfo, &pRange](RenderGraphNodeContext& ctx)
                      { VkExt::vkCmdBuildAccelerationStructuresKHR(ctx.commandBuffer, 1, &buildInfo, &pRange); }});
 
-    builder.AddNode({.nodeName = "XQTrace",
-                     .queueType = QueueType::RAY_TRACING,
-                     .resourceUses =
-                         {
-                             ResourceUse{.handle = ResourceHandle("XQCamera"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::UNIFORM_BUFFER,
-                                         .kind = ResourceKind::BUFFER,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
-                             ResourceUse{.handle = ResourceHandle("XQTLAS"),
-                                         .io = ResourceIOType::READ,
-                                         .usage = ResourceUsage::ACCEL_STRUCTURE,
-                                         .kind = ResourceKind::ACCELERATION_STRUCTURE,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
-                             ResourceUse{.handle = ResourceHandle("XQOutput"),
-                                         .io = ResourceIOType::READ_WRITE,
-                                         .usage = ResourceUsage::STORAGE_IMAGE,
-                                         .kind = ResourceKind::IMAGE,
-                                         .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
-                         },
-                     .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
-                     .execute = [](RenderGraphNodeContext&) {}});
+    RenderGraphNodeCreateInfo xqTrace = {
+        .nodeName = "XQTrace",
+        .queueType = QueueType::RAY_TRACING,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("XQCamera"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 0}},
+                ResourceUse{.handle = ResourceHandle("XQTLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 1}},
+                ResourceUse{.handle = ResourceHandle("XQOutput"),
+                            .io = ResourceIOType::READ_WRITE,
+                            .usage = ResourceUsage::STORAGE_IMAGE,
+                            .kind = ResourceKind::IMAGE,
+                            .descriptorBinding = DescriptorBinding{.set = 0, .binding = 2}},
+            },
+        .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
+        .execute = [](RenderGraphNodeContext&) {}};
+    ConvertRayTracingNode(xqTrace, "XQCamera", "XQTLAS", "XQOutput");
+    builder.AddNode(xqTrace);
 
     builder.AddDependency("XQBuild", "XQTrace");
     builder.Build();
@@ -3944,7 +4039,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
 
     builder.AddResource("RTMazdaCamera", BufferResourceDesc{.count = 1,
                                                             .stride = sizeof(PerViewData),
-                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                             .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
     builder.AddResource("RTMazdaRasterOutput", ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
                                                                  .extent = {WIDTH, HEIGHT},
@@ -3959,7 +4055,9 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
                                           .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
     builder.AddResource("RTMazdaDrawCommands", BufferResourceDesc{.count = 1024,
                                                                   .stride = sizeof(VkDrawIndexedIndirectCommand),
-                                                                  .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                                                  .usage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                                                           VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                                                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                                                                   .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
 
     const auto& meshResources = GetMeshResourceManager()->GetMeshVertexResources();
@@ -4099,6 +4197,11 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
             },
         .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
         .execute = [](RenderGraphNodeContext&) {}};
+
+    // B1b-5b-5: both halves of the Mazda parity test use the heap path, like the simple-scene parity
+    // case above.
+    ConvertCameraNode(rasterPass, "RTMazdaCamera", "PerObjData", "forward.vert.heap");
+    ConvertRayTracingNode(rayTracingPass, "RTMazdaCamera", "RTMazdaTLAS", "RTMazdaRayOutput");
 
     builder.AddNode(cameraPass);
     builder.AddNode(rasterPass);
