@@ -411,6 +411,35 @@ private:
     static constexpr VkDeviceSize kRootCapacity = 64ULL * 1024;
     std::vector<RootArena> m_rootArenas;
     uint32_t m_currentRootSlot = 0;
+
+    /// Content key for a descriptor-heap slot (B2b-2).
+    ///
+    /// Keyed on what the descriptor *says*, not on the resource handle: a repeated Build with the same
+    /// resource hits, while a recreated resource at a new image/address misses even though its handle is
+    /// unchanged. Image entries compare the view create info and layout; buffer and acceleration-structure
+    /// entries compare device address and, for buffers, the range.
+    struct DescriptorKey
+    {
+        VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;  ///< Descriptor type.
+        VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;     ///< Image layout, undefined for the others.
+        VkDeviceAddress address = 0;                          ///< Buffer / AS device address.
+        VkDeviceSize size = 0;                                ///< Buffer range in bytes.
+        VkImageViewCreateInfo view{};                         ///< Image view; unused by buffers and AS.
+        /// @param other Key to compare.
+        /// @return True when both keys describe the same descriptor content.
+        bool operator==(const DescriptorKey& other) const;
+    };
+    /// Hashes the fields `DescriptorKey::operator==` compares.
+    struct DescriptorKeyHash
+    {
+        /// @param key Key to hash.
+        /// @return Hash over the descriptor's content.
+        std::size_t operator()(const DescriptorKey& key) const;
+    };
+    /// Static slots reused across builds, keyed by descriptor content.
+    std::unordered_map<DescriptorKey, DescriptorSlot, DescriptorKeyHash> m_descriptorCache;
+    /// Release every cached static slot; only after the GPU is known idle.
+    void ReleaseCachedDescriptors();
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
     TransientMemoryPlan m_transientMemoryPlan;
 
