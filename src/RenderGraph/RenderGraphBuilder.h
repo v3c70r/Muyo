@@ -130,12 +130,17 @@ public:
     /// @param services The device, resource allocator and descriptor allocator the graph uses. Each is
     ///                 required; a missing one is reported by name rather than dereferenced later, and
     ///                 the check throws so it survives `NDEBUG`.
-    explicit RenderGraphBuilder(const RenderGraphServices& services);
+    /// @param inFlightCount How many executions may be in flight at once. The default of 1 serialises
+    ///                 them. Above 1, each slot owns its command buffers and root arena, but graph-owned
+    ///                 resources are still shared: a caller that overlaps resource-bearing executions
+    ///                 must keep their resources distinct or wait. B2b-2 makes the resource half safe.
+    explicit RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount = 1);
     /// Transitional: fills the remaining services from the engine's globals, for the callers that still
     /// use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is
     /// why it is documented as the transition rather than as an equal alternative.
     /// @param renderDevice Device used to create pipelines, command buffers and synchronisation.
-    explicit RenderGraphBuilder(VkRenderDevice* renderDevice);
+    /// @param inFlightCount See the services constructor; the default serialises executions.
+    explicit RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount = 1);
     /// Releases compiled pipelines and command buffers; the heaps belong to the injected service.
     ~RenderGraphBuilder();
 
@@ -256,8 +261,21 @@ private:
 
     CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
 
-    /// Create the per-execution root arena on first use; it is host-visible and device-addressable.
-    void EnsureRootArena();
+    /// One in-flight execution's host-visible, device-addressable root arena.
+    ///
+    /// Owned per executor slot rather than per builder: two executions can be recording at once, and a
+    /// shared arena would let the later execution overwrite root data the earlier one's GPU work has
+    /// not read yet. A slot's cursor is reset only after AcquireSlot has waited for that slot.
+    struct RootArena
+    {
+        VkBuffer buffer = VK_NULL_HANDLE;           ///< Host-visible root buffer.
+        VmaAllocation allocation = VK_NULL_HANDLE;  ///< Its VMA allocation.
+        std::byte* mapped = nullptr;                ///< Persistent mapping.
+        VkDeviceAddress address = 0;                ///< Device address of offset 0.
+        VkDeviceSize cursor = 0;                    ///< Next free byte in this execution.
+    };
+    /// Create the root arena for `slot` on first use; it is host-visible and device-addressable.
+    void EnsureRootArena(uint32_t slot);
     /// @return A slice of the current execution's root arena, or throw when it does not fit.
     RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment);
 
@@ -389,13 +407,10 @@ private:
     std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> m_aliasedImages;
     /// The blocks those buffers are bound into. Freed after every resource above is destroyed.
     std::vector<VmaAllocation> m_aliasBlocks;
-    /// Host-visible root arena (B1b-4). Reset at the start of every execution; the host owns its layout.
-    VkBuffer m_rootBuffer = VK_NULL_HANDLE;
-    VmaAllocation m_rootAllocation = VK_NULL_HANDLE;
-    std::byte* m_rootMapped = nullptr;
-    VkDeviceAddress m_rootAddress = 0;
-    VkDeviceSize m_rootCapacity = 64ULL * 1024;
-    VkDeviceSize m_rootCursor = 0;
+    /// Host-visible root arenas, one per in-flight slot (B1b-4 / B2b). The host owns each layout.
+    static constexpr VkDeviceSize kRootCapacity = 64ULL * 1024;
+    std::vector<RootArena> m_rootArenas;
+    uint32_t m_currentRootSlot = 0;
     /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
     TransientMemoryPlan m_transientMemoryPlan;
 

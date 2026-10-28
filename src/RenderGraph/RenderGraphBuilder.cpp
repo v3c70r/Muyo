@@ -135,11 +135,11 @@ const RenderGraphServices& RequireServices(const RenderGraphServices& services)
 }
 }  // namespace
 
-RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
+RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount)
     : m_services(RequireServices(services))
     , m_shaderAssetManager(m_services.device->GetDevice())
     , m_vkDevice(m_services.device->GetDevice())
-    , m_executor(m_services.device)
+    , m_executor(m_services.device, inFlightCount)
 {
     if (m_services.descriptorHeap == nullptr && m_services.device->IsDescriptorHeapEnabled())
     {
@@ -153,8 +153,9 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services)
     m_minStorageBufferOffsetAlignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
 }
 
-RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice)
-    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice, .resourceManager = GetRenderResourceManager()})
+RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount)
+    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice, .resourceManager = GetRenderResourceManager()},
+                         inFlightCount)
 {
 }
 
@@ -187,37 +188,45 @@ RenderGraphBuilder::~RenderGraphBuilder()
     // After the compiled graph, because its descriptors and pipelines name these buffers, and before the
     // device goes away, because the blocks hold memory this class owns.
     DestroyAliasedTransients();
-    if (m_rootMapped != nullptr) GetMemoryAllocator()->UnmapBuffer(m_rootAllocation);
-    if (m_rootBuffer != VK_NULL_HANDLE || m_rootAllocation != VK_NULL_HANDLE)
+    for (RootArena& arena : m_rootArenas)
     {
-        GetMemoryAllocator()->FreeBuffer(m_rootBuffer, m_rootAllocation);
+        if (arena.mapped != nullptr) GetMemoryAllocator()->UnmapBuffer(arena.allocation);
+        if (arena.buffer != VK_NULL_HANDLE || arena.allocation != VK_NULL_HANDLE)
+        {
+            GetMemoryAllocator()->FreeBuffer(arena.buffer, arena.allocation);
+        }
     }
+    m_rootArenas.clear();
     m_vkDevice = VK_NULL_HANDLE;
 }
 
-void RenderGraphBuilder::EnsureRootArena()
+void RenderGraphBuilder::EnsureRootArena(uint32_t slot)
 {
-    if (m_rootBuffer != VK_NULL_HANDLE) return;
-    GetMemoryAllocator()->AllocateBuffer(m_rootCapacity,
+    if (m_rootArenas.size() <= slot) m_rootArenas.resize(slot + 1);
+    RootArena& arena = m_rootArenas[slot];
+    if (arena.buffer != VK_NULL_HANDLE) return;
+    GetMemoryAllocator()->AllocateBuffer(kRootCapacity,
                                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                         VMA_MEMORY_USAGE_CPU_TO_GPU, m_rootBuffer, m_rootAllocation);
-    GetMemoryAllocator()->MapBuffer(m_rootAllocation, reinterpret_cast<void**>(&m_rootMapped));
-    m_rootAddress = m_services.device->GetBufferDeviceAddress(m_rootBuffer);
+                                         VMA_MEMORY_USAGE_CPU_TO_GPU, arena.buffer, arena.allocation);
+    GetMemoryAllocator()->MapBuffer(arena.allocation, reinterpret_cast<void**>(&arena.mapped));
+    arena.address = m_services.device->GetBufferDeviceAddress(arena.buffer);
 }
 
 RenderGraphRootSlice RenderGraphBuilder::AllocateRoot(size_t size, size_t alignment)
 {
     if (size == 0 || alignment == 0) throw std::runtime_error("RenderGraphBuilder: invalid root allocation");
-    const VkDeviceSize aligned = (m_rootCursor + alignment - 1) / alignment * alignment;
-    if (aligned + size > m_rootCapacity)
+    EnsureRootArena(m_currentRootSlot);
+    RootArena& arena = m_rootArenas[m_currentRootSlot];
+    const VkDeviceSize aligned = (arena.cursor + alignment - 1) / alignment * alignment;
+    if (aligned + size > kRootCapacity)
     {
         throw std::runtime_error("RenderGraphBuilder: root arena exhausted");
     }
     RenderGraphRootSlice slice{};
-    slice.host = m_rootMapped + aligned;
-    slice.deviceAddress = m_rootAddress + aligned;
+    slice.host = arena.mapped + aligned;
+    slice.deviceAddress = arena.address + aligned;
     slice.size = size;
-    m_rootCursor = aligned + size;
+    arena.cursor = aligned + size;
     return slice;
 }
 
@@ -1874,6 +1883,7 @@ TraceScope RenderGraphBuilder::BuildTraceScope() const
     scope.graphicsFamily = m_services.device->GetGraphicsQueueFamily();
     scope.computeFamily = m_services.device->GetComputeQueueFamily();
     scope.bDedicatedCompute = m_services.device->IsComputeQueueDedicated();
+    scope.inFlightCount = m_executor.GetInFlightCount();
     // Timestamps are phase 2 (#56): the fields exist so the shape does not change, and `bKnown` stays false so a
     // reader cannot mistake "not measured" for "measured as zero".
     scope.timestamps = TraceTimestamps{};
@@ -1883,8 +1893,6 @@ TraceScope RenderGraphBuilder::BuildTraceScope() const
 void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 {
     m_resourceAccessStates.clear();
-    EnsureRootArena();
-    m_rootCursor = 0;
 
     // A trace is recorded when a sink is installed or `MUYO_RG_TRACE` asks for one. The environment variable is
     // read once per process: it is a diagnostic switch, not a per-frame decision, and re-reading it per execution
@@ -1918,6 +1926,15 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
     const std::vector<CompiledRenderGraphNode>& nodes = m_compiledGraph.GetNodes();
     const RenderGraphExecutionPlan& plan = m_compiledGraph.GetExecutionPlan();
 
+    // Acquire the slot before any callback runs: a CPU node can allocate a root slice too, and the slice
+    // must live in the arena of the execution that will read it. AcquireSlot waits for this slot's
+    // previous execution, which is what makes resetting its cursor safe.
+    RenderGraphExecutor::ExecutionSlot slot = m_executor.AcquireSlot(plan);
+    m_currentRootSlot = slot.index;
+    if (m_rootArenas.size() <= slot.index) m_rootArenas.resize(slot.index + 1);
+    m_rootArenas[slot.index].cursor = 0;
+    const std::vector<VkCommandBuffer>& segmentCmdBuffers = slot.segmentCommandBuffers;
+
     // ── CPU nodes run host-side, before any GPU segment is recorded. ──────────────────────────
     for (const std::size_t i : plan.cpuNodes)
     {
@@ -1943,8 +1960,6 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
     // The executor owns the command buffers: it can only recycle one once that slot's fence has
     // signalled, which is what makes recording into a slot safe while earlier executions are still
     // in flight. Acquiring blocks while every slot is busy, bounding how far the CPU runs ahead.
-    RenderGraphExecutor::ExecutionSlot slot = m_executor.AcquireSlot(plan);
-    const std::vector<VkCommandBuffer>& segmentCmdBuffers = slot.segmentCommandBuffers;
     for (size_t s = 0; s < segments.size(); ++s)
     {
         const uint32_t queueFamily = GetQueueFamilyForType(segments[s].queueType);

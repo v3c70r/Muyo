@@ -2717,6 +2717,45 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphExecutor: in-flight slots are dist
     executor.WaitIdle();
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get separate root arenas",
+                 "[RenderGraphBuilder]")
+{
+    // B2b-1: a root slice is written on the CPU at record time and read by the GPU later, so two
+    // in-flight executions must not share an arena. With one shared arena the second execution's
+    // cursor reset hands back the same address and overwrites the first execution's data before its
+    // GPU work reads it. The callback records the slice and writes a value derived from the execution
+    // number; both executions are submitted without waiting.
+    struct RootCapture
+    {
+        std::byte* host = nullptr;
+        VkDeviceAddress address = 0;
+    };
+    std::vector<RootCapture> captures;
+    // Opt in to two slots: the default still serialises executions until B2b-2 makes shared graph
+    // resources safe to overlap.
+    RenderGraphBuilder builder(GetRenderDevice(), 2);
+    builder.AddNode(RenderGraphNodeCreateInfo{
+        .nodeName = "RootWriter",
+        .queueType = QueueType::COMPUTE,
+        .execute = [&captures](RenderGraphNodeContext& ctx)
+        {
+            RenderGraphRootSlice slice = ctx.AllocateRoot(sizeof(uint32_t), alignof(uint32_t));
+            ctx.WriteRootIndex(slice, 0, static_cast<uint32_t>(captures.size() + 1));
+            captures.push_back({slice.host, slice.deviceAddress});
+        }});
+    builder.Build();
+
+    // Blocking Execute() would drain between the two and hide the bug; the non-blocking overload lets
+    // both commands be recorded and submitted while the first is still in flight.
+    builder.Execute(RenderGraphExecuteInfo{});
+    builder.Execute(RenderGraphExecuteInfo{});
+
+    REQUIRE(captures.size() == 2);
+    CHECK(captures[0].address != captures[1].address);
+    CHECK(*reinterpret_cast<const uint32_t*>(captures[0].host) == 1);
+    CHECK(*reinterpret_cast<const uint32_t*>(captures[1].host) == 2);
+}
+
 TEST_CASE("RenderGraphExecutionPlan: a handover is recorded only across differing queue families", "[RenderGraph]")
 {
     // RebuildExecutionPlan compares the two segments' families and skips the transfer when they
