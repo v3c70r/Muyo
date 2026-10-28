@@ -411,6 +411,10 @@ int main()
     ImGui::DestroyContext();
     GetSamplerManager()->destroySamplers();
     GetRenderResourceManager()->Unintialize();
+    // The UI heap owns two device heaps plus their staging buffers (4 VkBuffer + 4 VkDeviceMemory).
+    // Its destructor runs when main returns, which is after DestroyDevice below; shut it down here or
+    // validation reports those objects leaked at vkDestroyDevice (VUID-vkDestroyDevice-device-05137).
+    uiHeap.Shutdown();
     GetDescriptorManager()->DestroyDescriptorSetLayouts();
     GetDescriptorManager()->DestroyDescriptorPool();
     GetRenderDevice()->DestroyCommandPools();
