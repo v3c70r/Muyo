@@ -113,7 +113,9 @@ struct RenderGraphServices
     /// builder, or calling its `ReleaseCachedDeviceObjects()` for a swapchain recreation, therefore does
     /// not invalidate a pipeline another builder or graph still uses. The cache is device-scoped, must
     /// outlive every builder that refers to it, and is validated against the builder's `VkDevice` at
-    /// construction. See `PipelineCache`.
+    /// construction. See `PipelineCache`. The cache also owns a `VkPipelineCache`, and every pipeline a
+    /// builder creates is recorded in it, so its serialized data survives a process restart when the
+    /// caller loads it back.
     PipelineCache* pipelineCache = nullptr;
     /// Optional shader module/reflection cache shared by every builder that is given the same instance
     /// (#17). When null, each builder loads and owns its shader modules as before.

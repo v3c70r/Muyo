@@ -136,7 +136,7 @@ Comparison operation used by depth/stencil state.
 | `ALWAYS` | Always passes. |
 | `COUNT` | Number of values; not a valid value, only the bound for the table below. |
 
-### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr)`
+### `VkPipeline Muyo::RenderGraph::CreatePipelineFromPSODesc(const PSODesc &psoDesc, VkDevice vkDevice, const std::vector< VkShaderModule > &shaderModuels, VkPipelineRenderingCreateInfo renderingInfo, const VkSpecializationInfo *pSpecializationInfo=nullptr, VkPipelineCache pipelineCache=VK_NULL_HANDLE)`
 
 Build a graphics pipeline from a PSODesc using dynamic rendering.
 
@@ -147,6 +147,7 @@ Build a graphics pipeline from a PSODesc using dynamic rendering.
 | `shaderModuels` | Vertex shader module followed by the fragment shader module. |
 | `renderingInfo` | Dynamic-rendering attachment formats. |
 | `pSpecializationInfo` | Values for the shaders' specialization constants, applied to both stages, or nullptr. Entries naming a constant a stage does not declare are ignored by Vulkan, so one map can serve both. |
+| `pipelineCache` | Optional driver pipeline cache to record this pipeline in, or VK_NULL_HANDLE. It is the caller's cache; this function neither keeps nor destroys it. |
 
 **Returns** — The created pipeline (caller owns it). Always created with VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT and layout = VK_NULL_HANDLE (B1b).
 
@@ -373,19 +374,24 @@ Key. The key is opaque to this type. RenderGraphBuilder builds it from the full 
 
 Threading. One thread at a time, like the builder and the device objects it borrows. The map is not synchronized.
 
+Driver cache. The object also owns a VkPipelineCache, passed to every pipeline creation a builder performs, so the driver can reuse its own compiled state across runs. GetSerializedData() returns the bytes vkGetPipelineCacheData produces; loading and saving a file is the caller's policy, not this type's, and the same is true of deciding where it lives. A PipelineCache created from those bytes starts with the driver's cache loaded and an empty map of VkPipeline handles: the handles are process-local, but the key path is the same on the next run.
+
 | Member | Description |
 | --- | --- |
 | `PipelineCache(VkRenderDevice *renderDevice)` | Parameters: `renderDevice` - Device the cached pipelines are created on. Must be non-null; it has to outlive the cache, because destroying a cached pipeline goes through its VkDevice Throws: `std::runtime_error` - when renderDevice is null or has no logical device |
-| `~PipelineCache()` | Destroy every cached pipeline. The device must be idle, and no builder or execution may still refer to an entry - the same requirement as Reset(). |
+| `PipelineCache(VkRenderDevice *renderDevice, std::span< const std::uint8_t > initialData)` | Create a cache with driver data from an earlier GetSerializedData() on the same device. Parameters: `renderDevice` - Device the cached pipelines are created on; same requirements as above; `initialData` - Bytes from GetSerializedData(), or an empty span for a cold cache Throws: `std::runtime_error` - when renderDevice is null or has no logical device |
+| `~PipelineCache()` | Destroy every cached pipeline and the VkPipelineCache itself. The device must be idle, and no builder or execution may still refer to an entry - the same requirement as Reset(). |
 | `PipelineCache(const PipelineCache &)=delete` | Owns raw Vulkan handles and destroys them, so copying would double-destroy a pipeline. |
 | `PipelineCache & operator=(const PipelineCache &)=delete` | Deleted for the same reason as the copy constructor. |
 | `PipelineCache(PipelineCache &&)=delete` | Deleted because a moved-from cache would leave the old object with no entries to destroy. |
 | `PipelineCache & operator=(PipelineCache &&)=delete` | Deleted for the same reason as the move constructor. |
 | `VkPipeline Find(std::string_view key) const` | Parameters: `key` - Byte-string key produced by the builder's full-state pipeline key Returns: The cached pipeline, or VK_NULL_HANDLE when key has no entry. |
 | `bool Insert(std::string_view key, VkPipeline pipeline)` | Take ownership of a pipeline and cache it under key. Parameters: `key` - Byte-string key produced by the builder's full-state pipeline key; `pipeline` - Pipeline created on GetDevice(); ownership transfers only on success Returns: True when the entry was stored and is now owned by the cache; false when key was taken. |
-| `void Reset()` | Destroy every cached pipeline and clear the cache. Safe to call repeatedly. |
+| `void Reset()` | Destroy every cached pipeline and clear the map. Safe to call repeatedly. |
 | `std::size_t GetPipelineCount() const` | Returns: How many pipelines the cache currently owns. Used by tests and diagnostics to observe reuse across builders; it is not a frame-cost metric. |
 | `VkDevice GetDevice() const` | Returns: The logical device the entries were created on. A builder compares this to its own device before borrowing, so a cache shared with the wrong device is a named error. |
+| `VkPipelineCache GetVkPipelineCache() const` | Returns: The VkPipelineCache passed to pipeline creation. Never VK_NULL_HANDLE for a live object; the builder passes it to every graphics, compute and ray-tracing create call. |
+| `std::vector< std::uint8_t > GetSerializedData() const` | initialData constructor. The device must be idle while this runs: Vulkan requires host access to a VkPipelineCache to be externally synchronized, and a pipeline creation on another thread is the conflict. Returns: The driver's pipeline-cache bytes (vkGetPipelineCacheData), or an empty vector when the driver reports none. |
 
 
 ## `RenderGraphBarrier.h`

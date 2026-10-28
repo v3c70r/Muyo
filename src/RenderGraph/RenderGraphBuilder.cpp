@@ -750,6 +750,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         // shared cache or from the per-builder fallback map, so the compiled node must not destroy it.
         const bool bCacheable = rgn.queueType == QueueType::GRAPHICS || rgn.queueType == QueueType::COMPUTE;
         PipelineCache* pSharedPipelineCache = m_services.pipelineCache;
+        const VkPipelineCache vkPipelineCache =
+            pSharedPipelineCache != nullptr ? pSharedPipelineCache->GetVkPipelineCache() : VK_NULL_HANDLE;
         std::string pipelineKey;
         if (bCacheable)
         {
@@ -774,8 +776,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
         if (result.pipeline == VK_NULL_HANDLE && rgn.queueType == QueueType::GRAPHICS)
         {
             result.bindingPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-            result.pipeline =
-                CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, renderingInfo, pSpecializationInfo);
+            result.pipeline = CreatePipelineFromPSODesc(rgn.psoDesc, m_vkDevice, shaderModules, renderingInfo,
+                                                        pSpecializationInfo, vkPipelineCache);
         }
         else if (result.pipeline == VK_NULL_HANDLE && rgn.queueType == QueueType::COMPUTE)
         {
@@ -794,7 +796,7 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             pipelineInfo.stage = stageInfo;
             pipelineInfo.layout = VK_NULL_HANDLE;
             VK_ASSERT(
-                vkCreateComputePipelines(m_vkDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &result.pipeline));
+                vkCreateComputePipelines(m_vkDevice, vkPipelineCache, 1, &pipelineInfo, nullptr, &result.pipeline));
         }
         if (bCacheable && result.pipeline != VK_NULL_HANDLE && result.bOwnsPipeline)
         {
@@ -871,8 +873,10 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
     createInfo.pNext = &heapFlags;
     createInfo.layout = VK_NULL_HANDLE;
-    VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(m_vkDevice, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr,
-                                                    &rgn.pipeline));
+    const VkPipelineCache vkPipelineCache =
+        m_services.pipelineCache != nullptr ? m_services.pipelineCache->GetVkPipelineCache() : VK_NULL_HANDLE;
+    VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(m_vkDevice, VK_NULL_HANDLE, vkPipelineCache, 1, &createInfo,
+                                                    nullptr, &rgn.pipeline));
 
     // ── Shader binding table ──────────────────────────────────────────────
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProps{
