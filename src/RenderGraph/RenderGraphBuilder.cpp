@@ -1948,7 +1948,10 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         {
             bSegmentUsesHeap = nodes[i].queueType != QueueType::CPU;
         }
-        if (bSegmentUsesHeap)
+        // A graph whose GPU nodes have no shaders (a present-only or copy-only frame) needs no heap:
+        // the service is null on a heap-less device and there is nothing acquired to upload. A node
+        // with shaders would have been rejected at Build on such a device.
+        if (bSegmentUsesHeap && m_services.descriptorHeap != nullptr)
         {
             m_services.descriptorHeap->Upload(cmdBuf);
         }
@@ -1986,7 +1989,8 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
                 if (it == rgn.heapIndices.end()) return std::nullopt;
                 return it->second;
             };
-            context.maxPushDataSize = m_services.descriptorHeap->GetProperties().maxPushDataSize;
+            context.maxPushDataSize =
+                m_services.descriptorHeap != nullptr ? m_services.descriptorHeap->GetProperties().maxPushDataSize : 0;
             context.bindingPoint = rgn.bindingPoint;
 
             // Bracket the node so a capture or validation tool attributes the commands and anything it reports to this
