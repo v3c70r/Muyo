@@ -148,6 +148,13 @@ public:
     ///         failed Build. Exposed for diagnostics and tests that inspect the compiled pipelines.
     const CompiledRenderGraph& GetCompiledGraph() const { return m_compiledGraph; }
 
+    /// Release the descriptor slots and pipelines cached from earlier Builds. Call only when every
+    /// execution that used them has completed - the app's swapchain recreation does this right after
+    /// `vkDeviceWaitIdle`. The next Build recreates what it needs; graph-owned resources are untouched.
+    /// Use this when the resources behind the cached descriptors are destroyed outside the graph (a
+    /// swapchain recreation) and the builder is kept across the change.
+    void ReleaseCachedDeviceObjects();
+
     // ── Resource declaration (data) ──────────────────────────────────────────
     /// Declare a graph-owned resource. It is allocated at `Build()` from `desc`.
     /// @param handle Name the graph and the nodes use for it.

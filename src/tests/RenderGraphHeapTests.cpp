@@ -94,6 +94,86 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a repeated build re
     CHECK(originalPipeline == first);
 }
 
+TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a persistent builder rebuilds across rotating imports",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // B2c-2: the app keeps one builder and calls Build() per frame; the acquired swapchain image rotates,
+    // so the only declaration that changes per frame is the Present import. This is the same pattern with
+    // three buffer imports: every Build must reuse the output descriptor and the pipeline while acquiring
+    // a descriptor for the newly imported input, and every execution must read the buffer imported for
+    // that frame.
+    VkRenderDevice* device = GetRenderDevice();
+    if (!device->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2c-2 records the row as a gap, not a pass");
+    }
+
+    std::array<BufferResource*, 3> inputs{};
+    for (int i = 0; i < 3; ++i)
+    {
+        inputs[i] = GetRenderResourceManager()->AllocateBuffer(
+            "RotatingInput" + std::to_string(i), sizeof(uint32_t),
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU);
+        REQUIRE(inputs[i] != nullptr);
+        const uint32_t value = static_cast<uint32_t>(10 * (i + 1));
+        inputs[i]->SetData(&value, sizeof(value));
+    }
+    BufferResource* pOutput = GetRenderResourceManager()->AllocateBuffer(
+        "RotatingOutput", sizeof(uint32_t),
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+    REQUIRE(pOutput != nullptr);
+
+    RenderGraphBuilder builder(device);
+    builder.ImportResource("RotatingInput", inputs[0]);
+    builder.ImportResource("RotatingOutput", pOutput);
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "RotatingCopy",
+                                              .queueType = QueueType::COMPUTE,
+                                              .resourceUses = {{.handle = ResourceHandle("RotatingInput"),
+                                                                .io = ResourceIOType::READ,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER},
+                                                               {.handle = ResourceHandle("RotatingOutput"),
+                                                                .io = ResourceIOType::WRITE,
+                                                                .usage = ResourceUsage::STORAGE_BUFFER,
+                                                                .kind = ResourceKind::BUFFER}},
+                                              .shaderNames = {"copyBuffer.comp.heap"},
+                                              .execute = [](RenderGraphNodeContext& ctx)
+                                              {
+                                                  const std::optional<uint32_t> input =
+                                                      ctx.GetHeapIndex("RotatingInput", ResourceUsage::STORAGE_BUFFER);
+                                                  const std::optional<uint32_t> output =
+                                                      ctx.GetHeapIndex("RotatingOutput", ResourceUsage::STORAGE_BUFFER);
+                                                  REQUIRE(input.has_value());
+                                                  REQUIRE(output.has_value());
+                                                  struct Push
+                                                  {
+                                                      uint32_t byteCount;
+                                                      uint32_t inputIndex;
+                                                      uint32_t outputIndex;
+                                                  };
+                                                  const Push push{sizeof(uint32_t), *input, *output};
+                                                  ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+                                                  vkCmdDispatch(ctx.commandBuffer, 1, 1, 1);
+                                              }});
+
+    VkPipeline firstPipeline = VK_NULL_HANDLE;
+    for (int frame = 0; frame < 6; ++frame)
+    {
+        builder.ImportResource("RotatingInput", inputs[frame % 3]);
+        builder.Build();
+        const VkPipeline pipeline = builder.GetCompiledGraph().GetNodes().front().pipeline;
+        if (frame == 0) firstPipeline = pipeline;
+        CHECK(pipeline == firstPipeline);
+        builder.Execute();
+
+        const auto* pMapped = static_cast<const uint32_t*>(pOutput->Map());
+        REQUIRE(pMapped != nullptr);
+        CHECK(*pMapped == static_cast<uint32_t>(10 * (frame % 3 + 1)));
+        pOutput->Unmap();
+    }
+}
+
 TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses the descriptor heap with no layout",
                  "[RenderGraphBuilder][DescriptorHeap]")
 {

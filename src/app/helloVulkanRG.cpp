@@ -146,6 +146,103 @@ int main()
             VkExtent2D{static_cast<uint32_t>(initialWidth), static_cast<uint32_t>(initialHeight)});
         FrameSync frameSync(GetRenderDevice(), &swapchain, kImagesInFlight);
 
+        // One builder for the process. Build() is per frame, and the resource, descriptor and pipeline
+        // caches make an unchanged declaration cheap; a builder per frame would discard all three. The
+        // acquired swapchain image rotates, so only that import changes per frame.
+        // The graph owns the heap binding: it uploads the service once per segment, before any render
+        // pass starts (the upload records vkCmdCopyBuffer). Inject the same service the UI sampler is
+        // acquired from, or the pushed sampler index and the bound resource heap would be different
+        // heaps.
+        RenderGraphBuilder builder(RenderGraphServices{
+            .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
+        // Record every execution for the lane view. The sink's presence is what turns tracing on, and it costs
+        // one null check per node when the page is not shown.
+        builder.SetTraceSink([page = pTracePage.get()](RenderGraph::RenderGraphTrace trace)
+                             { page->Push(std::move(trace)); });
+        // AddNode validates its uses immediately, and the per-frame import replaces this one before the
+        // first Build; image 0 is only the declaration-time placeholder.
+        builder.ImportResource("Present", swapchain.GetImageResource(0));
+        builder.ImportResource("Font", pFont);
+        builder.ImportResource("UIVertices", pUIVertices);
+        builder.ImportResource("UIIndices", pUIIndices);
+        builder.AddNode(RenderGraphNodeCreateInfo{
+            .nodeName = "UI",
+            .queueType = QueueType::GRAPHICS,
+            .resourceUses =
+                {
+                    ResourceUse{.handle = ResourceHandle("Font"),
+                                .io = ResourceIOType::READ,
+                                .usage = ResourceUsage::SAMPLED,
+                                .kind = ResourceKind::IMAGE},
+                    ResourceUse{.handle = ResourceHandle("UIVertices"),
+                                .io = ResourceIOType::READ,
+                                .usage = ResourceUsage::VERTEX_BUFFER,
+                                .kind = ResourceKind::BUFFER},
+                    ResourceUse{.handle = ResourceHandle("UIIndices"),
+                                .io = ResourceIOType::READ,
+                                .usage = ResourceUsage::INDEX_BUFFER,
+                                .kind = ResourceKind::BUFFER},
+                    ResourceUse{.handle = ResourceHandle("Present"),
+                                .io = ResourceIOType::WRITE,
+                                .usage = ResourceUsage::PRESENT,
+                                .kind = ResourceKind::IMAGE},
+                },
+            .shaderNames = {"ui.vert.slang", "ui.frag.heap"},
+            .psoDesc = {.vertexType = VertexType::UI,
+                        .rasterState = {.cullMode = CullMode::NONE},
+                        // Alpha blending, matching RenderPassUI: the font texture carries glyph
+                        // coverage in its alpha, so an opaque write renders white blocks.
+                        .blendState = {.attachmentCount = 1,
+                                       .attachments = {{{.blendEnable = true,
+                                                         .srcColor = BlendFactor::SRC_ALPHA,
+                                                         .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA,
+                                                         .srcAlpha = BlendFactor::ONE,
+                                                         .dstAlpha = BlendFactor::ZERO}}}}},
+            .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
+            .execute = [pUIVertices, pUIIndices, fontSamplerSlot](RenderGraphNodeContext& ctx)
+            {
+                ImDrawData* pDrawData = ImGui::GetDrawData();
+                if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
+
+                struct PushBlock
+                {
+                    glm::vec2 scale;
+                    glm::vec2 translate;
+                    uint32_t fontImage;
+                    uint32_t fontSampler;
+                };
+                const ImGuiIO& io = ImGui::GetIO();
+                const std::optional<uint32_t> fontImage = ctx.GetHeapIndex("Font", ResourceUsage::SAMPLED);
+                if (!fontImage.has_value()) return;
+                const PushBlock push{glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y), glm::vec2(-1.0F),
+                                     *fontImage, fontSamplerSlot.index};
+                ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+
+                VkDeviceSize offset = 0;
+                VkBuffer vertexBuffer = pUIVertices->buffer();
+                vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+                vkCmdBindIndexBuffer(ctx.commandBuffer, pUIIndices->buffer(), 0, VK_INDEX_TYPE_UINT16);
+
+                int32_t vertexOffset = 0;
+                uint32_t indexOffset = 0;
+                for (int n = 0; n < pDrawData->CmdListsCount; ++n)
+                {
+                    const ImDrawList* pList = pDrawData->CmdLists[n];
+                    for (int j = 0; j < pList->CmdBuffer.Size; ++j)
+                    {
+                        const ImDrawCmd& drawCmd = pList->CmdBuffer[j];
+                        const VkRect2D scissor{{static_cast<int32_t>(std::max(drawCmd.ClipRect.x, 0.0F)),
+                                                static_cast<int32_t>(std::max(drawCmd.ClipRect.y, 0.0F))},
+                                               {static_cast<uint32_t>(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
+                                                static_cast<uint32_t>(drawCmd.ClipRect.w - drawCmd.ClipRect.y)}};
+                        vkCmdSetScissor(ctx.commandBuffer, 0, 1, &scissor);
+                        vkCmdDrawIndexed(ctx.commandBuffer, drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0);
+                        indexOffset += drawCmd.ElemCount;
+                    }
+                    vertexOffset += pList->VtxBuffer.Size;
+                }
+            }});
+
         // Drain, recreate the swapchain at the window's new size, and rebuild the per-image tracking. Used
         // both when an acquire reports out-of-date and when present does, which is how a resize is picked
         // up between frames.
@@ -161,6 +258,9 @@ int main()
                                       VK_PRESENT_MODE_FIFO_KHR, kImagesInFlight, /*bOwnSurface=*/false,
                                       VkExtent2D{static_cast<uint32_t>(width), static_cast<uint32_t>(height)});
             frameSync.OnSwapchainRecreated();
+            // The old images are gone and the device was idle, so the descriptors and pipelines that
+            // named them can be released; the next Build recreates what the new swapchain needs.
+            builder.ReleaseCachedDeviceObjects();
         };
 
         while (!Window::ShouldQuit())
@@ -228,99 +328,9 @@ int main()
                 continue;
             }
 
-            // A graph per frame, because the acquired image rotates and the graph fixes its imports at
-            // Build. One graph per swapchain image is the optimisation and belongs with #40.
-            // The graph owns the heap binding: it uploads the service once per segment, before any render
-            // pass starts (the upload records vkCmdCopyBuffer). Inject the same service the UI sampler is
-            // acquired from, or the pushed sampler index and the bound resource heap would be different
-            // heaps.
-            RenderGraphBuilder builder(RenderGraphServices{
-                .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
-            // Record every execution for the lane view. The sink's presence is what turns tracing on, and it costs
-            // one null check per node when the page is not shown.
-            builder.SetTraceSink([page = pTracePage.get()](RenderGraph::RenderGraphTrace trace)
-                                 { page->Push(std::move(trace)); });
+            // The acquired image rotates; re-import it for this frame. The node declaration is fixed
+            // and Build() reuses the resource, descriptor and pipeline caches.
             builder.ImportResource("Present", swapchain.GetImageResource(frame->imageIndex));
-            builder.ImportResource("Font", pFont);
-            builder.ImportResource("UIVertices", pUIVertices);
-            builder.ImportResource("UIIndices", pUIIndices);
-            builder.AddNode(RenderGraphNodeCreateInfo{
-                .nodeName = "UI",
-                .queueType = QueueType::GRAPHICS,
-                .resourceUses =
-                    {
-                        ResourceUse{.handle = ResourceHandle("Font"),
-                                    .io = ResourceIOType::READ,
-                                    .usage = ResourceUsage::SAMPLED,
-                                    .kind = ResourceKind::IMAGE},
-                        ResourceUse{.handle = ResourceHandle("UIVertices"),
-                                    .io = ResourceIOType::READ,
-                                    .usage = ResourceUsage::VERTEX_BUFFER,
-                                    .kind = ResourceKind::BUFFER},
-                        ResourceUse{.handle = ResourceHandle("UIIndices"),
-                                    .io = ResourceIOType::READ,
-                                    .usage = ResourceUsage::INDEX_BUFFER,
-                                    .kind = ResourceKind::BUFFER},
-                        ResourceUse{.handle = ResourceHandle("Present"),
-                                    .io = ResourceIOType::WRITE,
-                                    .usage = ResourceUsage::PRESENT,
-                                    .kind = ResourceKind::IMAGE},
-                    },
-                .shaderNames = {"ui.vert.slang", "ui.frag.heap"},
-                .psoDesc = {.vertexType = VertexType::UI,
-                            .rasterState = {.cullMode = CullMode::NONE},
-                            // Alpha blending, matching RenderPassUI: the font texture carries glyph
-                            // coverage in its alpha, so an opaque write renders white blocks.
-                            .blendState = {.attachmentCount = 1,
-                                           .attachments = {{{.blendEnable = true,
-                                                             .srcColor = BlendFactor::SRC_ALPHA,
-                                                             .dstColor = BlendFactor::ONE_MINUS_SRC_ALPHA,
-                                                             .srcAlpha = BlendFactor::ONE,
-                                                             .dstAlpha = BlendFactor::ZERO}}}}},
-                .attachmentClearValues = {{{.color = {0.05F, 0.05F, 0.08F, 1.0F}}}},
-                .execute = [pUIVertices, pUIIndices, fontSamplerSlot](RenderGraphNodeContext& ctx)
-                {
-                    ImDrawData* pDrawData = ImGui::GetDrawData();
-                    if (pDrawData == nullptr || pDrawData->TotalVtxCount == 0) return;
-
-                    struct PushBlock
-                    {
-                        glm::vec2 scale;
-                        glm::vec2 translate;
-                        uint32_t fontImage;
-                        uint32_t fontSampler;
-                    };
-                    const ImGuiIO& io = ImGui::GetIO();
-                    const std::optional<uint32_t> fontImage = ctx.GetHeapIndex("Font", ResourceUsage::SAMPLED);
-                    if (!fontImage.has_value()) return;
-                    const PushBlock push{glm::vec2(2.0F / io.DisplaySize.x, 2.0F / io.DisplaySize.y), glm::vec2(-1.0F),
-                                         *fontImage, fontSamplerSlot.index};
-                    ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
-
-                    VkDeviceSize offset = 0;
-                    VkBuffer vertexBuffer = pUIVertices->buffer();
-                    vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
-                    vkCmdBindIndexBuffer(ctx.commandBuffer, pUIIndices->buffer(), 0, VK_INDEX_TYPE_UINT16);
-
-                    int32_t vertexOffset = 0;
-                    uint32_t indexOffset = 0;
-                    for (int n = 0; n < pDrawData->CmdListsCount; ++n)
-                    {
-                        const ImDrawList* pList = pDrawData->CmdLists[n];
-                        for (int j = 0; j < pList->CmdBuffer.Size; ++j)
-                        {
-                            const ImDrawCmd& drawCmd = pList->CmdBuffer[j];
-                            const VkRect2D scissor{{static_cast<int32_t>(std::max(drawCmd.ClipRect.x, 0.0F)),
-                                                    static_cast<int32_t>(std::max(drawCmd.ClipRect.y, 0.0F))},
-                                                   {static_cast<uint32_t>(drawCmd.ClipRect.z - drawCmd.ClipRect.x),
-                                                    static_cast<uint32_t>(drawCmd.ClipRect.w - drawCmd.ClipRect.y)}};
-                            vkCmdSetScissor(ctx.commandBuffer, 0, 1, &scissor);
-                            vkCmdDrawIndexed(ctx.commandBuffer, drawCmd.ElemCount, 1, indexOffset, vertexOffset, 0);
-                            indexOffset += drawCmd.ElemCount;
-                        }
-                        vertexOffset += pList->VtxBuffer.Size;
-                    }
-                }});
             builder.Build();
             builder.Execute(frameSync.ExecuteInfo(*frame));
             const VkResult presentResult = frameSync.Present(*frame);

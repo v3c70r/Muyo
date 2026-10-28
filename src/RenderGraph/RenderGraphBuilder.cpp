@@ -346,6 +346,12 @@ std::size_t RenderGraphBuilder::DescriptorKeyHash::operator()(const DescriptorKe
     return seed;
 }
 
+void RenderGraphBuilder::ReleaseCachedDeviceObjects()
+{
+    DestroyCachedPipelines();
+    ReleaseCachedDescriptors();
+}
+
 void RenderGraphBuilder::DestroyCachedPipelines()
 {
     for (const auto& entry : m_pipelineCache)
