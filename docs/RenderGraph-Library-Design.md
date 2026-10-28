@@ -95,10 +95,10 @@ Two ways to get a clean boundary:
 
 Choose the shared library, and revisit on the same trigger as the C ABI: a client that cannot use
 `muyo_device`. The current problem is not the *direction* of the dependency — it is that `muyo_rg` does
-not stand alone: 8 files under `src/RenderGraph/` include at least one header from outside the directory,
-2 code call sites reach for engine singletons (both in the transitional constructor), and the target
-links `muyo` publicly. The scan behind those numbers is in `Roadmap-Visual.md` section 7; #53 owns the
-remaining work. Fix the boundary, keep the direction.
+not stand alone: 9 files under `src/RenderGraph/` include at least one header from outside the directory,
+1 code call site reaches for an engine singleton (`GetRenderResourceManager()` in the transitional
+constructor's delegation), and the target links `muyo` publicly. The scans behind those numbers are in
+`Roadmap-Visual.md` section 7; #53 owns the remaining work. Fix the boundary, keep the direction.
 
 ### 3. Error reporting is unresolved, deliberately
 
