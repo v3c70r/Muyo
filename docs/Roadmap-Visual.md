@@ -120,7 +120,7 @@ flowchart LR
 
 Why this order:
 
-1. **The final #20 next.** B2 removed the freeze; the heap-only path, per-frame `Build()` and two-frame
+1. **The final #20 port is next.** B2 removed the freeze; the heap-only path, per-frame `Build()` and two-frame
    overlap are in place. #111's UI pass stays accepted double-conversion debt.
 2. **Then #48/#49 → #51.** The deletion waits for the DebugUI and shadow passes to leave
    `RenderPassManager`.
