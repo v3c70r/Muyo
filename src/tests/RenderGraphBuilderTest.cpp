@@ -2126,6 +2126,20 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight above one rejec
                                            Catch::Matchers::ContainsSubstring("inFlightCount"));
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight above the heap's slots is rejected",
+                 "[RenderGraphBuilder][DescriptorHeap]")
+{
+    // The rings are sized when the heap is initialized; a builder that runs further ahead than the
+    // heap's configured slots would otherwise fail later, from BeginExecution inside Execute.
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled())
+    {
+        SKIP("descriptor heap not enabled on this device; B2d records the row as a gap, not a pass");
+    }
+    RenderGraphBuilder builder(GetRenderDevice(), 3);
+    CHECK_THROWS_WITH(builder.Build(), Catch::Matchers::ContainsSubstring("exceeds the descriptor heap's") &&
+                                           Catch::Matchers::ContainsSubstring("execution slots"));
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a rebuild recreates a resource whose declaration changed",
                  "[RenderGraphBuilder]")
 {

@@ -57,6 +57,8 @@ public:
     /// Destroy the heaps and any registered custom-border indices. Safe to call repeatedly.
     void Shutdown();
     bool IsInitialized() const { return m_device != nullptr; }
+    /// @return How many execution slots the rings and staging layout were configured for.
+    uint32_t GetInFlightCount() const { return m_inFlightCount; }
 
     DescriptorSlot AcquireImage(const VkImageViewCreateInfo& view, VkImageLayout layout,
                                 VkDescriptorType type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, bool bRing = false);

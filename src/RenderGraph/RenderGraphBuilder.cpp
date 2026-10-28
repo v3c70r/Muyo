@@ -1594,6 +1594,18 @@ void RenderGraphBuilder::Build()
     // the order and the declarations.
     ValidateTransientLifetimes(executionOrder);
 
+    // The per-execution rings live in the heap service, whose slot count was fixed at Initialize;
+    // a builder that runs further ahead than that would call BeginExecution on a slot the rings do not
+    // have. Report the mismatch at Build rather than from a node's Execute.
+    if (m_services.descriptorHeap != nullptr &&
+        m_executor.GetInFlightCount() > m_services.descriptorHeap->GetInFlightCount())
+    {
+        throw std::runtime_error("RenderGraphBuilder: inFlightCount " + std::to_string(m_executor.GetInFlightCount()) +
+                                 " exceeds the descriptor heap's " +
+                                 std::to_string(m_services.descriptorHeap->GetInFlightCount()) +
+                                 " execution slots; initialize the heap with at least that many.");
+    }
+
     // Graph-owned resources are single-instance; two overlapping executions would alias them. Imported
     // resources are bound per execution from each slot's descriptor ring and are the caller's to
     // keep distinct, so only those are allowed above one slot (#40).
@@ -2199,7 +2211,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         m_services.descriptorHeap->ResetRing(slot.index);
         for (size_t i = 0; i < nodes.size(); ++i)
         {
-            if (nodes[i].queueType == QueueType::CPU) continue;
+            // A node with no pipeline has no shader to read a descriptor index; acquiring one for it
+            // would consume a ring slot for nothing.
+            if (nodes[i].queueType == QueueType::CPU || nodes[i].pipeline == VK_NULL_HANDLE) continue;
             for (const ResolvedResourceUse& use : nodes[i].resourceUses)
             {
                 if (m_importedResources.find(use.handle) == m_importedResources.end()) continue;
