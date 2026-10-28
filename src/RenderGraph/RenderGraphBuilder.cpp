@@ -1763,7 +1763,13 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
 
         if (renderArea.width == 0 && renderArea.height == 0)
         {
-            renderArea = {use.extent.width, use.extent.height};
+            // The attachment image is authoritative: an imported image (a swapchain target) can change
+            // extent between builds while a declaration-time `use.extent` stays at the old size, and a
+            // render area larger than the image view is a validation error (VUID-VkRenderingInfo-pNext-06079).
+            const VkExtent2D imageExtent = image->GetImageExtent();
+            renderArea = imageExtent.width > 0 && imageExtent.height > 0
+                             ? imageExtent
+                             : VkExtent2D{use.extent.width, use.extent.height};
         }
     }
 
