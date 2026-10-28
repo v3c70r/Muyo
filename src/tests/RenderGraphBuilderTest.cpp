@@ -1521,7 +1521,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a use's kind and usage mu
         return RenderGraphNodeCreateInfo{.nodeName = name,
                                          .queueType = QueueType::COMPUTE,
                                          .resourceUses = {use},
-                                         .shaderNames = {"copyBuffer.comp.heap"},
+                                         // AddNode-only case: no Build and no pipeline, so the legacy
+                                         // module (which needs no heap capability) is enough here.
+                                         .shaderNames = {"copyBuffer.comp.slang"},
                                          .execute = [](RenderGraphNodeContext&) {}};
     };
 
