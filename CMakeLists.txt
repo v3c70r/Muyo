@@ -380,7 +380,8 @@ file(GLOB PSOCompiler_SRC
 
 if (MUYO_TOP_LEVEL)
 add_executable(helloVulkan ${main_SRC})
-target_link_libraries(helloVulkan PUBLIC muyo)
+# The frame's FINAL pass is a graph node, so the app links the graph library as well as the engine.
+target_link_libraries(helloVulkan PUBLIC muyo muyo_rg)
 
 # The render graph's first consumer: the same frame through the graph. It links both `muyo` (the
 # engine's resources, device and managers) and `muyo_rg`.
@@ -531,6 +532,7 @@ add_executable(tests
     src/tests/DeviceCapabilityTests.cpp
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
+    src/tests/RenderGraphFinalNodeTest.cpp
     src/tests/RenderGraphHeapTests.cpp
     src/tests/RenderGraphPipelineCacheTests.cpp
     src/tests/RenderGraphShaderCacheTests.cpp

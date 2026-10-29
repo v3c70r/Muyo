@@ -117,6 +117,12 @@ struct TraceBarrier
     std::string dstStage;                             ///< Destination stage mask.
     std::string srcAccess;                            ///< Source access mask, rendered by `NameOfAccesses`.
     std::string dstAccess;                            ///< Destination access mask.
+    /// Layout the image is in before the barrier; `UNDEFINED` for a buffer or memory barrier. A first use
+    /// with `oldLayout == UNDEFINED` discards the resource's contents, so an imported image that was meant
+    /// to keep them is visible here as the difference between its stated layout and `UNDEFINED`.
+    VkImageLayout oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    /// Layout the use needs. `UNDEFINED` for a buffer or memory barrier.
+    VkImageLayout newLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     uint32_t srcFamily = VK_QUEUE_FAMILY_IGNORED;     ///< Source family for a handover, `IGNORED` otherwise.
     uint32_t dstFamily = VK_QUEUE_FAMILY_IGNORED;     ///< Destination family for a handover, `IGNORED` otherwise.
 };
@@ -219,6 +225,10 @@ const char* NameOf(TraceEdgeKind kind);
 /// @param kind Barrier kind to name.
 /// @return `image`, `buffer` or `memory`.
 const char* NameOf(TraceBarrierKind kind);
+
+/// @param layout Image layout to name.
+/// @return The layout's short name (e.g. `shader_read`), or `unknown` for a value this version does not know.
+const char* NameOf(VkImageLayout layout);
 
 /// @param reason Wait reason to name.
 /// @return `timeline` or `caller`.
@@ -373,13 +383,14 @@ public:
         for (const VkImageMemoryBarrier2& barrier : barriers.barriers.images)
         {
             sink.push_back(MakeBarrier(handle, TraceBarrierKind::Image, barrier.srcStageMask, barrier.dstStageMask,
-                                       barrier.srcAccessMask, barrier.dstAccessMask, barrier.srcQueueFamilyIndex,
-                                       barrier.dstQueueFamilyIndex));
+                                       barrier.srcAccessMask, barrier.dstAccessMask, barrier.oldLayout,
+                                       barrier.newLayout, barrier.srcQueueFamilyIndex, barrier.dstQueueFamilyIndex));
         }
         for (const VkBufferMemoryBarrier2& barrier : barriers.barriers.buffers)
         {
             sink.push_back(MakeBarrier(handle, TraceBarrierKind::Buffer, barrier.srcStageMask, barrier.dstStageMask,
-                                       barrier.srcAccessMask, barrier.dstAccessMask, barrier.srcQueueFamilyIndex,
+                                       barrier.srcAccessMask, barrier.dstAccessMask, VK_IMAGE_LAYOUT_UNDEFINED,
+                                       VK_IMAGE_LAYOUT_UNDEFINED, barrier.srcQueueFamilyIndex,
                                        barrier.dstQueueFamilyIndex));
         }
         if (barriers.memory.has_value())
@@ -388,7 +399,8 @@ public:
             // No resource: a memory barrier is device-wide, and naming one resource for it would be a lie.
             sink.push_back(MakeBarrier(ResourceHandle{}, TraceBarrierKind::Memory, barrier.srcStageMask,
                                        barrier.dstStageMask, barrier.srcAccessMask, barrier.dstAccessMask,
-                                       VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED));
+                                       VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, VK_QUEUE_FAMILY_IGNORED,
+                                       VK_QUEUE_FAMILY_IGNORED));
         }
     }
 
@@ -415,8 +427,8 @@ public:
 private:
     static TraceBarrier MakeBarrier(const ResourceHandle& resource, TraceBarrierKind kind,
                                     VkPipelineStageFlags2 srcStage, VkPipelineStageFlags2 dstStage,
-                                    VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess, uint32_t srcFamily,
-                                    uint32_t dstFamily)
+                                    VkAccessFlags2 srcAccess, VkAccessFlags2 dstAccess, VkImageLayout oldLayout,
+                                    VkImageLayout newLayout, uint32_t srcFamily, uint32_t dstFamily)
     {
         return TraceBarrier{.resource = resource,
                             .kind = kind,
@@ -424,6 +436,8 @@ private:
                             .dstStage = NameOfPipelineStages(dstStage),
                             .srcAccess = NameOfAccesses(srcAccess),
                             .dstAccess = NameOfAccesses(dstAccess),
+                            .oldLayout = oldLayout,
+                            .newLayout = newLayout,
                             .srcFamily = srcFamily,
                             .dstFamily = dstFamily};
     }

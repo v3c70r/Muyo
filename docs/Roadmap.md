@@ -48,13 +48,13 @@ at all (the subsumed `TODO`s, which live in code). If a fact can be a field, mak
 
 ## Where we are
 
-Measured on 2026-10-28 at master `1896bae`.
+Measured on 2026-10-29 after the #20 increment-1 port (`helloVulkan` presents through the graph).
 
 | | Lines | State |
 | --- | --- | --- |
-| `src/RenderGraph/` | 8,311 | Drives the **tests**, `helloVulkanRG` and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
-| `src/RenderPasses/` | 4,412 | What `helloVulkan` still renders with: 11 pass instantiations (10 distinct types) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. |
-| `src/app/helloVulkan.cpp` | 376 | Owns the legacy frame loop and hand-rolled semaphores. |
+| `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
+| `src/RenderPasses/` | 4,102 | The scene passes `helloVulkan` still records with, plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. Its acquire/present ownership is gone; the remaining passes port one per PR (#20). |
+| `src/app/helloVulkan.cpp` | 552 | `FrameSync` owns acquire/present and `FINAL` is a graph node; the scene passes are still legacy (#20 increment 1). |
 | `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 | `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
 
@@ -68,12 +68,13 @@ The other two boundary measurements below are commands, not prose:
 counts the singleton call sites, and the external-include scan is the Python block in
 [`Roadmap-Visual.md`](Roadmap-Visual.md) section 7. Both were re-run at this head.
 
-The single fact that matters: **the graph has zero adoption in the in-repo renderer.** `helloVulkan` still
-renders through `RenderPassManager`, which keeps its own frame-sync bugs (`m_imageAvailable` reused every
-frame, per-swapchain-image fences). The asymmetry is now partial rather than total: the suite,
-`helloVulkanRG` (a second app that owns its loop through the graph) and the external `muyo-llm` consumer
-exercise the graph, but the renderer this repository ships does not yet. That is the risk this roadmap
-exists to close — see Risks.
+**Adoption has started in the in-repo renderer.** `helloVulkan` acquires and presents through `FrameSync`
+and its `FINAL` pass is a graph node; `RenderPassManager` no longer owns the swapchain, acquire, present or a
+per-image fence (#20 increment 1). The scene passes still record through `RenderPassManager` and the
+composite is a manager-owned image the graph imports with its stated layout, so the asymmetry that remains
+is the passes, not the frame loop. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
+consumer now all exercise the graph. Closing the pass gap is the risk this roadmap exists to close — see
+Risks.
 
 **The descriptor-heap direction is recorded, accepted, and implemented through B2.** `docs/DescriptorHeap-Bindless-Design.md`
 merged in #211 (`80465ff`); it replaced the descriptor-set path with two physical heaps, null-layout

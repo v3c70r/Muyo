@@ -254,6 +254,13 @@ void RenderGraphTracePage::DrawLanes(const RenderGraph::RenderGraphTrace& trace,
                             barrier.resource.empty() ? "<device-wide>" : barrier.resource.c_str(),
                             RenderGraph::NameOf(barrier.kind), barrier.srcStage.c_str(), barrier.dstStage.c_str(),
                             barrier.srcAccess.c_str(), barrier.dstAccess.c_str());
+                // Layouts only describe images; a buffer or memory barrier carries UNDEFINED in both.
+                if (barrier.kind == RenderGraph::TraceBarrierKind::Image)
+                {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s->%s", RenderGraph::NameOf(barrier.oldLayout),
+                                        RenderGraph::NameOf(barrier.newLayout));
+                }
             }
         }
         ImGui::PopID();

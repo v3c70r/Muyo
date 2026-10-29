@@ -606,6 +606,19 @@ The stages are stored filtered, with the same set the barrier used. Storing the 
 
 **Returns** — The state the next barrier for this resource is derived from.
 
+### `void Muyo::RenderGraph::SeedImportedImageLayout(BarrierPriorState &state, VkImageLayout currentLayout)`
+
+Seed the access state for an imported image whose layout the caller stated at ImportResource.
+
+An imported image's content predates the execution, so its first GPU use must not transition it out of VK_IMAGE_LAYOUT_UNDEFINED - that transition discards the content the caller is handing the graph. The seed makes DeriveBarrierMasks use the stated layout as the first barrier's old layout instead.
+
+The source access is empty and the source stages are ALL_COMMANDS: the writes happened outside this execution, so nothing here can name their scope. The caller's external wait (a semaphore or fence) is what orders those writes, and this barrier only changes the layout when one is needed. lastIo is READ so the first use is judged on its own access/layout, not against a fabricated write.
+
+| Parameter | Description |
+| --- | --- |
+| `state` | The access state to seed. |
+| `currentLayout` | The layout the image is in when the execution begins; not UNDEFINED. |
+
 ### `struct Muyo::RenderGraph::UseBarriers`
 
 The barrier(s) one use needs: image and buffer lists, plus the device-wide memory barrier an in-family acceleration-structure use takes.
@@ -639,7 +652,7 @@ Build() is idempotent for a fixed declaration: it topologically sorts the nodes,
 | `void WaitIdle()` | Block until every submitted execution has completed. Does not record or submit work; use it before reading back an imported resource written by a non-blocking Execute(). |
 | `void ReleaseCachedDeviceObjects()` | Release the descriptor slots and the pipelines this builder owns from earlier Builds. Call only when every execution that used them has completed - the app's swapchain recreation does this right after vkDeviceWaitIdle. The next Build recreates what it needs; graph-owned resources are untouched. |
 | `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. Parameters: `handle` - Name the graph and the nodes use for it; `desc` - Allocation: buffer size, or image format/extent/usage, plus its lifetime Returns: *this for chaining. Throws: `std::runtime_error` - if desc cannot describe an allocation - a zero count/stride, a zero extent, VK_FORMAT_UNDEFINED, zero mips/layers, or usage == 0 - or if it asks for ResourceLifetime::Imported; use ImportResource for a resource the graph does not own |
-| `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. Returns: *this for chaining. |
+| `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource, VkImageLayout currentLayout=VK_IMAGE_LAYOUT_UNDEFINED)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. Parameters: `handle` - Name the graph and the nodes use for it; `resource` - The resource; the graph never frees it; `currentLayout` - For an imported image, the layout it is in when an execution begins. The default, VK_IMAGE_LAYOUT_UNDEFINED, promises nothing about its contents: the first node to use it transitions from UNDEFINED, which discards them. A caller importing content produced outside the graph - a scene pass that has not been ported yet, or a capture - passes the layout that content is in, and the graph's first-use barrier transitions from there instead. The graph cannot see the caller's outside writes, so the statement has to stay true for every execution; re-import when the layout changes. A non-UNDEFINED layout on a non-image is rejected Returns: *this for chaining. |
 | `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | Returns: The allocation description for a graph-owned resource, if any. |
 | `const IRenderResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. Parameters: `handle` - Resource handle Returns: The resource, or nullptr when the handle names nothing the graph can see. |
 | `const TransientMemoryPlan & GetTransientMemoryPlan() const` | Returns: The last build's transient memory plan: the blocks, their slots, and the two byte totals for one in-flight slot. The builder allocates one copy of this plan per slot, so the graph's total transient memory is reservedBytes * inFlightCount; the plan is shared because every slot binds the same resources at the same offsets. reservedBytes < individualBytes is what sharing memory looks like from outside, and reservedBytes == individualBytes is a legitimate answer for a graph whose transients all overlap in time. Empty before the first build. |
@@ -1145,6 +1158,14 @@ The same name used in AddResource / ImportResource is how nodes refer to it in t
 
 **Returns** — image, buffer or memory.
 
+### `const char * Muyo::RenderGraph::NameOf(VkImageLayout layout)`
+
+| Parameter | Description |
+| --- | --- |
+| `layout` | Image layout to name. |
+
+**Returns** — The layout's short name (e.g. shader_read), or unknown for a value this version does not know.
+
 ### `const char * Muyo::RenderGraph::NameOf(TraceWaitReason reason)`
 
 | Parameter | Description |
@@ -1284,6 +1305,8 @@ Stages and accesses are stored as names, not bitmasks: a reviewer or a model rea
 | `std::string dstStage` | Destination stage mask. |
 | `std::string srcAccess` | Source access mask, rendered by NameOfAccesses. |
 | `std::string dstAccess` | Destination access mask. |
+| `VkImageLayout oldLayout` | Layout the image is in before the barrier; UNDEFINED for a buffer or memory barrier. A first use with oldLayout == UNDEFINED discards the resource's contents, so an imported image that was meant to keep them is visible here as the difference between its stated layout and UNDEFINED. |
+| `VkImageLayout newLayout` | Layout the use needs. UNDEFINED for a buffer or memory barrier. |
 | `uint32_t srcFamily` | Source family for a handover, IGNORED otherwise. |
 | `uint32_t dstFamily` | Destination family for a handover, IGNORED otherwise. |
 

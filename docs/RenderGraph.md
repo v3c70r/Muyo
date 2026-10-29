@@ -9,8 +9,11 @@ GPU-driven rendering (compute-generated draws, frustum culling), async compute a
 
 ## Status
 
-The RenderGraph currently drives the **tests**; `helloVulkan` still renders through
-`RenderPassManager`. Note the following while the migration is in flight:
+The RenderGraph drives the **tests**, and `helloVulkan` now presents through it: `FrameSync` owns
+acquire/present and the `FINAL` pass is a graph node sampling the legacy scene's composite (#20
+increment 1). The scene passes still record through `RenderPassManager` and are ported one per PR;
+`RenderPassManager` no longer owns the swapchain or presents. Note the following while the migration is in
+flight:
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.
@@ -69,6 +72,12 @@ node may rely on:
 | `Transient` (default) | from its **first write to its last read within one execution** - nothing carries to the next one | the graph |
 | `Persistent` | across execution boundaries (TAA history, accumulation) | the graph |
 | `Imported` | wherever the caller says - the graph never writes it unless a node does | the caller, via `ImportResource` |
+
+An imported **image** whose content must survive the graph's first use states that content's layout:
+`ImportResource(handle, image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)`. Without it the first-use barrier
+starts from `VK_IMAGE_LAYOUT_UNDEFINED`, and a transition from `UNDEFINED` discards the content - which is
+correct for a resource the graph is about to write and wrong for one it is importing to read. The statement
+must hold before every execution; re-import if the caller's outside work leaves a different layout.
 
 `Build()` enforces the first row rather than leaving it as an assumption: a node that **reads a transient
 nothing writes first** fails with the node and the resource named, because the read would otherwise take
@@ -174,6 +183,9 @@ builder.AddResource("Color", ImageResourceDesc{
 // Externally owned resources (mesh buffers, scene data, ...).
 builder.ImportResource("Vertices", meshManager.m_pVertexBuffer);
 builder.ImportResource("Indices",  meshManager.m_pIndexBuffer);
+// An imported image whose content predates the graph states the layout it is in, so the first use
+// transitions from there instead of discarding it through UNDEFINED.
+builder.ImportResource("Composite", sceneComposite, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
 builder.AddNode({
     .nodeName = "OpaquePass",

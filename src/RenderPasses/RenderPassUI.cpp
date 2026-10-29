@@ -1,5 +1,7 @@
 #include "RenderPassUI.h"
 
+#include <stdexcept>
+
 #include "Debug.h"
 #include "DescriptorManager.h"
 #include "ImGuiControl.h"
@@ -176,8 +178,45 @@ void RenderPassUI::UpdateBuffers()
 
 void RenderPassUI::RecordCommandBuffer()
 {
+    // The graph's FINAL node imports the composite with the layout the scene leaves it in, so the layout
+    // must be the same whether or not there is UI geometry. With draws the render pass's final layout does
+    // it; without them the target would stay in COLOR_ATTACHMENT_OPTIMAL from the lighting pass, so record
+    // a barrier-only command buffer that keeps the pass's contract.
     if (m_uiResources.nTotalIndexCount == 0)
     {
+        const auto* pTarget =
+            GetRenderResourceManager()->GetResource<ImageResource>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME);
+        if (pTarget == nullptr)
+        {
+            throw std::runtime_error(
+                "RenderPassUI: the composite target does not exist, so its layout cannot be "
+                "left readable for the graph.");
+        }
+        VkCommandBuffer& curCmdBuf = m_commandBuffer;
+        if (curCmdBuf == VK_NULL_HANDLE) curCmdBuf = GetRenderDevice()->AllocateReusablePrimaryCommandbuffer();
+
+        VkCommandBufferBeginInfo beginInfo = {};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        VK_ASSERT(vkBeginCommandBuffer(curCmdBuf, &beginInfo));
+
+        VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+        barrier.dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = pTarget->getImage();
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+        VkDependencyInfo dependencyInfo{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependencyInfo.imageMemoryBarrierCount = 1;
+        dependencyInfo.pImageMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(curCmdBuf, &dependencyInfo);
+        VK_ASSERT(vkEndCommandBuffer(curCmdBuf));
         return;
     }
 

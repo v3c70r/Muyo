@@ -426,9 +426,26 @@ RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle
     return *this;
 }
 
-RenderGraphBuilder& RenderGraphBuilder::ImportResource(const ResourceHandle& handle, const IRenderResource* resource)
+RenderGraphBuilder& RenderGraphBuilder::ImportResource(const ResourceHandle& handle, const IRenderResource* resource,
+                                                       VkImageLayout currentLayout)
 {
+    if (currentLayout != VK_IMAGE_LAYOUT_UNDEFINED && dynamic_cast<const ImageResource*>(resource) == nullptr)
+    {
+        throw std::runtime_error("ImportResource('" + handle +
+                                 "') states a current layout, but the imported "
+                                 "resource is not an image. Layouts only describe images.");
+    }
     m_importedResources[handle] = resource;
+    // Re-importing resets the statement: the default clears a layout a previous import set, which is what
+    // a caller re-pointing at a fresh resource means.
+    if (currentLayout == VK_IMAGE_LAYOUT_UNDEFINED)
+    {
+        m_importedImageLayouts.erase(handle);
+    }
+    else
+    {
+        m_importedImageLayouts[handle] = currentLayout;
+    }
     return *this;
 }
 
@@ -2353,6 +2370,12 @@ TraceScope RenderGraphBuilder::BuildTraceScope() const
 void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
 {
     m_resourceAccessStates.clear();
+    // An imported image whose caller stated its layout is already in that layout; without this seed the
+    // first use would derive an `UNDEFINED` source and discard the content being imported.
+    for (const auto& [handle, layout] : m_importedImageLayouts)
+    {
+        SeedImportedImageLayout(m_resourceAccessStates[handle], layout);
+    }
 
     // A trace is recorded when a sink is installed or `MUYO_RG_TRACE` asks for one. The environment variable is
     // read once per process: it is a diagnostic switch, not a per-frame decision, and re-reading it per execution
