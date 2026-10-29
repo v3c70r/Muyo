@@ -499,6 +499,22 @@ private:
         std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> buffers;  ///< Transient buffers.
         std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> images;    ///< Transient images.
         std::vector<VmaAllocation> blocks;  ///< This slot's aliasing blocks, freed after its resources.
+        TransientSlotStorage() = default;
+        /// The maps own their resources, so the struct is move-only. Saying so explicitly is load-bearing on
+        /// MSVC: `std::unordered_map` declares its copy constructor unconditionally and without `noexcept` on
+        /// its move constructor, so `is_copy_constructible_v` reports *true* for any struct that merely
+        /// contains one. `std::vector::_Reallocate` then picks its copy branch over the move branch and
+        /// instantiates the deleted copy of the mapped `unique_ptr`, failing to compile `resize()` below.
+        /// Deleting the copy operations makes the trait tell the truth and the vector take the move branch.
+        TransientSlotStorage(const TransientSlotStorage&) = delete;
+        /// Copy assignment is deleted for the same reason; use move assignment instead.
+        /// @return Nothing; this overload is deleted.
+        TransientSlotStorage& operator=(const TransientSlotStorage&) = delete;
+        /// @param other Storage to take over.
+        TransientSlotStorage(TransientSlotStorage&& other) = default;
+        /// @param other Storage to take over.
+        /// @return This storage, holding `other`'s resources and blocks.
+        TransientSlotStorage& operator=(TransientSlotStorage&& other) = default;
     };
     /// One entry per in-flight slot, rebuilt only when `m_transientPlanKey` changes.
     std::vector<TransientSlotStorage> m_transientSlots;
