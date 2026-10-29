@@ -66,7 +66,7 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
     pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
     pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
     pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
-    auto *pCameraDebugPage = pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
+    pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
 
     // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
 
@@ -114,7 +114,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
         0.1f,                                      // near
         far,                                       // far
         static_cast<float>(m_uWidth), static_cast<float>(m_uHeight));
-    pCameraDebugPage->SetCamera(GetCamera());
 }
 
 void RenderPassManager::Unintialize()

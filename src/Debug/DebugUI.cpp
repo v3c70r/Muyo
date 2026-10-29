@@ -2,9 +2,9 @@
 
 #include <unordered_map>
 
+#include "Camera.h"
 #include "DescriptorManager.h"
 #include "LightSceneNode.h"
-#include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "SceneManager.h"
 #include "imgui.h"
@@ -12,7 +12,6 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <ImGuizmo.h>
-#include <imnodes.h>
 
 #include <functional>
 #include <glm/gtc/type_ptr.hpp>
@@ -39,11 +38,13 @@ void SceneDebugPage::Render() const
     ImGui::Begin(m_sName.c_str());
     {
         ImGuizmo::BeginFrame();
-        ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(GetRenderPassManager()->GetViewportSize().width),
-                          static_cast<float>(GetRenderPassManager()->GetViewportSize().height));
+        ImGuizmo::SetRect(0.0f, 0.0f, static_cast<float>(m_frame.width), static_cast<float>(m_frame.height));
 
-        glm::mat4 mProj = GetRenderPassManager()->GetCamera()->GetProjMat();
-        glm::mat4 mView = GetRenderPassManager()->GetCamera()->GetViewMat();
+        // The camera can be absent before the first frame (or on a host without one); the scene tree is
+        // still worth showing, so only the gizmo is skipped.
+        const bool bHasCamera = m_frame.camera != nullptr;
+        glm::mat4 mProj = bHasCamera ? m_frame.camera->GetProjMat() : glm::mat4(1.0F);
+        glm::mat4 mView = bHasCamera ? m_frame.camera->GetViewMat() : glm::mat4(1.0F);
         mProj[1][1] *= -1.0f;
 
         const auto& sceneMap = GetSceneManager()->GetAllScenes();
@@ -64,7 +65,7 @@ void SceneDebugPage::Render() const
                 {
                     m_pSelectedNode = pSceneNode;
                 }
-                if (m_pSelectedNode == pSceneNode)
+                if (bHasCamera && m_pSelectedNode == pSceneNode)
                 {
                     DrawGizmoOnSceneNode(pSceneNode, mWorld, mView, mProj);
                 }
@@ -172,9 +173,9 @@ void EnvironmentMapDebugPage::Render() const
         ImGui::Combo("Current HDR", &m_nCurrentHDRIndex, &Funcs::ItemGetter, (void*)m_vHDRImagePatheStrings.data(),
                      static_cast<int>(m_vHDRImagePatheStrings.size()));
 
-        if (nPrevSelection != m_nCurrentHDRIndex)
+        if (nPrevSelection != m_nCurrentHDRIndex && m_frame.reloadEnvironmentMap)
         {
-            GetRenderPassManager()->ReloadEnvironmentMap(m_vHDRImagePathes[m_nCurrentHDRIndex].string());
+            m_frame.reloadEnvironmentMap(m_vHDRImagePathes[m_nCurrentHDRIndex].string());
         }
 
         // Draw environmap texture
@@ -262,18 +263,17 @@ void LightsDebugPage::Render() const
 
 void CameraDebugPage::Render() const
 {
-    // m_pCamera could be unavailable before render pass manager initialization
-    if (m_pCamera)
+    // The camera can be unavailable before the first frame's host context.
+    if (m_frame.camera)
     {
         ImGui::GetWindowViewport();
-        ImGui::SetNextWindowPos(
-            ImVec2(-10.0f, static_cast<float>(GetRenderPassManager()->GetViewportSize().height) - 30.0f));
-        ImGui::SetNextWindowSize(ImVec2(static_cast<float>(GetRenderPassManager()->GetViewportSize().width), 30.0f));
-        float fRatio = m_pCamera->GetLeftSplitScreenRatio();
+        ImGui::SetNextWindowPos(ImVec2(-10.0f, static_cast<float>(m_frame.height) - 30.0f));
+        ImGui::SetNextWindowSize(ImVec2(static_cast<float>(m_frame.width), 30.0f));
+        float fRatio = m_frame.camera->GetLeftSplitScreenRatio();
         static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
         ImGui::Begin("Camera", nullptr, flags);
-        ImGui::PushItemWidth(static_cast<float>(GetRenderPassManager()->GetViewportSize().width));
+        ImGui::PushItemWidth(static_cast<float>(m_frame.width));
         // Set ImGui slider to transparent
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0, 0, 0, 0));
@@ -285,70 +285,9 @@ void CameraDebugPage::Render() const
         ImGui::PopStyleColor();
         ImGui::PopStyleColor();
         ImGui::PopStyleColor();
-        m_pCamera->SetLeftSplitScreenRatio(fRatio);
+        m_frame.camera->SetLeftSplitScreenRatio(fRatio);
         ImGui::End();
     }
-}
-
-RenderPassDebugPage::RenderPassDebugPage(const std::string& sName) : IDebugUIPage(sName) { ImNodes::CreateContext(); }
-RenderPassDebugPage::~RenderPassDebugPage() { ImNodes::DestroyContext(); }
-void RenderPassDebugPage::Render() const
-{
-    static ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                                    ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar;
-    ImGui::Begin("RenderPasses", nullptr, flags);
-    if (m_pRenderPassManager)
-    {
-        for (const auto* pRenderPass : m_pRenderPassManager->GetRenderPasses())
-        {
-            if (pRenderPass)
-            {
-                ImGui::Text("%s", pRenderPass->GetName().c_str());
-                const auto& resourceMap = GetRenderResourceManager()->GetResourceMap();
-                for (const auto* inputResource : pRenderPass->GetInputResources())
-                {
-                    // find key in resource map
-                    for (const auto& resMap : resourceMap)
-                    {
-                        if (resMap.second.get() == inputResource)
-                        {
-                            ImGui::Text("\tInput: %s", resMap.first.c_str());
-                        }
-                    }
-                }
-                for (const auto* outputResource : pRenderPass->GetOutputResources())
-                {
-                    // find key in resource map
-                    for (const auto& resMap : resourceMap)
-                    {
-                        if (resMap.second.get() == outputResource)
-                        {
-                            ImGui::Text("\tOutput: %s", resMap.first.c_str());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    ImGui::End();
-
-    // ImGui::Begin("node editor");
-    // const int hardcoded_node_id = 1;
-
-    // ImNodes::BeginNodeEditor();
-    // ImNodes::BeginNode(hardcoded_node_id);
-
-    // const int output_attr_id = 2;
-    // ImNodes::BeginOutputAttribute(output_attr_id);
-    //// in between Begin|EndAttribute calls, you can call ImGui
-    //// UI functions
-    // ImGui::Text("output pin");
-    // ImNodes::EndOutputAttribute();
-
-    // ImNodes::EndNode();
-    // ImNodes::EndNodeEditor();
-
-    // ImGui::End();
 }
 
 #undef GLM_ENABLE_EXPERIMENTAL

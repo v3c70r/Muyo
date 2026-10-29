@@ -1,7 +1,9 @@
 #pragma once
 #include <imgui.h>
 
+#include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -11,6 +13,21 @@ namespace Muyo
 {
 class SceneNode;
 class Camera;
+
+/// What a debug page may need from the frame it is about to be drawn for.
+///
+/// This is the whole renderer boundary the pages have: a viewport, a camera and an environment reload
+/// command. The host builds one per frame, so a page no longer reaches into the legacy render-pass manager (or any
+/// renderer header) for them.
+struct DebugUIFrame
+{
+    uint32_t width = 0;        ///< Framebuffer extent the UI is laid out for.
+    uint32_t height = 0;       ///< Framebuffer extent the UI is laid out for.
+    Camera* camera = nullptr;  ///< Active camera, or null before one exists.
+    /// Reloads the environment map; empty when the host has nothing to reload.
+    std::function<void(const std::string&)> reloadEnvironmentMap;
+};
+
 class IDebugUIPage
 {
 public:
@@ -18,6 +35,9 @@ public:
     explicit IDebugUIPage(std::string sName) : m_sName(std::move(sName)) {}
     virtual void Render() const = 0;
     virtual bool ShouldRender() const = 0;
+    /// Called immediately before `Render` with the frame the page is drawn for. The default ignores it;
+    /// a page that needs the viewport, camera or an environment reload keeps what it needs.
+    virtual void SetFrame(const DebugUIFrame& /*frame*/) {}
     virtual ~IDebugUIPage() = default;
     std::string GetName() const { return m_sName; }
 
@@ -39,6 +59,7 @@ class SceneDebugPage : public IDebugUIPage
 public:
     explicit SceneDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
     void Render() const override;
+    void SetFrame(const DebugUIFrame& frame) override { m_frame = frame; }
     bool ShouldRender() const override { return true; }
     ~SceneDebugPage() override = default;
 
@@ -47,6 +68,7 @@ private:
     void DrawGizmoOnSceneNode(const SceneNode* pSceneNode, glm::mat4& mWorld, const glm::mat4& mView,
                               const glm::mat4& mProj) const;
     mutable const SceneNode* m_pSelectedNode = nullptr;
+    DebugUIFrame m_frame;
 };
 
 class DemoDebugPage : public IDebugUIPage
@@ -104,6 +126,7 @@ public:
         }
     }
     void Render() const override;
+    void SetFrame(const DebugUIFrame& frame) override { m_frame = frame; }
     bool ShouldRender() const override { return true; }
     ~EnvironmentMapDebugPage() override = default;
 
@@ -111,6 +134,7 @@ private:
     std::vector<std::filesystem::path> m_vHDRImagePathes;
     std::vector<std::string> m_vHDRImagePatheStrings;
     mutable int m_nCurrentHDRIndex = 0;
+    DebugUIFrame m_frame;
 };
 
 class LightSceneNode;
@@ -131,32 +155,13 @@ class CameraDebugPage : public IDebugUIPage
 {
 public:
     explicit CameraDebugPage(const std::string& sName) : IDebugUIPage(sName) {}
-    void SetCamera(Camera* pCamera) { m_pCamera = pCamera; }
     void Render() const override;
+    void SetFrame(const DebugUIFrame& frame) override { m_frame = frame; }
     bool ShouldRender() const override { return true; }
     ~CameraDebugPage() override = default;
 
 private:
-    Camera* m_pCamera = nullptr;
+    DebugUIFrame m_frame;
 };
 
-class RenderPassManager;
-class RenderDependencyGraph;
-class RenderPassDebugPage : public IDebugUIPage
-{
-public:
-    explicit RenderPassDebugPage(const std::string& sName);
-    void SetRenderPassManager(const RenderPassManager* pRenderPassManager)
-    {
-        m_pRenderPassManager = pRenderPassManager;
-    }
-    void SetRDG(const RenderDependencyGraph* pRDG) { m_pRDG = pRDG; }
-    void Render() const override;
-    bool ShouldRender() const override { return true; }
-    ~RenderPassDebugPage() override;
-
-private:
-    const RenderPassManager* m_pRenderPassManager = nullptr;
-    const RenderDependencyGraph* m_pRDG = nullptr;
-};
 }  // namespace Muyo

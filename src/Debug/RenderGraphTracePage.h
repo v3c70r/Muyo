@@ -30,7 +30,8 @@ int AdjustSelectionAfterPush(int selected, std::size_t size, bool bDropped);
 
 /// Draws recorded executions as lanes, and keeps the history to scrub through.
 ///
-/// Not a `RenderPassUI` page: the graph app has no `RenderPassManager`, and this is deliberately independent of one
+/// Not a `RenderPassUI` page: the graph app has no legacy render-pass manager, and this is deliberately independent of
+/// one
 /// (#48 counts the dependency the other way). It is an `IDebugUIPage` so either app can host it, and the graph app
 /// constructs it directly.
 ///
