@@ -53,7 +53,7 @@ Measured on 2026-10-29 after the #20 increment-1 port (`helloVulkan` presents th
 | | Lines | State |
 | --- | --- | --- |
 | `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
-| `src/RenderPasses/` | 4,095 | The scene passes `helloVulkan` still records with, plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. Its acquire/present ownership is gone; the remaining passes port one per PR (#20). |
+| `src/RenderPasses/` | 4,102 | The scene passes `helloVulkan` still records with, plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. Its acquire/present ownership is gone; the remaining passes port one per PR (#20). |
 | `src/app/helloVulkan.cpp` | 552 | `FrameSync` owns acquire/present and `FINAL` is a graph node; the scene passes are still legacy (#20 increment 1). |
 | `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 | `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
