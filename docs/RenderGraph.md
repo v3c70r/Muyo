@@ -10,8 +10,8 @@ GPU-driven rendering (compute-generated draws, frustum culling), async compute a
 ## Status
 
 The RenderGraph drives the **tests**, and `helloVulkan` now presents through it: `FrameSync` owns
-acquire/present and the `FINAL` pass is a graph node sampling the legacy scene's composite (#20
-increment 1). The scene passes still record through `RenderPassManager` and are ported one per PR;
+acquire/present and the `FINAL` and `UI` passes are graph nodes over the legacy scene's composite (#20).
+The remaining scene passes still record through `RenderPassManager` and are ported one per PR;
 `RenderPassManager` no longer owns the swapchain or presents. Note the following while the migration is in
 flight:
 
