@@ -1876,6 +1876,41 @@ TEST_CASE("RenderGraphBuilder: barrier hazards and the host-write source", "[Ren
     CHECK((acquired.dstStage & VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT) != 0);
 }
 
+TEST_CASE("RenderGraphBuilder: an imported image's stated layout is the first barrier's source", "[RenderGraphBuilder]")
+{
+    // #20 increment 1. A caller importing content the graph did not produce (the legacy scene's composite)
+    // states the layout it is in. Without the seed the first use derives `UNDEFINED` and the transition
+    // discards that content - legal Vulkan, silently wrong pixels. The seed is checked directly, device-free,
+    // so deleting it fails here rather than on a driver whose UNDEFINED transition happens to be a no-op.
+    const ResourceUse read{.handle = ResourceHandle("Composite"),
+                           .io = ResourceIOType::READ,
+                           .usage = ResourceUsage::SAMPLED,
+                           .kind = ResourceKind::IMAGE};
+
+    // The default is unchanged: nothing is promised about an import with no stated layout.
+    const BarrierMasks undefined = DeriveBarrierMasks(BarrierPriorState{}, ResolveResourceUse(read), 0);
+    CHECK(undefined.oldLayout == VK_IMAGE_LAYOUT_UNDEFINED);
+
+    BarrierPriorState seeded;
+    SeedImportedImageLayout(seeded, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    const BarrierMasks preserved = DeriveBarrierMasks(seeded, ResolveResourceUse(read), 0);
+    CHECK(preserved.bNeeded);
+    CHECK(preserved.oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    CHECK(preserved.newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    CHECK(preserved.srcStage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+    CHECK(preserved.srcAccess == 0);
+    CHECK(preserved.dstAccess == VK_ACCESS_2_SHADER_READ_BIT);
+
+    // A use that asks for a different layout transitions from the stated one, not from UNDEFINED.
+    const ResourceUse write{.handle = ResourceHandle("Composite"),
+                            .io = ResourceIOType::WRITE,
+                            .usage = ResourceUsage::COLOR_ATTACHMENT,
+                            .kind = ResourceKind::IMAGE};
+    const BarrierMasks retarget = DeriveBarrierMasks(seeded, ResolveResourceUse(write), 0);
+    CHECK(retarget.oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    CHECK(retarget.newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the stage filter reflects what the device enabled",
                  "[RenderGraphBuilder]")
 {

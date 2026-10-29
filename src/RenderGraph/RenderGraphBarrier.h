@@ -400,6 +400,30 @@ inline void ApplyHostWrites(const std::vector<ResolvedResourceUse>& uses,
     }
 }
 
+/// Seed the access state for an imported image whose layout the caller stated at `ImportResource`.
+///
+/// An imported image's content predates the execution, so its first GPU use must not transition it out of
+/// `VK_IMAGE_LAYOUT_UNDEFINED` - that transition discards the content the caller is handing the graph. The
+/// seed makes `DeriveBarrierMasks` use the stated layout as the first barrier's old layout instead.
+///
+/// The source *access* is empty and the source *stages* are `ALL_COMMANDS`: the writes happened outside this
+/// execution, so nothing here can name their scope. The caller's external wait (a semaphore or fence) is
+/// what orders those writes, and this barrier only changes the layout when one is needed. `lastIo` is READ
+/// so the first use is judged on its own access/layout, not against a fabricated write.
+///
+/// @param state         The access state to seed.
+/// @param currentLayout The layout the image is in when the execution begins; not `UNDEFINED`.
+inline void SeedImportedImageLayout(BarrierPriorState& state, VkImageLayout currentLayout)
+{
+    state.bSeen = true;
+    state.lastAccess = 0;
+    state.lastStages = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+    state.lastLayout = currentLayout;
+    state.lastIo = ResourceIOType::READ;
+    state.bWrittenByHost = false;
+    state.pendingAcquireFamily = -1;
+}
+
 /// Record a use as the resource's new prior state.
 ///
 /// The stages are stored **filtered**, with the same set the barrier used. Storing the raw table stages would

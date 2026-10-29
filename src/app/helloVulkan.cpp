@@ -13,21 +13,30 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
+#include <optional>
+#include <span>
 #include <vector>
 
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
 #include "Camera.h"
 #include "Debug.h"
+#include "DescriptorHeapService.h"
 #include "DescriptorManager.h"
 #include "EventSystem.h"
+#include "FrameSync.h"
 #include "Geometry.h"
 #include "ImGuiControl.h"
 #include "Material.h"
+#include "MeshResourceManager.h"
+#include "RenderGraph/RenderGraphBuilder.h"
+#include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderPassManager.h"
 #include "RenderResourceManager.h"
+#include "RenderResourceNames.h"
 #include "SamplerManager.h"
 #include "SceneImporter.h"
 #include "SceneManager.h"
+#include "Swapchain.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VkExtFuncsLoader.h"
@@ -45,10 +54,20 @@
 #endif
 
 using namespace Muyo;
+using namespace Muyo::RenderGraph;
 
 bool g_bWaylandExt = false;
 const int WIDTH = 1920;
 const int HEIGHT = 1080;
+
+// The graph's FINAL node needs the acquired image to be available, and the legacy scene still writes one
+// shared composite that the node samples. With more than one execution in flight, frame N+1's scene submit
+// could overwrite that composite while frame N's node is still sampling it; one slot serialises the pair and
+// is correct until OPAQUE_LIGHTING/UI port and the composite becomes a per-slot graph transient (#20).
+constexpr uint32_t kImagesInFlight = 1;
+// Same format and mode the legacy manager used, so the port does not change what the surface presents.
+constexpr VkSurfaceFormatKHR kSwapchainFormat = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
+constexpr VkPresentModeKHR kPresentMode = VK_PRESENT_MODE_FIFO_KHR;
 
 static int s_framebufferWidth = WIDTH;
 static int s_framebufferHeight = HEIGHT;
@@ -141,6 +160,12 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+
+        // The graph path is descriptor-heap-only (B1b). Requesting both extensions here makes a device
+        // without them fail at creation with the missing extension named, rather than at the first graph
+        // node's Build(). CreateDevice appends and verifies the matching feature structs.
+        VK_EXT_DESCRIPTOR_HEAP_EXTENSION_NAME,
+        VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME,
 
 #ifdef FEATURE_RAY_TRACING
         // Ray tracing extensions
@@ -275,7 +300,7 @@ int main(int argc, char **argv)
 
         // update framebuffer size
         Window::GetFramebufferSize(s_framebufferWidth, s_framebufferHeight);
-        GetRenderPassManager()->Initialize(s_framebufferWidth, s_framebufferHeight, surface);
+        GetRenderPassManager()->Initialize(s_framebufferWidth, s_framebufferHeight);
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
@@ -327,39 +352,190 @@ int main(int argc, char **argv)
 
         // Record static command buffer
         GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-        // Mainloop
-        while (!Window::ShouldQuit())
+
+        // ── The graph owns the frame loop and the present from here (#20 increment 1) ────────────────
         {
-            Window::ProcessEvents();
-            // updateUniformBuffer(pUniformBuffer);
+            int initialWidth = 0;
+            int initialHeight = 0;
+            Window::GetFramebufferSize(initialWidth, initialHeight);
+            Swapchain swapchain;
+            // The window owns the surface, so the swapchain must not destroy it; the app destroys it below.
+            swapchain.CreateSwapchain(
+                surface, kSwapchainFormat, kPresentMode, kImagesInFlight, /*bOwnSurface=*/false,
+                VkExtent2D{static_cast<uint32_t>(initialWidth), static_cast<uint32_t>(initialHeight)});
+            FrameSync frameSync(GetRenderDevice(), &swapchain, kImagesInFlight);
 
-            GetRenderPassManager()->BeginFrame();
-
-            // uint32_t uFrameIdx = GetRenderDevice()->GetFrameIdx();
-            GetRenderPassManager()->RecordDynamicCmdBuffers();
-
-            GetRenderPassManager()->SubmitCommandBuffers();
-
-            GetRenderPassManager()->Present();
-            ImGui::Update();
-
-            // Handle resizing
+            const ImageResource *pComposite =
+                GetRenderResourceManager()->GetResource<ImageResource>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME);
+            if (pComposite == nullptr)
             {
-                // TODO(#20): resize is ported to helloVulkanRG; this legacy path goes with the migration.
-                VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
-                int width;
-                int height;
-                Window::GetFramebufferSize(width, height);
-                // Used by the commented-out resize branch below; kept so re-enabling it is one uncomment.
-                [[maybe_unused]] VkExtent2D currentVp = GetRenderPassManager()->GetViewportSize();
-                // if (width != static_cast<int>(currentVp.width) || height != static_cast<int>(currentVp.height))
-                //{
-                //     // VkExtent2D vp = {(uint32_t)width, (uint32_t)height};
-                //     GetRenderPassManager()->OnResize(width, height);
-                //     GetRenderPassManager()->RecordStaticCmdBuffers(dl);
-                // }
+                throw std::runtime_error("helloVulkan: the scene's composite target was not created.");
             }
+            const MeshVertexResources &meshResources = GetMeshResourceManager()->GetMeshVertexResources();
+            if (meshResources.m_pVertexBuffer == nullptr || meshResources.m_pIndexBuffer == nullptr)
+            {
+                throw std::runtime_error("helloVulkan: the quad mesh buffers were not uploaded.");
+            }
+            const Mesh &quad = GetMeshResourceManager()->GetQuad();
+
+            // The builder's slots and the heap's per-execution rings must agree, so configure the heap from
+            // the same constant.
+            DescriptorHeapService heap;
+            heap.Initialize(GetRenderDevice(), DescriptorHeapService::Config{.inFlightCount = kImagesInFlight});
+            // Match the legacy FINAL pass's sampler (SAMPLER_1_MIPS): linear filtering, clamp, one mip.
+            VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+            samplerInfo.magFilter = VK_FILTER_LINEAR;
+            samplerInfo.minFilter = VK_FILTER_LINEAR;
+            samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            samplerInfo.maxLod = 1.0F;
+            const DescriptorSlot compositeSamplerSlot = heap.AcquireSampler(samplerInfo);
+
+            // One builder for the process: Build() is per frame, and the resource/pipeline/descriptor caches
+            // make an unchanged declaration cheap. Only the acquired swapchain image changes per frame.
+            RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
+                                                           .resourceManager = GetRenderResourceManager(),
+                                                           .descriptorHeap = &heap},
+                                       kImagesInFlight);
+            // The composite is produced by the legacy scene outside the graph, and the UI pass leaves it in
+            // SHADER_READ_ONLY_OPTIMAL. Stating that layout is what keeps the graph's first-use barrier from
+            // treating the content as UNDEFINED and discarding it.
+            builder.ImportResource("Composite", pComposite, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            builder.ImportResource("FinalVertices", meshResources.m_pVertexBuffer);
+            builder.ImportResource("FinalIndices", meshResources.m_pIndexBuffer);
+            // Image 0 is only the declaration-time placeholder; every frame re-imports the acquired image.
+            builder.ImportResource("Present", swapchain.GetImageResource(0));
+            builder.AddNode(RenderGraphNodeCreateInfo{
+                .nodeName = "Final",
+                .queueType = QueueType::GRAPHICS,
+                .resourceUses =
+                    {
+                        ResourceUse{.handle = ResourceHandle("Composite"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::SAMPLED,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("FinalVertices"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::VERTEX_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("FinalIndices"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::INDEX_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("Present"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::PRESENT,
+                                    .kind = ResourceKind::IMAGE},
+                    },
+                .shaderNames = {"triangle.vert", "final.frag.heap"},
+                .psoDesc = {.vertexType = VertexType::GENERIC,
+                            .rasterState = {.cullMode = CullMode::NONE},
+                            // The quad is a blit; it has no depth attachment.
+                            .depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false},
+                            // One colour attachment and no blending: the node overwrites every pixel.
+                            .blendState = {.attachmentCount = 1}},
+                .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
+                .execute = [indexCount = quad.m_nIndexCount, indexOffset = quad.m_nIndexOffset,
+                            compositeSamplerSlot](RenderGraphNodeContext &ctx)
+                {
+                    struct FinalPush
+                    {
+                        uint32_t image;
+                        uint32_t sampler;
+                    };
+                    const std::optional<uint32_t> composite = ctx.GetHeapIndex("Composite", ResourceUsage::SAMPLED);
+                    if (!composite.has_value())
+                    {
+                        throw std::runtime_error("helloVulkan: the FINAL node's composite has no heap index.");
+                    }
+                    const FinalPush push{*composite, compositeSamplerSlot.index};
+                    // The graph requires the push block on every execution, even one that draws nothing.
+                    ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+
+                    const auto *pVertices = dynamic_cast<const BufferResource *>(ctx.resolveResource("FinalVertices"));
+                    const auto *pIndices = dynamic_cast<const BufferResource *>(ctx.resolveResource("FinalIndices"));
+                    if (pVertices == nullptr || pIndices == nullptr) return;
+                    VkDeviceSize offset = 0;
+                    VkBuffer vertexBuffer = pVertices->buffer();
+                    vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+                    vkCmdBindIndexBuffer(ctx.commandBuffer, pIndices->buffer(), 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdDrawIndexed(ctx.commandBuffer, indexCount, 1, indexOffset, 0, 0);
+                }});
+
+            // Drain, recreate the swapchain at the window's new size, and rebuild the graph's per-execution
+            // device objects. The legacy scene targets stay at their creation extent until their passes port;
+            // the graph stretches the composite into the new swapchain, and #186 owns the camera aspect.
+            const auto recreateSwapchain = [&]()
+            {
+                VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
+                const VkSurfaceKHR reclaimed = swapchain.GetSurface();
+                swapchain.DestroySwapchain();
+                int width = 0;
+                int height = 0;
+                Window::GetFramebufferSize(width, height);
+                swapchain.CreateSwapchain(reclaimed, kSwapchainFormat, kPresentMode, kImagesInFlight,
+                                          /*bOwnSurface=*/false,
+                                          VkExtent2D{static_cast<uint32_t>(width), static_cast<uint32_t>(height)});
+                frameSync.OnSwapchainRecreated();
+                builder.ReleaseCachedDeviceObjects();
+            };
+
+            while (!Window::ShouldQuit())
+            {
+                Window::ProcessEvents();
+
+                int framebufferWidth = 0;
+                int framebufferHeight = 0;
+                Window::GetFramebufferSize(framebufferWidth, framebufferHeight);
+                if (framebufferWidth > 0 && framebufferHeight > 0 &&
+                    (static_cast<uint32_t>(framebufferWidth) != swapchain.GetSwapchainExtent().width ||
+                     static_cast<uint32_t>(framebufferHeight) != swapchain.GetSwapchainExtent().height))
+                {
+                    recreateSwapchain();
+                }
+
+                // BeginFrame waits the slot's previous execution, which is what makes re-recording the UI
+                // command buffer and re-uploading `perView` safe with one slot in flight.
+                const std::optional<FrameSync::Frame> frame = frameSync.BeginFrame();
+                if (!frame.has_value())
+                {
+                    // Out of date (a resize).
+                    recreateSwapchain();
+                    continue;
+                }
+
+                // The scene still records through the legacy manager; it no longer acquires or presents.
+                GetRenderPassManager()->UpdatePerViewData();
+                GetRenderPassManager()->RecordDynamicCmdBuffers();
+                GetRenderPassManager()->SubmitSceneCommandBuffers(frame->imageAvailable);
+
+                builder.ImportResource("Present", swapchain.GetImageResource(frame->imageIndex));
+                builder.Build();
+                // The graph waits on the scene's completion (which consumed the acquire) and signals the
+                // frame's renderFinished + fence, which is what FrameSync presents and reuses.
+                RenderGraphExecuteInfo executeInfo = frameSync.ExecuteInfo(*frame);
+                executeInfo.waitSemaphore = GetRenderPassManager()->GetSceneFinishedSemaphore();
+                builder.Execute(executeInfo);
+
+                const VkResult presentResult = frameSync.Present(*frame);
+                if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)
+                {
+                    recreateSwapchain();
+                }
+
+                ImGui::Update();
+            }
+
+            VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
+            swapchain.DestroySwapchain();
         }
+
+        // The app owns the surface now (the swapchain was created with bOwnSurface=false). It must go before
+        // the instance, or validation reports it as a child object left behind.
+        vkDestroySurfaceKHR(GetRenderDevice()->GetInstance(), surface, nullptr);
+
         std::cout << "Closing window, wait for device to finish..." << std::endl;
         VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
         std::cout << "Device finished" << std::endl;

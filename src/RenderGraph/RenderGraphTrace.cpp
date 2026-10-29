@@ -430,6 +430,31 @@ const char* NameOf(TraceBarrierKind kind)
     return "?";
 }
 
+const char* NameOf(VkImageLayout layout)
+{
+    switch (layout)
+    {
+        case VK_IMAGE_LAYOUT_UNDEFINED:
+            return "undefined";
+        case VK_IMAGE_LAYOUT_GENERAL:
+            return "general";
+        case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
+            return "color_attachment";
+        case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
+            return "depth_stencil_attachment";
+        case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+            return "shader_read";
+        case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+            return "transfer_src";
+        case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+            return "transfer_dst";
+        case VK_IMAGE_LAYOUT_PRESENT_SRC_KHR:
+            return "present_src";
+        default:
+            return "unknown";
+    }
+}
+
 const char* NameOf(TraceWaitReason reason)
 {
     switch (reason)

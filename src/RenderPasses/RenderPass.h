@@ -2,11 +2,9 @@
 
 #include <vulkan/vulkan.h>
 
-#include <cassert>
 #include <vector>
 
 #include "RenderPassParameters.h"
-#include "Swapchain.h"
 
 namespace Muyo
 {
@@ -43,42 +41,4 @@ protected:
     RenderPassParameters m_renderPassParameters;
 };
 
-// The pass render to swap chain
-class RenderPassFinal : public IRenderPass
-{
-public:
-    RenderPassFinal(const Swapchain& swapchain, bool bClearAttachments);
-    ~RenderPassFinal() override;
-    virtual void RecordCommandBuffers();
-
-    VkCommandBuffer GetCommandBuffer() const override
-    {
-        assert(m_nCurrentSwapchainImageIndex < m_vCommandBuffers.size());
-        return m_vCommandBuffers[m_nCurrentSwapchainImageIndex];
-    }
-    void CreatePipeline() override {};
-    void SetCurrentSwapchainImageIndex(uint32_t nIndex) { m_nCurrentSwapchainImageIndex = nIndex; }
-    void PrepareRenderPass() override {};
-
-    const std::vector<const IRenderResource*>& GetInputResources() const override
-    {
-        return m_vRenderPassParameters[0].GetInputResources();
-    }
-    const std::vector<const IRenderResource*>& GetOutputResources() const override
-    {
-        return m_vRenderPassParameters[0].GetOutputResources();
-    }
-    std::string GetName() const override { return m_vRenderPassParameters[0].GetName(); }
-
-protected:
-    VkExtent2D m_renderArea = {0, 0};
-
-    std::vector<VkCommandBuffer> m_vCommandBuffers;
-    std::vector<RenderPassParameters> m_vRenderPassParameters;
-    std::vector<VkPipeline> m_vPipelines;
-
-private:
-    void DestroyFramebuffers();
-    uint32_t m_nCurrentSwapchainImageIndex = 0;
-};
 }  // namespace Muyo

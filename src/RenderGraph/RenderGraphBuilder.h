@@ -201,8 +201,20 @@ public:
     RenderGraphBuilder& AddResource(const ResourceHandle& handle, ResourceDesc desc);
     /// Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated
     /// or freed by the graph.
+    ///
+    /// @param handle Name the graph and the nodes use for it.
+    /// @param resource The resource; the graph never frees it.
+    /// @param currentLayout For an imported **image**, the layout it is in when an execution begins.
+    ///        The default, `VK_IMAGE_LAYOUT_UNDEFINED`, promises nothing about its contents: the first
+    ///        node to use it transitions from `UNDEFINED`, which discards them. A caller importing
+    ///        content produced outside the graph - a scene pass that has not been ported yet, or a
+    ///        capture - passes the layout that content is in, and the graph's first-use barrier
+    ///        transitions from there instead. The graph cannot see the caller's outside writes, so the
+    ///        statement has to stay true for every execution; re-import when the layout changes. A
+    ///        non-`UNDEFINED` layout on a non-image is rejected.
     /// @return `*this` for chaining.
-    RenderGraphBuilder& ImportResource(const ResourceHandle& handle, const IRenderResource* resource);
+    RenderGraphBuilder& ImportResource(const ResourceHandle& handle, const IRenderResource* resource,
+                                       VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED);
 
     /// @return The allocation description for a graph-owned resource, if any.
     std::optional<ResourceDesc> GetResourceDesc(const ResourceHandle& handle) const;
@@ -615,5 +627,9 @@ private:
 
     ResourceDescRegistry m_resourceDescRegistry;
     std::unordered_map<ResourceHandle, const IRenderResource*> m_importedResources;
+    /// The layout each imported image is in before every execution, when the caller stated one. Seeded
+    /// into the per-execution access state so the first-use barrier preserves the imported content
+    /// instead of discarding it through `VK_IMAGE_LAYOUT_UNDEFINED`. Absent for `UNDEFINED`.
+    std::unordered_map<ResourceHandle, VkImageLayout> m_importedImageLayouts;
 };
 }  // namespace Muyo::RenderGraph

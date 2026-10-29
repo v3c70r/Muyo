@@ -11,7 +11,7 @@ guarantee named is a hidden dependency waiting to be broken.
 
 | Consumer | Kind | Where | What it exercises |
 | --- | --- | --- | --- |
-| `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. The migration to the graph is P2; until then it still renders through `RenderPassManager`. |
+| `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. `FrameSync` owns acquire/present and the `FINAL` pass is a graph node (#20 increment 1); the scene passes still record through `RenderPassManager` until their own PRs. |
 | in-tree tests | test suite | `src/tests/` | Every graph guarantee, in isolation, on one device at a time. |
 | **muyo-llm** | **first-party architecture validation** | <https://github.com/v3c70r/muyo-llm> | A compute-only, windowless, long-running LLM decode workload. |
 
@@ -40,6 +40,7 @@ tracking issue and, where it blocks a consumer, is marked.
 | Compute-only profile: no surface, present or colour attachment required on the execution path | muyo-llm | holds | — |
 | Completion is expressible as a timeline value and chainable across executions | muyo-llm | holds | — |
 | Long-lived *imported* resources (weights, a KV cache) survive across executions | muyo-llm | holds | — |
+| An imported image's caller-stated layout is the first barrier's source, so its content is not discarded | helloVulkan | holds | — |
 | A node can bind a byte range of a buffer, so one arena serves many tensors | muyo-llm | holds | — |
 | Graph-managed transients have a defined lifetime and aliasing policy | muyo-llm | holds | — |
 | Device, allocator and descriptor allocation are injected, not global | muyo-llm | holds | — |
