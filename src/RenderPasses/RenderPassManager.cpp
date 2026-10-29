@@ -4,7 +4,6 @@
 #include <cassert>
 #include <memory>
 
-#include "DebugUI.h"
 #include "RenderLayerIBL.h"
 #include "RenderPass.h"
 #include "RenderPassCubeMapGeneration.h"
@@ -14,7 +13,6 @@
 #include "RenderPassRSM.h"
 #include "RenderPassSkybox.h"
 #include "RenderPassTransparent.h"
-#include "RenderPassUI.h"
 #include "RenderResourceManager.h"
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
@@ -56,20 +54,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
         m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING] =
             std::make_unique<RenderPassOpaqueLighting>(vp, *m_pShadowPassManager);
     }
-    // UI Pass
-    m_vpRenderPasses[RENDERPASS_UI] = std::make_unique<RenderPassUI>(vp);
-    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
-    pUIPass->PrepareRenderPass();
-    pUIPass->RegisterDebugPage<DockSpace>("DockSpace");
-    // Register debug ui pages
-    pUIPass->RegisterDebugPage<ResourceManagerDebugPage>("Render Manager Resources");
-    pUIPass->RegisterDebugPage<SceneDebugPage>("Loaded Scenes");
-    pUIPass->RegisterDebugPage<EnvironmentMapDebugPage>("Env HDRs");
-    pUIPass->RegisterDebugPage<LightsDebugPage>("Lights");
-    pUIPass->RegisterDebugPage<CameraDebugPage>("MainCamera");
-
-    // pUIPass->RegisterDebugPage<DemoDebugPage>("demo");
-
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
 
@@ -182,15 +166,6 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
     pSkybox->RecordCommandBuffers();
 }
 
-void RenderPassManager::RecordDynamicCmdBuffers()
-{
-    VkExtent2D vpExtent = {m_uWidth, m_uHeight};
-    auto *pUIPass = static_cast<RenderPassUI *>(m_vpRenderPasses[RENDERPASS_UI].get());
-    pUIPass->NewFrame(vpExtent);
-    pUIPass->UpdateBuffers();
-    pUIPass->RecordCommandBuffer();
-}
-
 void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
 {
     auto *pIBLPass = static_cast<RenderLayerIBL *>(m_vpRenderPasses[RENDERPASS_IBL].get());
@@ -250,13 +225,8 @@ void RenderPassManager::SubmitSceneCommandBuffers(VkSemaphore imageAvailable)
     }
 #endif
 
-    // Submit UI. UI writes the composite, so it waits on the batch that produced it.
-    VkCommandBuffer uiCmdBuffer = m_vpRenderPasses[RENDERPASS_UI]->GetCommandBuffer();
-    if (uiCmdBuffer != VK_NULL_HANDLE)  // it's possible there's no UI to draw
-    {
-        vCmdBufs.push_back(uiCmdBuffer);
-    }
-
+    // The UI is a graph node now (#20), so this batch is only the legacy RT pass - empty without RT.
+    // It still consumes the acquire and signals sceneFinished, which is what the graph waits on.
     vWaitForSemaphores.push_back(m_depthReady);
     vWaitStages.push_back(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
     // The legacy scene does not touch the swapchain, but it consumes the acquire so the graph's single

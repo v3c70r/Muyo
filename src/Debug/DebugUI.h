@@ -26,6 +26,9 @@ struct DebugUIFrame
     Camera* camera = nullptr;  ///< Active camera, or null before one exists.
     /// Reloads the environment map; empty when the host has nothing to reload.
     std::function<void(const std::string&)> reloadEnvironmentMap;
+    /// Maps a page's named texture (the environment preview) to the id its draw data carries. Empty when
+    /// the host has no such texture; the page then falls back to the font.
+    std::function<ImTextureID(const std::string&)> textureId;
 };
 
 class IDebugUIPage

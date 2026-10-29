@@ -3,7 +3,6 @@
 #include <unordered_map>
 
 #include "Camera.h"
-#include "DescriptorManager.h"
 #include "LightSceneNode.h"
 #include "RenderResourceManager.h"
 #include "SceneManager.h"
@@ -181,7 +180,7 @@ void EnvironmentMapDebugPage::Render() const
         // Draw environmap texture
         {
             ImGuiIO& io = ImGui::GetIO();
-            ImTextureID my_tex_id = static_cast<ImTextureID>(GetDescriptorManager()->GetImGuiTextureId("EnvMap"));
+            const ImTextureID my_tex_id = m_frame.textureId ? m_frame.textureId("EnvMap") : static_cast<ImTextureID>(0);
             float my_tex_w = 512.0f;
             float my_tex_h = 256.0f;
             {

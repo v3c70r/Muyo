@@ -11,7 +11,7 @@ guarantee named is a hidden dependency waiting to be broken.
 
 | Consumer | Kind | Where | What it exercises |
 | --- | --- | --- | --- |
-| `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. `FrameSync` owns acquire/present and the `FINAL` pass is a graph node (#20 increment 1); the scene passes still record through `RenderPassManager` until their own PRs. |
+| `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. `FrameSync` owns acquire/present and the `FINAL` and `UI` passes are graph nodes (#20); the remaining scene passes still record through `RenderPassManager` until their own PRs. |
 | in-tree tests | test suite | `src/tests/` | Every graph guarantee, in isolation, on one device at a time. |
 | **muyo-llm** | **first-party architecture validation** | <https://github.com/v3c70r/muyo-llm> | A compute-only, windowless, long-running LLM decode workload. |
 

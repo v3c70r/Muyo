@@ -220,7 +220,7 @@ int main()
             .shaderNames = {"ui.vert.slang", "ui.frag.heap"},
             .psoDesc = {.vertexType = VertexType::UI,
                         .rasterState = {.cullMode = CullMode::NONE},
-                        // Alpha blending, matching RenderPassUI: the font texture carries glyph
+                        // Alpha blending, matching the legacy UI: the font texture carries glyph
                         // coverage in its alpha, so an opaque write renders white blocks.
                         .blendState = {.attachmentCount = 1,
                                        .attachments = {{{.blendEnable = true,
@@ -320,7 +320,7 @@ int main()
             ImGui::Update();
 
             // ImGui needs a display size before NewFrame. The engine's wrapper does not set one (the
-            // legacy RenderPassUI::NewFrame did), and the push constants below scale by it. The window
+            // the legacy UI pass did), and the push constants below scale by it. The window
             // framebuffer size is the size the UI is laid out for.
             int framebufferWidth = 0;
             int framebufferHeight = 0;
