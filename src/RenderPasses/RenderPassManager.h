@@ -30,8 +30,6 @@ enum RenderPassNames
     RENDERPASS_SKYBOX,
     RENDERPASS_TRANSPARENT,
 
-    RENDERPASS_UI,
-
     RENDERPASS_RAY_TRACING,
 
     RENDERPASS_COUNT
@@ -40,17 +38,16 @@ enum RenderPassNames
 ///
 /// Since #20 increment 1 it no longer owns the swapchain, acquire or present: `FrameSync` does, and the
 /// graph presents. This class records the scene passes that have not been ported and submits them,
-/// signalling `GetSceneFinishedSemaphore()` when the composite is ready for the graph's `FINAL` node.
-/// The bridge and its removal are named on #20.
+/// signalling `GetSceneFinishedSemaphore()` when the composite is ready for the graph's UI and `FINAL`
+/// nodes. The bridge and its removal are named on #20.
 class RenderPassManager
 {
 public:
     void Initialize(uint32_t uWidth, uint32_t uHeight);
     void Unintialize();
     void RecordStaticCmdBuffers(const DrawLists& drawLists);
-    void RecordDynamicCmdBuffers();
-    /// Advance the camera's temporal state and upload `perView`. Call once per frame before recording the
-    /// UI (which reads the camera through `DebugUI`) and before `SubmitSceneCommandBuffers`.
+    /// Advance the camera's temporal state and upload `perView`. Call once per frame before the host
+    /// builds the UI frame (which reads the camera) and before `SubmitSceneCommandBuffers`.
     void UpdatePerViewData();
     void ReloadEnvironmentMap(const std::string& sNewEnvMapPath);
     VkExtent2D GetViewportSize() const { return VkExtent2D({.width = m_uWidth, .height = m_uHeight}); }

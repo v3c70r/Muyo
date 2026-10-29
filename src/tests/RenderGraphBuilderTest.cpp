@@ -1732,7 +1732,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an image role must fit it
 TEST_CASE_METHOD(GraphicsTestEnv, "BufferResource: a null source sizes the buffer without uploading",
                  "[RenderGraphBuilder]")
 {
-    // `RenderPassUI::UpdateBuffers` sizes a CPU-visible buffer with `SetData(nullptr, n)` and then maps it.
+    // The legacy UI's UpdateBuffers sizes a CPU-visible buffer with `SetData(nullptr, n)` and then maps it.
     // On a staged (TRANSFER_DST) buffer the same call used to hit `assert(pData != nullptr)` in Debug and
     // `memcpy(dst, nullptr, n)` in Release (#191): the assert was false for the intended call and gone
     // under NDEBUG, so the copy ran with a null source.
@@ -4765,7 +4765,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: rejects undeclared resour
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders through a graph node",
                  "[RenderGraphBuilder]")
 {
-    // The RenderPassUI port, reduced to what the graph must express: the UI shaders, a combined image
+    // The UI pass port, reduced to what the graph must express: the UI shaders, a combined image
     // sampler for the font texture, push constants, and a draw loop over ImDrawVert geometry. The
     // geometry is synthetic rather than ImGui's (ImGui needs a frame), but the node is the one the pass
     // would use. Rendering offscreen lets the result be read back headlessly.
