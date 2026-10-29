@@ -8,6 +8,7 @@
 #include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
 #include "PushConstantBlocks.h"
+#include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "RenderResourceNames.h"
 #include "SamplerManager.h"
@@ -131,11 +132,19 @@ void RenderPassUI::NewFrame(VkExtent2D screenExtent)
 {
     ImGui::GetIO().DisplaySize = ImVec2(screenExtent.width, screenExtent.height);
     ImGui::NewFrame();
+    // The pages get the renderer facts they need from this frame instead of reaching for
+    // `RenderPassManager` themselves (#48).
+    DebugUIFrame frame;
+    frame.width = screenExtent.width;
+    frame.height = screenExtent.height;
+    frame.camera = GetRenderPassManager()->GetCamera();
+    frame.reloadEnvironmentMap = [](const std::string& path) { GetRenderPassManager()->ReloadEnvironmentMap(path); };
     // Render registered pages
     for (const auto& pDebugPage : m_vpDebugPages)
     {
         if (pDebugPage->ShouldRender())
         {
+            pDebugPage->SetFrame(frame);
             pDebugPage->Render();
         }
     }
