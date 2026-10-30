@@ -9,11 +9,12 @@ GPU-driven rendering (compute-generated draws, frustum culling), async compute a
 
 ## Status
 
-The RenderGraph drives the **tests**, and `helloVulkan` now presents through it: `FrameSync` owns
-acquire/present and the `FINAL` and `UI` passes are graph nodes over the legacy scene's composite (#20).
-The remaining scene passes still record through `RenderPassManager` and are ported one per PR;
-`RenderPassManager` no longer owns the swapchain or presents. Note the following while the migration is in
-flight:
+The RenderGraph drives the **tests**, and `helloVulkan` now presents and shades through it: `FrameSync`
+owns acquire/present and the `GBUFFER`, direct `OPAQUE_LIGHTING`, `UI` and `FINAL` passes are graph nodes
+over graph-owned transients (#20). The remaining legacy work is IBL/cubemap generation, the unported
+`SKYBOX`/`TRANSPARENT` passes (recorded and dropped) and the RT pass; `RenderPassManager` no longer owns the
+swapchain or presents. Direct lighting is deliberately direct-only until IBL and shadows port (#49). Note
+the following while the migration is in flight:
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.

@@ -48,13 +48,13 @@ at all (the subsumed `TODO`s, which live in code). If a fact can be a field, mak
 
 ## Where we are
 
-Measured on 2026-10-29 after the #20 FINAL and UI ports (`helloVulkan` presents and draws its UI through the graph).
+Measured on 2026-10-30 after the #20 FINAL, UI, GBUFFER and direct-LIGHTING ports (`helloVulkan` presents, draws its UI and shades the opaque scene through the graph).
 
 | | Lines | State |
 | --- | --- | --- |
 | `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
-| `src/RenderPasses/` | 3,678 | The scene passes `helloVulkan` still records with, plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. Its acquire/present ownership is gone; the remaining passes port one per PR (#20). |
-| `src/app/helloVulkan.cpp` | 750 | `FrameSync` owns acquire/present, and `FINAL` and `UI` are graph nodes; the remaining scene passes are still legacy (#20). |
+| `src/RenderPasses/` | 3,189 | The passes `helloVulkan` still records with (IBL, cubemap generation, the unported SKYBOX/TRANSPARENT, the legacy RT pass) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. Its acquire/present ownership is gone, and `GBUFFER`/`OPAQUE_LIGHTING` moved to the graph; the remaining passes port one per PR (#20). |
+| `src/app/helloVulkan.cpp` | 1,024 | `FrameSync` owns acquire/present, and `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes; the remaining legacy work is IBL/cubemap, the dropped SKYBOX/TRANSPARENT and the RT pass (#20). |
 | `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 | `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
 
@@ -69,10 +69,11 @@ counts the singleton call sites, and the external-include scan is the Python blo
 [`Roadmap-Visual.md`](Roadmap-Visual.md) section 7. Both were re-run at this head.
 
 **Adoption has started in the in-repo renderer.** `helloVulkan` acquires and presents through `FrameSync`,
-and its `FINAL` and `UI` passes are graph nodes; `RenderPassManager` no longer owns the swapchain, acquire,
-present, a per-image fence or the UI. The remaining scene passes still record through `RenderPassManager`
-and the composite is a manager-owned image the graph imports with its stated layout, so the asymmetry that
-remains is the scene passes, not the frame loop or the UI. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
+and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes; `RenderPassManager` no longer
+owns the swapchain, acquire, present, a per-image fence, the UI or the opaque scene. What still records
+through it is the IBL/cubemap work, the unported SKYBOX/TRANSPARENT passes and the RT pass, and its shadow
+command buffers are recorded but no longer submitted (their consumer, the legacy lighting pass, is gone).
+Lighting is deliberately direct-only until IBL and shadows port (#20, #49). The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
 consumer now all exercise the graph. Closing the pass gap is the risk this roadmap exists to close — see
 Risks.
 
