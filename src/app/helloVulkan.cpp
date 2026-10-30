@@ -25,20 +25,25 @@
 #include "Debug/DebugUIOverlay.h"
 #include "DescriptorHeapService.h"
 #include "DescriptorManager.h"
+#include "DrawCommandBuffer.h"
 #include "EventSystem.h"
 #include "FrameSync.h"
 #include "Geometry.h"
 #include "ImGuiControl.h"
 #include "Material.h"
 #include "MeshResourceManager.h"
+#include "PerObjResourceManager.h"
 #include "RenderGraph/RenderGraphBuilder.h"
 #include "RenderGraph/RenderGraphNodeResource.h"
 #include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "RenderResourceNames.h"
 #include "SamplerManager.h"
+#include "Scene.h"
 #include "SceneImporter.h"
 #include "SceneManager.h"
+#include "ScenePushData.h"
+#include "SharedStructures.h"
 #include "Swapchain.h"
 #include "Texture.h"
 #include "UniformBuffer.h"
@@ -63,10 +68,9 @@ bool g_bWaylandExt = false;
 const int WIDTH = 1920;
 const int HEIGHT = 1080;
 
-// The graph's FINAL node needs the acquired image to be available, and the legacy scene still writes one
-// shared composite that the node samples. With more than one execution in flight, frame N+1's scene submit
-// could overwrite that composite while frame N's node is still sampling it; one slot serialises the pair and
-// is correct until OPAQUE_LIGHTING/UI port and the composite becomes a per-slot graph transient (#20).
+// The composite is a per-slot graph transient now, so the composite hazard that pinned this to 1 is gone.
+// The remaining legacy bridge is not per-slot, though: one `sceneFinished` binary semaphore and one set of
+// IBL/cubemap command buffers are shared by every frame. Raising this is a separate change (#20).
 constexpr uint32_t kImagesInFlight = 1;
 // Same format and mode the legacy manager used, so the port does not change what the surface presents.
 constexpr VkSurfaceFormatKHR kSwapchainFormat = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
@@ -310,6 +314,33 @@ int main(int argc, char **argv)
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
+        // The GBUFFER node draws the opaque list with one indirect command per submesh, built once here.
+        // This is the legacy RenderPassGBuffer::RecordCommandBuffers construction, moved out of the
+        // deleted pass: firstInstance packs (object, submesh), which the shader unpacks again.
+        std::vector<VkDrawIndexedIndirectCommand> gbufferDrawCommands;
+        for (const SceneNode *pGeometryNode : dl.m_aDrawLists[DrawLists::DL_OPAQUE])
+        {
+            const Geometry *pGeometry = static_cast<const GeometrySceneNode *>(pGeometryNode)->GetGeometry();
+            uint32_t submeshIndex = 0;
+            for (const auto &pSubmesh : pGeometry->getSubmeshes())
+            {
+                const Mesh &mesh = GetMeshResourceManager()->GetMesh(pSubmesh->GetMeshIndex());
+                VkDrawIndexedIndirectCommand drawCommand{};
+                drawCommand.indexCount = mesh.m_nIndexCount;
+                drawCommand.instanceCount = 1;
+                drawCommand.firstIndex = mesh.m_nIndexOffset;
+                drawCommand.vertexOffset = 0;
+                drawCommand.firstInstance = PackSubmeshObjectIndex(pGeometryNode->GetPerObjId(), submeshIndex++);
+                gbufferDrawCommands.push_back(drawCommand);
+            }
+        }
+        // The buffer must exist even for an empty list so the node's declared use resolves; the draw
+        // count, not the buffer size, says how many commands are real.
+        const uint32_t gbufferDrawCount = static_cast<uint32_t>(gbufferDrawCommands.size());
+        if (gbufferDrawCommands.empty()) gbufferDrawCommands.push_back(VkDrawIndexedIndirectCommand{});
+        auto *pGBufferDrawCommands =
+            GetRenderResourceManager()->GetDrawCommandBuffer("GBUFFER draw commands", gbufferDrawCommands);
+
         // Registration, not a lookup: the passes fetch "perView" by name, so the call has to happen
         // even though this pointer is not read (#25).
         (void)GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
@@ -371,12 +402,6 @@ int main(int argc, char **argv)
                 VkExtent2D{static_cast<uint32_t>(initialWidth), static_cast<uint32_t>(initialHeight)});
             FrameSync frameSync(GetRenderDevice(), &swapchain, kImagesInFlight);
 
-            const ImageResource *pComposite =
-                GetRenderResourceManager()->GetResource<ImageResource>(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME);
-            if (pComposite == nullptr)
-            {
-                throw std::runtime_error("helloVulkan: the scene's composite target was not created.");
-            }
             const MeshVertexResources &meshResources = GetMeshResourceManager()->GetMeshVertexResources();
             if (meshResources.m_pVertexBuffer == nullptr || meshResources.m_pIndexBuffer == nullptr)
             {
@@ -423,8 +448,15 @@ int main(int argc, char **argv)
 
             // The builder's slots and the heap's per-execution rings must agree, so configure the heap from
             // the same constant.
+            // The GBUFFER node gives every material texture one *static* sampled-image descriptor, so the
+            // image region must hold the scene's textures as well as the default 256 slots. Sizing it from
+            // the scene keeps a texture-heavy scene from exhausting the region where the legacy descriptor
+            // array had no such limit.
+            const auto &sceneTextures = GetTextureResourceManager()->GetTextures();
+            const uint32_t imageSlots = std::max(256u, static_cast<uint32_t>(sceneTextures.size()) + 16u);
             DescriptorHeapService heap;
-            heap.Initialize(GetRenderDevice(), DescriptorHeapService::Config{.inFlightCount = kImagesInFlight});
+            heap.Initialize(GetRenderDevice(),
+                            DescriptorHeapService::Config{.imageSlots = imageSlots, .inFlightCount = kImagesInFlight});
             // Match the legacy UI's SAMPLER_1_MIPS: linear filtering, clamp, one mip. The FINAL node uses
             // the same state for the composite.
             VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -448,18 +480,263 @@ int main(int argc, char **argv)
             {
                 throw std::runtime_error("helloVulkan: the environment map texture was not created.");
             }
-            // The composite is produced by the legacy scene outside the graph and left in
-            // COLOR_ATTACHMENT_OPTIMAL by the lighting pass. Stating that layout is what keeps the graph's
-            // first-use barrier from treating the content as UNDEFINED and discarding it.
-            builder.ImportResource("Composite", pComposite, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+            // ── Material texture table ───────────────────────────────────────────────────────────────
+            // PBRMaterial::textureIds are TextureResourceManager indices, not heap indices, and an
+            // imported texture's heap slot is per-execution. So every material texture gets one static
+            // sampled-image descriptor, and a small storage buffer maps the manager index to it. The
+            // images are static, read-only, written once and retired with the heap; the graph does not
+            // declare them as uses, because nothing writes them and there is no barrier to order.
+            std::vector<uint32_t> materialTextureTable;
+            materialTextureTable.reserve(sceneTextures.size());
+            for (const auto &pTexture : sceneTextures)
+            {
+                materialTextureTable.push_back(heap.AcquireImage(pTexture->GetImageViewCreateInfo(),
+                                                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                                                 VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, /*bRing=*/false)
+                                                   .index);
+            }
+            // GPU-only: the table is written once at load and never read back, so it does not need a
+            // host-visible allocation.
+            const StorageBuffer<uint32_t> *pMaterialTextureTable = GetRenderResourceManager()->GetStorageBuffer(
+                "material texture table", materialTextureTable, /*bAllowReadback=*/false);
+            const StorageBuffer<PerObjData> *pPerObj = GetPerObjResourceManager()->GetPerObjResource();
+            const StorageBuffer<PBRMaterial> *pMaterials = GetMaterialManager()->GetMaterialBuffer();
+            const auto *pLightCount = GetRenderResourceManager()->GetResource<UniformBuffer<uint32_t>>(LIGHT_COUNT);
+            const auto *pLightData = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>(LIGHT_DATA);
+            if (pPerObj == nullptr || pMaterials == nullptr || pLightCount == nullptr || pLightData == nullptr)
+            {
+                throw std::runtime_error("helloVulkan: a scene buffer the GBUFFER/LIGHTING nodes need is missing.");
+            }
+
             builder.ImportResource("Font", overlay.GetFontTexture());
             builder.ImportResource("EnvMap", pEnvMap);
             builder.ImportResource("UIVertices", pUIVertices[0]);
             builder.ImportResource("UIIndices", pUIIndices[0]);
-            builder.ImportResource("FinalVertices", meshResources.m_pVertexBuffer);
-            builder.ImportResource("FinalIndices", meshResources.m_pIndexBuffer);
+            builder.ImportResource("SceneVertices", meshResources.m_pVertexBuffer);
+            builder.ImportResource("SceneIndices", meshResources.m_pIndexBuffer);
+            builder.ImportResource("PerObjData", pPerObj);
+            builder.ImportResource("Materials", pMaterials);
+            builder.ImportResource("TextureTable", pMaterialTextureTable);
+            builder.ImportResource("DrawCommands", pGBufferDrawCommands);
+            builder.ImportResource("LightCount", pLightCount);
+            builder.ImportResource("LightData", pLightData);
             // Image 0 is only the declaration-time placeholder; every frame re-imports the acquired image.
             builder.ImportResource("Present", swapchain.GetImageResource(0));
+
+            // ── GBUFFER + direct OPAQUE_LIGHTING, graph-owned ─────────────────────────────────────────
+            const VkExtent2D sceneExtent = GetRenderPassManager()->GetViewportSize();
+            const auto addSceneColorTarget = [&builder, sceneExtent](const char *name)
+            {
+                builder.AddResource(
+                    ResourceHandle(name),
+                    ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
+                                      .extent = sceneExtent,
+                                      .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT});
+            };
+            addSceneColorTarget("GBufferPositionAO");
+            addSceneColorTarget("GBufferAlbedoTransmittance");
+            addSceneColorTarget("GBufferNormalRoughness");
+            addSceneColorTarget("GbufferMetalnessTranslucency");
+            addSceneColorTarget("Composite");
+            builder.AddResource("GBufferDepth", ImageResourceDesc{.format = VK_FORMAT_D32_SFLOAT,
+                                                                  .extent = sceneExtent,
+                                                                  .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                                                           VK_IMAGE_USAGE_SAMPLED_BIT});
+
+            Camera *pCamera = GetRenderPassManager()->GetCamera();
+            builder.AddNode(RenderGraphNodeCreateInfo{
+                .nodeName = "GBUFFER",
+                .queueType = QueueType::GRAPHICS,
+                .resourceUses =
+                    {
+                        ResourceUse{.handle = ResourceHandle("PerObjData"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::STORAGE_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("Materials"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::STORAGE_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("TextureTable"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::STORAGE_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        // INDIRECT_BUFFER rather than DRAW_COMMAND_BUFFER: the legacy DrawCommandBuffer
+                        // has no SHADER_DEVICE_ADDRESS usage and no shader reads it, so the
+                        // draw-command role would acquire an unnecessary heap descriptor and call
+                        // vkGetBufferDeviceAddress on a buffer that cannot answer it.
+                        ResourceUse{.handle = ResourceHandle("DrawCommands"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::INDIRECT_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("SceneVertices"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::VERTEX_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("SceneIndices"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::INDEX_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("GBufferPositionAO"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("GBufferAlbedoTransmittance"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("GBufferNormalRoughness"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("GbufferMetalnessTranslucency"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("GBufferDepth"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::DEPTH_STENCIL_ATTACHMENT,
+                                    .kind = ResourceKind::IMAGE},
+                    },
+                .shaderNames = {"GBuffer.vert.heap", "GBuffer.frag.heap"},
+                .psoDesc = {.vertexType = VertexType::GENERIC,
+                            // The legacy pass did not cull, so neither does this one.
+                            .rasterState = {.cullMode = CullMode::NONE},
+                            .depthStencilState = {.depthTestEnable = true, .depthWriteEnable = true},
+                            // One entry per colour attachment: a mismatch fails pipeline creation
+                            // (VUID-VkGraphicsPipelineCreateInfo-renderPass-06055).
+                            .blendState = {.attachmentCount = 4,
+                                           .attachments = {{{.blendEnable = false},
+                                                            {.blendEnable = false},
+                                                            {.blendEnable = false},
+                                                            {.blendEnable = false}}}}},
+                .attachmentClearValues = {VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}},
+                                          VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}},
+                                          VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}},
+                                          VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}}},
+                .execute =
+                    [pCamera, sampler = uiSamplerSlot.index, drawCount = gbufferDrawCount](RenderGraphNodeContext &ctx)
+                {
+                    const std::optional<uint32_t> perObj =
+                        ctx.GetHeapIndex("PerObjData", ResourceUsage::STORAGE_BUFFER);
+                    const std::optional<uint32_t> materials =
+                        ctx.GetHeapIndex("Materials", ResourceUsage::STORAGE_BUFFER);
+                    const std::optional<uint32_t> table =
+                        ctx.GetHeapIndex("TextureTable", ResourceUsage::STORAGE_BUFFER);
+                    if (!perObj.has_value() || !materials.has_value() || !table.has_value())
+                    {
+                        throw std::runtime_error("helloVulkan: the GBUFFER node's buffers have no heap index.");
+                    }
+                    GBufferPush push{};
+                    push.mView = pCamera->GetViewMat();
+                    push.mProj = pCamera->GetProjMat();
+                    push.perObjData = glm::uvec2(*perObj, 0);
+                    push.materialData = glm::uvec2(*materials, 0);
+                    push.textureTable = glm::uvec2(*table, 0);
+                    push.sampler = sampler;
+                    ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+
+                    const auto *pVertices = ctx.GetResource<VertexBuffer<Vertex>>("SceneVertices");
+                    const auto *pIndices = ctx.GetResource<IndexBuffer>("SceneIndices");
+                    const auto *pDrawBuffers =
+                        ctx.GetResource<DrawCommandBuffer<VkDrawIndexedIndirectCommand>>("DrawCommands");
+                    if (pVertices == nullptr || pIndices == nullptr || pDrawBuffers == nullptr) return;
+                    VkDeviceSize offset = 0;
+                    VkBuffer vertexBuffer = pVertices->buffer();
+                    vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+                    vkCmdBindIndexBuffer(ctx.commandBuffer, pIndices->buffer(), 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdDrawIndexedIndirect(ctx.commandBuffer, pDrawBuffers->buffer(), 0, drawCount,
+                                             pDrawBuffers->GetStride());
+                }});
+            builder.AddNode(RenderGraphNodeCreateInfo{
+                .nodeName = "LIGHTING",
+                .queueType = QueueType::GRAPHICS,
+                .resourceUses =
+                    {
+                        ResourceUse{.handle = ResourceHandle("GBufferPositionAO"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::SAMPLED,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("GBufferAlbedoTransmittance"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::SAMPLED,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("GBufferNormalRoughness"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::SAMPLED,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("GbufferMetalnessTranslucency"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::SAMPLED,
+                                    .kind = ResourceKind::IMAGE},
+                        ResourceUse{.handle = ResourceHandle("LightCount"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::UNIFORM_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("LightData"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::STORAGE_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("SceneVertices"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::VERTEX_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("SceneIndices"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::INDEX_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("Composite"),
+                                    .io = ResourceIOType::WRITE,
+                                    .usage = ResourceUsage::COLOR_ATTACHMENT,
+                                    .kind = ResourceKind::IMAGE},
+                    },
+                .shaderNames = {"triangle.vert", "lighting.frag.heap"},
+                .psoDesc = {.vertexType = VertexType::GENERIC,
+                            .rasterState = {.cullMode = CullMode::NONE},
+                            .depthStencilState = {.depthTestEnable = false, .depthWriteEnable = false},
+                            // A full-screen overwrite: no blending, matching the deleted lighting pass.
+                            .blendState = {.attachmentCount = 1, .attachments = {{{.blendEnable = false}}}}},
+                .execute = [pCamera, sampler = uiSamplerSlot.index, indexCount = quad.m_nIndexCount,
+                            indexOffset = quad.m_nIndexOffset](RenderGraphNodeContext &ctx)
+                {
+                    const std::optional<uint32_t> positionAO =
+                        ctx.GetHeapIndex("GBufferPositionAO", ResourceUsage::SAMPLED);
+                    const std::optional<uint32_t> albedo =
+                        ctx.GetHeapIndex("GBufferAlbedoTransmittance", ResourceUsage::SAMPLED);
+                    const std::optional<uint32_t> normal =
+                        ctx.GetHeapIndex("GBufferNormalRoughness", ResourceUsage::SAMPLED);
+                    const std::optional<uint32_t> metalness =
+                        ctx.GetHeapIndex("GbufferMetalnessTranslucency", ResourceUsage::SAMPLED);
+                    const std::optional<uint32_t> lightCount =
+                        ctx.GetHeapIndex("LightCount", ResourceUsage::UNIFORM_BUFFER);
+                    const std::optional<uint32_t> lightData =
+                        ctx.GetHeapIndex("LightData", ResourceUsage::STORAGE_BUFFER);
+                    if (!positionAO.has_value() || !albedo.has_value() || !normal.has_value() ||
+                        !metalness.has_value() || !lightCount.has_value() || !lightData.has_value())
+                    {
+                        throw std::runtime_error("helloVulkan: the LIGHTING node's inputs have no heap index.");
+                    }
+                    LightingPush push{};
+                    push.mView = pCamera->GetViewMat();
+                    push.positionAO = glm::uvec2(*positionAO, 0);
+                    push.albedoTransmittance = glm::uvec2(*albedo, 0);
+                    push.normalRoughness = glm::uvec2(*normal, 0);
+                    push.metalnessTranslucency = glm::uvec2(*metalness, 0);
+                    push.lightCount = glm::uvec2(*lightCount, 0);
+                    push.lightData = glm::uvec2(*lightData, 0);
+                    push.sampler = sampler;
+                    ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
+
+                    const auto *pVertices = ctx.GetResource<VertexBuffer<Vertex>>("SceneVertices");
+                    const auto *pIndices = ctx.GetResource<IndexBuffer>("SceneIndices");
+                    if (pVertices == nullptr || pIndices == nullptr) return;
+                    VkDeviceSize offset = 0;
+                    VkBuffer vertexBuffer = pVertices->buffer();
+                    vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
+                    vkCmdBindIndexBuffer(ctx.commandBuffer, pIndices->buffer(), 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdDrawIndexed(ctx.commandBuffer, indexCount, 1, indexOffset, 0, 0);
+                }});
             builder.AddNode(RenderGraphNodeCreateInfo{
                 .nodeName = "UI",
                 .queueType = QueueType::GRAPHICS,
@@ -569,11 +846,11 @@ int main(int argc, char **argv)
                                     .io = ResourceIOType::READ,
                                     .usage = ResourceUsage::SAMPLED,
                                     .kind = ResourceKind::IMAGE},
-                        ResourceUse{.handle = ResourceHandle("FinalVertices"),
+                        ResourceUse{.handle = ResourceHandle("SceneVertices"),
                                     .io = ResourceIOType::READ,
                                     .usage = ResourceUsage::VERTEX_BUFFER,
                                     .kind = ResourceKind::BUFFER},
-                        ResourceUse{.handle = ResourceHandle("FinalIndices"),
+                        ResourceUse{.handle = ResourceHandle("SceneIndices"),
                                     .io = ResourceIOType::READ,
                                     .usage = ResourceUsage::INDEX_BUFFER,
                                     .kind = ResourceKind::BUFFER},
@@ -607,8 +884,8 @@ int main(int argc, char **argv)
                     // The graph requires the push block on every execution, even one that draws nothing.
                     ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
-                    const auto *pVertices = dynamic_cast<const BufferResource *>(ctx.resolveResource("FinalVertices"));
-                    const auto *pIndices = dynamic_cast<const BufferResource *>(ctx.resolveResource("FinalIndices"));
+                    const auto *pVertices = dynamic_cast<const BufferResource *>(ctx.resolveResource("SceneVertices"));
+                    const auto *pIndices = dynamic_cast<const BufferResource *>(ctx.resolveResource("SceneIndices"));
                     if (pVertices == nullptr || pIndices == nullptr) return;
                     VkDeviceSize offset = 0;
                     VkBuffer vertexBuffer = pVertices->buffer();
@@ -616,12 +893,15 @@ int main(int argc, char **argv)
                     vkCmdBindIndexBuffer(ctx.commandBuffer, pIndices->buffer(), 0, VK_INDEX_TYPE_UINT32);
                     vkCmdDrawIndexed(ctx.commandBuffer, indexCount, 1, indexOffset, 0, 0);
                 }});
-            // Ordering is explicit; sharing Composite does not order UI before Final by itself.
+            // Ordering is explicit; sharing a resource does not order the nodes by itself.
+            builder.AddDependency("GBUFFER", "LIGHTING");
+            builder.AddDependency("LIGHTING", "UI");
             builder.AddDependency("UI", "Final");
 
             // Drain, recreate the swapchain at the window's new size, and rebuild the graph's per-execution
-            // device objects. The legacy scene targets stay at their creation extent until their passes port;
-            // the graph stretches the composite into the new swapchain, and #186 owns the camera aspect.
+            // device objects. The graph's scene targets stay at their creation extent (the manager's
+            // viewport); FINAL stretches the composite into the new swapchain, and #186 owns the camera
+            // aspect.
             const auto recreateSwapchain = [&]()
             {
                 VK_ASSERT(vkDeviceWaitIdle(GetRenderDevice()->GetDevice()));
@@ -662,9 +942,9 @@ int main(int argc, char **argv)
                     continue;
                 }
 
-                // The scene still records through the legacy manager; it no longer acquires, presents or
-                // draws the UI. The overlay builds the debug UI's draw data, and the graph's UI node
-                // composites it into the scene's output.
+                // The legacy manager now records only IBL/cubemap (and the unported RT pass); the scene
+                // itself runs as graph nodes. The overlay builds the debug UI's draw data, and the graph's
+                // UI node composites it over the lighting output.
                 GetRenderPassManager()->UpdatePerViewData();
                 DebugUIFrame uiFrame;
                 uiFrame.width = GetRenderPassManager()->GetViewportSize().width;

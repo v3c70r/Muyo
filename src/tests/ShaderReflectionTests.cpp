@@ -40,7 +40,10 @@ TEST_CASE("ShaderReflectionFetcher: Partially build pipeline", "[ShaderReflectio
 {
     fs::path vertSpirvPath = fs::path("shaders") / "GBuffer.vert.spv";
     auto vertByteCode = ReadSpv(vertSpirvPath);
-    fs::path fragSpirvPath = fs::path("shaders") / "GBuffer.frag.spv";
+    // GBuffer.frag was deleted with RenderPassGBuffer (#20). transparent.frag is the remaining
+    // consumer of the same GBuffer.vert outputs and of the material/per-object bindings, so it still
+    // exercises the merged-reflection contract this case pins.
+    fs::path fragSpirvPath = fs::path("shaders") / "transparent.frag.spv";
     auto fragByteCode = ReadSpv(fragSpirvPath);
 
     std::vector<ShaderReflection> reflections;
@@ -48,7 +51,7 @@ TEST_CASE("ShaderReflectionFetcher: Partially build pipeline", "[ShaderReflectio
     reflections.push_back(Muyo::FetchShaderReflection(fragByteCode));
     ShaderReflection mergedReflection = Muyo::MergeShaderReflections(reflections);
     // Check that descriptor sets are merged correctly
-    // For GBuffer.vert and GBuffer.frag, expect:
+    // For GBuffer.vert and transparent.frag, expect:
     // - CAMERA_UBO at set=0, binding=0 (from Camera.h)
     // - PerObjData at set=1, binding=0 (from SharedStructures.h)
     // - MATERIAL_SSBO at set=2, binding=0 (from material.h, frag only)

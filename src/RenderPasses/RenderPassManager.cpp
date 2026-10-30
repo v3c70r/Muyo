@@ -7,13 +7,12 @@
 #include "RenderLayerIBL.h"
 #include "RenderPass.h"
 #include "RenderPassCubeMapGeneration.h"
-#include "RenderPassGBuffer.h"
 #include "RenderPassGBufferMeshShader.h"
-#include "RenderPassOpaqueLighting.h"
 #include "RenderPassRSM.h"
 #include "RenderPassSkybox.h"
 #include "RenderPassTransparent.h"
 #include "RenderResourceManager.h"
+#include "RenderResourceNames.h"
 #include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
@@ -48,12 +47,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
 
     m_pShadowPassManager = std::make_unique<ShadowPassManager>();
     VkExtent2D vp = {uWidth, uHeight};
-    // GBuffer and opaque lighting
-    {
-        m_vpRenderPasses[RENDERPASS_GBUFFER] = std::make_unique<RenderPassGBuffer>(vp);
-        m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING] =
-            std::make_unique<RenderPassOpaqueLighting>(vp, *m_pShadowPassManager);
-    }
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
 
@@ -75,14 +68,17 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = nullptr;
 #endif
 
-    GetRenderResourceManager()->GetDepthTarget("depthTarget", VkExtent2D({m_uWidth, m_uHeight}));
+    // The unported SKYBOX and TRANSPARENT passes still name these two targets while their command buffers
+    // are recorded and dropped. The GBUFFER/LIGHTING targets are graph-owned now, so these exist only for
+    // those two passes and nothing writes them; they go with the passes (#51).
+    GetRenderResourceManager()->GetRenderTarget(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME, vp,
+                                                VK_FORMAT_R16G16B16A16_SFLOAT);
+    GetRenderResourceManager()->GetDepthTarget("GBufferDepth_", vp);
 
-    // Create semaphores
+    // Create the bridge semaphore
     VkSemaphoreCreateInfo semaphoreInfo = {};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_depthReady));
-    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_depthReady), VK_OBJECT_TYPE_SEMAPHORE, "Depth Ready");
-    // The bridge the graph's FINAL node waits on (#20); removed with the last legacy scene pass.
+    // The bridge the graph's first scene node waits on (#20); removed with the last legacy scene pass.
     VK_ASSERT(vkCreateSemaphore(GetRenderDevice()->GetDevice(), &semaphoreInfo, nullptr, &m_sceneFinished));
     setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_sceneFinished), VK_OBJECT_TYPE_SEMAPHORE, "Scene Finished");
 
@@ -107,7 +103,6 @@ void RenderPassManager::Unintialize()
     {
         pPass = nullptr;
     }
-    vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_depthReady, nullptr);
     vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_sceneFinished, nullptr);
 }
 
@@ -132,18 +127,6 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         m_pShadowPassManager->PrepareRenderPasses();
         const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
         m_pShadowPassManager->RecordCommandBuffers(opaqueDrawList);
-    }
-    {
-        auto *pGBufferPass = static_cast<RenderPassGBuffer *>(m_vpRenderPasses[RENDERPASS_GBUFFER].get());
-        pGBufferPass->PrepareRenderPass();
-        const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
-        pGBufferPass->RecordCommandBuffers(opaqueDrawList);
-    }
-    {
-        auto *pOpaqueLightingPass =
-            static_cast<RenderPassOpaqueLighting *>(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING].get());
-        pOpaqueLightingPass->PrepareRenderPass();
-        pOpaqueLightingPass->RecordCommandBuffers();
     }
     {
         auto *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
@@ -176,13 +159,10 @@ void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
 
 void RenderPassManager::SubmitSceneCommandBuffers(VkSemaphore imageAvailable)
 {
-    // This function manages command buffer submissions and queue synchronizations. It no longer owns
-    // acquire or present: FrameSync does, and the graph's FINAL node consumes the composite this batch
-    // produces. The two batches and their semaphores are the named bridge on #20.
+    // Since #20's GBUFFER/LIGHTING increment this is not the scene any more: those passes are graph
+    // nodes. What remains here is the legacy IBL/cubemap work (and the unported RT pass), recorded by
+    // RecordStaticCmdBuffers. One submit consumes the acquire and signals the bridge the graph waits on.
     std::vector<VkCommandBuffer> vCmdBufs;
-    std::vector<VkSemaphore> vWaitForSemaphores;
-    std::vector<VkPipelineStageFlags2> vWaitStages;
-    std::vector<VkSemaphore> vSignalSemaphores;
 
     if (!m_bIsIrradianceGenerated)
     {
@@ -196,20 +176,11 @@ void RenderPassManager::SubmitSceneCommandBuffers(VkSemaphore imageAvailable)
     // Mesh shader
     // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_MESH_SHADER]->GetCommandBuffer());
 
-    // Shadow pass
-    // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_SHADOW]->GetCommandBuffer());
-    auto vShadowPassCmds = m_pShadowPassManager->GetCommandBuffers();
-    vCmdBufs.insert(std::end(vCmdBufs), std::begin(vShadowPassCmds), std::end(vShadowPassCmds));
-
-    // Submit graphics queue to signal depth ready semaphore
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_GBUFFER]->GetCommandBuffer());
-    vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_OPAQUE_LIGHTING]->GetCommandBuffer());
-    vSignalSemaphores.push_back(m_depthReady);
-    GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores,
-                                            vSignalSemaphores, vWaitStages);
-
-    vCmdBufs.clear();
-    vSignalSemaphores.clear();
+    // The shadow command buffers are recorded but no longer submitted: their only consumer was the
+    // deleted legacy lighting pass. Keeping them out is deliberate rather than an oversight; #49 ports
+    // the RSM passes to the graph and they become real work again there.
+    // auto vShadowPassCmds = m_pShadowPassManager->GetCommandBuffers();
+    // vCmdBufs.insert(std::end(vCmdBufs), std::begin(vShadowPassCmds), std::end(vShadowPassCmds));
 
     // SKYBOX and TRANSPARENT are recorded by RecordStaticCmdBuffers but deliberately not submitted here.
     // That is pre-existing: the old submit built this batch and then cleared it before submitting, so the
@@ -218,22 +189,18 @@ void RenderPassManager::SubmitSceneCommandBuffers(VkSemaphore imageAvailable)
 
 #ifdef FEATURE_RAY_TRACING
     // The ray tracing pass used to produce the image consumed by FINAL. Until it is ported (#253, #223,
-    // #238) it still runs, but the graph's FINAL node samples the raster composite.
+    // #238) it still runs, but the graph presents the raster composite.
     if (m_vpRenderPasses[RENDERPASS_RAY_TRACING])
     {
         vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_RAY_TRACING]->GetCommandBuffer());
     }
 #endif
 
-    // The UI is a graph node now (#20), so this batch is only the legacy RT pass - empty without RT.
-    // It still consumes the acquire and signals sceneFinished, which is what the graph waits on.
-    vWaitForSemaphores.push_back(m_depthReady);
-    vWaitStages.push_back(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
+    std::vector<VkSemaphore> vWaitForSemaphores = {imageAvailable};
+    std::vector<VkPipelineStageFlags2> vWaitStages = {VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT};
+    std::vector<VkSemaphore> vSignalSemaphores = {m_sceneFinished};
     // The legacy scene does not touch the swapchain, but it consumes the acquire so the graph's single
     // wait (on m_sceneFinished) transitively orders the acquired image's availability.
-    vWaitForSemaphores.push_back(imageAvailable);
-    vWaitStages.push_back(VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT);
-    vSignalSemaphores.push_back(m_sceneFinished);
     GetRenderDevice()->SubmitCommandBuffers(vCmdBufs, GetRenderDevice()->GetGraphicsQueue(), vWaitForSemaphores,
                                             vSignalSemaphores, vWaitStages);
 }
