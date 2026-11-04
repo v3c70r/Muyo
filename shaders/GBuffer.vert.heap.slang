@@ -2,8 +2,9 @@
 // node's push data (root data, not a descriptor); the per-object buffer is a function-local heap
 // handle. No DescriptorSet/Binding is declared.
 //
-// This is the heap successor of shaders/GBuffer.vert. That file stays because RenderPassTransparent
-// still builds its pipeline from it and TRANSPARENT is out of scope for this port.
+// This is the heap successor of shaders/GBuffer.vert. That file is no longer used by a runtime pass;
+// it stays as the merged-reflection fixture in ShaderReflectionTests until the legacy shaders are
+// cleaned up with the rest of src/RenderPasses (#51).
 
 #include "shared/RenderGraph/GBuffer.h"
 

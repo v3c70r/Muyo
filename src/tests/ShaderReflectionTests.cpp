@@ -40,9 +40,10 @@ TEST_CASE("ShaderReflectionFetcher: Partially build pipeline", "[ShaderReflectio
 {
     fs::path vertSpirvPath = fs::path("shaders") / "GBuffer.vert.spv";
     auto vertByteCode = ReadSpv(vertSpirvPath);
-    // GBuffer.frag was deleted with RenderPassGBuffer (#20). transparent.frag is the remaining
-    // consumer of the same GBuffer.vert outputs and of the material/per-object bindings, so it still
-    // exercises the merged-reflection contract this case pins.
+    // GBuffer.frag was deleted with RenderPassGBuffer (#20), and transparent.frag's runtime pass is
+    // gone too. The pair is retained as the merged-reflection fixture: it is the remaining module that
+    // uses the same GBuffer.vert outputs and the set 0/1/2 material/per-object bindings, so it still
+    // exercises the contract this case pins until #51 removes the legacy shaders.
     fs::path fragSpirvPath = fs::path("shaders") / "transparent.frag.spv";
     auto fragByteCode = ReadSpv(fragSpirvPath);
 

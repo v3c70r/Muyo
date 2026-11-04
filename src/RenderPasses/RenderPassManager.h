@@ -6,15 +6,13 @@
 #include <string>
 #include <vector>
 
-#include "ShadowPassManager.h"
+#include "RenderPass.h"
 
 namespace Muyo
 {
 class IRenderPass;
 class RayTracingSceneManager;
 class Camera;
-struct DrawLists;
-
 enum RenderPassNames
 {
     // Order matters
@@ -22,10 +20,6 @@ enum RenderPassNames
 
     // TODO(P3): merge ibl passes with a manager - deleted with src/RenderPasses/.
     RENDERPASS_CUBEMAP_GENERATION,
-    RENDERPASS_MESH_SHADER,
-
-    RENDERPASS_SKYBOX,
-    RENDERPASS_TRANSPARENT,
 
     RENDERPASS_RAY_TRACING,
 
@@ -36,14 +30,15 @@ enum RenderPassNames
 /// Since #20 increment 1 it no longer owns the swapchain, acquire or present: `FrameSync` does, and the
 /// graph presents. Since the GBUFFER/direct-LIGHTING increment, the scene's raster passes are graph
 /// nodes too. This class records and submits only the legacy IBL/cubemap work (plus the unported RT
-/// pass), signalling `GetSceneFinishedSemaphore()` so the graph runs after it. The bridge and its
-/// removal are named on #20.
+/// pass), signalling `GetSceneFinishedSemaphore()` so the graph runs after it. The dead recorded-only
+/// passes (RSM, SKYBOX, TRANSPARENT, MESH_SHADER) are gone; what remains is removed by #51.
+/// The bridge and its removal are named on #20.
 class RenderPassManager
 {
 public:
     void Initialize(uint32_t uWidth, uint32_t uHeight);
     void Unintialize();
-    void RecordStaticCmdBuffers(const DrawLists& drawLists);
+    void RecordStaticCmdBuffers();
     /// Advance the camera's temporal state and upload `perView`. Call once per frame before the host
     /// builds the UI frame (which reads the camera) and before `SubmitSceneCommandBuffers`.
     void UpdatePerViewData();
@@ -105,8 +100,6 @@ private:
         uint32_t nFrameId = 0;
         uint32_t nFrameNoCameraMove = 0;
     } m_temporalInfo;
-
-    std::unique_ptr<ShadowPassManager> m_pShadowPassManager;
 };
 
 RenderPassManager* GetRenderPassManager();

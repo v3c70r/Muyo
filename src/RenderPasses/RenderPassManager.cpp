@@ -7,13 +7,7 @@
 #include "RenderLayerIBL.h"
 #include "RenderPass.h"
 #include "RenderPassCubeMapGeneration.h"
-#include "RenderPassGBufferMeshShader.h"
-#include "RenderPassRSM.h"
-#include "RenderPassSkybox.h"
-#include "RenderPassTransparent.h"
 #include "RenderResourceManager.h"
-#include "RenderResourceNames.h"
-#include "Scene.h"
 #ifdef FEATURE_RAY_TRACING
 #include "RayTracingSceneManager.h"
 #include "RenderPassRayTracing.h"
@@ -45,35 +39,19 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
     m_uWidth = uWidth;
     m_uHeight = uHeight;
 
-    m_pShadowPassManager = std::make_unique<ShadowPassManager>();
-    VkExtent2D vp = {uWidth, uHeight};
     // IBL pass
     m_vpRenderPasses[RENDERPASS_IBL] = std::make_unique<RenderLayerIBL>();
 
     m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION] =
         std::make_unique<RenderPassCubeMapGeneration>(VkExtent2D({128, 128}));
 
-    m_vpRenderPasses[RENDERPASS_MESH_SHADER] =
-        std::make_unique<RenderPassGBufferMeshShader>(VkExtent2D({m_uWidth, m_uHeight}));
-
-    // IBL pass separated
-    // Transparent pass
-    m_vpRenderPasses[RENDERPASS_TRANSPARENT] = std::make_unique<RenderPassTransparent>(vp);
-    // Skybox pass
-    m_vpRenderPasses[RENDERPASS_SKYBOX] = std::make_unique<RenderPassSkybox>(vp);
 #ifdef FEATURE_RAY_TRACING
     // RenderPass Ray Tracing
-    m_vpRenderPasses[RENDERPASS_RAY_TRACING] = std::make_unique<RenderPassRayTracing>(vp);
+    m_vpRenderPasses[RENDERPASS_RAY_TRACING] =
+        std::make_unique<RenderPassRayTracing>(VkExtent2D({m_uWidth, m_uHeight}));
 #else
     m_vpRenderPasses[RENDERPASS_RAY_TRACING] = nullptr;
 #endif
-
-    // The unported SKYBOX and TRANSPARENT passes still name these two targets while their command buffers
-    // are recorded and dropped. The GBUFFER/LIGHTING targets are graph-owned now, so these exist only for
-    // those two passes and nothing writes them; they go with the passes (#51).
-    GetRenderResourceManager()->GetRenderTarget(OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME, vp,
-                                                VK_FORMAT_R16G16B16A16_SFLOAT);
-    GetRenderResourceManager()->GetDepthTarget("GBufferDepth_", vp);
 
     // Create the bridge semaphore
     VkSemaphoreCreateInfo semaphoreInfo = {};
@@ -98,7 +76,6 @@ void RenderPassManager::Initialize(uint32_t uWidth, uint32_t uHeight)
 
 void RenderPassManager::Unintialize()
 {
-    m_pShadowPassManager = nullptr;
     for (auto &pPass : m_vpRenderPasses)
     {
         pPass = nullptr;
@@ -106,33 +83,13 @@ void RenderPassManager::Unintialize()
     vkDestroySemaphore(GetRenderDevice()->GetDevice(), m_sceneFinished, nullptr);
 }
 
-void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
+void RenderPassManager::RecordStaticCmdBuffers()
 {
     {
         auto *pCubeMapGenerationPass =
             static_cast<RenderPassCubeMapGeneration *>(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION].get());
         pCubeMapGenerationPass->PrepareRenderPass();
         pCubeMapGenerationPass->RecordCommandBuffers();
-    }
-
-    {
-        auto *pMeshShaderPass =
-            static_cast<RenderPassGBufferMeshShader *>(m_vpRenderPasses[RENDERPASS_MESH_SHADER].get());
-        pMeshShaderPass->PrepareRenderPass();
-        pMeshShaderPass->RecordCommandBuffers();
-    }
-    // Prepare shadow pass
-    {
-        m_pShadowPassManager->SetLights(drawLists.m_aDrawLists[DrawLists::DL_LIGHT]);
-        m_pShadowPassManager->PrepareRenderPasses();
-        const std::vector<const SceneNode *> &opaqueDrawList = drawLists.m_aDrawLists[DrawLists::DL_OPAQUE];
-        m_pShadowPassManager->RecordCommandBuffers(opaqueDrawList);
-    }
-    {
-        auto *pTransparentPass = static_cast<RenderPassTransparent *>(m_vpRenderPasses[RENDERPASS_TRANSPARENT].get());
-        const std::vector<const SceneNode *> &transparentDrawList = drawLists.m_aDrawLists[DrawLists::DL_TRANSPARENT];
-        pTransparentPass->PrepareRenderPass();
-        pTransparentPass->RecordCommandBuffers(transparentDrawList);
     }
 
 #ifdef FEATURE_RAY_TRACING
@@ -144,9 +101,6 @@ void RenderPassManager::RecordStaticCmdBuffers(const DrawLists &drawLists)
         pRTPass->RecordCommandBuffer();
     }
 #endif
-    auto *pSkybox = static_cast<RenderPassSkybox *>(m_vpRenderPasses[RENDERPASS_SKYBOX].get());
-    pSkybox->PrepareRenderPass();
-    pSkybox->RecordCommandBuffers();
 }
 
 void RenderPassManager::ReloadEnvironmentMap(const std::string &sNewEnvMapPath)
@@ -172,20 +126,6 @@ void RenderPassManager::SubmitSceneCommandBuffers(VkSemaphore imageAvailable)
 
     // Debug cubemap generation
     vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_CUBEMAP_GENERATION]->GetCommandBuffer());
-
-    // Mesh shader
-    // vCmdBufs.push_back(m_vpRenderPasses[RENDERPASS_MESH_SHADER]->GetCommandBuffer());
-
-    // The shadow command buffers are recorded but no longer submitted: their only consumer was the
-    // deleted legacy lighting pass. Keeping them out is deliberate rather than an oversight; #49 ports
-    // the RSM passes to the graph and they become real work again there.
-    // auto vShadowPassCmds = m_pShadowPassManager->GetCommandBuffers();
-    // vCmdBufs.insert(std::end(vCmdBufs), std::begin(vShadowPassCmds), std::end(vShadowPassCmds));
-
-    // SKYBOX and TRANSPARENT are recorded by RecordStaticCmdBuffers but deliberately not submitted here.
-    // That is pre-existing: the old submit built this batch and then cleared it before submitting, so the
-    // legacy frame never contained either pass. Porting one has to make that visual change deliberately
-    // rather than inherit it silently (#20 design note).
 
 #ifdef FEATURE_RAY_TRACING
     // The ray tracing pass used to produce the image consumed by FINAL. Until it is ported (#253, #223,

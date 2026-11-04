@@ -48,13 +48,13 @@ at all (the subsumed `TODO`s, which live in code). If a fact can be a field, mak
 
 ## Where we are
 
-Measured on 2026-10-30 after the #20 FINAL, UI, GBUFFER and direct-LIGHTING ports (`helloVulkan` presents, draws its UI and shades the opaque scene through the graph).
+Measured on 2026-11-04 after the #20 FINAL, UI, GBUFFER and direct-LIGHTING ports and the deletion of the dead legacy passes (`helloVulkan` presents, draws its UI and shades the opaque scene through the graph).
 
 | | Lines | State |
 | --- | --- | --- |
 | `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
-| `src/RenderPasses/` | 3,189 | The passes `helloVulkan` still records with (IBL, cubemap generation, the unported SKYBOX/TRANSPARENT, the legacy RT pass) plus `ShadowPassManager`, which owns its own `RenderPassRSM` set. Its acquire/present ownership is gone, and `GBUFFER`/`OPAQUE_LIGHTING` moved to the graph; the remaining passes port one per PR (#20). |
-| `src/app/helloVulkan.cpp` | 1,024 | `FrameSync` owns acquire/present, and `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes; the remaining legacy work is IBL/cubemap, the dropped SKYBOX/TRANSPARENT and the RT pass (#20). |
+| `src/RenderPasses/` | 2,233 | The remaining legacy work: IBL, cubemap generation, the RT pass, and the manager/parameter code they share. Its acquire/present ownership is gone, `GBUFFER`/`OPAQUE_LIGHTING` moved to the graph, and the recorded-only passes (RSM, SKYBOX, TRANSPARENT, MESH_SHADER) are deleted. What remains goes with #51. |
+| `src/app/helloVulkan.cpp` | 1,053 | `FrameSync` owns acquire/present, and `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes; the remaining legacy work is IBL/cubemap and the RT pass (#20). |
 | `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 | `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
 
@@ -71,9 +71,9 @@ counts the singleton call sites, and the external-include scan is the Python blo
 **Adoption has started in the in-repo renderer.** `helloVulkan` acquires and presents through `FrameSync`,
 and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes; `RenderPassManager` no longer
 owns the swapchain, acquire, present, a per-image fence, the UI or the opaque scene. What still records
-through it is the IBL/cubemap work, the unported SKYBOX/TRANSPARENT passes and the RT pass, and its shadow
-command buffers are recorded but no longer submitted (their consumer, the legacy lighting pass, is gone).
-Lighting is deliberately direct-only until IBL and shadows port (#20, #49). The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
+through it is the IBL/cubemap work and the RT pass; the recorded-only passes (RSM, SKYBOX, TRANSPARENT,
+MESH_SHADER) are deleted. Lighting is deliberately direct-only until IBL ports (#20); shadows were
+dropped rather than ported and would be rebuilt from scratch if wanted. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
 consumer now all exercise the graph. Closing the pass gap is the risk this roadmap exists to close — see
 Risks.
 
@@ -189,7 +189,8 @@ landed). These are capabilities, not polish — the frame loop cannot be ported 
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
 still references `RenderPassManager` from outside `src/RenderPasses/` has to go first — which is why the
-`DebugUI` coupling and `ShadowPassManager` are P2 work rather than P3 cleanup.
+`DebugUI` coupling is P2 work rather than P3 cleanup. `ShadowPassManager` was deleted outright when RSM
+was dropped, rather than ported.
 
 **Where this can go wrong** is P1 growing without P2 starting, because each missing capability is a
 plausible reason to wait. The mitigation is in P2's gate itself: it is capability, not completeness.
@@ -270,7 +271,7 @@ filters on it — the issues are not listed here, for the reason above.
 - **First consumer** — transfer and clear usages (`#18` ✅) → the client-side frame helper (`#57` ✅;
   `FrameSync` landed and `helloVulkanRG` uses it) → **B0 (`#213`) → B1a → B1b → B2** (all ✅; B2 is
   `#217`/#254) → the final port (`#20`; increment 1 is the #111 UI pass, accepted double conversion) →
-  `#48`/`#49` → the deletion (`#51`). `#59` sits across this chain rather than in it: P1 cannot close
+  `#48` → the deletion (`#51`); #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted. `#59` sits across this chain rather than in it: P1 cannot close
   without its number, so its slippage moves the date even though nothing waits for it.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.
@@ -287,7 +288,7 @@ leaving it marked would have the Critical path view claiming a finished item sti
 `#18` and `#68` were cleared the same way, on the same reasoning, when they landed. The B-track and B2
 items — `#17`, `#40`, `#83`, `#213`, `#215`, `#216`, `#217` — were cleared on the same rule after
 2026-10-28. The two P2/P3 prerequisites `#48` and `#49` were marked Yes instead, because the critical path
-diagram has always shown them between the final port and `#51`.
+diagram has always shown them between the final port and `#51`; #49 is now closed with the RSM deletion.
 
 **The field is scoped to this project.** It answers "whose slippage moves *Muyo's* end date", so a
 consumer's own schedule does not belong on it: `muyo-llm`'s M1 blocking list is tracked in muyo-llm's
