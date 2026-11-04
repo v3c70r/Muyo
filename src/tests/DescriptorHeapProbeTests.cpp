@@ -374,7 +374,7 @@ TEST_CASE("DescriptorHeap: positive .heap.spv modules carry no binding or descri
     // a device so CI covers it even where the heap feature is absent.
     // Explicit rather than a glob: the negative control in docs/DescriptorHeap-Probes is deliberately
     // excluded, and each new positive graph module is added with its converter.
-    const std::array<const char *, 17> modules = {"shaders/heapProbe.comp.heap.spv",
+    const std::array<const char *, 20> modules = {"shaders/heapProbe.comp.heap.spv",
                                                   "shaders/heapProbe.frag.heap.spv",
                                                   "shaders/heapProbe.vert.heap.spv",
                                                   "shaders/heapProbe.rgen.heap.spv",
@@ -390,7 +390,10 @@ TEST_CASE("DescriptorHeap: positive .heap.spv modules carry no binding or descri
                                                   "shaders/testWorldPos.vert.heap.spv",
                                                   "shaders/testSolidColor.frag.heap.spv",
                                                   "shaders/testPrimary.rgen.heap.spv",
-                                                  "shaders/testSpecConstant.comp.heap.spv"};
+                                                  "shaders/testSpecConstant.comp.heap.spv",
+                                                  "shaders/GBuffer.vert.heap.spv",
+                                                  "shaders/GBuffer.frag.heap.spv",
+                                                  "shaders/lighting.frag.heap.spv"};
     constexpr uint32_t kMagic = 0x07230203;
     constexpr uint16_t kOpExtension = 10;
     constexpr uint16_t kOpDecorate = 71;

@@ -84,6 +84,9 @@ bool IsAABBVisible(WorldAABB aabb, float4 vPlanes[6])
     DrawSource src = drawSources[i];
     if (src.indexCount == 0) return;
 
+    // TODO(#262): vAABBMin/vAABBMax are array-typed members of PerObjData, and a heap StructuredBuffer
+    // read of an array-typed member is corrupt on NVIDIA 595.99.02 (the GBUFFER path now flattens its
+    // data to avoid it). This pre-existing culling read is tracked by #262.
     PerObjData obj = perObjData[src.perObjId];
     WorldAABB worldAABB = TransformAABB(float3(obj.vAABBMin[0], obj.vAABBMin[1], obj.vAABBMin[2]),
                                         float3(obj.vAABBMax[0], obj.vAABBMax[1], obj.vAABBMax[2]), obj.mWorldMatrix);

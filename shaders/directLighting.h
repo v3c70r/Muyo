@@ -2,6 +2,10 @@
 #define DIRECT_LIGHTING_H
 #include "brdf.h"
 
+// The heap lighting node (#20) has a Slang port of this file in
+// shaders/shared/RenderGraph/DirectLighting.h. Keep the two in step until the last legacy consumer
+// (transparent / shadow / RSM) is deleted with src/RenderPasses (#51).
+
 // https://google.github.io/filament/Filament.md.html#lighting/directlighting
 // Direct lighting related functions
 

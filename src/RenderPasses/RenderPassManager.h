@@ -24,9 +24,6 @@ enum RenderPassNames
     RENDERPASS_CUBEMAP_GENERATION,
     RENDERPASS_MESH_SHADER,
 
-    RENDERPASS_GBUFFER,
-    RENDERPASS_OPAQUE_LIGHTING,
-
     RENDERPASS_SKYBOX,
     RENDERPASS_TRANSPARENT,
 
@@ -37,9 +34,10 @@ enum RenderPassNames
 /// The legacy scene renderer.
 ///
 /// Since #20 increment 1 it no longer owns the swapchain, acquire or present: `FrameSync` does, and the
-/// graph presents. This class records the scene passes that have not been ported and submits them,
-/// signalling `GetSceneFinishedSemaphore()` when the composite is ready for the graph's UI and `FINAL`
-/// nodes. The bridge and its removal are named on #20.
+/// graph presents. Since the GBUFFER/direct-LIGHTING increment, the scene's raster passes are graph
+/// nodes too. This class records and submits only the legacy IBL/cubemap work (plus the unported RT
+/// pass), signalling `GetSceneFinishedSemaphore()` so the graph runs after it. The bridge and its
+/// removal are named on #20.
 class RenderPassManager
 {
 public:
@@ -55,9 +53,9 @@ public:
     /// Record and submit the legacy scene passes for one frame.
     ///
     /// The submit consumes `imageAvailable` (the swapchain acquire) and signals
-    /// `GetSceneFinishedSemaphore()`. The graph's `FINAL` node waits on that semaphore before sampling the
-    /// imported composite, so the swapchain image's availability is chained through it - the graph itself
-    /// only declares the one wait `RenderGraphExecuteInfo` carries.
+    /// `GetSceneFinishedSemaphore()`. The graph's first scene node waits on that semaphore, so the
+    /// swapchain image's availability is chained through it - the graph itself only declares the one wait
+    /// `RenderGraphExecuteInfo` carries.
     /// @param imageAvailable Semaphore the swapchain acquire signalled this frame.
     void SubmitSceneCommandBuffers(VkSemaphore imageAvailable);
 
@@ -85,15 +83,13 @@ public:
     }
 
 private:
-    std::array<std::unique_ptr<IRenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {nullptr, nullptr, nullptr,
-                                                                                   nullptr, nullptr, nullptr};
+    std::array<std::unique_ptr<IRenderPass>, RENDERPASS_COUNT> m_vpRenderPasses = {};
     uint32_t m_uWidth = 0;
     uint32_t m_uHeight = 0;
     bool m_bIsIrradianceGenerated = false;
 
-    // Synchronization elements required in passes. Acquire and present belong to FrameSync since #20
-    // increment 1; `m_sceneFinished` is the named bridge the graph's FINAL node waits on.
-    VkSemaphore m_depthReady = VK_NULL_HANDLE;
+    // Synchronisation element required in the remaining legacy passes. Acquire and present belong to
+    // FrameSync since #20 increment 1; `m_sceneFinished` is the named bridge the graph waits on.
     VkSemaphore m_sceneFinished = VK_NULL_HANDLE;
 
     std::unique_ptr<Camera> m_pCamera = nullptr;

@@ -15,13 +15,12 @@ class UniformBuffer : public BufferResource
 {
 public:
     UniformBuffer()
-        : BufferResource(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-#ifdef FEATURE_RAY_TRACING
-
-                             | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-
-#endif
-                         ,
+        // The device-address flag is unconditional: the descriptor-heap path reaches every buffer
+        // through vkGetBufferDeviceAddress, and a uniform buffer that lacks the flag fails
+        // VUID-VkBufferDeviceAddressInfo-buffer-02601 when a graph node imports it (#20, the
+        // "light count" buffer). bufferDeviceAddress is a required device feature, so this never
+        // asks for something a supported device lacks.
+        : BufferResource(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                          VMA_MEMORY_USAGE_CPU_TO_GPU)
 
     {

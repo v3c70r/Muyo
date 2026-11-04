@@ -533,6 +533,7 @@ add_executable(tests
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
     src/tests/RenderGraphFinalNodeTest.cpp
+    src/tests/RenderGraphGBufferLightingTest.cpp
     src/tests/RenderGraphHeapTests.cpp
     src/tests/RenderGraphPipelineCacheTests.cpp
     src/tests/RenderGraphShaderCacheTests.cpp
