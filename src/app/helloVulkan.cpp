@@ -501,10 +501,24 @@ int main(int argc, char **argv)
             const StorageBuffer<uint32_t> *pMaterialTextureTable = GetRenderResourceManager()->GetStorageBuffer(
                 "material texture table", materialTextureTable, /*bAllowReadback=*/false);
             const StorageBuffer<PerObjData> *pPerObj = GetPerObjResourceManager()->GetPerObjResource();
-            const StorageBuffer<PBRMaterial> *pMaterials = GetMaterialManager()->GetMaterialBuffer();
             const auto *pLightCount = GetRenderResourceManager()->GetResource<UniformBuffer<uint32_t>>(LIGHT_COUNT);
             const auto *pLightData = GetRenderResourceManager()->GetResource<StorageBuffer<LightData>>(LIGHT_DATA);
-            if (pPerObj == nullptr || pMaterials == nullptr || pLightCount == nullptr || pLightData == nullptr)
+
+            // The heap fragment stage must not read array-typed struct members (#262), so the host
+            // flattens the submesh material indices and the material fields into two scalar-only
+            // buffers. Both are GPU-only and written once at load.
+            const std::vector<uint32_t> submeshMaterialIndices =
+                MakeSubmeshMaterialIndices(GetPerObjResourceManager()->GetPerObjDataCPU());
+            const std::vector<PBRMaterial> &materialsCPU = GetMaterialManager()->GetMaterialBufferCPU();
+            std::vector<GBufferMaterial> gbufferMaterials;
+            gbufferMaterials.reserve(materialsCPU.size());
+            for (const PBRMaterial &material : materialsCPU) gbufferMaterials.push_back(MakeGBufferMaterial(material));
+            const StorageBuffer<uint32_t> *pSubmeshMaterials = GetRenderResourceManager()->GetStorageBuffer(
+                "GBUFFER submesh materials", submeshMaterialIndices, /*bAllowReadback=*/false);
+            const StorageBuffer<GBufferMaterial> *pGBufferMaterials = GetRenderResourceManager()->GetStorageBuffer(
+                "GBUFFER materials", gbufferMaterials, /*bAllowReadback=*/false);
+            if (pPerObj == nullptr || pSubmeshMaterials == nullptr || pGBufferMaterials == nullptr ||
+                pLightCount == nullptr || pLightData == nullptr)
             {
                 throw std::runtime_error("helloVulkan: a scene buffer the GBUFFER/LIGHTING nodes need is missing.");
             }
@@ -516,7 +530,8 @@ int main(int argc, char **argv)
             builder.ImportResource("SceneVertices", meshResources.m_pVertexBuffer);
             builder.ImportResource("SceneIndices", meshResources.m_pIndexBuffer);
             builder.ImportResource("PerObjData", pPerObj);
-            builder.ImportResource("Materials", pMaterials);
+            builder.ImportResource("SubmeshMaterials", pSubmeshMaterials);
+            builder.ImportResource("GBufferMaterials", pGBufferMaterials);
             builder.ImportResource("TextureTable", pMaterialTextureTable);
             builder.ImportResource("DrawCommands", pGBufferDrawCommands);
             builder.ImportResource("LightCount", pLightCount);
@@ -554,7 +569,11 @@ int main(int argc, char **argv)
                                     .io = ResourceIOType::READ,
                                     .usage = ResourceUsage::STORAGE_BUFFER,
                                     .kind = ResourceKind::BUFFER},
-                        ResourceUse{.handle = ResourceHandle("Materials"),
+                        ResourceUse{.handle = ResourceHandle("SubmeshMaterials"),
+                                    .io = ResourceIOType::READ,
+                                    .usage = ResourceUsage::STORAGE_BUFFER,
+                                    .kind = ResourceKind::BUFFER},
+                        ResourceUse{.handle = ResourceHandle("GBufferMaterials"),
                                     .io = ResourceIOType::READ,
                                     .usage = ResourceUsage::STORAGE_BUFFER,
                                     .kind = ResourceKind::BUFFER},
@@ -620,11 +639,14 @@ int main(int argc, char **argv)
                 {
                     const std::optional<uint32_t> perObj =
                         ctx.GetHeapIndex("PerObjData", ResourceUsage::STORAGE_BUFFER);
+                    const std::optional<uint32_t> submeshMaterials =
+                        ctx.GetHeapIndex("SubmeshMaterials", ResourceUsage::STORAGE_BUFFER);
                     const std::optional<uint32_t> materials =
-                        ctx.GetHeapIndex("Materials", ResourceUsage::STORAGE_BUFFER);
+                        ctx.GetHeapIndex("GBufferMaterials", ResourceUsage::STORAGE_BUFFER);
                     const std::optional<uint32_t> table =
                         ctx.GetHeapIndex("TextureTable", ResourceUsage::STORAGE_BUFFER);
-                    if (!perObj.has_value() || !materials.has_value() || !table.has_value())
+                    if (!perObj.has_value() || !submeshMaterials.has_value() || !materials.has_value() ||
+                        !table.has_value())
                     {
                         throw std::runtime_error("helloVulkan: the GBUFFER node's buffers have no heap index.");
                     }
@@ -632,7 +654,8 @@ int main(int argc, char **argv)
                     push.mView = pCamera->GetViewMat();
                     push.mProj = pCamera->GetProjMat();
                     push.perObjData = glm::uvec2(*perObj, 0);
-                    push.materialData = glm::uvec2(*materials, 0);
+                    push.submeshMaterials = glm::uvec2(*submeshMaterials, 0);
+                    push.materials = glm::uvec2(*materials, 0);
                     push.textureTable = glm::uvec2(*table, 0);
                     push.sampler = sampler;
                     ctx.PushData(0, std::as_bytes(std::span{&push, 1}));

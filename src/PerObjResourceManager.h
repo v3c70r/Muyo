@@ -20,6 +20,12 @@ public:
         assert(m_bUploaded);
         return m_pPerObjDataGPU;
     }
+    /// @return The CPU-side copy, for a consumer that needs a *flat* view of the submesh records.
+    ///
+    /// The heap path cannot read `PerObjData::vSubmeshDatas` (an array-typed member) on NVIDIA's
+    /// descriptor-heap/untyped-pointer lowering - it returns garbage (#262). The GBUFFER node
+    /// therefore builds a flat material-index buffer from this copy on the host instead.
+    const std::vector<PerObjData>& GetPerObjDataCPU() const { return m_vPerObjDataCPU; }
 
 private:
     std::vector<PerObjData> m_vPerObjDataCPU;

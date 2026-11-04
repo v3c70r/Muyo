@@ -6,6 +6,10 @@
 // PBRMaterial::textureIds are TextureResourceManager indices, not heap indices. See the design note on
 // #20: the table is the only declared use; the image descriptors behind it are static and read-only.
 //
+// **No array-typed struct member is read.** A heap StructuredBuffer read of one returns garbage on
+// NVIDIA 595.99.02 (#262), so the host flattens the submesh material index and the material fields
+// into two scalar-only buffers. Only scalar/vector members and top-level runtime arrays are read here.
+//
 // This is the heap successor of shaders/GBuffer.frag (deleted with RenderPassGBuffer).
 
 #include "shared/RenderGraph/GBuffer.h"
@@ -38,42 +42,42 @@ PS_OUTPUT main(PS_INPUT input)
     // Supports up to 2 sets of UVs.
     const float2 texCoords[2] = {input.inTexCoords0, input.inTexCoords1};
 
-    StructuredBuffer<PerObjData> perObjData = StructuredBuffer<PerObjData>.Handle(push.perObjData);
-    StructuredBuffer<PBRMaterial> materials = StructuredBuffer<PBRMaterial>.Handle(push.materialData);
+    StructuredBuffer<uint> submeshMaterialIndices = StructuredBuffer<uint>.Handle(push.submeshMaterials);
+    StructuredBuffer<GBufferMaterial> gbufferMaterials = StructuredBuffer<GBufferMaterial>.Handle(push.materials);
     StructuredBuffer<uint> textureTable = StructuredBuffer<uint>.Handle(push.textureTable);
 
     const uint objectIndex = input.inObjSubmeshIndex.x;
     const uint submeshIndex = input.inObjSubmeshIndex.y;
-    const uint materialIndex = perObjData[objectIndex].vSubmeshDatas[submeshIndex].nMaterialIndex;
-    const PBRMaterial material = materials[materialIndex];
+    const uint materialIndex = submeshMaterialIndices[PackSubmeshObjectIndex(objectIndex, submeshIndex)];
+    const GBufferMaterial material = gbufferMaterials[materialIndex];
 
     // Manager texture index -> this heap's static sampled-image index -> combined with the sampler.
-    const float3 textureNormal = Sampler2D.Handle(uint2(textureTable[material.textureIds[TEX_NORMAL]], push.sampler))
-                                     .SampleLevel(texCoords[material.uvIndices[TEX_NORMAL]], 0.0)
+    const float3 textureNormal = Sampler2D.Handle(uint2(textureTable[material.textureNormal], push.sampler))
+                                     .SampleLevel(texCoords[material.uvNormal], 0.0)
                                      .xyz;
     const float3 worldNormal = normalize(input.inWorldNormal.xyz + textureNormal);
 
     output.positionAO = input.inWorldPos / input.inWorldPos.w;
-    output.positionAO.w = Sampler2D.Handle(uint2(textureTable[material.textureIds[TEX_AO]], push.sampler))
-                              .SampleLevel(texCoords[material.uvIndices[TEX_AO]], 0.0)
+    output.positionAO.w = Sampler2D.Handle(uint2(textureTable[material.textureAO], push.sampler))
+                              .SampleLevel(texCoords[material.uvAO], 0.0)
                               .r;
 
     output.albedoTransmittance.xyz =
-        Sampler2D.Handle(uint2(textureTable[material.textureIds[TEX_ALBEDO]], push.sampler))
-            .SampleLevel(texCoords[material.uvIndices[TEX_ALBEDO]], 0.0)
+        Sampler2D.Handle(uint2(textureTable[material.textureAlbedo], push.sampler))
+            .SampleLevel(texCoords[material.uvAlbedo], 0.0)
             .xyz *
         material.vBaseColorFactors.xyz;
     output.albedoTransmittance.w = 1.0;  // Transmittance
 
-    const float roughness = Sampler2D.Handle(uint2(textureTable[material.textureIds[TEX_ROUGHNESS]], push.sampler))
-                                .SampleLevel(texCoords[material.uvIndices[TEX_ROUGHNESS]], 0.0)
+    const float roughness = Sampler2D.Handle(uint2(textureTable[material.textureRoughness], push.sampler))
+                                .SampleLevel(texCoords[material.uvRoughness], 0.0)
                                 .g *
                             material.fRoughness;
     output.normalRoughness = float4(worldNormal, roughness);
 
     output.metalnessTranslucency = float4(
-        Sampler2D.Handle(uint2(textureTable[material.textureIds[TEX_METALNESS]], push.sampler))
-                .SampleLevel(texCoords[material.uvIndices[TEX_METALNESS]], 0.0)
+        Sampler2D.Handle(uint2(textureTable[material.textureMetalness], push.sampler))
+                .SampleLevel(texCoords[material.uvMetalness], 0.0)
                 .r *
             material.fMetalness,
         1.0, 0.0, 0.0);

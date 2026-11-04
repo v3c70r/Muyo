@@ -2,6 +2,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <glm/glm.hpp>
+#include <vector>
+
+#include "SharedStructures.h"
 
 namespace Muyo
 {
@@ -16,22 +19,107 @@ struct GBufferPush
     glm::mat4 mView;
     glm::mat4 mProj;
     glm::uvec2 perObjData;
-    glm::uvec2 materialData;
+    glm::uvec2 submeshMaterials;
+    glm::uvec2 materials;
     glm::uvec2 textureTable;
     uint32_t sampler;
     // The shader's std140 block rounds the structure up to 16 bytes; the push must cover the whole
     // reflected range, so the tail is explicit rather than left to the C++ struct's own padding.
-    uint32_t padding;
+    uint32_t padding0;
+    uint32_t padding1;
+    uint32_t padding2;
 };
 
 static_assert(offsetof(GBufferPush, mView) == 0, "GBufferPush::mView must match the shader's offset");
 static_assert(offsetof(GBufferPush, mProj) == 64, "GBufferPush::mProj must match the shader's offset");
 static_assert(offsetof(GBufferPush, perObjData) == 128, "GBufferPush::perObjData must match the shader's offset");
-static_assert(offsetof(GBufferPush, materialData) == 136, "GBufferPush::materialData must match the shader's offset");
-static_assert(offsetof(GBufferPush, textureTable) == 144, "GBufferPush::textureTable must match the shader's offset");
-static_assert(offsetof(GBufferPush, sampler) == 152, "GBufferPush::sampler must match the shader's offset");
-static_assert(offsetof(GBufferPush, padding) == 156, "GBufferPush::padding must match the shader's offset");
-static_assert(sizeof(GBufferPush) == 160, "GBufferPush must cover the shader's padded size");
+static_assert(offsetof(GBufferPush, submeshMaterials) == 136,
+              "GBufferPush::submeshMaterials must match the shader's offset");
+static_assert(offsetof(GBufferPush, materials) == 144, "GBufferPush::materials must match the shader's offset");
+static_assert(offsetof(GBufferPush, textureTable) == 152, "GBufferPush::textureTable must match the shader's offset");
+static_assert(offsetof(GBufferPush, sampler) == 160, "GBufferPush::sampler must match the shader's offset");
+static_assert(offsetof(GBufferPush, padding0) == 164, "GBufferPush::padding0 must match the shader's offset");
+static_assert(sizeof(GBufferPush) == 176, "GBufferPush must cover the shader's padded size");
+
+/// Host-side view of `GBufferMaterial` in shaders/shared/RenderGraph/GBuffer.h.
+///
+/// Deliberately has no array members: a heap `StructuredBuffer` read of an array-typed member returns
+/// garbage on NVIDIA's descriptor-heap/untyped-pointer lowering (#262), which is why the GBUFFER node
+/// does not read `PBRMaterial::textureIds`/`UVIndices` directly.
+struct GBufferMaterial
+{
+    glm::vec4 vBaseColorFactors;
+    float fRoughness;
+    float fMetalness;
+    uint32_t textureAlbedo;
+    uint32_t textureNormal;
+    uint32_t textureMetalness;
+    uint32_t textureRoughness;
+    uint32_t textureAO;
+    uint32_t textureEmissive;
+    uint32_t uvAlbedo;
+    uint32_t uvNormal;
+    uint32_t uvMetalness;
+    uint32_t uvRoughness;
+    uint32_t uvAO;
+    uint32_t uvEmissive;
+    uint32_t padding0;
+    uint32_t padding1;
+};
+
+static_assert(offsetof(GBufferMaterial, vBaseColorFactors) == 0,
+              "GBufferMaterial::vBaseColorFactors must match the shader's offset");
+static_assert(offsetof(GBufferMaterial, fRoughness) == 16,
+              "GBufferMaterial::fRoughness must match the shader's offset");
+static_assert(offsetof(GBufferMaterial, fMetalness) == 20,
+              "GBufferMaterial::fMetalness must match the shader's offset");
+static_assert(offsetof(GBufferMaterial, textureAlbedo) == 24,
+              "GBufferMaterial::textureAlbedo must match the shader's offset");
+static_assert(offsetof(GBufferMaterial, textureEmissive) == 44,
+              "GBufferMaterial::textureEmissive must match the shader's offset");
+static_assert(offsetof(GBufferMaterial, uvAlbedo) == 48, "GBufferMaterial::uvAlbedo must match the shader's offset");
+static_assert(offsetof(GBufferMaterial, uvEmissive) == 68,
+              "GBufferMaterial::uvEmissive must match the shader's offset");
+static_assert(offsetof(GBufferMaterial, padding0) == 72, "GBufferMaterial::padding0 must match the shader's offset");
+static_assert(sizeof(GBufferMaterial) == 80, "GBufferMaterial must cover the shader's padded size");
+
+/// Flatten a `PBRMaterial` into the scalar-only form the heap shader reads.
+inline GBufferMaterial MakeGBufferMaterial(const PBRMaterial& material)
+{
+    GBufferMaterial out{};
+    out.vBaseColorFactors = material.vBaseColorFactors;
+    out.fRoughness = material.fRoughness;
+    out.fMetalness = material.fMetalness;
+    out.textureAlbedo = material.textureIds[TEX_ALBEDO];
+    out.textureNormal = material.textureIds[TEX_NORMAL];
+    out.textureMetalness = material.textureIds[TEX_METALNESS];
+    out.textureRoughness = material.textureIds[TEX_ROUGHNESS];
+    out.textureAO = material.textureIds[TEX_AO];
+    out.textureEmissive = material.textureIds[TEX_EMISSIVE];
+    out.uvAlbedo = material.UVIndices[TEX_ALBEDO];
+    out.uvNormal = material.UVIndices[TEX_NORMAL];
+    out.uvMetalness = material.UVIndices[TEX_METALNESS];
+    out.uvRoughness = material.UVIndices[TEX_ROUGHNESS];
+    out.uvAO = material.UVIndices[TEX_AO];
+    out.uvEmissive = material.UVIndices[TEX_EMISSIVE];
+    return out;
+}
+
+/// Flatten every object's submesh material indices, indexed by `PackSubmeshObjectIndex`.
+///
+/// 32 slots per object (`MAX_NUM_SUBMESHES`); slots past `nSubmeshCount` stay 0 and are never read.
+inline std::vector<uint32_t> MakeSubmeshMaterialIndices(const std::vector<PerObjData>& objects)
+{
+    std::vector<uint32_t> indices(objects.size() * MAX_NUM_SUBMESHES, 0);
+    for (size_t object = 0; object < objects.size(); ++object)
+    {
+        for (uint32_t submesh = 0; submesh < objects[object].nSubmeshCount; ++submesh)
+        {
+            indices[object * MAX_NUM_SUBMESHES + submesh] = objects[object].vSubmeshDatas[submesh].nMaterialIndex;
+        }
+    }
+    return indices;
+}
 
 /// Host-side view of `LightingPush` in shaders/shared/RenderGraph/Lights.h.
 ///

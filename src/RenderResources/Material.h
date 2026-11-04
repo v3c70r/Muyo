@@ -93,6 +93,11 @@ public:
 
     void UploadMaterialBuffer() const;
     const StorageBuffer<PBRMaterial>* GetMaterialBuffer() const;
+    /// @return The CPU-side material array, for a consumer that needs a flat view of its array members.
+    ///
+    /// See PerObjResourceManager::GetPerObjDataCPU: the GBUFFER node flattens `textureIds`/`uvIndices`
+    /// because a heap `StructuredBuffer` read of an array-typed member is corrupt on NVIDIA (#262).
+    const std::vector<PBRMaterial>& GetMaterialBufferCPU() const { return m_vMaterialBufferCPU; }
 
     // Recreate all material factor buffers against the current device.
     void RefreshGPUResources();

@@ -174,13 +174,15 @@ struct GBufferHarness
     std::unique_ptr<RenderGraphBuilder> builder;
 
     StorageBuffer<PerObjData>* pPerObj = nullptr;
-    StorageBuffer<PBRMaterial>* pMaterials = nullptr;
+    StorageBuffer<uint32_t>* pSubmeshMaterials = nullptr;
+    StorageBuffer<GBufferMaterial>* pGBufferMaterials = nullptr;
     StorageBuffer<uint32_t>* pTextureTable = nullptr;
     StorageBuffer<LightData>* pLightData = nullptr;
     UniformBuffer<uint32_t>* pLightCount = nullptr;
     DrawCommandBuffer<VkDrawIndexedIndirectCommand>* pDrawCommands = nullptr;
 
     std::vector<uint32_t> textureTable;
+    std::vector<uint32_t> submeshMaterialIndices;
 
     void Run() { builder->Execute(); }
 };
@@ -252,7 +254,16 @@ std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting)
     perObjects[0].vSubmeshDatas[0].nMaterialIndex = 0;
 
     harness.pPerObj = GetRenderResourceManager()->GetStorageBuffer("GBufferTestPerObj", perObjects);
-    harness.pMaterials = GetRenderResourceManager()->GetStorageBuffer("GBufferTestMaterials", materials);
+    // The shipped heap fragment stage reads the flattened buffers, not PBRMaterial/PerObjData arrays
+    // (#262), so the harness builds them with the same helpers the app uses.
+    harness.submeshMaterialIndices = MakeSubmeshMaterialIndices(perObjects);
+    std::vector<GBufferMaterial> gbufferMaterials;
+    gbufferMaterials.reserve(materials.size());
+    for (const PBRMaterial& material : materials) gbufferMaterials.push_back(MakeGBufferMaterial(material));
+    harness.pSubmeshMaterials = GetRenderResourceManager()->GetStorageBuffer(
+        "GBufferTestSubmeshMaterials", harness.submeshMaterialIndices, /*bAllowReadback=*/false);
+    harness.pGBufferMaterials = GetRenderResourceManager()->GetStorageBuffer("GBufferTestMaterials", gbufferMaterials,
+                                                                             /*bAllowReadback=*/false);
     harness.pTextureTable =
         GetRenderResourceManager()->GetStorageBuffer("GBufferTestTextureTable", harness.textureTable);
 
@@ -309,7 +320,8 @@ std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting)
     if (bAddLighting) addColorTarget("Composite");
 
     builder.ImportResource("PerObjData", harness.pPerObj);
-    builder.ImportResource("Materials", harness.pMaterials);
+    builder.ImportResource("SubmeshMaterials", harness.pSubmeshMaterials);
+    builder.ImportResource("GBufferMaterials", harness.pGBufferMaterials);
     builder.ImportResource("TextureTable", harness.pTextureTable);
     builder.ImportResource("DrawCommands", harness.pDrawCommands);
     builder.ImportResource("Vertices", pVertices);
@@ -329,7 +341,11 @@ std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting)
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
                             .kind = ResourceKind::BUFFER},
-                ResourceUse{.handle = ResourceHandle("Materials"),
+                ResourceUse{.handle = ResourceHandle("SubmeshMaterials"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::STORAGE_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("GBufferMaterials"),
                             .io = ResourceIOType::READ,
                             .usage = ResourceUsage::STORAGE_BUFFER,
                             .kind = ResourceKind::BUFFER},
@@ -393,9 +409,12 @@ std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting)
             [view = harness.view, proj = harness.proj, sampler = harness.samplerSlot.index](RenderGraphNodeContext& ctx)
         {
             const std::optional<uint32_t> perObj = ctx.GetHeapIndex("PerObjData", ResourceUsage::STORAGE_BUFFER);
-            const std::optional<uint32_t> materials = ctx.GetHeapIndex("Materials", ResourceUsage::STORAGE_BUFFER);
+            const std::optional<uint32_t> submeshMaterials =
+                ctx.GetHeapIndex("SubmeshMaterials", ResourceUsage::STORAGE_BUFFER);
+            const std::optional<uint32_t> materials =
+                ctx.GetHeapIndex("GBufferMaterials", ResourceUsage::STORAGE_BUFFER);
             const std::optional<uint32_t> table = ctx.GetHeapIndex("TextureTable", ResourceUsage::STORAGE_BUFFER);
-            if (!perObj.has_value() || !materials.has_value() || !table.has_value())
+            if (!perObj.has_value() || !submeshMaterials.has_value() || !materials.has_value() || !table.has_value())
             {
                 throw std::runtime_error("GBUFFER test: a buffer use has no heap index");
             }
@@ -404,7 +423,8 @@ std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting)
             push.mView = view;
             push.mProj = proj;
             push.perObjData = glm::uvec2(*perObj, 0);
-            push.materialData = glm::uvec2(*materials, 0);
+            push.submeshMaterials = glm::uvec2(*submeshMaterials, 0);
+            push.materials = glm::uvec2(*materials, 0);
             push.textureTable = glm::uvec2(*table, 0);
             push.sampler = sampler;
             ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
@@ -602,6 +622,10 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: GBUFFER node writes the f
         mutated[0].nSubmeshCount = 1;
         mutated[0].vSubmeshDatas[0].nMaterialIndex = 1;
         pHarness->pPerObj->SetData(mutated.data(), sizeof(PerObjData));
+        // The heap fragment stage reads the flat index, not PerObjData's array member (#262).
+        pHarness->submeshMaterialIndices[0] = 1;
+        pHarness->pSubmeshMaterials->SetData(pHarness->submeshMaterialIndices.data(),
+                                             pHarness->submeshMaterialIndices.size() * sizeof(uint32_t));
     }
     pHarness->Run();
     const Rgba materialOne = PixelAt(ReadColor(pAlbedo, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL), center, center);
@@ -618,6 +642,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: GBUFFER node writes the f
         restored[0].nSubmeshCount = 1;
         restored[0].vSubmeshDatas[0].nMaterialIndex = 0;
         pHarness->pPerObj->SetData(restored.data(), sizeof(PerObjData));
+        pHarness->submeshMaterialIndices[0] = 0;
+        pHarness->pSubmeshMaterials->SetData(pHarness->submeshMaterialIndices.data(),
+                                             pHarness->submeshMaterialIndices.size() * sizeof(uint32_t));
 
         // The spare texture's heap index was table[6]; table[0] now names the same image.
         const uint32_t spare = pHarness->textureTable[GBufferHarness::kTextureCount - 1];
