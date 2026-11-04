@@ -4,11 +4,8 @@
 #include <string>
 namespace Muyo
 {
-// Images
-static const std::string OPAQUE_LIGHTING_OUTPUT_ATTACHMENT_NAME = "opaqueLightingOutput";
-
-// Buffers
-static const std::string PER_VIEW = "perView";
+// Buffers. The app's graph nodes import these; they live here until #51 moves the last shared names
+// out of src/RenderPasses/.
 static const std::string LIGHT_COUNT = "light count";
 static const std::string LIGHT_DATA = "light data";
 

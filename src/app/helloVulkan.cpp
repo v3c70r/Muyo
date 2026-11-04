@@ -388,7 +388,7 @@ int main(int argc, char **argv)
         //
 
         // Record static command buffer
-        GetRenderPassManager()->RecordStaticCmdBuffers(dl);
+        GetRenderPassManager()->RecordStaticCmdBuffers();
 
         // ── The graph owns the frame loop and the present from here (#20 increment 1) ────────────────
         {
