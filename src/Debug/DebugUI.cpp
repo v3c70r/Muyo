@@ -137,7 +137,7 @@ void VerticalTabsPage::Render() const
 
 void DockSpace::Render() const
 {
-    // TODO(#48): move this part outside DebugUI.
+    // TODO(#268): move this part outside DebugUI, or record why it stays.
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);

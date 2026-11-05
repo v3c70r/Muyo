@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """B1b gate: the RenderGraph path has no descriptor sets, layouts, pools or pipeline layouts.
 
-The graph is descriptor-heap-only since B1b. The legacy `RenderPassManager` keeps its own descriptor
-path outside `src/RenderGraph/`, so the scan is scoped to that directory. This is the mechanical form of
+The graph is descriptor-heap-only since B1b. The material descriptor-set path (`DescriptorManager`)
+remains outside `src/RenderGraph/`, so the scan is scoped to that directory; the legacy
+`RenderPassManager` was deleted in #51. This is the mechanical form of
 the acceptance criterion in docs/DescriptorHeap-Bindless-Design.md §12: a grep for the four calls the
 descriptor-set path needed is empty.
 """

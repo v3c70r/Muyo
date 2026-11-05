@@ -107,7 +107,7 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
                         if (light.type == "point")
                         {
-                            // TODO(#20): derive the point-light radius from the glTF light's `range`.
+                            // TODO(#268): derive the point-light radius from the glTF light's `range`.
                             pSceneNode = std::make_unique<PointLightNode>(lightColor, (float)light.intensity);
                         }
                         else if (light.type == "spot")
