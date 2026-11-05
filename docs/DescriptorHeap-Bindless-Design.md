@@ -44,7 +44,7 @@ binding objects between them.
 - GPU-driven execution, DGC, meshlets and work graphs, which remain host renderer concerns;
 - the barrier stage/access derivation, except that heap-visible images use one layout;
 - transient aliasing policy, except that B2 gives each execution its own arena;
-- the legacy `RenderPassManager` and its descriptor sets, which remain until P3;
+- the legacy `RenderPassManager` and its descriptor sets, which P3 has since deleted (#51);
 - the graph's error-reporting policy (it still throws at `Build()` and aborts on Vulkan failure).
 
 ## 2. What the extension actually removes
@@ -81,7 +81,7 @@ The only "layout" left is the **host's root data**. The graph treats it as bytes
 | D6 | `Build()` is **per frame**; pipelines, resources and descriptors are caches behind it. | A measured build cost that cannot be brought down. |
 | D7 | **Per-execution state lives in the executor slot**: command buffers, optional root memory, transient arenas. The host may supply its own root memory. The compiled plan is shared. | A design that needs cross-execution state. |
 | D8 | Heap-visible images live in `VK_IMAGE_LAYOUT_GENERAL`, which removes their layout transitions **now**. `VK_KHR_unified_image_layouts` is deferred until every target driver exposes it. | A measured cost of `GENERAL`, or a driver that needs the extension for a valid layout. |
-| D9 | The legacy `RenderPassManager` keeps its descriptor-set shaders until P3; the graph gets **separate `.heap.slang`** sources rather than `#if` variants. | P3 arrives before the graph variants are done. |
+| D9 | The legacy `RenderPassManager` kept its descriptor-set shaders until P3 (#51, landed); the graph uses **separate `.heap.slang`** sources rather than `#if` variants. | P3 arrived before the graph variants were done; the legacy renderer is now deleted. |
 | D10 | Heap allocation is a static free-list plus **one dynamic ring per in-flight execution**; preallocate 8-16 MB and double at a frame boundary. | A measured need for a larger budget, or a low-memory target. |
 | D11 | RT pipelines use the heap flag with a **null layout**; the SBT remains, and per-hit shader-record resources are a later slice. | A driver rejecting the null RT layout. |
 | D12 | The heap service writes **separate image and sampler descriptors**; combined `Sampler2D` is a shader-side composition of two heap indices, not a combined descriptor. Root layout is the host's concern. | A resource type that requires a combined or embedded descriptor. |
@@ -712,12 +712,12 @@ This section is a proposal for `docs/Roadmap.md`; the roadmap PR applies it afte
 | **#83** per-execution bindings | **Close after B2.** Different root data is a different value per execution; no rebuild and no descriptor rewrite. |
 | **#209** rebuild keeps stale resource | **Fixed in B2** by the desc-keyed resource cache. |
 | **#12** barriers | **Closed; no new work.** The stage/access work landed; unified-layout removal is deferred to B3. If B3 is scheduled it gets its own issue; #12 is not reopened. |
-| **#14/#19** RT parity | RT shaders use heap handles. B0 verifies a null-layout RT pipeline; if a driver rejects it, RT waits on that driver rather than getting a second binding path — the graph does not keep descriptor sets for it. |
+| **#14/#19** RT parity | RT shaders use heap handles. B0 verified a null-layout RT pipeline; if a driver rejects it, RT waits on that driver rather than getting a second binding path. The legacy RT pass was deleted in #51; the graph RT tests remain (#19/#223/#238/#253). |
 | **#57** client frame helper | Unaffected; runs in parallel. |
-| **#20** `helloVulkan` port | **Freeze further ports after #111 until B2.** #111 already ported the UI pass; it is accepted double-conversion debt. Porting more passes now would convert twice; if work continues, record the double conversion as accepted debt. #20 remains open for the final port after B2. |
-| **#51** delete `RenderPassManager` | Unchanged, after P2. |
+| **#20** `helloVulkan` port | **Landed 2026-11-05.** The freeze after #111 held; #111 is accepted double-conversion debt. The final port and the deletion (#51) are complete. |
+| **#51** delete `RenderPassManager` | **Landed 2026-11-05.** `RenderPassManager` and `src/RenderPasses/` are gone; `grep -rn "RenderPassManager" src/` is empty. |
 | **#53/#58/#54** library track | `DescriptorManager` becomes the heap service; device floor becomes 1.4; #54's compute-only test runs on the heap. |
-| **#59** cost criterion | Add per-frame build CPU time and heap/descriptor traffic. Host-side draw-call and GPU-driven costs are the renderer's own metrics, not the graph's. |
+| **#59** cost criterion | Add per-frame build CPU time and heap/descriptor traffic. The legacy comparison path was deleted in #51; #59 must name a new reference. Host-side draw-call and GPU-driven costs are the renderer's own metrics, not the graph's. |
 | **`AGENTS.md` / CI** | Raise the floor to 1.4, enable and verify `descriptorHeap` + `shaderUntypedPointers`, and record driver, Mesa, loader and heap/untyped support in the `[test device]` line. Lavapipe gates the path only when its Mesa exposes both; absence is recorded, not green. |
 | **`docs/DescriptorSet-Lifecycle-Design.md`** | Mark superseded, and remove it from the Doxygen `INPUT` set and `scripts/render_graph_docs.py` in B1b so the API reference stops describing deleted types. |
 | **`Consumers.md` / muyo-llm** | The hard requirement and the 1.4 floor are a breaking change; name the consumer and add the guarantee row before B1b lands. |
@@ -774,8 +774,8 @@ commands contain.
    first bug is attributed to the driver or to us before it is worked around.
 2. **API floor.** Vulkan 1.4 is a deliberate break from the current 1.3 floor in `AGENTS.md`; it must
    be recorded there and in `Consumers.md`, not only in code.
-3. **Shader rewrite cost.** B1b converts every graph shader, and the legacy renderer needs a second
-   variant until P3. The count is small (19 Slang shaders; 8 with explicit `[[vk::binding]]` or a
+3. **Shader rewrite cost.** B1b converted every graph shader, and the legacy renderer needed a second
+   variant until P3 (#51, landed). The count is small (19 Slang shaders; 8 with explicit `[[vk::binding]]` or a
    `SET_(PER_VIEW|PER_OBJ|MATERIAL)` mention by
    `grep -lE '\[\[vk::binding|SET_(PER_VIEW|PER_OBJ|MATERIAL)' shaders/*.slang | wc -l`) but the
    overlap is real.

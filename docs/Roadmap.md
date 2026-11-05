@@ -49,7 +49,7 @@ at all (the subsumed `TODO`s, which live in code). If a fact can be a field, mak
 
 ## Where we are
 
-Measured on 2026-11-04 after the #20 FINAL, UI, GBUFFER and direct-LIGHTING ports and the deletion of the dead legacy passes (`helloVulkan` presents, draws its UI and shades the opaque scene through the graph).
+Measured on 2026-11-05 at `ada2c1d`, after #20 and #51 closed: `helloVulkan` presents, draws its UI and shades the opaque scene through the graph, and the legacy renderer is deleted.
 
 | | Lines | State |
 | --- | --- | --- |
@@ -82,7 +82,7 @@ pipelines, host-owned push/root data and per-frame `Build()`. The **B track** (#
 B2: B0 (#213), B1a (#215), B1b (#216) and B2 (#217) landed, the last one as PR #254. The graph path has
 no descriptor sets, layouts, pools or `VkPipelineLayout`; `Build()` is per frame with resource, pipeline
 and descriptor caches; and `inFlightCount > 1` now works with graph-owned transients (#40, #83). B3 is
-deferred and driver-gated; B4 is optional. The final `#20` port is no longer frozen; the #111 UI pass is
+deferred and driver-gated; B4 is optional. The final `#20` port landed on 2026-11-05; the #111 UI pass is
 the one deliberate double conversion, kept as accepted debt.
 
 ## The library goal, and what it constrains now
@@ -181,10 +181,11 @@ present and images-in-flight, moving the application onto it would replace one h
 with another, and the migration would buy nothing that could be measured. P0 also supplies the
 `signalFence` deferred in A1.3b, which is what a present path needs.
 
-**P1 before P2** because the graph must express what the legacy passes do before the loop can move:
-clears and resolves (`#18`, landed), descriptor heaps (B0–B2, landed; #15 closed as superseded),
+**P1 before P2** because the graph had to express what the legacy passes did before the loop could
+move: clears and resolves (`#18`, landed), descriptor heaps (B0–B2, landed; #15 closed as superseded),
 transient memory (`#16` landed; B2 added the per-execution arenas, #40), pipeline caching (`#17`,
-landed). These are capabilities, not polish — the frame loop cannot be ported around their absence.
+landed). Those capabilities are complete, which is why P2 and P3 have now held; P1 remains open only
+for cost (#59), the RT gate and the device/heap follow-ups.
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
 referenced `RenderPassManager` from outside `src/RenderPasses/` went first — the DebugUI coupling, the
@@ -195,31 +196,35 @@ the manager and the directory; P3 held.
 plausible reason to wait. The mitigation is in P2's gate itself: it is capability, not completeness.
 
 **P1's cost criterion is not a gate yet, and says so.** It originally read "cost in the same range as the
-legacy path", which cannot fail: no scene, resolution, metric, sample count, device or tolerance was
-named. Correctness is the part that can be evaluated now, so it is the gate; the cost half is owned by
-`#59`, which has to establish the method and a tolerance before P1 can close. Recording it with its
-trigger, the same way the C-ABI decision is, rather than leaving a criterion that only looks like one.
+legacy path", which could not fail: no scene, resolution, metric, sample count, device or tolerance was
+named. Correctness is the gate and is now met — the graph is the only renderer. The cost half is owned
+by `#59`, which must establish the method and a tolerance before P1 can close. **The legacy path it was
+meant to compare against was deleted in #51**, so #59 must now choose a reference (a frozen `e584d45`
+worktree with the IBL/RSM confound stated, or a hand-written same-four-passes harness); P1 cannot close
+until that choice and its tolerance are recorded.
 
 ### Cross-cutting track B — descriptor-heap bindless
 
 The design in [DescriptorHeap-Bindless-Design.md](DescriptorHeap-Bindless-Design.md) merged in #211
 (`80465ff`) and is the accepted direction: no descriptor set layouts/sets/pools or pipeline layouts,
 one resource heap and one sampler heap, direct heap access, host-owned push/root data, per-frame `Build()`.
-It is a **track**, not a phase; it ran inside P1 and gated the final `#20` port. B0–B2 all landed.
+It is a **track**, not a phase; it ran inside P1, gated the final `#20` port, and that port landed
+(#20/#51 closed on 2026-11-05). B0–B2 all landed.
 
 | Slice | What it settles | Gate |
 | --- | --- | --- |
 | B0 (#213) | Device features, heap properties, function pointers, standalone probe, AS/RT decision | Same `.heap.spv` on RADV, RTX 3090 and a qualifying llvmpipe; no `Binding`; heaps/descriptors/push data work |
 | B1a | `DescriptorHeapService`, typed regions, static + per-execution rings, sampler lifecycle | Descriptors read through host push data with no descriptor set/layout/pipeline layout |
 | B1b | Graph bind: `PushData`, heap index resolver, null-layout pipelines, remove descriptor-set code | Graph suite green; no descriptor-set/pipeline-layout calls in `src/RenderGraph/`; UI renders |
-| B2 | Per-frame build, descriptor/root rings, in-flight above 1, #17/#209/#40/#83 | **Met** — resize/swapchain build per frame; #209/#17 landed; #40's overlap test and #83's per-execution bindings closed; #59 follows the final #20 |
+| B2 | Per-frame build, descriptor/root rings, in-flight above 1, #17/#209/#40/#83 | **Met** — resize/swapchain build per frame; #209/#17 landed; #40's overlap test and #83's per-execution bindings closed; #20/#51 landed afterwards |
 | B3/B4 | Unified layouts deferred; GPU-written root optional | No work now |
 
 #212 tracks B0–B4 and closed when B2 landed. B3 is deferred and driver-gated; B4 optional; if either is
-scheduled it gets its own issue rather than reopening the tracker. The #20 port freeze ended with B2; the
-#111 UI pass remains accepted double-conversion debt. #15 closed as superseded (the graph no longer has
-descriptor sets to retain). #16 and #12 remain closed; their remaining work belonged to B2/B3, not to a
-reopened issue. GPU-driven execution, DGC, meshlets and work graphs remain host concerns: no G track.
+scheduled it gets its own issue rather than reopening the tracker. The #20 port freeze ended with B2 and
+the port is complete; the #111 UI pass remains accepted double-conversion debt. #15 closed as superseded
+(the graph no longer has descriptor sets to retain). #16 and #12 remain closed; their remaining work
+belonged to B2/B3, not to a reopened issue. GPU-driven execution, DGC, meshlets and work graphs remain
+host concerns: no G track.
 
 ## Technical debt policy
 
@@ -242,37 +247,36 @@ amount of code, and work spent polishing what is about to be removed is worse th
 
 | Debt | Replaced by | Note |
 | --- | --- | --- |
-| Every `TODO` under `src/RenderPasses/` | **Deleted with #51** | The files are gone; no TODO remains. |
-| `helloVulkan.cpp:347` "resizing doesn't work" | **A1.5 FrameSync** | Swapchain recreation with images in flight *is* the fix for resize. |
-| Legacy frame-sync bugs (`m_imageAvailable` reused every frame, per-image fences) | **A1.5 FrameSync** | Fixing them in place is work on code P2 removes. |
+| Legacy rows: `TODO` under `src/RenderPasses/`, the `helloVulkan` resize hook, the old frame-sync bugs, the `RenderPassParameters` assert | **Deleted with #51** | The files and callers are gone. The remaining resize issue is #186 (Backlog), not this table. |
 | `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. |
-| `Texture.h:50` "move this barrier out of the function" | **Resolved by B2 / #40** | The per-execution arena landed in B2 (#254); #16 and #40 are closed. |
+| `Texture.h` "move this barrier out of the function" | **Resolved by B2 / #40** | The per-execution arena landed in B2 (#254); #16 and #40 are closed. |
 | `ResourceBarrier.cpp:64` `TODO(A2)` | **#12 closed; B3 if unified layouts are scheduled** | The stage/access work landed; do not reopen #12. If B3 is scheduled it gets its own issue. |
 | The three `PipelineStateBuilder.h` markers (finish other builders, add more builders, create setters) | **#17 A5** | Pipeline and shader caching is where that builder set is either finished or shown to be unnecessary. This is why `#17` carries `Debt: Subsumes debt` — a field verdict needs an explanation here, the same way a table verdict needed a field. |
-| `RenderPassParameters` `assert(false)` on an unhandled descriptor type | **P3 deletion** | Decide in #46 as "leave it, deleted by P3" unless it is reachable before then. |
 
 ### Not on the parity path — schedule after P3
 
 | Item | Why it can wait |
 | --- | --- |
-| **Copy queue** (`QueueType::COPY` resolves to the graphics queue; `VkRenderDevice.h:59` `// TODO: Handle copy queue`) | The legacy path uses the graphics queue for every transfer, so a real transfer queue is a new capability, not parity. Unfiled today; file it when it is scheduled rather than carrying it. |
+| **Copy queue** (`QueueType::COPY` resolves to the graphics queue; `VkRenderDevice.h:59` `// TODO: Handle copy queue`) | The renderer uses the graphics queue for every transfer, so a real transfer queue is a new capability, not parity. Unfiled today; file it when it is scheduled rather than carrying it. |
 | `ShaderReflectionFetcher` TODOs (input attachments, decorations, specialization constants) | They concern subpass features the graph does not use — it renders with dynamic rendering. Revisit only if subpasses return. |
 | **#25** remaining (`-Wconversion` measurement, scan-build baseline) | Incremental adoption, none of it blocking. `-Wextra` and the warning baseline landed in #193/#194; **#24** (clang-tidy) landed in #205/#207; **#22** (CI) left this table by landing in #91, and AGENTS.md section 4 is now the honest statement of what a green run does and does not prove. |
 
 ## Critical path
 
-There are two chains, because there are two things to reach: the library shipping, and the first
-consumer adopting it. The project's `Critical path` field marks the union and the **Critical path** view
-filters on it — the issues are not listed here, for the reason above.
+There are two chains: the library shipping, and closing P1. **The first-consumer adoption chain is
+complete**, so it no longer has an open item; what remains is the library and P1's non-gate work. The
+project's `Critical path` field marks the union and the **Critical path** view filters on it — the issues
+are not listed here, for the reason above.
 
 - **Library** — frame sync (`#11` ✅) → the graph boundary (`#53`) → the device boundary (`#58`) → the
   boundary test (`#54`). Nothing on this chain can slip without moving the goal.
-- **First consumer** — transfer and clear usages (`#18` ✅) → the client-side frame helper (`#57` ✅;
-  `FrameSync` landed and `helloVulkanRG` uses it) → **B0 (`#213`) → B1a → B1b → B2** (all ✅; B2 is
-  `#217`/#254) → the final port (`#20`; increment 1 is the #111 UI pass, accepted double conversion) →
-  `#48` → the deletion (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was
-  deleted. `#59` sits across this chain rather than in it: P1 cannot close without its number, so its
-  slippage moves the date even though nothing waits for it.
+- **First consumer — complete.** Transfer and clear usages (`#18` ✅) → the client-side frame helper
+  (`#57` ✅) → **B0 (`#213`) → B1a → B1b → B2** (all ✅; B2 is `#217`/#254) → the final port
+  (`#20` ✅; increment 1 was the #111 UI pass, accepted double conversion) → `#48` ✅ → the deletion
+  (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted.
+- **P1 closure** — `#59` (cost) with `#197` (timings, its data source); the RT gate
+  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`. `#59` is now the
+  chain that decides P1's end date, and it must choose a reference because the legacy path is gone.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.
 - **B track** — B0 (#213) was the go/no-go; B1a/B1b implemented the heap and graph bind; B2 made per-frame
@@ -287,8 +291,8 @@ closed item has no slippage left. #11 is the first case: it closed with A1.5 del
 leaving it marked would have the Critical path view claiming a finished item still decides the schedule.
 `#18` and `#68` were cleared the same way, on the same reasoning, when they landed. The B-track and B2
 items — `#17`, `#40`, `#83`, `#213`, `#215`, `#216`, `#217` — were cleared on the same rule after
-2026-10-28. The two P2/P3 prerequisites `#48` and `#49` were marked Yes instead, because the critical path
-diagram has always shown them between the final port and `#51`; #49 is now closed with the RSM deletion.
+2026-10-28. The P2/P3 items `#48`, `#49`, `#20` and `#51` are closed and clear; the adoption chain has no
+open `Critical path` item. `#59` and `#197` remain marked because P1 cannot close without them.
 
 **The field is scoped to this project.** It answers "whose slippage moves *Muyo's* end date", so a
 consumer's own schedule does not belong on it: `muyo-llm`'s M1 blocking list is tracked in muyo-llm's
@@ -300,21 +304,16 @@ otherwise be read differently by each session that touched it.
 
 ## Risks
 
-1. **The migration is deferred by one more graph feature.** This is the real risk, and the phase gates
-   are its mitigation: **P2's gate is capability, not completeness.** A1.5 and #18 have landed, and
-   `helloVulkanRG` proves the loop, so the graph and the legacy renderer can coexist during P2. The B
-   track was the one deliberate sequencing exception: further #20 ports froze after #111 until B2,
-   because converting a pass twice is the retrofit the heap design exists to avoid. **That freeze ended
-   when B2 landed (2026-10-28, #254)**, and #17 landed with it; #19 can continue in parallel. `helloVulkan`
-   itself is now fully graph-driven, which closes this risk.
-2. **Two renderers means every fix lands twice.** Mitigated by the do-not-fix table above: the way to
-   keep the cost bounded is to stop polishing the code being deleted, and to put new behaviour in the
-   graph only.
-3. **RT parity pulls P2 later.** The legacy RT pass was dropped with #51; `helloVulkan` presents the
-   raster graph. If ray tracing must be at parity, `#14` and `#19` join the critical path. **The trigger
-   is a consumer that needs RT at parity**; the graph's RT tests remain, and a rebuild would be a
-   graph implementation. Recorded with its trigger so `#14`/`#19` can be scheduled rather than re-argued each
-   time someone asks.
+1. **The migration is deferred by one more graph feature.** *Resolved 2026-11-05.* The phase gates
+   held: P2's capability gate was met and P3 deleted the legacy renderer; `helloVulkan` is fully
+   graph-driven. Recorded because the mitigation — capability, not completeness — is still the pattern
+   for any future adoption.
+2. **Two renderers means every fix lands twice.** *Resolved 2026-11-05.* The second renderer is deleted;
+   the do-not-fix table is now only about markers that survive in the graph and the host.
+3. **RT parity is a rebuild, not a port.** The legacy RT pass was dropped with #51; `helloVulkan` presents
+   the raster graph. If ray tracing must be at parity, `#19` and the RT cluster join the critical path.
+   **The trigger is a consumer that needs RT at parity**; the graph's RT tests remain, and a rebuild
+   would be a graph implementation. #223/#238/#253 are the known RTX 3090 / lifetime gaps.
 4. **The library is shaped by its first consumer.** The renderer's needs become the API by default and
    every later client inherits them. Mitigated on two fronts, and no longer hypothetically: A1.5's split
    keeps presentation out of the library, and **a second consumer that is not a renderer now exists** —
@@ -356,7 +355,8 @@ otherwise be read differently by each session that touched it.
 
 **Six milestones**, each carrying its gate in its description: the four phases
 (`P0 Frame synchronization` … `P3 Deprecation`), the library track (`L Library extraction`), and
-`Backlog (after P3)` for what this document deliberately defers. The two extra ones exist because the plan
+`Backlog (after P3)` for what this document deliberately defers. **P0, P2 and P3 are closed** (their
+gates held); P1, L and Backlog remain open. The two extra ones exist because the plan
 has two halves — P0–P3 is the *first consumer*, L is the *library itself* — and because "after P3" is a
 verdict rather than an absence of one. The B descriptor-heap track is cross-cutting inside P1 rather than
 a seventh milestone; the B issues carry the P1 milestone, and the tracking issue #212 closed when B2

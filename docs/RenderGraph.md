@@ -9,12 +9,12 @@ GPU-driven rendering (compute-generated draws, frustum culling), async compute a
 
 ## Status
 
-The RenderGraph drives the **tests**, and `helloVulkan` now presents and shades entirely through it:
+The RenderGraph drives the **tests**, and `helloVulkan` presents and shades entirely through it:
 `FrameSync` owns acquire/present and the `GBUFFER`, direct `OPAQUE_LIGHTING`, `UI` and `FINAL` passes are
-graph nodes over graph-owned transients (#20). `RenderPassManager` and `src/RenderPasses/` are deleted
-(#51). IBL, RSM and the legacy RT pass were dropped rather than ported; direct lighting is deliberately
-direct-only, and the app still loads the environment map for the UI preview. Note the following while the
-library and its consumers evolve:
+graph nodes over graph-owned transients (#20, closed). `RenderPassManager` and `src/RenderPasses/` are
+deleted (#51, closed). IBL, RSM and the legacy RT pass were dropped rather than ported; direct lighting
+is deliberately direct-only, and the app still loads the environment map for the UI preview. Note the
+following while the library and its consumers evolve:
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.
