@@ -185,7 +185,7 @@ with another, and the migration would buy nothing that could be measured. P0 als
 move: clears and resolves (`#18`, landed), descriptor heaps (B0–B2, landed; #15 closed as superseded),
 transient memory (`#16` landed; B2 added the per-execution arenas, #40), pipeline caching (`#17`,
 landed). Those capabilities are complete, which is why P2 and P3 have now held; P1 remains open only
-for cost (#59), the RT gate and the device/heap follow-ups.
+for cost (#59), the RT gate and the device/heap follow-ups (#267 included).
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
 referenced `RenderPassManager` from outside `src/RenderPasses/` went first — the DebugUI coupling, the
@@ -197,8 +197,9 @@ plausible reason to wait. The mitigation is in P2's gate itself: it is capabilit
 
 **P1's cost criterion is not a gate yet, and says so.** It originally read "cost in the same range as the
 legacy path", which could not fail: no scene, resolution, metric, sample count, device or tolerance was
-named. Correctness is the gate and is now met — the graph is the only renderer. The cost half is owned
-by `#59`, which must establish the method and a tolerance before P1 can close. **The legacy path it was
+named. Correctness is the gate; adoption is complete and the graph is the only renderer, but #267 (a
+per-submesh material-slot defect found in the reconciliation) remains open, so P1 cannot close until it
+is fixed or shown not to affect the rendered scene. The cost half is owned by `#59`, which must establish the method and a tolerance before P1 can close. **The legacy path it was
 meant to compare against was deleted in #51**, so #59 must now choose a reference (a frozen `e584d45`
 worktree with the IBL/RSM confound stated, or a hand-written same-four-passes harness); P1 cannot close
 until that choice and its tolerance are recorded.
@@ -240,7 +241,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | Of the `TODO` markers under `src/`, one names what will handle it (`ResourceBarrier.cpp:64`, `TODO(A2)`) and the rest name nothing. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted here, because the count moved twice while this document was being reviewed and a number is the part that rots. One is worse than a marker: `assert("TODO: update node date")` in `Scene.cpp` asserts **nothing** (a string literal is always non-null), so it reads like a check. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible, which is the failure this document exists to avoid. |
+| **TODO hygiene** | Every marker under `src/` now names an open issue (`#17`, `#253`, `#265`, `#267`, `#268`) or is a historical comment. The reconciliation retargeted the two stale closed references (`TODO(#20)` in `Scene.cpp`/`SceneImporter.cpp`, `TODO(#48)` in `DebugUI.cpp`), and removed debt rows for `TODO(A2)` and `Texture.h` after their markers had already gone. #267 is the submesh material slot; #268 covers the glTF point-light `range` and the `DockSpace` move. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
@@ -249,15 +250,13 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | --- | --- | --- |
 | Legacy rows: `TODO` under `src/RenderPasses/`, the `helloVulkan` resize hook, the old frame-sync bugs, the `RenderPassParameters` assert | **Deleted with #51** | The files and callers are gone. The remaining resize issue is #186 (Backlog), not this table. |
 | `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. |
-| `Texture.h` "move this barrier out of the function" | **Resolved by B2 / #40** | The per-execution arena landed in B2 (#254); #16 and #40 are closed. |
-| `ResourceBarrier.cpp:64` `TODO(A2)` | **#12 closed; B3 if unified layouts are scheduled** | The stage/access work landed; do not reopen #12. If B3 is scheduled it gets its own issue. |
 | The three `PipelineStateBuilder.h` markers (finish other builders, add more builders, create setters) | **#17 A5** | Pipeline and shader caching is where that builder set is either finished or shown to be unnecessary. This is why `#17` carries `Debt: Subsumes debt` — a field verdict needs an explanation here, the same way a table verdict needed a field. |
 
 ### Not on the parity path — schedule after P3
 
 | Item | Why it can wait |
 | --- | --- |
-| **Copy queue** (`QueueType::COPY` resolves to the graphics queue; `VkRenderDevice.h:59` `// TODO: Handle copy queue`) | The renderer uses the graphics queue for every transfer, so a real transfer queue is a new capability, not parity. Unfiled today; file it when it is scheduled rather than carrying it. |
+| **Copy queue** (`QueueType::COPY` still resolves to the graphics queue; see `src/RenderGraph/RenderGraphNodeResource.h:20`) | The renderer uses the graphics queue for every transfer, so a real transfer queue is a new capability, not parity. Unfiled today; file it when it is scheduled rather than carrying it. |
 | `ShaderReflectionFetcher` TODOs (input attachments, decorations, specialization constants) | They concern subpass features the graph does not use — it renders with dynamic rendering. Revisit only if subpasses return. |
 | **#25** remaining (`-Wconversion` measurement, scan-build baseline) | Incremental adoption, none of it blocking. `-Wextra` and the warning baseline landed in #193/#194; **#24** (clang-tidy) landed in #205/#207; **#22** (CI) left this table by landing in #91, and AGENTS.md section 4 is now the honest statement of what a green run does and does not prove. |
 
@@ -275,7 +274,7 @@ are not listed here, for the reason above.
   (`#20` ✅; increment 1 was the #111 UI pass, accepted double conversion) → `#48` ✅ → the deletion
   (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted.
 - **P1 closure** — `#59` (cost) with `#197` (timings, its data source); the RT gate
-  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`. `#59` is now the
+  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`/`#267`. `#59` is now the
   chain that decides P1's end date, and it must choose a reference because the legacy path is gone.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.

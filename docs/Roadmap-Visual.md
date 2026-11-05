@@ -2,7 +2,7 @@
 
 **Snapshot:** 2026-11-05, master `ada2c1d`. **Adoption is complete:** #20 and #51 are closed, the
 renderer is fully graph-driven, and `src/RenderPasses/` is gone. P0, P2 and P3 are closed milestones;
-P1, L and Backlog remain open with **27 open issues**. The B track is complete through B2, and the
+P1, L and Backlog remain open with **29 open issues**. The B track is complete through B2, and the
 post-adoption reconciliation added #262/#265 to P1 and moved #186 to Backlog.
 
 **Authority:** phase membership is the six GitHub milestones; an issue's state is its `Status`,
@@ -22,12 +22,12 @@ about. The view lives here so the contract there stays true.
 ```mermaid
 flowchart LR
     P0["P0 Frame synchronization<br/>closed · 10 done<br/>executor + timeline values"]
-    P1["P1 Graph parity<br/>open · 11<br/>cost + RT + device/heap"]
+    P1["P1 Graph parity<br/>open · 12<br/>cost + RT + device/heap"]
     B["B descriptor heap<br/>B0–B2 ✅ · B3/B4 future<br/>inside P1"]
     P2["P2 App adoption<br/>closed · 5 done<br/>helloVulkan fully on the graph"]
     P3["P3 Deprecation<br/>closed · 1 done<br/>RenderPassManager deleted"]
     L["L Library extraction<br/>open · 7<br/>overlaps P1"]
-    BL["Backlog (after P3)<br/>open · 9<br/>tooling + deferred capabilities"]
+    BL["Backlog (after P3)<br/>open · 10<br/>tooling + deferred capabilities"]
     P0 --> P1 --> B --> P2 --> P3
     L -. constrains .-> P1
     P3 -. after it .-> BL
@@ -36,11 +36,11 @@ flowchart LR
 | Phase | Gate (from the milestone description) | State |
 | --- | --- | --- |
 | **P0** | Executor runs N in-flight executions; completion is per-queue timeline values; no frame boundary on the execution path. | **Met, closed.** 10 done, 0 open. |
-| **P1** | The graph renders the scene validation-clean with the capabilities (transfer/clear, transients, descriptors, pipeline caching). Correctness is met; RT is a separate gate. The cost half is #59. | **Open, 11.** Correctness met: the graph is the only renderer after #51. Remaining: #59 cost (must choose a new reference because the legacy path is gone), the RT cluster #19/#223/#238/#253, and device/heap follow-ups #222/#233/#234/#262/#265. |
+| **P1** | The graph renders the scene validation-clean with the capabilities (transfer/clear, transients, descriptors, pipeline caching). RT is a separate gate. The cost half is #59. | **Open, 12.** Adoption is complete and the graph is the only renderer after #51, but #267 is an open per-submesh material-slot defect. Remaining: #59 cost (must choose a new reference because the legacy path is gone), the RT cluster #19/#223/#238/#253, device/heap follow-ups #222/#233/#234/#262/#265, and #267. |
 | **P2** | `helloVulkan` renders through the graph; `RenderPassManager` is referenced only by its own files. Capability, not completeness. | **Met, closed.** 5 done, 0 open; the manager was deleted with #51. |
 | **P3** | `grep -rn "RenderPassManager" src/` is empty and `src/RenderPasses/` is gone; the diff is almost entirely deletions. | **Met, closed.** 1 done, 0 open (#51). |
 | **L** | A non-renderer consumer runs against the public surface only, with no `gap` row blocking it. | **Open, 7.** #53 (public surface) is in progress; #54 and #58 are the other critical-path items. #72 is the driver-specific blocker. |
-| **Backlog** | Work the roadmap places after the first consumer adoption (complete) and P3. | **Open, 9.** None on the parity path. |
+| **Backlog** | Work the roadmap places after the first consumer adoption (complete) and P3. | **Open, 10.** None on the parity path. |
 
 ### B track inside P1
 
@@ -103,6 +103,7 @@ flowchart LR
 | P1 | #253 Build vs in-flight RT pipeline | Ray tracing | No |
 | P1 | #262 NVIDIA array-member reads | Descriptors | No |
 | P1 | #265 dead device features | Device | No |
+| P1 | #267 submesh material index | Descriptors | No |
 | L | #53 extract `muyo_rg` | Graph API | **Yes** |
 | L | #54 in-tree boundary coverage | Graph API | **Yes** |
 | L | #58 extract device layer | Device | **Yes** |
@@ -119,6 +120,7 @@ flowchart LR
 | Backlog | #219 GLFW init error reporting | Tooling | No |
 | Backlog | #220 RenderDoc on Wayland | Tooling | No |
 | Backlog | #260 X11 close crash | Tooling | No |
+| Backlog | #268 stale TODO markers | Tooling | No |
 
 ## 5. Dependencies
 
@@ -142,6 +144,7 @@ Earlier rounds (R1–R28) are in the file's history; this pass regenerated the s
 | R33 | #262/#265 had no milestone; #265 was filed from #264 review. | Issue list. | Assigned both to P1; #265 is `Device / Fix early / Critical path No`. |
 | R34 | No rebuild issues for IBL/RSM/RT were filed. | #20 close comment; user decision. | Deliberate: create them as features after the library/renderer separation. |
 | R35 | Three closed items still carried `Critical path: Yes` (#48, #226, #230). | Board query. | Cleared; the field now has 5 open items, all in the library/P1 chains. |
+| R36 | The TODO audit found closed-issue markers and a live material-index defect. | `grep TODO(#20)\|TODO(#48)`; `Scene.cpp:76`. | Filed #267 (submesh material index, P1) and #268 (stale markers, Backlog); retargeted the three markers. |
 
 ## 7. Refreshing this view
 
@@ -153,7 +156,9 @@ gh api 'repos/v3c70r/Muyo/milestones?state=all&per_page=100' \
 gh issue list --state open --limit 100 --json number,title,milestone \
   --jq '.[] | "#\(.number) \(.milestone.title // "-") \(.title)"'
 
-# critical-path count: expect 5 at this snapshot
+# critical-path count: expect 5 at this snapshot.
+# Board reads need the read:project scope (`gh auth refresh -s read:project`); without it this call
+# fails with "Could not resolve to a node..." — that is a missing scope, not an empty board.
 gh api graphql -f query='query($p:ID!,$q:String){ node(id:$p){ ... on ProjectV2 {
   items(first:100,query:$q){ totalCount } } } }' \
   -f p=PVT_kwHOACw01s4BmAfF -f q='critical-path:Yes' --jq '.data.node.items.totalCount'
