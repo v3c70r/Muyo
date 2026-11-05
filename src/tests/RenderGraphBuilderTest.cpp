@@ -5605,4 +5605,13 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace records the seg
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "TextureResource: a missing file throws in every build configuration", "[Texture]")
+{
+    // stbi_load returns null for a missing file. The old assert disappeared under NDEBUG and the path
+    // ran LoadPixels(nullptr, 0, 0) into a 0x0 image; the throw names the file in Release too.
+    REQUIRE_THROWS_AS(
+        GetRenderResourceManager()->GetTexture("texture_missing_file_probe", "assets/does_not_exist_51.png"),
+        std::runtime_error);
+}
+
 }  // namespace Muyo::RenderGraph

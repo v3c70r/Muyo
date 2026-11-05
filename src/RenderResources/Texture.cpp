@@ -57,7 +57,13 @@ void TextureResource::LoadImage(const std::string &path)
     int height = 0;
     int channels = 0;
     stbi_uc *pixels = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-    assert(pixels);
+    // A missing or unreadable file is input, not a programmer invariant: in Release the assert used to
+    // disappear and the path ran `LoadPixels(nullptr, 0, 0)` into a 0x0 image. Throw so the caller gets
+    // the path and the reason in every configuration.
+    if (pixels == nullptr)
+    {
+        throw std::runtime_error("TextureResource::LoadImage: failed to load '" + path + "'");
+    }
     LoadPixels(static_cast<void *>(pixels), width, height);
     stbi_image_free(pixels);
 }

@@ -11,7 +11,7 @@ guarantee named is a hidden dependency waiting to be broken.
 
 | Consumer | Kind | Where | What it exercises |
 | --- | --- | --- | --- |
-| `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. `FrameSync` owns acquire/present and the `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes over graph-owned transients (#20); IBL/cubemap and the RT pass still record through `RenderPassManager` until their own PRs; the recorded-only SKYBOX/TRANSPARENT/MESH_SHADER/RSM passes are deleted. |
+| `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. `FrameSync` owns acquire/present and the `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes over graph-owned transients (#20); the legacy renderer and `src/RenderPasses/` are deleted (#51), with IBL/RSM/RT dropped rather than ported. |
 | in-tree tests | test suite | `src/tests/` | Every graph guarantee, in isolation, on one device at a time. |
 | **muyo-llm** | **first-party architecture validation** | <https://github.com/v3c70r/muyo-llm> | A compute-only, windowless, long-running LLM decode workload. |
 

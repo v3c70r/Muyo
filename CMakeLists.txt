@@ -265,7 +265,6 @@ include_directories(SYSTEM
 
 include_directories(
     "src/RenderDevice"
-    "src/RenderPasses"
     "src/RenderResources"
     "src/Scene"
     "src/Debug"
@@ -279,8 +278,6 @@ file(GLOB muyo_SRC
     "src/Debug/*.cpp"
     "src/RenderDevice/*.h"
     "src/RenderDevice/*.cpp"
-    "src/RenderPasses/*.h"
-    "src/RenderPasses/*.cpp"
     "src/RenderResources/*.h"
     "src/RenderResources/*.cpp"
     "src/Scene/*.h"
@@ -326,7 +323,6 @@ target_include_directories(muyo
         # That these are needed at all is #53's finding arriving from the packaging side: the
         # surface is not a surface, it is the whole tree.
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderDevice>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderPasses>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderResources>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/Scene>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/Debug>

@@ -4,18 +4,17 @@ The RenderGraph is a declarative, data-driven frame graph for the Vulkan rendere
 described as a set of **resources** and **nodes** (passes); the graph derives execution order,
 GPU synchronisation and queue scheduling from the declared reads/writes.
 
-It is intended to replace the hand-written `RenderPassManager` pipeline and is the home for
+It replaced the hand-written `RenderPassManager` pipeline and is the home for
 GPU-driven rendering (compute-generated draws, frustum culling), async compute and ray tracing.
 
 ## Status
 
-The RenderGraph drives the **tests**, and `helloVulkan` now presents and shades through it: `FrameSync`
-owns acquire/present and the `GBUFFER`, direct `OPAQUE_LIGHTING`, `UI` and `FINAL` passes are graph nodes
-over graph-owned transients (#20). The remaining legacy work is IBL/cubemap generation and the RT pass;
-the recorded-only `SKYBOX`/`TRANSPARENT`/`MESH_SHADER`/RSM passes are deleted, and `RenderPassManager` no
-longer owns the swapchain or presents. Direct lighting is deliberately direct-only until IBL ports; shadows
-were dropped and would be rebuilt from scratch if wanted. Note the following while the migration is in
-flight:
+The RenderGraph drives the **tests**, and `helloVulkan` now presents and shades entirely through it:
+`FrameSync` owns acquire/present and the `GBUFFER`, direct `OPAQUE_LIGHTING`, `UI` and `FINAL` passes are
+graph nodes over graph-owned transients (#20). `RenderPassManager` and `src/RenderPasses/` are deleted
+(#51). IBL, RSM and the legacy RT pass were dropped rather than ported; direct lighting is deliberately
+direct-only, and the app still loads the environment map for the UI preview. Note the following while the
+library and its consumers evolve:
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
   resource does *not* yet create an implicit edge, so declare every ordering you rely on.
@@ -40,9 +39,10 @@ flight:
   through `GetHeapIndex`. Root data and push data are opaque bytes: a node writes them with
   `RenderGraphNodeContext::PushData` (and optionally `AllocateRoot`). Nothing in the graph path calls
   `vkCmdBindDescriptorSets`, `vkCmdPushConstants`, `vkCreateDescriptorSetLayout` or
-  `vkCreatePipelineLayout`; `scripts/check_descriptor_path.py` enforces that in CI. The legacy
-  `RenderPassManager` keeps its descriptor-set path outside the graph. The historical descriptor-set
-  design (`DescriptorSet-Lifecycle-Design.md`) is kept in the repository, outside this reference.
+  `vkCreatePipelineLayout`; `scripts/check_descriptor_path.py` enforces that in CI. The material
+  descriptor-set path (`DescriptorManager`) remains outside the graph; the graph never uses it. The
+  historical descriptor-set design (`DescriptorSet-Lifecycle-Design.md`) is kept in the repository,
+  outside this reference.
 - **Device floor.** The engine requires Vulkan 1.4 and enables `synchronization2` and
   `timelineSemaphore` at device creation; both are verified against `vkGetPhysicalDeviceFeatures2`
   and device creation fails with a named error if either is missing. The descriptor-heap path also
@@ -323,9 +323,10 @@ const Push push{*tlas, 0};
 ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 ```
 
-The graph imposes no set or binding convention; the root layout is the host's. The engine's built-in
-sets (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) are a legacy `RenderPassManager` convention, kept in
-`shaders/shared/RenderGraph/bindings.h`, not something the library knows about.
+The graph imposes no set or binding convention; the root layout is the host's. The engine's legacy
+descriptor-set names (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) are kept in
+`shaders/shared/RenderGraph/bindings.h` for the remaining legacy shaders and tests, not something the
+library knows about.
 
 To bind part of a buffer rather than all of it, add a `bufferRange` to the use:
 

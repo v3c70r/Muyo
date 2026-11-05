@@ -156,7 +156,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "FrameSync: a headless swapchain presents seve
     for (VkCommandBuffer cmd : commandBuffers) GetRenderDevice()->FreeReusablePrimaryCommandbuffer(cmd);
 
     // The slot cycles 0,1,2,0,1,2,0,1, and each slot has its own acquire semaphore - the two things
-    // RenderPassManager gets wrong (one semaphore for the process, fence indexed by image).
+    // the legacy renderer got wrong (one semaphore for the process, fence indexed by image).
     const std::vector<uint32_t> expectedSlots = {0, 1, 2, 0, 1, 2, 0, 1};
     CHECK(slots == expectedSlots);
     REQUIRE(acquireSemaphores.size() >= 3);
