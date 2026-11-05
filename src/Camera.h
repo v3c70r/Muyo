@@ -111,7 +111,6 @@ public:
         glm::perspective(glm::radians(45.0f), newSize.x / newSize.y, 0.1f, 10.0f);
     }
     virtual void Update() = 0;
-    virtual void UpdatePerViewDataUBO(UniformBuffer<PerViewData> *ubo) { ubo->SetData(m_perViewData); };
 
     void SetAperture(float fAperture) { m_perViewData.fAperture = fAperture; }
 
@@ -210,14 +209,6 @@ public:
     }
 
     void Update() override {}
-
-    virtual void UpdatePerViewDataUBO(UniformBuffer<PerViewData> *ubo) override
-    {
-        PerViewData perView = m_perViewData;
-        perView.mView = GetViewMat();
-        perView.mViewInv = glm::inverse(perView.mView);
-        ubo->SetData(perView);
-    }
 
 protected:
     glm::vec2 mLastPos;

@@ -55,7 +55,7 @@ Measured on 2026-11-04 after the #20 FINAL, UI, GBUFFER and direct-LIGHTING port
 | --- | --- | --- |
 | `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
 | `src/RenderPasses/` | 0 | Deleted (#51). The graph owns the frame and the raster scene; IBL/RSM/RT were dropped rather than ported. |
-| `src/app/helloVulkan.cpp` | 1,026 | `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
+| `src/app/helloVulkan.cpp` | 1,029 | `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
 | `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 | `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
 
@@ -72,7 +72,7 @@ counts the singleton call sites, and the external-include scan is the Python blo
 **Adoption is complete in the in-repo renderer.** `helloVulkan` acquires and presents through `FrameSync`,
 and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes; the app owns the camera and
 the environment-map preview. The legacy renderer is deleted (#51): IBL, RSM and the RT pass were dropped
-rather than ported and would be rebuilt from scratch if wanted. The app owns the camera and the environment-map preview. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
+rather than ported and would be rebuilt from scratch if wanted. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
 consumer now all exercise the graph. Closing the pass gap is the risk this roadmap exists to close — see
 Risks.
 

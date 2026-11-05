@@ -360,8 +360,8 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
 
     VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     features2.features.multiDrawIndirect = VK_TRUE;
-    // Required by shaders that use 64-bit integers / buffer references and by shaders that
-    // read/write storage images with unknown formats (testPrimary.rgen).
+    // TODO(#265): no built shader declares OpCapability Int64; this enable has no consumer. Drop it or
+    // name a consumer. shaderStorageImageRead/WriteWithoutFormat are used by testPrimary.rgen.
     features2.features.shaderInt64 = VK_TRUE;
     features2.features.shaderStorageImageReadWithoutFormat = VK_TRUE;
     features2.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;

@@ -236,6 +236,8 @@ int main(int argc, char **argv)
     accStructFeature.accelerationStructure = VK_TRUE;
 
     // Mesh shader feature
+    // TODO(#265): no mesh shader remains after #263 deleted the pass and its shaders; decide whether to
+    // stop requesting the extension and pushing this feature.
     VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeature = {};
     meshShaderFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
     meshShaderFeature.taskShader = VK_FALSE;
