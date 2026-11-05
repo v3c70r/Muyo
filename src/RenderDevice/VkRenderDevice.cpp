@@ -360,8 +360,8 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
 
     VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     features2.features.multiDrawIndirect = VK_TRUE;
-    // Required by shaders that use 64-bit integers / buffer references (pathTracing.rchit)
-    // and by shaders that read/write storage images with unknown formats (testPrimary.rgen).
+    // Required by shaders that use 64-bit integers / buffer references and by shaders that
+    // read/write storage images with unknown formats (testPrimary.rgen).
     features2.features.shaderInt64 = VK_TRUE;
     features2.features.shaderStorageImageReadWithoutFormat = VK_TRUE;
     features2.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
@@ -380,7 +380,7 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     features12.drawIndirectCount = VK_TRUE;
     // Shaders declare layout(scalar) / layout(buffer_reference, scalar); e.g. the packed
-    // Vertex array in pathTracing.rchit has a 40-byte stride, which is only valid with
+    // Vertex array in the legacy shaders has a 40-byte stride, which is only valid with
     // scalar block layout.
     features12.scalarBlockLayout = VK_TRUE;
     // 16-bit *arithmetic*, which is the other half of what a consumer's F16 kernels need and is a

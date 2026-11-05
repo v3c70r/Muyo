@@ -35,7 +35,6 @@
 #include "PerObjResourceManager.h"
 #include "RenderGraph/RenderGraphBuilder.h"
 #include "RenderGraph/RenderGraphNodeResource.h"
-#include "RenderPassManager.h"
 #include "RenderResourceManager.h"
 #include "RenderResourceNames.h"
 #include "SamplerManager.h"
@@ -57,10 +56,6 @@
 #include "WindowGLFW.h"
 #endif
 
-#ifdef FEATURE_RAY_TRACING
-#include "RayTracingSceneManager.h"
-#endif
-
 using namespace Muyo;
 using namespace Muyo::RenderGraph;
 
@@ -68,9 +63,9 @@ bool g_bWaylandExt = false;
 const int WIDTH = 1920;
 const int HEIGHT = 1080;
 
-// The composite is a per-slot graph transient now, so the composite hazard that pinned this to 1 is gone.
-// The remaining legacy bridge is not per-slot, though: one `sceneFinished` binary semaphore and one set of
-// IBL/cubemap command buffers are shared by every frame. Raising this is a separate change (#20).
+// The graph and FrameSync both support more than one execution, but this app still uses one slot. Raising
+// it is a separate change: the UI vertex/index pair is per swapchain image, and the heap's rings are
+// configured from this constant.
 constexpr uint32_t kImagesInFlight = 1;
 // Same format and mode the legacy manager used, so the port does not change what the surface presents.
 constexpr VkSurfaceFormatKHR kSwapchainFormat = {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
@@ -81,13 +76,25 @@ constexpr ImTextureID kEnvMapTextureId = 1;
 
 static int s_framebufferWidth = WIDTH;
 static int s_framebufferHeight = HEIGHT;
+// The app owns the camera now that the legacy renderer is gone. The event callbacks are registered before
+// the camera exists and only run after the frame loop starts, so a guarded pointer is enough.
+static Arcball *s_pArcball = nullptr;
+
+/// Load (or reload) the environment-map preview texture. IBL used to own this; the graph's UI node
+/// imports the texture by name each frame, so reloading is just replace-and-let-the-next-import-see-it.
+/// The caller is the frame loop after BeginFrame, i.e. with the previous execution already waited, so
+/// destroying the old texture cannot strand in-flight GPU work.
+static TextureResource *LoadEnvironmentMap(const std::string &path)
+{
+    GetRenderResourceManager()->RemoveResource("EnvMap");
+    return GetRenderResourceManager()->GetTexture("EnvMap", path);
+}
 
 ///
 // Arcball callbacks
 static void clickArcballCallback(int button, int action)
 {
-    Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera());
-    if (pArcball)
+    if (Arcball *pArcball = s_pArcball)
     {
         if (button == Input::Button::BUTTON_LEFT)
         {
@@ -105,8 +112,7 @@ static void clickArcballCallback(int button, int action)
 
 static void rotateArcballCallback(double xpos, double ypos)
 {
-    Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera());
-    if (pArcball)
+    if (Arcball *pArcball = s_pArcball)
     {
         pArcball->UpdateDrag(glm::vec2(xpos, ypos));
     }
@@ -129,7 +135,7 @@ static void InitEventHandlers()
     pWheel->Watch(
         [](uint32_t, double, double yoffset)
         {
-            if (Arcball *pArcball = dynamic_cast<Arcball *>(GetRenderPassManager()->GetCamera()))
+            if (Arcball *pArcball = s_pArcball)
             {
                 pArcball->AddZoom(yoffset * -0.1f);
             }
@@ -195,7 +201,6 @@ void cleanup()
     GetDescriptorManager()->DestroyDescriptorSetLayouts();
     GetDescriptorManager()->DestroyDescriptorPool();
 
-    GetRenderPassManager()->Unintialize();
     GetRenderDevice()->DestroyCommandPools();
     GetRenderResourceManager()->Unintialize();
     GetMemoryAllocator()->Unintialize();
@@ -203,10 +208,6 @@ void cleanup()
     GetRenderDevice()->Unintialize();
     Window::Uninitialize();
 }
-
-void updateUniformBuffer(UniformBuffer<PerViewData> *) {
-    // s_arcball.UpdatePerViewDataUBO(ub);
-};
 
 int main(int argc, char **argv)
 {
@@ -310,7 +311,27 @@ int main(int argc, char **argv)
 
         // update framebuffer size
         Window::GetFramebufferSize(s_framebufferWidth, s_framebufferHeight);
-        GetRenderPassManager()->Initialize(s_framebufferWidth, s_framebufferHeight);
+
+        // The app owns the camera now (#51): same parameters the manager used.
+        const float far = 100.0F;
+        auto pSceneCamera = std::make_unique<Arcball>(
+            glm::perspective(glm::radians(80.0f),
+                             static_cast<float>(s_framebufferWidth) / static_cast<float>(s_framebufferHeight), 0.1F,
+                             far),
+            glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
+                        glm::vec3(0.0f, 0.0f, 0.0f),   // Center
+                        glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
+            0.1f,                                      // near
+            far,                                       // far
+            static_cast<float>(s_framebufferWidth), static_cast<float>(s_framebufferHeight));
+        s_pArcball = pSceneCamera.get();
+
+        // IBL used to load this as a side effect; the UI preview imports it by name, so the app loads it.
+        if (LoadEnvironmentMap("assets/hdr/black.hdr") == nullptr)
+        {
+            throw std::runtime_error("helloVulkan: the environment-map preview texture was not created.");
+        }
+
         DrawLists dl = GetSceneManager()->GatherDrawLists();
         GetSceneManager()->ConstructLightBufferFromDrawLists(dl);
 
@@ -341,54 +362,7 @@ int main(int argc, char **argv)
         auto *pGBufferDrawCommands =
             GetRenderResourceManager()->GetDrawCommandBuffer("GBUFFER draw commands", gbufferDrawCommands);
 
-        // Registration, not a lookup: the passes fetch "perView" by name, so the call has to happen
-        // even though this pointer is not read (#25).
-        (void)GetRenderResourceManager()->GetUniformBuffer<PerViewData>("perView");
-
         // Load materials
-
-        // Test ray tracing
-#ifdef FEATURE_RAY_TRACING
-
-        RayTracingSceneManager RTSceneManager;
-        RTSceneManager.BuildScene(dl.m_aDrawLists[DrawLists::DL_OPAQUE]);
-        GetRenderPassManager()->SetRayTracingSceneManager(&RTSceneManager);
-        // Allocate ray tracing descriptor layout based on number of textures in scene.
-        // GetDescriptorManager()->CreateRayTracingDescriptorLayout(GetTextureResourceManager()->GetTextures().size());
-
-        // RTBuilder rayTracingBuilder;
-        // if (GetRenderDevice()->IsRayTracingSupported())
-        //{
-        //     // Test ray tracing
-        //     RTInputs rtInputs;
-        //     rtInputs = ConstructRTInputsFromDrawLists(dl);
-        //     rayTracingBuilder.BuildBLAS(
-        //         rtInputs.BLASs,
-        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
-        //         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
-        //     rayTracingBuilder.BuildTLAS(
-        //         rtInputs.vInstances,
-        //         VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR |
-        //         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
-
-        //    // Allocate primitive description buffer
-        //    StorageBuffer<PrimitiveDescription>* primDescBuffer =
-        //    GetRenderResourceManager()->GetStorageBuffer("primitive descs", rtInputs.vPrimitiveDescriptions);
-
-        //    // Allocate output image
-        //    ImageResource* rtOutputImage = GetRenderResourceManager()->GetStorageImageResource("Ray Tracing Output",
-        //    vpExtent, VK_FORMAT_R16G16B16A16_SFLOAT);
-
-        //    rayTracingBuilder.BuildRTPipeline();
-        //    rayTracingBuilder.BuildShaderBindingTable();
-        //    rayTracingBuilder.RayTrace(vpExtent);
-        //}
-#endif
-        // Create perview constant buffer
-        //
-
-        // Record static command buffer
-        GetRenderPassManager()->RecordStaticCmdBuffers();
 
         // ── The graph owns the frame loop and the present from here (#20 increment 1) ────────────────
         {
@@ -540,7 +514,8 @@ int main(int argc, char **argv)
             builder.ImportResource("Present", swapchain.GetImageResource(0));
 
             // ── GBUFFER + direct OPAQUE_LIGHTING, graph-owned ─────────────────────────────────────────
-            const VkExtent2D sceneExtent = GetRenderPassManager()->GetViewportSize();
+            const VkExtent2D sceneExtent{static_cast<uint32_t>(s_framebufferWidth),
+                                         static_cast<uint32_t>(s_framebufferHeight)};
             const auto addSceneColorTarget = [&builder, sceneExtent](const char *name)
             {
                 builder.AddResource(
@@ -559,7 +534,7 @@ int main(int argc, char **argv)
                                                                   .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                                                                            VK_IMAGE_USAGE_SAMPLED_BIT});
 
-            Camera *pCamera = GetRenderPassManager()->GetCamera();
+            Camera *pCamera = s_pArcball;
             builder.AddNode(RenderGraphNodeCreateInfo{
                 .nodeName = "GBUFFER",
                 .queueType = QueueType::GRAPHICS,
@@ -955,8 +930,8 @@ int main(int argc, char **argv)
                     recreateSwapchain();
                 }
 
-                // BeginFrame waits the slot's previous execution, which is what makes rebuilding the UI
-                // draw data and re-uploading `perView` safe with one slot in flight.
+                // BeginFrame waits the slot's previous execution, which is what makes rebuilding and
+                // re-uploading the UI draw data safe with one slot in flight.
                 const std::optional<FrameSync::Frame> frame = frameSync.BeginFrame();
                 if (!frame.has_value())
                 {
@@ -965,16 +940,19 @@ int main(int argc, char **argv)
                     continue;
                 }
 
-                // The legacy manager now records only IBL/cubemap (and the unported RT pass); the scene
-                // itself runs as graph nodes. The overlay builds the debug UI's draw data, and the graph's
-                // UI node composites it over the lighting output.
-                GetRenderPassManager()->UpdatePerViewData();
+                // The graph owns the whole frame now. The overlay builds the debug UI's draw data, and
+                // the graph's UI node composites it over the lighting output.
                 DebugUIFrame uiFrame;
-                uiFrame.width = GetRenderPassManager()->GetViewportSize().width;
-                uiFrame.height = GetRenderPassManager()->GetViewportSize().height;
-                uiFrame.camera = GetRenderPassManager()->GetCamera();
+                uiFrame.width = static_cast<uint32_t>(s_framebufferWidth);
+                uiFrame.height = static_cast<uint32_t>(s_framebufferHeight);
+                uiFrame.camera = s_pArcball;
                 uiFrame.reloadEnvironmentMap = [](const std::string &path)
-                { GetRenderPassManager()->ReloadEnvironmentMap(path); };
+                {
+                    if (LoadEnvironmentMap(path) == nullptr)
+                    {
+                        throw std::runtime_error("helloVulkan: the environment-map preview texture was not recreated.");
+                    }
+                };
                 uiFrame.textureId = [](const std::string &name) -> ImTextureID
                 { return name == "EnvMap" ? kEnvMapTextureId : kFontTextureId; };
                 overlay.BuildFrame(uiFrame);
@@ -1008,18 +986,14 @@ int main(int argc, char **argv)
                     pFrameIndices->Unmap();
                 }
 
-                GetRenderPassManager()->SubmitSceneCommandBuffers(frame->imageAvailable);
-
                 builder.ImportResource("Present", swapchain.GetImageResource(frame->imageIndex));
                 builder.ImportResource("UIVertices", pFrameVertices);
                 builder.ImportResource("UIIndices", pFrameIndices);
                 builder.ImportResource("EnvMap", pFrameEnvMap);
                 builder.Build();
-                // The graph waits on the scene's completion (which consumed the acquire) and signals the
-                // frame's renderFinished + fence, which is what FrameSync presents and reuses.
-                RenderGraphExecuteInfo executeInfo = frameSync.ExecuteInfo(*frame);
-                executeInfo.waitSemaphore = GetRenderPassManager()->GetSceneFinishedSemaphore();
-                builder.Execute(executeInfo);
+                // The graph waits on the acquired image and signals the frame's renderFinished + fence,
+                // which is what FrameSync presents and reuses.
+                builder.Execute(frameSync.ExecuteInfo(*frame));
 
                 const VkResult presentResult = frameSync.Present(*frame);
                 if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR)

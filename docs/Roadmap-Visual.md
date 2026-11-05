@@ -24,8 +24,8 @@ flowchart LR
     P0["P0 Frame synchronization<br/>10 closed · 0 open<br/>executor + timeline values"]
     P1["P1 Graph parity<br/>15 closed · 9 open<br/>capabilities complete; cost + RT remain"]
     B["B descriptor heap<br/>B0–B2 ✅ · B3/B4 future<br/>inside P1 · #20 unblocked"]
-    P2["P2 App adoption<br/>2 closed · 4 open<br/>helloVulkanRG proves the loop;<br/>helloVulkan not ported"]
-    P3["P3 Deprecation<br/>0 closed · 1 open<br/>delete RenderPassManager"]
+    P2["P2 App adoption<br/>closed<br/>helloVulkan fully on the graph"]
+    P3["P3 Deprecation<br/>closed<br/>delete RenderPassManager"]
     L["L Library extraction<br/>7 closed · 7 open<br/>overlaps P1-P3"]
     BL["Backlog (after P3)<br/>2 closed · 7 open<br/>tooling + deferred capabilities"]
     P0 --> P1 --> B --> P2 --> P3
@@ -38,8 +38,8 @@ flowchart LR
 | --- | --- | --- |
 | **P0** | Executor runs N in-flight executions; completion is per-queue timeline values; no frame boundary on the execution path. | **Met** — 0 open. Its note that the builder stayed at `inFlightCount == 1` is historical: #40 landed in B2 (#254) and overlap is no longer a P0 item. |
 | **P1** | A scene renders through the graph, validation-clean, every capability (transfer/clear, transients, descriptors, pipeline caching) matching the legacy path; RT is a separate gate. The cost half is #59. | **In progress.** Capabilities are complete: #18/#16/#17 landed, #15 closed as superseded, and B0–B2 landed. Remaining: #59 (cost) and the RT gate (#19/#223/#238); heap follow-ups #222/#233/#234. |
-| **P2** | `helloVulkan` renders through the graph; `RenderPassManager` is referenced only by its own files. Capability, not completeness. | **Started** (helloVulkanRG, #112/#113). B2 landed, so the final #20 port is unblocked; #48/#49 must land before #51. |
-| **P3** | `grep -rn "RenderPassManager" src/` is empty and `src/RenderPasses/` is gone; the diff is almost entirely deletions. | **Blocked on P2 + #48 + #49.** |
+| **P2** | `helloVulkan` renders through the graph; `RenderPassManager` is referenced only by its own files. Capability, not completeness. | **Met** — `helloVulkan` is fully graph-driven; the manager was deleted with #51. |
+| **P3** | `grep -rn "RenderPassManager" src/` is empty and `src/RenderPasses/` is gone; the diff is almost entirely deletions. | **Met** — #51 deleted the manager and the directory. |
 | **L** | A non-renderer consumer runs against the public surface only, with no `gap` row blocking it. | #53 (public surface, SPIR-V bytes) and #72 (cooperative-matrix fetch) are the remaining blockers. #55 and #16 landed, so their `gap` rows are `holds`. |
 | **Backlog** | Work the roadmap places after the first consumer is adopted: tooling adoption, diagnostics, deferred capabilities. | **Parked.** 7 open, none on the parity path. |
 

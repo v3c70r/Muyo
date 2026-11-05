@@ -1,4 +1,4 @@
-# Roadmap: ship the RenderGraph as a library; retire RenderPassManager on the way
+# Roadmap: ship the RenderGraph as a library; the legacy renderer is retired
 
 ## Goal
 
@@ -7,15 +7,16 @@ pipeline built on top of it — and the consumers after that do not look like a 
 inference, LLM inference (long-running, compute-only), and hybrids where some queues span a frame
 boundary.
 
-**Retiring `RenderPassManager` is a milestone on that path, not the goal.** It matters because the first
-consumer must actually use the library — a graph exercised only by its own tests is not a library anyone
-else will adopt — but "the old renderer is deleted" is a consequence of the goal, not the goal.
+**Retiring `RenderPassManager` was a milestone on that path, not the goal.** It mattered because the
+first consumer must actually use the library — a graph exercised only by its own tests is not a library
+anyone else will adopt — but "the old renderer is deleted" is a consequence of the goal, not the goal. It
+is done (#51).
 
 **Definition of done:**
 
 ```bash
-grep -rn "RenderPassManager" src/          # expect: no matches
-ls src/RenderPasses/ 2>/dev/null           # expect: does not exist
+grep -rn "RenderPassManager" src/          # no matches (holds)
+ls src/RenderPasses/ 2>/dev/null           # does not exist (holds)
 ```
 
 ## Where the plan lives
@@ -53,8 +54,8 @@ Measured on 2026-11-04 after the #20 FINAL, UI, GBUFFER and direct-LIGHTING port
 | | Lines | State |
 | --- | --- | --- |
 | `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
-| `src/RenderPasses/` | 2,233 | The remaining legacy work: IBL, cubemap generation, the RT pass, and the manager/parameter code they share. Its acquire/present ownership is gone, `GBUFFER`/`OPAQUE_LIGHTING` moved to the graph, and the recorded-only passes (RSM, SKYBOX, TRANSPARENT, MESH_SHADER) are deleted. What remains goes with #51. |
-| `src/app/helloVulkan.cpp` | 1,053 | `FrameSync` owns acquire/present, and `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes; the remaining legacy work is IBL/cubemap and the RT pass (#20). |
+| `src/RenderPasses/` | 0 | Deleted (#51). The graph owns the frame and the raster scene; IBL/RSM/RT were dropped rather than ported. |
+| `src/app/helloVulkan.cpp` | 1,026 | `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
 | `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 | `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
 
@@ -68,12 +69,10 @@ The other two boundary measurements below are commands, not prose:
 counts the singleton call sites, and the external-include scan is the Python block in
 [`Roadmap-Visual.md`](Roadmap-Visual.md) section 7. Both were re-run at this head.
 
-**Adoption has started in the in-repo renderer.** `helloVulkan` acquires and presents through `FrameSync`,
-and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes; `RenderPassManager` no longer
-owns the swapchain, acquire, present, a per-image fence, the UI or the opaque scene. What still records
-through it is the IBL/cubemap work and the RT pass; the recorded-only passes (RSM, SKYBOX, TRANSPARENT,
-MESH_SHADER) are deleted. Lighting is deliberately direct-only until IBL ports (#20); shadows were
-dropped rather than ported and would be rebuilt from scratch if wanted. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
+**Adoption is complete in the in-repo renderer.** `helloVulkan` acquires and presents through `FrameSync`,
+and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes; the app owns the camera and
+the environment-map preview. The legacy renderer is deleted (#51): IBL, RSM and the RT pass were dropped
+rather than ported and would be rebuilt from scratch if wanted. The app owns the camera and the environment-map preview. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
 consumer now all exercise the graph. Closing the pass gap is the risk this roadmap exists to close — see
 Risks.
 
@@ -188,9 +187,9 @@ transient memory (`#16` landed; B2 added the per-execution arenas, #40), pipelin
 landed). These are capabilities, not polish — the frame loop cannot be ported around their absence.
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
-still references `RenderPassManager` from outside `src/RenderPasses/` has to go first — which is why the
-`DebugUI` coupling is P2 work rather than P3 cleanup. `ShadowPassManager` was deleted outright when RSM
-was dropped, rather than ported.
+referenced `RenderPassManager` from outside `src/RenderPasses/` went first — the DebugUI coupling, the
+camera/environment/wait ownership in the app, and the recorded-only passes. With that done, #51 deleted
+the manager and the directory; P3 held.
 
 **Where this can go wrong** is P1 growing without P2 starting, because each missing capability is a
 plausible reason to wait. The mitigation is in P2's gate itself: it is capability, not completeness.
@@ -243,7 +242,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 
 | Debt | Replaced by | Note |
 | --- | --- | --- |
-| Every `TODO` under `src/RenderPasses/` (`RenderPassManager.h:24`, `.cpp:158,173`, `RenderPassParameters.cpp:321`, `RenderLayerIBL.h:82`) | **P3 deletion** | Do not file them, do not fix them. |
+| Every `TODO` under `src/RenderPasses/` | **Deleted with #51** | The files are gone; no TODO remains. |
 | `helloVulkan.cpp:347` "resizing doesn't work" | **A1.5 FrameSync** | Swapchain recreation with images in flight *is* the fix for resize. |
 | Legacy frame-sync bugs (`m_imageAvailable` reused every frame, per-image fences) | **A1.5 FrameSync** | Fixing them in place is work on code P2 removes. |
 | `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. |
@@ -271,8 +270,9 @@ filters on it — the issues are not listed here, for the reason above.
 - **First consumer** — transfer and clear usages (`#18` ✅) → the client-side frame helper (`#57` ✅;
   `FrameSync` landed and `helloVulkanRG` uses it) → **B0 (`#213`) → B1a → B1b → B2** (all ✅; B2 is
   `#217`/#254) → the final port (`#20`; increment 1 is the #111 UI pass, accepted double conversion) →
-  `#48` → the deletion (`#51`); #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted. `#59` sits across this chain rather than in it: P1 cannot close
-  without its number, so its slippage moves the date even though nothing waits for it.
+  `#48` → the deletion (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was
+  deleted. `#59` sits across this chain rather than in it: P1 cannot close without its number, so its
+  slippage moves the date even though nothing waits for it.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.
 - **B track** — B0 (#213) was the go/no-go; B1a/B1b implemented the heap and graph bind; B2 made per-frame
@@ -306,14 +306,14 @@ otherwise be read differently by each session that touched it.
    track was the one deliberate sequencing exception: further #20 ports froze after #111 until B2,
    because converting a pass twice is the retrofit the heap design exists to avoid. **That freeze ended
    when B2 landed (2026-10-28, #254)**, and #17 landed with it; #19 can continue in parallel. `helloVulkan`
-   itself is still legacy, which is the remaining half of this risk rather than a hypothetical.
+   itself is now fully graph-driven, which closes this risk.
 2. **Two renderers means every fix lands twice.** Mitigated by the do-not-fix table above: the way to
    keep the cost bounded is to stop polishing the code being deleted, and to put new behaviour in the
    graph only.
-3. **RT parity pulls P2 later.** If ray tracing must be at parity, `#14` and `#19` join the critical
-   path; if it need not, the raster path can adopt first and RT follow. **The trigger is a consumer that
-   needs RT at parity** — `helloVulkan` renders it today, so the honest answer is "probably yes, not
-   yet decided". Recorded with its trigger so `#14`/`#19` can be scheduled rather than re-argued each
+3. **RT parity pulls P2 later.** The legacy RT pass was dropped with #51; `helloVulkan` presents the
+   raster graph. If ray tracing must be at parity, `#14` and `#19` join the critical path. **The trigger
+   is a consumer that needs RT at parity**; the graph's RT tests remain, and a rebuild would be a
+   graph implementation. Recorded with its trigger so `#14`/`#19` can be scheduled rather than re-argued each
    time someone asks.
 4. **The library is shaped by its first consumer.** The renderer's needs become the API by default and
    every later client inherits them. Mitigated on two fronts, and no longer hypothetically: A1.5's split

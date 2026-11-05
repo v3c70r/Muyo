@@ -22,8 +22,8 @@ class Swapchain;
 /// Per frame of `framesInFlight` there is an `imageAvailable` binary and an in-flight fence; per swapchain
 /// image there is a `renderFinished` binary and the fence of the frame currently using it. An image is
 /// never re-acquired while still in use, and its render-finished semaphore is only re-signalled once a
-/// re-acquire proves the previous present consumed it. `RenderPassManager` gets the first wrong by keeping
-/// one acquire semaphore for the process and indexing its fence by image rather than by frame.
+/// re-acquire proves the previous present consumed it. The legacy renderer got this wrong by keeping one acquire
+/// semaphore for the process and indexing its fence by image rather than by frame.
 class FrameSync
 {
 public:
