@@ -71,10 +71,19 @@ const DrawLists &Scene::GatherDrawLists()
 
                 for (auto &submesh : pGeometry->getSubmeshes())
                 {
-                    // TODO(#267): populate the submesh material slot from GetMaterialIndex(), not the mesh index.
-
-                    aSubmeshDatas[nSubmeshCount++].nMaterialIndex = submesh->GetMeshIndex();
-                    // submesh->GetMaterial();
+                    if (nSubmeshCount >= MAX_NUM_SUBMESHES)
+                    {
+                        throw std::runtime_error("Scene: node '" + pNode->GetName() + "' has more than " +
+                                                 std::to_string(MAX_NUM_SUBMESHES) + " submeshes.");
+                    }
+                    if (!submesh->HasMaterial())
+                    {
+                        throw std::runtime_error("Scene: node '" + pNode->GetName() + "' submesh " +
+                                                 std::to_string(nSubmeshCount) + " has no material.");
+                    }
+                    // The shader indexes the material buffer with this value; the mesh index is a
+                    // different table and happens to differ for most of the Mazda scene (#267).
+                    aSubmeshDatas[nSubmeshCount++].nMaterialIndex = static_cast<uint32_t>(submesh->GetMaterialIndex());
                 }
             }
             // Gather light sources
