@@ -5605,6 +5605,42 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the trace records the seg
     }
 }
 
+TEST_CASE_METHOD(GraphicsTestEnv, "Scene: per-submesh material index follows the material, not the mesh", "[Scene]")
+{
+    Scene scene("material-index-test");
+    auto pSubmesh = std::make_unique<Submesh>(0);
+    pSubmesh->SetMaterialIndex(1);
+    auto pGeometry = std::make_unique<Geometry>(std::move(pSubmesh));
+    pGeometry->SetWorldMatrixUniformBuffer(
+        GetRenderResourceManager()->GetUniformBuffer<glm::mat4>("material index test world"));
+
+    auto* pNode = new GeometrySceneNode();
+    pNode->SetName("material index test node");
+    pNode->SetGeometry(pGeometry.get());
+    scene.GetRoot()->AppendChild(pNode);
+
+    scene.GatherDrawLists();
+
+    // Mesh 0 and material 1 deliberately differ; the old GetMeshIndex() assignment records 0.
+    REQUIRE(pNode->GetPerObjId() >= 0);
+    const auto& perObjData = GetPerObjResourceManager()->GetPerObjDataCPU();
+    const PerObjData& perObj = perObjData.at(static_cast<size_t>(pNode->GetPerObjId()));
+    REQUIRE(perObj.nSubmeshCount == 1);
+    CHECK(perObj.vSubmeshDatas[0].nMaterialIndex == 1);
+
+    // A submesh without a material must fail loudly rather than index the material buffer with UINT32_MAX.
+    Scene missingMaterialScene("material-index-missing-test");
+    auto pMissingSubmesh = std::make_unique<Submesh>(0);
+    auto pMissingGeometry = std::make_unique<Geometry>(std::move(pMissingSubmesh));
+    pMissingGeometry->SetWorldMatrixUniformBuffer(
+        GetRenderResourceManager()->GetUniformBuffer<glm::mat4>("material index missing test world"));
+    auto* pMissingNode = new GeometrySceneNode();
+    pMissingNode->SetName("material index missing node");
+    pMissingNode->SetGeometry(pMissingGeometry.get());
+    missingMaterialScene.GetRoot()->AppendChild(pMissingNode);
+    REQUIRE_THROWS_AS(missingMaterialScene.GatherDrawLists(), std::runtime_error);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "TextureResource: a missing file throws in every build configuration", "[Texture]")
 {
     // stbi_load returns null for a missing file. The old assert disappeared under NDEBUG and the path
