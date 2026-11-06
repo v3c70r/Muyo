@@ -2,7 +2,7 @@
 
 **Snapshot:** 2026-11-05, master `ada2c1d`. **Adoption is complete:** #20 and #51 are closed, the
 renderer is fully graph-driven, and `src/RenderPasses/` is gone. P0, P2 and P3 are closed milestones;
-P1, L and Backlog remain open with **28 open issues**. The B track is complete through B2, and the
+P1, L and Backlog remain open with **29 open issues**. The B track is complete through B2, and the
 post-adoption reconciliation added #262/#265 to P1 and moved #186 to Backlog.
 
 **Authority:** phase membership is the six GitHub milestones; an issue's state is its `Status`,
@@ -22,7 +22,7 @@ about. The view lives here so the contract there stays true.
 ```mermaid
 flowchart LR
     P0["P0 Frame synchronization<br/>closed · 10 done<br/>executor + timeline values"]
-    P1["P1 Graph parity<br/>open · 11<br/>cost + RT + device/heap"]
+    P1["P1 Graph parity<br/>open · 12<br/>cost + RT + device/heap"]
     B["B descriptor heap<br/>B0–B2 ✅ · B3/B4 future<br/>inside P1"]
     P2["P2 App adoption<br/>closed · 5 done<br/>helloVulkan fully on the graph"]
     P3["P3 Deprecation<br/>closed · 1 done<br/>RenderPassManager deleted"]
@@ -36,7 +36,7 @@ flowchart LR
 | Phase | Gate (from the milestone description) | State |
 | --- | --- | --- |
 | **P0** | Executor runs N in-flight executions; completion is per-queue timeline values; no frame boundary on the execution path. | **Met, closed.** 10 done, 0 open. |
-| **P1** | The graph renders the scene validation-clean with the capabilities (transfer/clear, transients, descriptors, pipeline caching). RT is a separate gate. The cost half is #59. | **Open, 11.** Adoption is complete and the graph is the only renderer after #51; the per-submesh material defect (#267) was fixed by #269. Remaining: #59 cost (must choose a new reference because the legacy path is gone), the RT cluster #19/#223/#238/#253, and device/heap follow-ups #222/#233/#234/#262/#265. |
+| **P1** | The graph renders the scene validation-clean with the capabilities (transfer/clear, transients, descriptors, pipeline caching). RT is a separate gate. The cost half is #59. | **Open, 12.** Adoption is complete and the graph is the only renderer after #51; the per-submesh material defect (#267) was fixed by #269. Remaining: #59 cost (must choose a new reference because the legacy path is gone), the RT cluster #19/#223/#238/#253, and device/heap follow-ups #222/#233/#234/#262/#265 plus #270 (material sampler). |
 | **P2** | `helloVulkan` renders through the graph; `RenderPassManager` is referenced only by its own files. Capability, not completeness. | **Met, closed.** 5 done, 0 open; the manager was deleted with #51. |
 | **P3** | `grep -rn "RenderPassManager" src/` is empty and `src/RenderPasses/` is gone; the diff is almost entirely deletions. | **Met, closed.** 1 done, 0 open (#51). |
 | **L** | A non-renderer consumer runs against the public surface only, with no `gap` row blocking it. | **Open, 7.** #53 (public surface) is in progress; #54 and #58 are the other critical-path items. #72 is the driver-specific blocker. |
@@ -103,6 +103,7 @@ flowchart LR
 | P1 | #253 Build vs in-flight RT pipeline | Ray tracing | No |
 | P1 | #262 NVIDIA array-member reads | Descriptors | No |
 | P1 | #265 dead device features | Device | No |
+| P1 | #270 material sampler clamp | Descriptors | No |
 | L | #53 extract `muyo_rg` | Graph API | **Yes** |
 | L | #54 in-tree boundary coverage | Graph API | **Yes** |
 | L | #58 extract device layer | Device | **Yes** |

@@ -444,6 +444,14 @@ int main(int argc, char **argv)
             samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
             samplerInfo.maxLod = 1.0F;
             const DescriptorSlot uiSamplerSlot = heap.AcquireSampler(samplerInfo);
+            // Material UVs are glTF data and may lie outside [0,1] (the Mazda tyre uses V 1..2); the
+            // UI's clamp sampler turns those into the texture edge. Keep clamp for UI/FINAL, repeat for
+            // the GBUFFER's material textures.
+            VkSamplerCreateInfo materialSamplerInfo = samplerInfo;
+            materialSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            materialSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            materialSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            const DescriptorSlot materialSamplerSlot = heap.AcquireSampler(materialSamplerInfo);
 
             // One builder for the process: Build() is per frame, and the resource/pipeline/descriptor caches
             // make an unchanged declaration cheap. Only the acquired swapchain image changes per frame.
@@ -611,8 +619,8 @@ int main(int argc, char **argv)
                                           VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}},
                                           VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}},
                                           VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}}},
-                .execute =
-                    [pCamera, sampler = uiSamplerSlot.index, drawCount = gbufferDrawCount](RenderGraphNodeContext &ctx)
+                .execute = [pCamera, sampler = materialSamplerSlot.index,
+                            drawCount = gbufferDrawCount](RenderGraphNodeContext &ctx)
                 {
                     const std::optional<uint32_t> perObj =
                         ctx.GetHeapIndex("PerObjData", ResourceUsage::STORAGE_BUFFER);
