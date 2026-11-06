@@ -185,7 +185,7 @@ with another, and the migration would buy nothing that could be measured. P0 als
 move: clears and resolves (`#18`, landed), descriptor heaps (B0–B2, landed; #15 closed as superseded),
 transient memory (`#16` landed; B2 added the per-execution arenas, #40), pipeline caching (`#17`,
 landed). Those capabilities are complete, which is why P2 and P3 have now held; P1 remains open only
-for cost (#59), the RT gate and the device/heap follow-ups (#267 included).
+for cost (#59), the RT gate and the device/heap follow-ups.
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
 referenced `RenderPassManager` from outside `src/RenderPasses/` went first — the DebugUI coupling, the
@@ -197,9 +197,10 @@ plausible reason to wait. The mitigation is in P2's gate itself: it is capabilit
 
 **P1's cost criterion is not a gate yet, and says so.** It originally read "cost in the same range as the
 legacy path", which could not fail: no scene, resolution, metric, sample count, device or tolerance was
-named. Correctness is the gate; adoption is complete and the graph is the only renderer, but #267 (a
-per-submesh material-slot defect found in the reconciliation) remains open, so P1 cannot close until it
-is fixed or shown not to affect the rendered scene. The cost half is owned by `#59`, which must establish the method and a tolerance before P1 can close. **The legacy path it was
+named. Correctness is the gate; adoption is complete and the graph is the only renderer. The
+per-submesh material-slot defect found in the reconciliation (#267) was fixed by its own PR, so the
+remaining P1 work is the cost method, the RT gate and the device/heap follow-ups. The cost half is owned
+by `#59`, which must establish the method and a tolerance before P1 can close. **The legacy path it was
 meant to compare against was deleted in #51**, so #59 must now choose a reference (a frozen `e584d45`
 worktree with the IBL/RSM confound stated, or a hand-written same-four-passes harness); P1 cannot close
 until that choice and its tolerance are recorded.
@@ -241,7 +242,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | Every marker under `src/` now names an open issue (`#17`, `#253`, `#265`, `#267`, `#268`) or is a historical comment. The reconciliation retargeted the two stale closed references (`TODO(#20)` in `Scene.cpp`/`SceneImporter.cpp`, `TODO(#48)` in `DebugUI.cpp`), and removed debt rows for `TODO(A2)` and `Texture.h` after their markers had already gone. #267 is the submesh material slot; #268 covers the glTF point-light `range` and the `DockSpace` move. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
+| **TODO hygiene** | Every marker under `src/` now names an open issue (`#17`, `#253`, `#265`, `#268`) or is a historical comment. The reconciliation retargeted the two stale closed references (`TODO(#20)` in `Scene.cpp`/`SceneImporter.cpp`, `TODO(#48)` in `DebugUI.cpp`), and removed debt rows for `TODO(A2)` and `Texture.h` after their markers had already gone. #268 covers the glTF point-light `range` and the `DockSpace` move. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
@@ -274,7 +275,7 @@ are not listed here, for the reason above.
   (`#20` ✅; increment 1 was the #111 UI pass, accepted double conversion) → `#48` ✅ → the deletion
   (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted.
 - **P1 closure** — `#59` (cost) with `#197` (timings, its data source); the RT gate
-  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`/`#267`. `#59` is now the
+  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`. `#59` is now the
   chain that decides P1's end date, and it must choose a reference because the legacy path is gone.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.
