@@ -619,8 +619,8 @@ int main(int argc, char **argv)
                                           VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}},
                                           VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}},
                                           VkClearValue{.color = {0.0F, 0.0F, 0.0F, 0.0F}}},
-                .execute =
-                    [pCamera, sampler = materialSamplerSlot.index, drawCount = gbufferDrawCount](RenderGraphNodeContext &ctx)
+                .execute = [pCamera, sampler = materialSamplerSlot.index,
+                            drawCount = gbufferDrawCount](RenderGraphNodeContext &ctx)
                 {
                     const std::optional<uint32_t> perObj =
                         ctx.GetHeapIndex("PerObjData", ResourceUsage::STORAGE_BUFFER);

@@ -185,7 +185,7 @@ with another, and the migration would buy nothing that could be measured. P0 als
 move: clears and resolves (`#18`, landed), descriptor heaps (B0–B2, landed; #15 closed as superseded),
 transient memory (`#16` landed; B2 added the per-execution arenas, #40), pipeline caching (`#17`,
 landed). Those capabilities are complete, which is why P2 and P3 have now held; P1 remains open only
-for cost (#59), the RT gate and the device/heap follow-ups.
+for cost (#59), the RT gate, the device/heap follow-ups and the material-sampler fix (#270).
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
 referenced `RenderPassManager` from outside `src/RenderPasses/` went first — the DebugUI coupling, the
@@ -199,7 +199,7 @@ plausible reason to wait. The mitigation is in P2's gate itself: it is capabilit
 legacy path", which could not fail: no scene, resolution, metric, sample count, device or tolerance was
 named. Correctness is the gate; adoption is complete and the graph is the only renderer. The
 per-submesh material-slot defect found in the reconciliation (#267) was fixed by its own PR, so the
-remaining P1 work is the cost method, the RT gate and the device/heap follow-ups. The cost half is owned
+remaining P1 work is the cost method, the RT gate, the device/heap follow-ups and the material-sampler fix (#270). The cost half is owned
 by `#59`, which must establish the method and a tolerance before P1 can close. **The legacy path it was
 meant to compare against was deleted in #51**, so #59 must now choose a reference (a frozen `e584d45`
 worktree with the IBL/RSM confound stated, or a hand-written same-four-passes harness); P1 cannot close
@@ -275,7 +275,7 @@ are not listed here, for the reason above.
   (`#20` ✅; increment 1 was the #111 UI pass, accepted double conversion) → `#48` ✅ → the deletion
   (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted.
 - **P1 closure** — `#59` (cost) with `#197` (timings, its data source); the RT gate
-  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`. `#59` is now the
+  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`, plus the material-sampler fix #270. `#59` is now the
   chain that decides P1's end date, and it must choose a reference because the legacy path is gone.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.
