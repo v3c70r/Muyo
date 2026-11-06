@@ -1,6 +1,6 @@
 # Roadmap: a visualized snapshot
 
-**Snapshot:** 2026-11-05, master `ada2c1d`. **Adoption is complete:** #20 and #51 are closed, the
+**Snapshot:** 2026-11-06, master `70d1bb8`. **Adoption is complete:** #20 and #51 are closed, the
 renderer is fully graph-driven, and `src/RenderPasses/` is gone. P0, P2 and P3 are closed milestones;
 P1, L and Backlog remain open with **29 open issues**. The B track is complete through B2, and the
 post-adoption reconciliation added #262/#265 to P1 and moved #186 to Backlog.
@@ -22,11 +22,11 @@ about. The view lives here so the contract there stays true.
 ```mermaid
 flowchart LR
     P0["P0 Frame synchronization<br/>closed · 10 done<br/>executor + timeline values"]
-    P1["P1 Graph parity<br/>open · 12<br/>cost + RT + device/heap"]
+    P1["P1 Graph parity<br/>open · 11<br/>cost + RT + device/heap"]
     B["B descriptor heap<br/>B0–B2 ✅ · B3/B4 future<br/>inside P1"]
     P2["P2 App adoption<br/>closed · 5 done<br/>helloVulkan fully on the graph"]
     P3["P3 Deprecation<br/>closed · 1 done<br/>RenderPassManager deleted"]
-    L["L Library extraction<br/>open · 7<br/>overlaps P1"]
+    L["L Library extraction<br/>open · 8<br/>overlaps P1"]
     BL["Backlog (after P3)<br/>open · 10<br/>tooling + deferred capabilities"]
     P0 --> P1 --> B --> P2 --> P3
     L -. constrains .-> P1
@@ -36,10 +36,10 @@ flowchart LR
 | Phase | Gate (from the milestone description) | State |
 | --- | --- | --- |
 | **P0** | Executor runs N in-flight executions; completion is per-queue timeline values; no frame boundary on the execution path. | **Met, closed.** 10 done, 0 open. |
-| **P1** | The graph renders the scene validation-clean with the capabilities (transfer/clear, transients, descriptors, pipeline caching). RT is a separate gate. The cost half is #59. | **Open, 12.** Adoption is complete and the graph is the only renderer after #51; the per-submesh material defect (#267) was fixed by #269. Remaining: #59 cost (must choose a new reference because the legacy path is gone), the RT cluster #19/#223/#238/#253, and device/heap follow-ups #222/#233/#234/#262/#265 plus #270 (material sampler). |
+| **P1** | The graph renders the scene validation-clean with the capabilities (transfer/clear, transients, descriptors, pipeline caching). RT is a separate gate. The cost half is #59. | **Open, 11.** Adoption is complete and the graph is the only renderer after #51; the per-submesh material defect (#267) was fixed by #269. Remaining: #59 cost (must choose a new reference because the legacy path is gone), the RT cluster #19/#223/#238/#253, and device/heap follow-ups #222/#233/#234/#262/#265. |
 | **P2** | `helloVulkan` renders through the graph; `RenderPassManager` is referenced only by its own files. Capability, not completeness. | **Met, closed.** 5 done, 0 open; the manager was deleted with #51. |
 | **P3** | `grep -rn "RenderPassManager" src/` is empty and `src/RenderPasses/` is gone; the diff is almost entirely deletions. | **Met, closed.** 1 done, 0 open (#51). |
-| **L** | A non-renderer consumer runs against the public surface only, with no `gap` row blocking it. | **Open, 7.** #53 (public surface) is in progress; #54 and #58 are the other critical-path items. #72 is the driver-specific blocker. |
+| **L** | A non-renderer consumer runs against the public surface only, with no `gap` row blocking it. | **Open, 8.** #53 (public surface) is in progress; #54, #58 and #272 (resource/allocator boundary) are the other critical-path items. #72 is the driver-specific blocker. |
 | **Backlog** | Work the roadmap places after the first consumer adoption (complete) and P3. | **Open, 10.** None on the parity path. |
 
 ### B track inside P1
@@ -54,21 +54,23 @@ flowchart LR
 
 ## 2. Critical path
 
-The field has **5 open items**: the library chain and P1's cost pair. Adoption has no open critical-path
+The field has **6 open items**: the library chain and P1's cost pair. Adoption has no open critical-path
 item.
 
 ```mermaid
 flowchart LR
     L53["#53 muyo_rg extraction<br/>In Progress · CP Yes"]
     L58["#58 device layer<br/>Todo · CP Yes"]
+    L272["#272 resource/allocator boundary<br/>Todo · CP Yes"]
     L54["#54 in-tree coverage<br/>Todo · CP Yes"]
     C59["#59 cost criterion<br/>Todo · CP Yes"]
     C197["#197 trace timings<br/>Todo · CP Yes"]
-    L53 --> L58 --> L54
+    L53 --> L58 --> L272 --> L54
     C197 -. data source .-> C59
 ```
 
-- **Library** — `#53` → `#58` → `#54`.
+- **Library** — `#53` → `#58` → `#272` → `#54`. `#272` is the resource half of `#53`; it lands after `#58`
+  so the concrete resource types have a home.
 - **P1 closure** — `#197` supplies the timings; `#59` owns the method and tolerance. `#59` must name a
   reference now that the legacy path is deleted: a frozen `e584d45` worktree (with the IBL/RSM confound
   stated) or a hand-written same-four-passes harness.
@@ -76,8 +78,8 @@ flowchart LR
 
 ## 3. Where the next work is
 
-1. **Extract the library (#53).** Public surface, injected services, standalone build. #58 (device layer)
-   and #54 (in-tree coverage) follow.
+1. **Extract the library (#53).** Public surface, injected services, standalone build. #58 (device layer),
+   #272 (resource/allocator boundary) and #54 (in-tree coverage) follow.
 2. **Close P1's cost (#59).** Choose the post-adoption reference, measure on both machines, set a
    tolerance. #197 is the timing source; #59 can start against wall clock.
 3. **RT, only with a consumer or when scheduled.** #19 hardening, #223 (RTX 3090 device loss), #238
@@ -103,10 +105,10 @@ flowchart LR
 | P1 | #253 Build vs in-flight RT pipeline | Ray tracing | No |
 | P1 | #262 NVIDIA array-member reads | Descriptors | No |
 | P1 | #265 dead device features | Device | No |
-| P1 | #270 material sampler clamp | Descriptors | No |
 | L | #53 extract `muyo_rg` | Graph API | **Yes** |
 | L | #54 in-tree boundary coverage | Graph API | **Yes** |
 | L | #58 extract device layer | Device | **Yes** |
+| L | #272 resource/allocator boundary | Graph API | **Yes** |
 | L | #72 cooperative-matrix NULL dispatch | Device | No |
 | L | #73 package for external use | Tooling | No |
 | L | #80 8-bit storage / shaderInt8 | Device | No |
@@ -124,7 +126,8 @@ flowchart LR
 
 ## 5. Dependencies
 
-- `#53 → #58 → #54`: the library chain.
+- `#53 → #58 → #272 → #54`: the library chain (#272 is the resource half of #53; it lands after #58 so the
+  concrete resource types have a home).
 - `#197 → #59`: #59 consumes the timings, but can start against wall clock and switch one function.
 - `#19 / #223 / #238 / #253`: the RT cluster; all block a graph RT rebuild, none blocks the raster frame.
 - `#265` is independent; its TODOs are in `VkRenderDevice.cpp` and `helloVulkan.cpp`.
@@ -156,7 +159,7 @@ gh api 'repos/v3c70r/Muyo/milestones?state=all&per_page=100' \
 gh issue list --state open --limit 100 --json number,title,milestone \
   --jq '.[] | "#\(.number) \(.milestone.title // "-") \(.title)"'
 
-# critical-path count: expect 5 at this snapshot.
+# critical-path count: expect 6 at this snapshot.
 # Board reads need the read:project scope (`gh auth refresh -s read:project`); without it this call
 # fails with "Could not resolve to a node..." — that is a missing scope, not an empty board.
 gh api graphql -f query='query($p:ID!,$q:String){ node(id:$p){ ... on ProjectV2 {
@@ -167,7 +170,7 @@ gh api graphql -f query='query($p:ID!,$q:String){ node(id:$p){ ... on ProjectV2 
 cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h') | wc -l   # 8,429
 wc -l src/app/helloVulkan.cpp src/app/helloVulkanRG.cpp            # 1,029 / 426
 grep -rnE 'GetRenderDevice\(\)|GetRenderResourceManager\(\)|GetDescriptorManager\(\)' \
-  --include=*.cpp src/RenderGraph/ | wc -l                          # 1
+  --include=*.cpp src/RenderGraph/ | wc -l                          # 1 by this pattern; +GetMemoryAllocator() (#272) = 2
 
 # External includes from src/RenderGraph/*.h|cpp; expect 9 files.
 python3 - <<'PY'
