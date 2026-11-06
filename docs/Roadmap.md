@@ -125,7 +125,7 @@ state, and neither should try to carry the other's half.
 | Constraint | Why it is expensive to retrofit |
 | --- | --- |
 | **No frame boundary in the library** | An inference client submits work that outlives many display frames. `Execute()` draining at frame end is a convenience to keep, not the model: completion has to be expressible as a timeline value the client can chain across frames. |
-| **Device, allocator and descriptor allocation injected, not global** | The injection (#85) replaced the singleton lookups inside `src/RenderGraph/`; 1 transitional call site remains (`GetRenderResourceManager()` in the `RenderGraphBuilder(VkRenderDevice*)` delegation). A library cannot own the engine's singletons. |
+| **Device, allocator and descriptor allocation injected, not global** | The injection (#85) replaced the singleton lookups inside `src/RenderGraph/`; **two** globals remain — `GetRenderResourceManager()` in the transitional `RenderGraphBuilder(VkRenderDevice*)` delegation, and `GetMemoryAllocator()` in the transient-buffer path — and the graph still subclasses the engine's concrete `BufferResource`/`ImageResource` types. A library cannot own the engine's singletons or resource types. #272 is the resource half of this: the narrow interface it defines is what makes the target split (device + graph in this repository, the renderer in a consumer repo) possible. |
 | **Compute-only is a first-class profile** | No surface, no present, possibly no colour attachments. Nothing on the execution path may require a graphics family or a swapchain. |
 | **Long-lived resources are first-class** | Weights and a KV cache live for the process, not a frame. The transient/persistent split (`#15`, `#16`) has to serve that, not only per-frame render targets. |
 | **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
@@ -156,12 +156,20 @@ Measured, not estimated:
   `RenderGraphBuilder.cpp` (`Debug.h`, `PipelineStateBuilder.h`, `ShaderReflectionFetcher.h`,
   `VkExtFuncsLoader.h`), `RenderGraphBuilder.h` (`DescriptorHeapService.h`, `PerObjResourceManager.h`,
   `ShaderAsset.h`) and `RenderGraphNodeContext.h` (3). The scan is in `Roadmap-Visual.md` section 7.
-- **1 code call site reaches for an engine singleton** rather than receiving it:
-  `GetRenderResourceManager()` in the transitional `RenderGraphBuilder(VkRenderDevice*)` delegation. The
-  services constructor (#85) is the path the consumer uses; the remaining work is making the transitional
-  form unnecessary.
+- **Two code call sites reach for engine globals** rather than receiving what they need: the
+  `GetRenderResourceManager()` the scan above counts, in the transitional `RenderGraphBuilder(VkRenderDevice*)`
+  delegation, and a second one the scan does not count — `GetMemoryAllocator()` in `TransientResources.h`.
+  The services constructor (#85) is the path the consumer uses.
+- **The graph subclasses the engine's resource types** rather than depending on an interface of its own:
+  `TransientBufferResource : BufferResource` and `TransientImageResource : ImageResource`, identified by
+  `dynamic_cast` in the barrier/descriptor/binding paths. That is the deepest remaining coupling, and it is
+  what `#272` (the resource/allocator boundary) removes: the graph owns a narrow resource/allocator
+  interface, `muyo_device` owns the concrete VMA-backed resources, and scene-level resources stay in the
+  consumer.
 
-None of that blocks the first consumer; all of it blocks a second one.
+None of that blocks the first consumer; all of it blocks a second one. #272 is the piece that decides
+whether the eventual split is `muyo_device` + `muyo_rg` in this repository with the host and pipeline in a
+consumer repo (`muyo-renderer`), or the renderer still has to link the whole engine.
 
 And the boundary is not self-assessed: [`Consumers.md`](Consumers.md) states which consumers exist and
 which guarantee each relies on, `holds` or `gap`, with the gap naming its issue. That is the checkable
@@ -185,7 +193,7 @@ with another, and the migration would buy nothing that could be measured. P0 als
 move: clears and resolves (`#18`, landed), descriptor heaps (B0–B2, landed; #15 closed as superseded),
 transient memory (`#16` landed; B2 added the per-execution arenas, #40), pipeline caching (`#17`,
 landed). Those capabilities are complete, which is why P2 and P3 have now held; P1 remains open only
-for cost (#59), the RT gate, the device/heap follow-ups and the material-sampler fix (#270).
+for cost (#59), the RT gate and the device/heap follow-ups.
 
 **P2 before P3** because a deletion that requires behaviour changes is not a deletion. Everything that
 referenced `RenderPassManager` from outside `src/RenderPasses/` went first — the DebugUI coupling, the
@@ -198,8 +206,9 @@ plausible reason to wait. The mitigation is in P2's gate itself: it is capabilit
 **P1's cost criterion is not a gate yet, and says so.** It originally read "cost in the same range as the
 legacy path", which could not fail: no scene, resolution, metric, sample count, device or tolerance was
 named. Correctness is the gate; adoption is complete and the graph is the only renderer. The
-per-submesh material-slot defect found in the reconciliation (#267) was fixed by its own PR, so the
-remaining P1 work is the cost method, the RT gate, the device/heap follow-ups and the material-sampler fix (#270). The cost half is owned
+per-submesh material-slot defect (#267) and the material-sampler defect (#270) were fixed by their own
+PRs, so the remaining P1 work is the cost method, the RT gate and the device/heap follow-ups. The cost
+half is owned
 by `#59`, which must establish the method and a tolerance before P1 can close. **The legacy path it was
 meant to compare against was deleted in #51**, so #59 must now choose a reference (a frozen `e584d45`
 worktree with the IBL/RSM confound stated, or a hand-written same-four-passes harness); P1 cannot close
@@ -269,13 +278,15 @@ project's `Critical path` field marks the union and the **Critical path** view f
 are not listed here, for the reason above.
 
 - **Library** — frame sync (`#11` ✅) → the graph boundary (`#53`) → the device boundary (`#58`) → the
-  boundary test (`#54`). Nothing on this chain can slip without moving the goal.
+  resource/allocator boundary (`#272`, the resource half of `#53`; it lands after `#58` so the concrete
+  resource types have a home) → the boundary test (`#54`). Nothing on this chain can slip without moving
+  the goal.
 - **First consumer — complete.** Transfer and clear usages (`#18` ✅) → the client-side frame helper
   (`#57` ✅) → **B0 (`#213`) → B1a → B1b → B2** (all ✅; B2 is `#217`/#254) → the final port
   (`#20` ✅; increment 1 was the #111 UI pass, accepted double conversion) → `#48` ✅ → the deletion
   (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted.
 - **P1 closure** — `#59` (cost) with `#197` (timings, its data source); the RT gate
-  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`, plus the material-sampler fix #270. `#59` is now the
+  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`. `#59` is now the
   chain that decides P1's end date, and it must choose a reference because the legacy path is gone.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.

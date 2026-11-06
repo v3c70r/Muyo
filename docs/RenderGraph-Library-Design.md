@@ -16,6 +16,7 @@ index.
 | `muyo_device` is a shared library, not an inverted dependency | a client that cannot take the shared library | §2 below |
 | Error reporting is unresolved, deliberately | deciding it, or a consumer that cannot act on the errors we report | §3 below |
 | No C++ modules: fix the paths and add an export set instead | the surface is split (#53) **and** a consumer asks for a module | the packaging section |
+| Concrete resource types live in `muyo_device`; the graph owns only a narrow resource/allocator interface; scene-level resources stay in the consumer | a consumer whose allocator is not the device's | §4 below |
 | Versioning: the library publishes, first-party consumers are named and must not lag | a consumer that cannot move, or a second first-party consumer | the versioning section |
 
 ## The stack
@@ -66,7 +67,7 @@ several are currently on the wrong side of it.
 | --- | --- | --- | --- |
 | Instance, device, queues, memory, sync primitives, command pools | **device** | — | Already exists; needs a target of its own rather than a header inside the engine. |
 | Queue *use* — which segment runs where | **graph** | queue-family facts | The graph plans; it must not *require* a graphics family (compute-only profile). |
-| Transient resources, aliasing, lifetimes | **graph** | allocator | The policy is the graph's; the memory is not. |
+| Transient resources, aliasing, lifetimes | **graph** | allocator | The policy is the graph's; the memory is not. The interface is graph-owned and the concrete types live in `muyo_device` (#272). |
 | Barriers and layouts | **graph** | — | The reason the graph exists. |
 | Pipeline creation | **graph** | shader source provider, pipeline cache | It builds pipelines from node descriptions today. Keep that — but a client should be able to supply SPIR-V bytes and a cache, not only a file name on disk. |
 | Descriptor heap and bindless binding | **graph** | descriptor-heap service | B1a/B1b replaced descriptor sets: the graph receives a `DescriptorHeapService`, writes no set layouts, pools or pipeline layouts, and exposes a use's heap index. |
@@ -110,6 +111,27 @@ for Vulkan call failures, or to let the host install a handler.
 
 Not decided. Recorded as a design question rather than left implicit, because it is the kind of thing
 that gets decided by whoever writes the next call site.
+
+### 4. The graph owns the resource interface; `muyo_device` owns the concrete resources
+
+Decided as the direction, with #272 the work. The graph declares a narrow resource/allocator interface
+and receives it by injection, rather than subclassing the engine's concrete resource types. The
+VMA-backed buffer/image implementation lives in `muyo_device` — `VkMemoryAllocator` already sits there —
+and scene-level resources (`Texture`, `Material`, `Geometry`, `MeshVertex`, `RenderResourceManager`) live
+in the consumer (`muyo-renderer`, `muyo-llm`).
+
+This closes the last "the surface is the engine" dependency in one move. Today `RenderGraphServices` is
+typed `RenderResourceManager*`, the graph subclasses `BufferResource`/`ImageResource`
+(`TransientResources.h`) and identifies them with `dynamic_cast`, and it reaches two globals —
+`GetRenderResourceManager()` and `GetMemoryAllocator()`. The trigger that would reopen this decision is a
+consumer whose allocator is not the device's — a host that allocates through its own memory manager — at
+which point the interface stays and only the implementation moves.
+
+This is also what turns the stack's two bottom layers into a repo boundary: `muyo_device` + `muyo_rg`
+stay in this repository, while the host and the render pipeline move to a consumer repository
+(`muyo-renderer`) built on the graph the way `muyo-llm` is. The render pipeline (layer (b)) remains a
+consumer of the public surface only; the resource boundary is the prerequisite that lets it stop linking
+the engine.
 
 ## What the device layer must shed
 

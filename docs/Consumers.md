@@ -14,6 +14,7 @@ guarantee named is a hidden dependency waiting to be broken.
 | `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. `FrameSync` owns acquire/present and the `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes over graph-owned transients (#20); the legacy renderer and `src/RenderPasses/` are deleted (#51), with IBL/RSM/RT dropped rather than ported. |
 | in-tree tests | test suite | `src/tests/` | Every graph guarantee, in isolation, on one device at a time. |
 | **muyo-llm** | **first-party architecture validation** | <https://github.com/v3c70r/muyo-llm> | A compute-only, windowless, long-running LLM decode workload. |
+| **muyo-renderer** | **host + render pipeline, future consumer** | separate repository (planned) | The window/swapchain/present host and the GBuffer/lighting/UI/FINAL pipeline, built on the graph the way `muyo-llm` is — the split `#272` unblocks. |
 
 ### muyo-llm — first-party architecture validation
 
@@ -44,6 +45,7 @@ tracking issue and, where it blocks a consumer, is marked.
 | A node can bind a byte range of a buffer, so one arena serves many tensors | muyo-llm | holds | — |
 | Graph-managed transients have a defined lifetime and aliasing policy | muyo-llm | holds | — |
 | Device, allocator and descriptor allocation are injected, not global | muyo-llm | holds | — |
+| The graph's resource dependency is a narrow interface it owns — no engine resource types or global lookups in its public headers | muyo-renderer, muyo-llm | **gap** | #272 |
 | A stated public surface (what is API and what is detail) | all | **gap** | #53 |
 | Specialization constants are applied at pipeline creation | muyo-llm | holds | — |
 | Cooperative matrix can be enabled at device creation | muyo-llm | holds | — |
