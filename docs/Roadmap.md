@@ -55,7 +55,7 @@ Measured on 2026-11-05 at `ada2c1d`, after #20 and #51 closed: `helloVulkan` pre
 | --- | --- | --- |
 | `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
 | `src/RenderPasses/` | 0 | Deleted (#51). The graph owns the frame and the raster scene; IBL/RSM/RT were dropped rather than ported. |
-| `src/app/helloVulkan.cpp` | 1,029 | `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
+| `src/app/helloVulkan.cpp` | 1,037 | `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
 | `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
 | `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
 
@@ -156,10 +156,10 @@ Measured, not estimated:
   `RenderGraphBuilder.cpp` (`Debug.h`, `PipelineStateBuilder.h`, `ShaderReflectionFetcher.h`,
   `VkExtFuncsLoader.h`), `RenderGraphBuilder.h` (`DescriptorHeapService.h`, `PerObjResourceManager.h`,
   `ShaderAsset.h`) and `RenderGraphNodeContext.h` (3). The scan is in `Roadmap-Visual.md` section 7.
-- **Two code call sites reach for engine globals** rather than receiving what they need: the
-  `GetRenderResourceManager()` the scan above counts, in the transitional `RenderGraphBuilder(VkRenderDevice*)`
-  delegation, and a second one the scan does not count — `GetMemoryAllocator()` in `TransientResources.h`.
-  The services constructor (#85) is the path the consumer uses.
+- **Two distinct engine globals** remain rather than being received: `GetRenderResourceManager()` (one
+  call site, the transitional `RenderGraphBuilder(VkRenderDevice*)` delegation) and `GetMemoryAllocator()`
+  (12 call sites in the builder plus 2 in `TransientResources.h`). The services constructor (#85) is the
+  path the consumer uses.
 - **The graph subclasses the engine's resource types** rather than depending on an interface of its own:
   `TransientBufferResource : BufferResource` and `TransientImageResource : ImageResource`, identified by
   `dynamic_cast` in the barrier/descriptor/binding paths. That is the deepest remaining coupling, and it is
