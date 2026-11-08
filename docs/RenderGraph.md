@@ -115,10 +115,32 @@ trace data a sink receives; the executor, planner and recorder that produce them
 device-facing allocator interface lives in `RenderGraphResources.h`, because a consumer with its own
 memory manager implements it.
 
+### Installed package
+
+`cmake --install` produces a CMake package, so a consumer compiles against the list above without the
+source tree:
+
+```cmake
+find_package(muyo_rg 0.1 REQUIRED)          # SameMinorVersion while the major is 0
+target_link_libraries(app PRIVATE Muyo::muyo_rg)
+```
+
+The public headers are installed under `include/RenderGraph/`, so a translation unit includes
+`<RenderGraph/RenderGraphBuilder.h>`. `Muyo::muyo_rg` exports those include directories and links
+`Muyo::muyo_device`; the package also ships VMA and SPIRV-Reflect as exported targets. Vulkan is the one
+external dependency, looked up by `muyo_rgConfig.cmake` at configure time with `find_dependency(Vulkan)`,
+so a missing SDK fails there naming Vulkan instead of at a compile or link later.
+
+The internal headers are installed too, under `include/Muyo/detail/RenderGraph/`, because the public
+headers' private members include them (the paragraph above says why); that directory is implementation
+detail and not API. The device headers are under `include/RenderDevice/`. The installed set is stated and
+checked against `scripts/render_graph_docs.py` by the docs check; making the public headers self-contained
+(no internal includes) is a separate builder split, not a packaging change (#73, [#297](https://github.com/v3c70r/Muyo/issues/297)).
+
 A consumer of the public headers needs Vulkan, VMA and SPIRV-Reflect: `BufferResourceDesc::memoryProperties`
 and the allocator interface speak `VmaMemoryUsage`, and `ShaderAsset` carries the reflection object. Those
-are part of the declared interface until #293 removes the VMA vocabulary; making them installable
-is the packaging work (#73).
+are part of the declared interface until #293 removes the VMA vocabulary; the package makes them reachable
+by shipping VMA and SPIRV-Reflect with it (#73).
 
 ## Resource lifetimes
 
