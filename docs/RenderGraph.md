@@ -67,15 +67,16 @@ following while the library and its consumers evolve:
 ## Public surface
 
 `muyo_rg` has a **stated public surface**: the headers below are API, and a consumer may include them.
-Everything else under `src/RenderGraph/` is implementation detail. Internal headers are reachable because
-the public headers' private members include them, but a consumer must not include or name them; the
-promise is about the public list, not about what the preprocessor can see.
+Everything else under `src/RenderGraph/` is implementation detail, is not installed, and a consumer must not
+include or name it. The public headers are self-contained: `RenderGraphBuilder`'s private state is an
+out-of-line `Impl` in its `.cpp` (#297), and `render_graph_docs.py --check` fails when a public header includes
+an internal one.
 
 The list is canonical in `scripts/render_graph_docs.py` (`PUBLIC_HEADERS` / `INTERNAL_HEADERS`) and is
 reproduced in the checked block below. `python3 scripts/render_graph_docs.py --check` fails when a new
-header under `src/RenderGraph/` is not classified, when a listed header is missing, or when this block
-and the lists disagree. The Doxygen reference covers exactly the public headers, so `RenderGraph-api.md`
-is the surface rather than the directory.
+header under `src/RenderGraph/` is not classified, when a listed header is missing, when this block
+and the lists disagree, or when the public surface needs an internal header. The Doxygen reference covers
+exactly the public headers, so `RenderGraph-api.md` is the surface rather than the directory.
 
 <!-- public-surface:begin -->
 **Public headers (API):**
@@ -97,7 +98,7 @@ is the surface rather than the directory.
 - `ShaderCache.h`
 - `TransientMemoryPlan.h`
 
-**Internal headers (not API):**
+**Internal headers (not API, not installed):**
 
 - `DependencyGraph.h`
 - `RenderGraphBarrier.h`
@@ -131,11 +132,12 @@ The public headers are installed under `include/RenderGraph/`, so a translation 
 external dependency, looked up by `muyo_rgConfig.cmake` at configure time with `find_dependency(Vulkan)`,
 so a missing SDK fails there naming Vulkan instead of at a compile or link later.
 
-The internal headers are installed too, under `include/Muyo/detail/RenderGraph/`, because the public
-headers' private members include them (the paragraph above says why); that directory is implementation
-detail and not API. The device headers are under `include/RenderDevice/`. The installed set is stated and
-checked against `scripts/render_graph_docs.py` by the docs check; making the public headers self-contained
-(no internal includes) is a separate builder split, not a packaging change (#73, [#297](https://github.com/v3c70r/Muyo/issues/297)).
+Only the public headers are installed, under `include/RenderGraph/`; the internal graph headers are not
+installed at all, so the package has no `include/Muyo/detail/RenderGraph/` directory. That is possible because
+the public headers are self-contained since #297: the builder's private state is an out-of-line `Impl` in
+`RenderGraphBuilder.cpp`, and `render_graph_docs.py --check` rejects a public header that includes an internal
+one. The device headers are under `include/RenderDevice/`. The installed set is stated and checked against
+`scripts/render_graph_docs.py` by the docs check (#73).
 
 A consumer of the public headers needs Vulkan, VMA and SPIRV-Reflect: `BufferResourceDesc::memoryProperties`
 and the allocator interface speak `VmaMemoryUsage`, and `ShaderAsset` carries the reflection object. Those

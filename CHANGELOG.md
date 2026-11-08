@@ -34,14 +34,20 @@ commit that deprecated it (#87).
 - **An installable CMake package.** `cmake --install` writes `Muyo::muyo_rg` and `Muyo::muyo_device`
   (plus the VMA and SPIRV-Reflect targets they use) to `<prefix>/lib/cmake/muyo_rg/`, so a consumer can
   `find_package(muyo_rg 0.1 REQUIRED)` and link `Muyo::muyo_rg` without the source tree. The installed
-  include set is the stated public surface under `include/RenderGraph/`; the internal graph headers the
-  public headers' private members use are installed under `include/Muyo/detail/RenderGraph/` and are not
-  API. `muyo_rgConfig.cmake` looks up Vulkan with `find_dependency(Vulkan)`, so a missing SDK
-  fails at the consumer's configure step naming Vulkan, and the version file uses `SameMinorVersion`
-  while the major is 0, so `find_package(muyo_rg 0.1)` rejects a 0.2 package (#73).
+  include set is exactly the stated public surface under `include/RenderGraph/`; the internal graph
+  headers are not installed. `muyo_rgConfig.cmake` looks up Vulkan with `find_dependency(Vulkan)`, so a
+  missing SDK fails at the consumer's configure step naming Vulkan, and the version file uses
+  `SameMinorVersion` while the major is 0, so `find_package(muyo_rg 0.1)` rejects a 0.2 package (#73).
 
 ### Changed
 
+- **The public graph headers are self-contained, so the package installs no detail headers.**
+  `RenderGraphBuilder`'s private state is an out-of-line `Impl` held by `std::unique_ptr`, so
+  `RenderGraphBuilder.h` includes only public and device headers and `include/Muyo/detail/RenderGraph/`
+  is gone from the installed prefix. The builder stays non-copyable and non-movable, as it already was.
+  A consumer that included an internal graph header (never API) must stop; the stated public surface is
+  unchanged. `render_graph_docs.py --check` now rejects a public header that includes an internal one
+  (#297, Part of #73).
 - **Breaking: validation is the host's choice, not the device's.** `muyo_device` appends neither the
   validation layer nor a debug messenger; the in-tree hosts opt in through
   `InitializeDeviceWithValidation` in every configuration. A consumer that relied on linking the library

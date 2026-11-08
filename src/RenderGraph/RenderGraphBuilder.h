@@ -1,32 +1,34 @@
 #pragma once
-#include <spirv_reflect.h>
-
-#include <array>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
+// The public headers below are the builder's *entire* interface. Its private state lives in an
+// out-of-line `Impl` (defined in RenderGraphBuilder.cpp), so this header no longer pulls in the
+// implementation headers that describe that state - the package can install the public surface only
+// (#297). Do not include an internal header here: the out-of-tree consumer probe compiles against an
+// installed prefix with no `include/Muyo/detail/RenderGraph/`.
 #include "CompiledRenderGraph.h"
-#include "DependencyGraph.h"
 #include "DescriptorHeapService.h"
-#include "MuyoVersion.h"
 #include "PSODesc.h"
-#include "RenderGraphBarrier.h"
+#include "RenderGraphExecuteInfo.h"
 #include "RenderGraphExecutionPlan.h"
-#include "RenderGraphExecutor.h"
 #include "RenderGraphNodeContext.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderGraphResourceDesc.h"
-#include "RenderGraphShader.h"
+#include "RenderGraphResourceHandle.h"
+#include "RenderGraphResources.h"
 #include "RenderGraphTrace.h"
-#include "ShaderAssetManager.h"
-#include "TransientMemoryPlanner.h"
-#include "TransientResources.h"
+#include "TransientMemoryPlan.h"
+
+namespace Muyo
+{
+class VkRenderDevice;
+}  // namespace Muyo
 
 namespace Muyo::RenderGraph
 {
@@ -205,7 +207,7 @@ public:
 
     /// @return The graph compiled by the last successful Build(); empty before the first and after a
     ///         failed Build. Exposed for diagnostics and tests that inspect the compiled pipelines.
-    const CompiledRenderGraph& GetCompiledGraph() const { return m_compiledGraph; }
+    const CompiledRenderGraph& GetCompiledGraph() const;
 
     /// Block until every submitted execution has completed. Does not record or submit work; use it
     /// before reading back an imported resource written by a non-blocking Execute().
@@ -277,7 +279,7 @@ public:
     ///         individualBytes` is what sharing memory looks like from outside, and `reservedBytes ==
     ///         individualBytes` is a legitimate answer for a graph whose transients all overlap in time.
     ///         Empty before the first build.
-    const TransientMemoryPlan& GetTransientMemoryPlan() const { return m_transientMemoryPlan; }
+    const TransientMemoryPlan& GetTransientMemoryPlan() const;
 
     // ── Node declaration ─────────────────────────────────────────────────────
     /// Declare a node.
@@ -310,7 +312,7 @@ public:
     /// Cost when unset is one null check per node and per submit; when set, the plan half is strings the compiled
     /// graph already owns.
     /// @param sink Called after each execution completes submission, with that execution's record.
-    void SetTraceSink(std::function<void(RenderGraphTrace)> sink) { m_traceSink = std::move(sink); }
+    void SetTraceSink(std::function<void(RenderGraphTrace)> sink);
 
     /// Record and submit without waiting for the GPU. With `inFlightCount > 1` a second call may record
     /// and submit while the first is still in flight; its transients come from its own arena, and its
@@ -329,7 +331,7 @@ public:
     /// @return The plan the last `Build()` produced: queue segments and cross-queue transfers. Derived,
     ///         read-only state, empty before the first `Build()`. It is what tells a caller whether an
     ///         `async` node actually got a cross-queue handover or was serialised on one family.
-    const RenderGraphExecutionPlan& GetExecutionPlan() const { return m_compiledGraph.GetExecutionPlan(); }
+    const RenderGraphExecutionPlan& GetExecutionPlan() const;
 
     /// Render what `Build()` compiled as a Mermaid flowchart, **without executing anything**.
     ///
@@ -348,330 +350,25 @@ public:
     std::string ToDot() const;
 
 private:
-    struct RenderGraphNode
-    {
-        std::string name;
-        QueueType queueType = QueueType::GRAPHICS;
-        bool async = false;
-        std::vector<ResolvedResourceUse> resourceUses;
-        std::array<ShaderAssetKey, MAX_SHADER_STAGES> shaders;
-        // Ray tracing shader keys: [0] = raygen, [1] = miss, [2] = closest hit.
-        std::array<ShaderAssetKey, 3> rtShaders;
-        PSODesc psoDesc = {};
-        uint32_t costHint = 1;
-        std::vector<VkClearValue> attachmentClearValues;
-        std::vector<SpecializationValue> specializationConstants;
-        RenderGraphNodeCallback execute;
-    };
-
-    CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
-
-    /// One in-flight execution's host-visible, device-addressable root arena.
+    /// Complete definition of the builder's state, in RenderGraphBuilder.cpp.
     ///
-    /// Owned per executor slot rather than per builder: two executions can be recording at once, and a
-    /// shared arena would let the later execution overwrite root data the earlier one's GPU work has
-    /// not read yet. A slot's cursor is reset only after AcquireSlot has waited for that slot.
-    struct RootArena
-    {
-        VkBuffer buffer = VK_NULL_HANDLE;           ///< Host-visible root buffer.
-        GraphMemoryBlock allocation;                ///< The block owning its memory.
-        std::byte* mapped = nullptr;                ///< Persistent mapping.
-        VkDeviceAddress address = 0;                ///< Device address of offset 0.
-        VkDeviceSize cursor = 0;                    ///< Next free byte in this execution.
-    };
-    /// Finish construction: create the owned descriptor heap when the device supports one, validate the
-    /// injected caches and read the device limits. Shared by both constructors.
-    void Initialise();
-    /// Create the root arena for `slot` on first use; it is host-visible and device-addressable.
-    void EnsureRootArena(uint32_t slot);
-    /// @return A slice of the current execution's root arena, or throw when it does not fit.
-    RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment);
+    /// Out of line so this header names no implementation type (#297): a consumer compiles the public
+    /// surface against an installed prefix with no internal graph headers. The builder's copy and move
+    /// operations are deleted, which is the contract it already had when its members were declared
+    /// here (a `unique_ptr` member plus a user-declared destructor), now stated rather than implied.
+    struct Impl;
 
-    // Build a ray tracing pipeline + shader binding table for a RAY_TRACING node.
-    void BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
-                                 const std::vector<VkShaderModule>& shaderModules);
+    /// Owned implementation. Non-null for the whole lifetime of a constructed builder.
+    std::unique_ptr<Impl> m_impl;
 
-    /// The compiled plan as a diagram graph: segments, and the edges that force their order.
-    /// @return Segments and labelled edges, from what `Build()` compiled.
-    RenderGraph::TraceGraph BuildPlanGraph() const;
-
-    /// Device and topology, as a trace records them. Read once per traced execution, never from the graph itself.
-    /// @return The scope a trace produced now should carry.
-    TraceScope BuildTraceScope() const;
-
-    /// Record a node's barriers into its segment's command buffer.
-    /// @param cmdBuf       Command buffer the node's barriers are emitted into.
-    /// @param resourceUses The node's uses, in declaration order.
-    /// @param queueFamily  Family the node is recorded on; decides whether a handover is needed.
-    /// @param pObserver    Optional observer told about each use's barriers, with the resource it belongs to.
-    void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
-                        uint32_t queueFamily, BarrierObserver* pObserver = nullptr);
-
-    // Stage bits the device enables. `ResourceUseResolver`'s table names a union of every stage that can
-    // touch a resource; a stage whose feature the device does not enable may not appear in a barrier mask
-    // at all (VUID-VkImageMemoryBarrier2-dstStageMask-07946), so the barrier masks are filtered by this.
-    VkPipelineStageFlags2 SupportedStages() const;
-
-    /// Emit the post-node transition to `PRESENT_SRC_KHR` for a node's present targets.
-    ///
-    /// Present is the one layout whose consumer is outside the graph, so its barrier cannot be emitted at
-    /// the start of a consumer the way every other use's is. This runs after the node's render pass.
-    /// @param cmdBuf       Command buffer being recorded.
-    /// @param resourceUses The node's uses; the `PRESENT` ones are transitioned.
-    void RecordPresentTransition(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses);
-
-    // Emit queue-family ownership transfer barriers for resources crossing queues.
-    /// @param cmdBuf         Command buffer the release barrier is emitted into.
-    /// @param srcQueueFamily Family releasing ownership.
-    /// @param dstQueueFamily Family taking it.
-    /// @param bAcquire       True for the acquire half, which only records pending state.
-    /// @param handles        Resources being handed over.
-    /// @param pObserver      Optional observer told about each release barrier, with the resource it belongs to.
-    void RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily, uint32_t dstQueueFamily,
-                                     bool bAcquire, const std::vector<ResourceHandle>& handles,
-                                     BarrierObserver* pObserver = nullptr);
-
-    // Resolve a handle to its concrete resource: imported resources take priority,
-    // otherwise look in the graph-owned resource manager.
-
-    // The offset/range to write into VkDescriptorBufferInfo for a buffer binding, validated against
-    // the buffer and this device's alignment limit. Whole buffer when the use declares no range.
-    std::pair<VkDeviceSize, VkDeviceSize> ResolveBufferRange(const ResourceHandle& nodeName,
-                                                             const ResolvedResourceUse& use, const IGraphBuffer& buffer,
-                                                             VkDescriptorType descriptorType) const;
-
-    // Queue routing. `GetQueueKey` (which node runs where) lives with the execution plan in
-    // RenderGraphExecutionPlan.h; these resolve a queue key against this device. Submission itself
-    // - queues, handover semaphores, waiting - belongs to RenderGraphExecutor.
-    uint32_t GetQueueFamilyForType(QueueType type) const;
-    RenderGraphQueueFamilies GetQueueFamilies() const;
-
-    // Auto wraps a graphics node's work in vkCmdBeginRendering/vkCmdEndRendering.
-    bool BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn, RenderGraphNodeContext& ctx,
-                        std::unordered_set<ResourceHandle>& alreadyWritten,
-                        std::vector<VkRenderingAttachmentInfo>& colorAttachments,
-                        std::vector<VkClearValue>& clearValues);
-
-    // A graph-owned transient's live interval, in execution order.
-    //
-    // Derived from first to last use. It is the input aliasing needs - two transients may share memory
-    // exactly when their intervals do not overlap - and it is what makes the read-before-write check
-    // below a statement about a range rather than about one node.
-    struct TransientLiveRange
-    {
-        size_t firstUse = 0;
-        size_t lastUse = 0;
-    };
-
-    // Derive every graph-owned transient's live range and reject a read that no write precedes.
-    //
-    // A transient promises content from its first write to its last read *within one execution*, so a
-    // read with nothing writing it first is a declaration error. Without the check it silently reads
-    // whatever the memory holds: the first reader's barrier moves an image out of
-    // VK_IMAGE_LAYOUT_UNDEFINED, and a transition from UNDEFINED discards contents rather than keeping
-    // them. `Persistent` and `Imported` are exempt because their content is not this execution's to
-    // produce - which is what declaring either of them means.
-    void ValidateTransientLifetimes(const std::vector<std::string>& executionOrder);
-
-    /// One aliased transient's device-independent planning identity.
-    ///
-    /// Everything the memory plan depends on that the declaration and the execution order alone decide:
-    /// no `VkBuffer`/`VkImage` is created to gather it. That is what lets `Build()` decide whether the
-    /// arenas it already has still match before it destroys anything.
-    struct TransientPlanInput
-    {
-        ResourceHandle handle;                ///< Declaration handle.
-        const ResourceDesc* pDesc = nullptr;  ///< Its declaration; points into the registry.
-        TransientLiveRange liveRange;         ///< First/last execution-order use.
-        uint64_t sharingDomain = 0;           ///< Queue family, one-based; 0 means no GPU use.
-        bool canShareSlot = true;             ///< False when its uses span queue families.
-    };
-
-    /// @param executionOrder Node order used to derive live ranges and queue-family domains.
-    /// @return Every used aliased transient's planning identity, sorted by handle so the key and the
-    ///         plan are deterministic.
-    std::vector<TransientPlanInput> GatherTransientPlanInputs(const std::vector<std::string>& executionOrder) const;
-    /// @param inputs Output of `GatherTransientPlanInputs`.
-    /// @return A byte-string identity for the arena layout those inputs describe. Equal keys mean an
-    ///         unchanged plan, so a repeated `Build()` may keep the existing arenas.
-    std::string MakeTransientPlanKey(const std::vector<TransientPlanInput>& inputs) const;
-
-    // Live ranges from the last `Build()`, keyed by handle. Nothing reads this until aliasing lands;
-    // it is kept because re-deriving it later would mean re-walking the order for a fact this pass
-    // already computed.
-    std::unordered_map<ResourceHandle, TransientLiveRange> m_transientLiveRanges;
-
-    // Tracked resource access state for barrier generation between nodes. The derivation lives in
-    // RenderGraphBarrier.h, as a free function, so the masks can be tested without a device.
-    std::unordered_map<ResourceHandle, BarrierPriorState> m_resourceAccessStates;
-
-    std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
-    CompiledRenderGraph m_compiledGraph;
-
-    DependencyGraph<std::string> m_dependencyGraph;
-    /// Allocator owned by the convenience constructor. Declared before `m_services` because that
-    /// constructor initialises it first and points the services at it.
-    std::unique_ptr<IGraphResourceAllocator> m_ownedResourceAllocator;
-    /// The injected services, declared **before** the members whose construction dereferences them: a
-    /// member initialiser list runs in declaration order, so putting this first is what lets
-    /// `RequireServices` reject a missing one by name before anything dereferences it.
-    RenderGraphServices m_services;
-    /// Owned fallback for callers that did not inject a service; B1b-5b lets tests/builder construction
-    /// opt into heap nodes without threading a service, and the descriptor lifetime follows the graph.
-    std::unique_ptr<DescriptorHeapService> m_ownedDescriptorHeap;
-    ShaderAssetManager m_shaderAssetManager;
-    /// Load a shader through the injected `ShaderCache` when there is one, otherwise through the
-    /// per-builder manager. AddNode and CompileRenderGraphNode both go through these two helpers so the
-    /// load and the resolve cannot disagree about which cache the key belongs to.
-    /// @param shaderName Shader name without the `.spv` suffix.
-    /// @return The loaded shader's identity, or `std::nullopt` when it could not be loaded.
-    std::optional<ShaderAssetKey> LoadShaderAsset(const std::string& shaderName);
-    /// @param key Key returned by the matching `LoadShaderAsset` call.
-    /// @return The module, words and reflection, or nullptr when the key is unknown.
-    const ShaderAsset* ResolveShaderAsset(const ShaderAssetKey& key) const;
-    VkDevice m_vkDevice = VK_NULL_HANDLE;
-    VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
-    VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
-    // Owns submission, cross-queue synchronization and waiting. The graph only records.
-    RenderGraphExecutor m_executor;
-    uint64_t m_nextExecution = 0;                       ///< Execution counter a trace is labelled with.
-    std::function<void(RenderGraphTrace)> m_traceSink;  ///< Set by SetTraceSink; empty means no trace is recorded.
-    /// One in-flight slot's complete copy of the graph's transients.
-    ///
-    /// The plan is shared; the storage is not. Each slot owns its own unbound-then-bound buffers and
-    /// images, its own views, and its own aliasing blocks, so two executions that write the same handle
-    /// write different memory. The maps are keyed by handle so `ResolveResource` can find the current
-    /// slot's instance, and the resources are destroyed before the blocks are freed because a block
-    /// cannot be released while something is still bound to it.
-    struct TransientSlotStorage
-    {
-        std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> buffers;  ///< Transient buffers.
-        std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> images;    ///< Transient images.
-        std::vector<GraphMemoryBlock> blocks;  ///< This slot's aliasing blocks, freed after its resources.
-        TransientSlotStorage() = default;
-        /// The maps own their resources, so the struct is move-only. Saying so explicitly is load-bearing on
-        /// MSVC: `std::unordered_map` declares its copy constructor unconditionally and without `noexcept` on
-        /// its move constructor, so `is_copy_constructible_v` reports *true* for any struct that merely
-        /// contains one. `std::vector::_Reallocate` then picks its copy branch over the move branch and
-        /// instantiates the deleted copy of the mapped `unique_ptr`, failing to compile `resize()` below.
-        /// Deleting the copy operations makes the trait tell the truth and the vector take the move branch.
-        TransientSlotStorage(const TransientSlotStorage&) = delete;
-        /// Copy assignment is deleted for the same reason; use move assignment instead.
-        /// @return Nothing; this overload is deleted.
-        TransientSlotStorage& operator=(const TransientSlotStorage&) = delete;
-        /// @param other Storage to take over.
-        TransientSlotStorage(TransientSlotStorage&& other) = default;
-        /// @param other Storage to take over.
-        /// @return This storage, holding `other`'s resources and blocks.
-        TransientSlotStorage& operator=(TransientSlotStorage&& other) = default;
-    };
-    /// One entry per in-flight slot, rebuilt only when `m_transientPlanKey` changes.
-    std::vector<TransientSlotStorage> m_transientSlots;
-    /// Slot whose instance `ResolveResource` and the recording paths read: the execution being recorded.
-    uint32_t m_currentTransientSlot = 0;
-    /// Identity of the layout `m_transientSlots` currently holds. Empty before the first successful
-    /// build; a different key means the old arenas must be drained and rebuilt.
-    std::string m_transientPlanKey;
-    /// Host-visible root arenas, one per in-flight slot (B1b-4 / B2b). The host owns each layout.
-    static constexpr VkDeviceSize kRootCapacity = 64ULL * 1024;
-    std::vector<RootArena> m_rootArenas;
-    uint32_t m_currentRootSlot = 0;
-
-    /// Content key for a descriptor-heap slot (B2b-2).
-    ///
-    /// Keyed on what the descriptor *says*, not on the resource handle: a repeated Build with the same
-    /// resource hits, while a recreated resource at a new image/address misses even though its handle is
-    /// unchanged. Image entries compare the view create info and layout; buffer and acceleration-structure
-    /// entries compare device address and, for buffers, the range.
-    struct DescriptorKey
-    {
-        VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;  ///< Descriptor type.
-        VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;     ///< Image layout, undefined for the others.
-        VkDeviceAddress address = 0;                          ///< Buffer / AS device address.
-        VkDeviceSize size = 0;                                ///< Buffer range in bytes.
-        VkImageViewCreateInfo view{};                         ///< Image view; unused by buffers and AS.
-        /// @param other Key to compare.
-        /// @return True when both keys describe the same descriptor content.
-        bool operator==(const DescriptorKey& other) const;
-    };
-    /// Hashes the fields `DescriptorKey::operator==` compares.
-    struct DescriptorKeyHash
-    {
-        /// @param key Key to hash.
-        /// @return Hash over the descriptor's content.
-        std::size_t operator()(const DescriptorKey& key) const;
-    };
-    /// Static slots reused across builds, keyed by descriptor content.
-    std::unordered_map<DescriptorKey, DescriptorSlot, DescriptorKeyHash> m_descriptorCache;
-    /// Release every cached static slot; only after the GPU is known idle.
-    void ReleaseCachedDescriptors();
-    /// Pipelines reused across builds when no shared `PipelineCache` is injected, keyed on every input
-    /// that changes the created pipeline but not on any descriptor or layout state (B2c/#17). Owned here;
-    /// compiled nodes do not destroy them. With a shared cache injected this map stays empty and the
-    /// cache's entries are borrowed instead.
-    std::unordered_map<std::string, VkPipeline> m_pipelineCache;
-    /// Destroy every pipeline in the per-builder fallback cache; only after the GPU is known idle.
-    /// Entries in an injected shared cache are never touched by this.
-    void DestroyCachedPipelines();
-    /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
-    /// One slot's plan: `m_transientSlots` holds `inFlightCount` copies bound at these offsets.
-    TransientMemoryPlan m_transientMemoryPlan;
-
-    /// Create one slot's unbound resources from `inputs`, and optionally the planner requests (which
-    /// need the device-queried requirements).
-    /// @param inputs   Planning identity of every used aliased transient.
-    /// @param pRequests When non-null, filled with one request per resource for `PlanTransientMemory`.
-    /// @return The slot's resources, unbound; the caller allocates blocks and binds them.
-    TransientSlotStorage CreateTransientSlotStorage(const std::vector<TransientPlanInput>& inputs,
-                                                    std::vector<TransientMemoryRequest>* pRequests);
-    /// Allocate `m_transientMemoryPlan`'s blocks for one slot and bind that slot's resources into them.
-    /// @param storage Slot whose resources are bound; the new blocks are appended to it.
-    void AllocateAndBindTransientBlocks(TransientSlotStorage& storage);
-
-    /// Create the per-slot transient arenas for `planKey`, or keep the existing ones when it matches.
-    /// The caller guarantees no execution is in flight when the key differs.
-    /// @param inputs  Planning identity of every used aliased transient.
-    /// @param planKey This build's identity; compared with `m_transientPlanKey`.
-    void BuildAliasedTransients(const std::vector<TransientPlanInput>& inputs, const std::string& planKey);
-    /// Destroy every slot's transient resources and then free its blocks. The caller must have drained
-    /// every execution: a block freed under in-flight work is a use-after-free. Safe to call repeatedly.
-    void DestroyAliasedTransients();
-
-    /// Resolve a handle against one execution slot's transients, or the manager when it has none.
-    /// @param slot In-flight slot whose instance is wanted.
-    /// @param handle Resource handle.
-    /// @return The slot's instance, another owner's resource, or nullptr.
-    const IGraphResource* ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const;
-    /// @param handle Resource handle.
-    /// @return True when the handle is bound per execution (an import, or a graph-owned transient) and
-    ///         therefore cannot use a build-time static descriptor.
-    bool IsPerExecutionResource(const ResourceHandle& handle) const;
-
-    /// Throw when a node callback returned with a graph-owned transient still host-mapped.
-    ///
-    /// A transient buffer is mapped through its aliasing block, so the pointer is valid only while no
-    /// other transient shares its slot. The live range promises that for the node whose use declared the
-    /// resource and nothing beyond it, which is why the mapping must be released before the callback
-    /// returns: a later node may be bound to the same bytes. Nothing enforced that, and a leaked pointer
-    /// is a silent overwrite rather than an error, so this runs at every node boundary and names both the
-    /// node and the resource.
-    ///
-    /// Cost is one `IsMapped()` scan of the graph's aliased buffers per node - O(nodes x transient
-    /// buffers) per execution, and transient buffers are the only graph-owned resources that can be
-    /// mapped.
-    /// @param nodeName Node whose callback just returned, named in the error.
-    void EnsureMappingsReleased(const std::string& nodeName) const;
-
-    ResourceDescRegistry m_resourceDescRegistry;
-    /// Graph-owned persistent resources, allocated at Build() through the injected allocator. The graph
-    /// owns the object; the allocator owns the memory and the concrete Vulkan class.
-    std::unordered_map<ResourceHandle, std::unique_ptr<IGraphResource>> m_ownedResources;
-    /// Per-node shader binding tables, allocated at Build() through the injected allocator.
-    std::unordered_map<std::string, std::unique_ptr<IGraphBuffer>> m_shaderBindingTables;
-    std::unordered_map<ResourceHandle, const IGraphResource*> m_importedResources;
-    /// The layout each imported image is in before every execution, when the caller stated one. Seeded
-    /// into the per-execution access state so the first-use barrier preserves the imported content
-    /// instead of discarding it through `VK_IMAGE_LAYOUT_UNDEFINED`. Absent for `UNDEFINED`.
-    std::unordered_map<ResourceHandle, VkImageLayout> m_importedImageLayouts;
+public:
+    /// The builder owns GPU resources, so copying it is not allowed.
+    RenderGraphBuilder(const RenderGraphBuilder&) = delete;
+    /// The builder owns GPU resources, so copy-assigning it is not allowed.
+    RenderGraphBuilder& operator=(const RenderGraphBuilder&) = delete;
+    /// The builder owns GPU resources, so moving it is not allowed.
+    RenderGraphBuilder(RenderGraphBuilder&&) = delete;
+    /// The builder owns GPU resources, so move-assigning it is not allowed.
+    RenderGraphBuilder& operator=(RenderGraphBuilder&&) = delete;
 };
 }  // namespace Muyo::RenderGraph

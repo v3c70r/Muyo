@@ -1,23 +1,35 @@
 #include "RenderGraphBuilder.h"
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "Debug.h"
+#include "DependencyGraph.h"
 #include "PipelineCache.h"
 #include "PipelineStateBuilder.h"
 #include "RenderGraph/ResourceUseResolver.h"
+#include "RenderGraphBarrier.h"
+#include "RenderGraphExecutor.h"
+#include "RenderGraphShader.h"
+#include "ShaderAssetManager.h"
 #include "ShaderCache.h"
 #include "ShaderReflectionFetcher.h"
+#include "TransientMemoryPlanner.h"
+#include "TransientResources.h"
 #include "VkExtFuncsLoader.h"
 #include "VkGraphResourceAllocator.h"
 #include "vulkan/vulkan_core.h"
@@ -176,7 +188,412 @@ const RenderGraphServices& RequireServices(const RenderGraphServices& services)
 }
 }  // namespace
 
-RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount)
+/// Everything `RenderGraphBuilder` used to declare privately, out of line so its header is the public
+/// surface only (#297).
+///
+/// The nested planning types and the data members are in the order the class had them, because both
+/// are load-bearing: `m_services` is declared before the members whose construction dereferences it,
+/// and `~Impl` tears the GPU objects down in an order the owning members rely on before they are
+/// destroyed.
+struct RenderGraphBuilder::Impl
+{
+    // ── Planning types ──────────────────────────────────────────────────────
+    struct RenderGraphNode
+    {
+        std::string name;
+        QueueType queueType = QueueType::GRAPHICS;
+        bool async = false;
+        std::vector<ResolvedResourceUse> resourceUses;
+        std::array<ShaderAssetKey, MAX_SHADER_STAGES> shaders;
+        // Ray tracing shader keys: [0] = raygen, [1] = miss, [2] = closest hit.
+        std::array<ShaderAssetKey, 3> rtShaders;
+        PSODesc psoDesc = {};
+        uint32_t costHint = 1;
+        std::vector<VkClearValue> attachmentClearValues;
+        std::vector<SpecializationValue> specializationConstants;
+        RenderGraphNodeCallback execute;
+    };
+
+    /// One in-flight execution's host-visible, device-addressable root arena.
+    ///
+    /// Owned per executor slot rather than per builder: two executions can be recording at once, and a
+    /// shared arena would let the later execution overwrite root data the earlier one's GPU work has
+    /// not read yet. A slot's cursor is reset only after AcquireSlot has waited for that slot.
+    struct RootArena
+    {
+        VkBuffer buffer = VK_NULL_HANDLE;  ///< Host-visible root buffer.
+        GraphMemoryBlock allocation;       ///< The block owning its memory.
+        std::byte* mapped = nullptr;       ///< Persistent mapping.
+        VkDeviceAddress address = 0;       ///< Device address of offset 0.
+        VkDeviceSize cursor = 0;           ///< Next free byte in this execution.
+    };
+
+    // A graph-owned transient's live interval, in execution order.
+    //
+    // Derived from first to last use. It is the input aliasing needs - two transients may share memory
+    // exactly when their intervals do not overlap - and it is what makes the read-before-write check
+    // below a statement about a range rather than about one node.
+    struct TransientLiveRange
+    {
+        size_t firstUse = 0;
+        size_t lastUse = 0;
+    };
+
+    /// One aliased transient's device-independent planning identity.
+    ///
+    /// Everything the memory plan depends on that the declaration and the execution order alone decide:
+    /// no `VkBuffer`/`VkImage` is created to gather it. That is what lets `Build()` decide whether the
+    /// arenas it already has still match before it destroys anything.
+    struct TransientPlanInput
+    {
+        ResourceHandle handle;                ///< Declaration handle.
+        const ResourceDesc* pDesc = nullptr;  ///< Its declaration; points into the registry.
+        TransientLiveRange liveRange;         ///< First/last execution-order use.
+        uint64_t sharingDomain = 0;           ///< Queue family, one-based; 0 means no GPU use.
+        bool canShareSlot = true;             ///< False when its uses span queue families.
+    };
+
+    /// Content key for a descriptor-heap slot (B2b-2).
+    ///
+    /// Keyed on what the descriptor *says*, not on the resource handle: a repeated Build with the same
+    /// resource hits, while a recreated resource at a new image/address misses even though its handle is
+    /// unchanged. Image entries compare the view create info and layout; buffer and acceleration-structure
+    /// entries compare device address and, for buffers, the range.
+    struct DescriptorKey
+    {
+        VkDescriptorType type = VK_DESCRIPTOR_TYPE_MAX_ENUM;  ///< Descriptor type.
+        VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;     ///< Image layout, undefined for the others.
+        VkDeviceAddress address = 0;                          ///< Buffer / AS device address.
+        VkDeviceSize size = 0;                                ///< Buffer range in bytes.
+        VkImageViewCreateInfo view{};                         ///< Image view; unused by buffers and AS.
+        /// @param other Key to compare.
+        /// @return True when both keys describe the same descriptor content.
+        bool operator==(const DescriptorKey& other) const;
+    };
+    /// Hashes the fields `DescriptorKey::operator==` compares.
+    struct DescriptorKeyHash
+    {
+        /// @param key Key to hash.
+        /// @return Hash over the descriptor's content.
+        std::size_t operator()(const DescriptorKey& key) const;
+    };
+
+    /// One in-flight slot's complete copy of the graph's transients.
+    ///
+    /// The plan is shared; the storage is not. Each slot owns its own unbound-then-bound buffers and
+    /// images, its own views, and its own aliasing blocks, so two executions that write the same handle
+    /// write different memory. The maps are keyed by handle so `ResolveResource` can find the current
+    /// slot's instance, and the resources are destroyed before the blocks are freed because a block
+    /// cannot be released while something is still bound to it.
+    struct TransientSlotStorage
+    {
+        std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> buffers;  ///< Transient buffers.
+        std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> images;    ///< Transient images.
+        std::vector<GraphMemoryBlock> blocks;  ///< This slot's aliasing blocks, freed after its resources.
+        TransientSlotStorage() = default;
+        /// The maps own their resources, so the struct is move-only. Saying so explicitly is load-bearing on
+        /// MSVC: `std::unordered_map` declares its copy constructor unconditionally and without `noexcept` on
+        /// its move constructor, so `is_copy_constructible_v` reports *true* for any struct that merely
+        /// contains one. `std::vector::_Reallocate` then picks its copy branch over the move branch and
+        /// instantiates the deleted copy of the mapped `unique_ptr`, failing to compile `resize()` below.
+        /// Deleting the copy operations makes the trait tell the truth and the vector take the move branch.
+        TransientSlotStorage(const TransientSlotStorage&) = delete;
+        /// Copy assignment is deleted for the same reason; use move assignment instead.
+        /// @return Nothing; this overload is deleted.
+        TransientSlotStorage& operator=(const TransientSlotStorage&) = delete;
+        /// @param other Storage to take over.
+        TransientSlotStorage(TransientSlotStorage&& other) = default;
+        /// @param other Storage to take over.
+        /// @return This storage, holding `other`'s resources and blocks.
+        TransientSlotStorage& operator=(TransientSlotStorage&& other) = default;
+    };
+
+    // ── Construction and teardown ───────────────────────────────────────────
+    /// @param services     Device, allocator and descriptor heap the graph uses.
+    /// @param inFlightCount Number of executions that may be in flight.
+    Impl(const RenderGraphServices& services, uint32_t inFlightCount);
+    /// @param renderDevice  Device whose VMA-backed allocator the graph creates.
+    /// @param inFlightCount Number of executions that may be in flight.
+    Impl(VkRenderDevice* renderDevice, uint32_t inFlightCount);
+    ~Impl();
+
+    /// Finish construction: create the owned descriptor heap when the device supports one, validate the
+    /// injected caches and read the device limits. Shared by both constructors.
+    void Initialise();
+
+    // ── Public API implementations, forwarded by RenderGraphBuilder ─────────
+    void WaitIdle();
+    void ReleaseCachedDeviceObjects();
+    /// @param handle Resource handle.
+    /// @param desc   Allocation description.
+    void AddResource(const ResourceHandle& handle, ResourceDesc desc);
+    /// @param handle        Resource handle.
+    /// @param resource      Imported resource.
+    /// @param currentLayout Its layout before an execution begins.
+    void ImportResource(const ResourceHandle& handle, const IGraphResource* resource, VkImageLayout currentLayout);
+    /// @param handle Resource handle.
+    /// @return The allocation description, if any.
+    std::optional<ResourceDesc> GetResourceDesc(const ResourceHandle& handle) const;
+    /// @param handle Resource handle.
+    /// @return The resolved resource, or nullptr.
+    const IGraphResource* ResolveResource(const ResourceHandle& handle) const;
+    /// @param nodeCreateInfo Node declaration.
+    void AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo);
+    /// @param fromNode Node that runs first.
+    /// @param toNode   Node that runs after it.
+    void AddDependency(const std::string& fromNode, const std::string& toNode);
+    void Build();
+    void Execute();
+    /// @param info External semaphores for this execution.
+    void Execute(const RenderGraphExecuteInfo& info);
+    /// @return The node names in dependency (topological) order.
+    std::vector<std::string> GetExecutionOrder() const;
+    /// @return A Mermaid `flowchart LR` document.
+    std::string ToMermaid() const;
+    /// @return A DOT document.
+    std::string ToDot() const;
+
+    // ── Build helpers ───────────────────────────────────────────────────────
+    /// @param rgn Node to compile.
+    /// @return The compiled node.
+    CompiledRenderGraphNode CompileRenderGraphNode(const RenderGraphNode& rgn);
+    /// Create the root arena for `slot` on first use; it is host-visible and device-addressable.
+    void EnsureRootArena(uint32_t slot);
+    /// @param size      Bytes wanted.
+    /// @param alignment Alignment the bytes need.
+    /// @return A slice of the current execution's root arena, or throw when it does not fit.
+    RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment);
+
+    // Build a ray tracing pipeline + shader binding table for a RAY_TRACING node.
+    /// @param rgn           Compiled node to fill in.
+    /// @param logicalNode   Node declaration it was compiled from.
+    /// @param shaderModules Shader modules for the RT stages.
+    void BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
+                                 const std::vector<VkShaderModule>& shaderModules);
+
+    /// The compiled plan as a diagram graph: segments, and the edges that force their order.
+    /// @return Segments and labelled edges, from what `Build()` compiled.
+    RenderGraph::TraceGraph BuildPlanGraph() const;
+
+    /// Device and topology, as a trace records them. Read once per traced execution, never from the graph itself.
+    /// @return The scope a trace produced now should carry.
+    TraceScope BuildTraceScope() const;
+
+    /// Record a node's barriers into its segment's command buffer.
+    /// @param cmdBuf       Command buffer the node's barriers are emitted into.
+    /// @param resourceUses The node's uses, in declaration order.
+    /// @param queueFamily  Family the node is recorded on; decides whether a handover is needed.
+    /// @param pObserver    Optional observer told about each use's barriers, with the resource it belongs to.
+    void RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
+                        uint32_t queueFamily, BarrierObserver* pObserver = nullptr);
+
+    // Stage bits the device enables. `ResourceUseResolver`'s table names a union of every stage that can
+    // touch a resource; a stage whose feature the device does not enable may not appear in a barrier mask
+    // at all (VUID-VkImageMemoryBarrier2-dstStageMask-07946), so the barrier masks are filtered by this.
+    VkPipelineStageFlags2 SupportedStages() const;
+
+    /// Emit the post-node transition to `PRESENT_SRC_KHR` for a node's present targets.
+    ///
+    /// Present is the one layout whose consumer is outside the graph, so its barrier cannot be emitted at
+    /// the start of a consumer the way every other use's is. This runs after the node's render pass.
+    /// @param cmdBuf       Command buffer being recorded.
+    /// @param resourceUses The node's uses; the `PRESENT` ones are transitioned.
+    void RecordPresentTransition(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses);
+
+    // Emit queue-family ownership transfer barriers for resources crossing queues.
+    /// @param cmdBuf         Command buffer the release barrier is emitted into.
+    /// @param srcQueueFamily Family releasing ownership.
+    /// @param dstQueueFamily Family taking it.
+    /// @param bAcquire       True for the acquire half, which only records pending state.
+    /// @param handles        Resources being handed over.
+    /// @param pObserver      Optional observer told about each release barrier, with the resource it belongs to.
+    void RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily, uint32_t dstQueueFamily,
+                                     bool bAcquire, const std::vector<ResourceHandle>& handles,
+                                     BarrierObserver* pObserver = nullptr);
+
+    // The offset/range to write into VkDescriptorBufferInfo for a buffer binding, validated against
+    // the buffer and this device's alignment limit. Whole buffer when the use declares no range.
+    /// @param nodeName       Node name used in the error.
+    /// @param use            Buffer use to resolve.
+    /// @param buffer         Buffer being bound.
+    /// @param descriptorType Descriptor type, which decides the alignment.
+    /// @return The offset and range to write.
+    std::pair<VkDeviceSize, VkDeviceSize> ResolveBufferRange(const ResourceHandle& nodeName,
+                                                             const ResolvedResourceUse& use, const IGraphBuffer& buffer,
+                                                             VkDescriptorType descriptorType) const;
+
+    // Queue routing. `GetQueueKey` (which node runs where) lives with the execution plan in
+    // RenderGraphExecutionPlan.h; these resolve a queue key against this device. Submission itself
+    // - queues, handover semaphores, waiting - belongs to RenderGraphExecutor.
+    /// @param type Queue type.
+    /// @return The queue family index for it.
+    uint32_t GetQueueFamilyForType(QueueType type) const;
+    /// @return The device's queue families.
+    RenderGraphQueueFamilies GetQueueFamilies() const;
+
+    // Auto wraps a graphics node's work in vkCmdBeginRendering/vkCmdEndRendering.
+    /// @param cmdBuf           Command buffer being recorded.
+    /// @param rgn              Compiled node.
+    /// @param ctx              Node context handed to the callback.
+    /// @param alreadyWritten   Resources already written by this node.
+    /// @param colorAttachments Colour attachments gathered so far.
+    /// @param clearValues      Clear values gathered so far.
+    /// @return True when a render pass was begun.
+    bool BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn, RenderGraphNodeContext& ctx,
+                        std::unordered_set<ResourceHandle>& alreadyWritten,
+                        std::vector<VkRenderingAttachmentInfo>& colorAttachments,
+                        std::vector<VkClearValue>& clearValues);
+
+    // Derive every graph-owned transient's live range and reject a read that no write precedes.
+    //
+    // A transient promises content from its first write to its last read *within one execution*, so a
+    // read with nothing writing it first is a declaration error. Without the check it silently reads
+    // whatever the memory holds: the first reader's barrier moves an image out of
+    // VK_IMAGE_LAYOUT_UNDEFINED, and a transition from UNDEFINED discards contents rather than keeping
+    // them. `Persistent` and `Imported` are exempt because their content is not this execution's to
+    // produce - which is what declaring either of them means.
+    /// @param executionOrder Node order to derive the ranges from.
+    void ValidateTransientLifetimes(const std::vector<std::string>& executionOrder);
+
+    /// @param executionOrder Node order used to derive live ranges and queue-family domains.
+    /// @return Every used aliased transient's planning identity, sorted by handle so the key and the
+    ///         plan are deterministic.
+    std::vector<TransientPlanInput> GatherTransientPlanInputs(const std::vector<std::string>& executionOrder) const;
+    /// @param inputs Output of `GatherTransientPlanInputs`.
+    /// @return A byte-string identity for the arena layout those inputs describe. Equal keys mean an
+    ///         unchanged plan, so a repeated `Build()` may keep the existing arenas.
+    std::string MakeTransientPlanKey(const std::vector<TransientPlanInput>& inputs) const;
+
+    /// Create one slot's unbound resources from `inputs`, and optionally the planner requests (which
+    /// need the device-queried requirements).
+    /// @param inputs    Planning identity of every used aliased transient.
+    /// @param pRequests When non-null, filled with one request per resource for `PlanTransientMemory`.
+    /// @return The slot's resources, unbound; the caller allocates blocks and binds them.
+    TransientSlotStorage CreateTransientSlotStorage(const std::vector<TransientPlanInput>& inputs,
+                                                    std::vector<TransientMemoryRequest>* pRequests);
+    /// Allocate `m_transientMemoryPlan`'s blocks for one slot and bind that slot's resources into them.
+    /// @param storage Slot whose resources are bound; the new blocks are appended to it.
+    void AllocateAndBindTransientBlocks(TransientSlotStorage& storage);
+
+    /// Create the per-slot transient arenas for `planKey`, or keep the existing ones when it matches.
+    /// The caller guarantees no execution is in flight when the key differs.
+    /// @param inputs  Planning identity of every used aliased transient.
+    /// @param planKey This build's identity; compared with `m_transientPlanKey`.
+    void BuildAliasedTransients(const std::vector<TransientPlanInput>& inputs, const std::string& planKey);
+    /// Destroy every slot's transient resources and then free its blocks. The caller must have drained
+    /// every execution: a block freed under in-flight work is a use-after-free. Safe to call repeatedly.
+    void DestroyAliasedTransients();
+
+    /// Resolve a handle against one execution slot's transients, or the manager when it has none.
+    /// @param slot   In-flight slot whose instance is wanted.
+    /// @param handle Resource handle.
+    /// @return The slot's instance, another owner's resource, or nullptr.
+    const IGraphResource* ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const;
+    /// @param handle Resource handle.
+    /// @return True when the handle is bound per execution (an import, or a graph-owned transient) and
+    ///         therefore cannot use a build-time static descriptor.
+    bool IsPerExecutionResource(const ResourceHandle& handle) const;
+
+    /// Throw when a node callback returned with a graph-owned transient still host-mapped.
+    ///
+    /// A transient buffer is mapped through its aliasing block, so the pointer is valid only while no
+    /// other transient shares its slot. The live range promises that for the node whose use declared the
+    /// resource and nothing beyond it, which is why the mapping must be released before the callback
+    /// returns: a later node may be bound to the same bytes. Nothing enforced that, and a leaked pointer
+    /// is a silent overwrite rather than an error, so this runs at every node boundary and names both the
+    /// node and the resource.
+    ///
+    /// Cost is one `IsMapped()` scan of the graph's aliased buffers per node - O(nodes x transient
+    /// buffers) per execution, and transient buffers are the only graph-owned resources that can be
+    /// mapped.
+    /// @param nodeName Node whose callback just returned, named in the error.
+    void EnsureMappingsReleased(const std::string& nodeName) const;
+
+    /// Load a shader through the injected `ShaderCache` when there is one, otherwise through the
+    /// per-builder manager. AddNode and CompileRenderGraphNode both go through these two helpers so the
+    /// load and the resolve cannot disagree about which cache the key belongs to.
+    /// @param shaderName Shader name without the `.spv` suffix.
+    /// @return The loaded shader's identity, or `std::nullopt` when it could not be loaded.
+    std::optional<ShaderAssetKey> LoadShaderAsset(const std::string& shaderName);
+    /// @param key Key returned by the matching `LoadShaderAsset` call.
+    /// @return The module, words and reflection, or nullptr when the key is unknown.
+    const ShaderAsset* ResolveShaderAsset(const ShaderAssetKey& key) const;
+
+    /// Release every cached static slot; only after the GPU is known idle.
+    void ReleaseCachedDescriptors();
+    /// Destroy every pipeline in the per-builder fallback cache; only after the GPU is known idle.
+    /// Entries in an injected shared cache are never touched by this.
+    void DestroyCachedPipelines();
+
+    // ── State ───────────────────────────────────────────────────────────────
+    // Live ranges from the last `Build()`, keyed by handle. Nothing reads this until aliasing lands;
+    // it is kept because re-deriving it later would mean re-walking the order for a fact this pass
+    // already computed.
+    std::unordered_map<ResourceHandle, TransientLiveRange> m_transientLiveRanges;
+
+    // Tracked resource access state for barrier generation between nodes. The derivation lives in
+    // RenderGraphBarrier.h, as a free function, so the masks can be tested without a device.
+    std::unordered_map<ResourceHandle, BarrierPriorState> m_resourceAccessStates;
+
+    std::unordered_map<std::string, RenderGraphNode> m_renderGraphNodes;
+    CompiledRenderGraph m_compiledGraph;
+
+    DependencyGraph<std::string> m_dependencyGraph;
+    /// Allocator owned by the convenience constructor. Declared before `m_services` because that
+    /// constructor initialises it first and points the services at it.
+    std::unique_ptr<IGraphResourceAllocator> m_ownedResourceAllocator;
+    /// The injected services, declared **before** the members whose construction dereferences them: a
+    /// member initialiser list runs in declaration order, so putting this first is what lets
+    /// `RequireServices` reject a missing one by name before anything dereferences it.
+    RenderGraphServices m_services;
+    /// Owned fallback for callers that did not inject a service; B1b-5b lets tests/builder construction
+    /// opt into heap nodes without threading a service, and the descriptor lifetime follows the graph.
+    std::unique_ptr<DescriptorHeapService> m_ownedDescriptorHeap;
+    ShaderAssetManager m_shaderAssetManager;
+    VkDevice m_vkDevice = VK_NULL_HANDLE;
+    VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
+    VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
+    // Owns submission, cross-queue synchronization and waiting. The graph only records.
+    RenderGraphExecutor m_executor;
+    uint64_t m_nextExecution = 0;                       ///< Execution counter a trace is labelled with.
+    std::function<void(RenderGraphTrace)> m_traceSink;  ///< Set by SetTraceSink; empty means no trace is recorded.
+    /// One entry per in-flight slot, rebuilt only when `m_transientPlanKey` changes.
+    std::vector<TransientSlotStorage> m_transientSlots;
+    /// Slot whose instance `ResolveResource` and the recording paths read: the execution being recorded.
+    uint32_t m_currentTransientSlot = 0;
+    /// Identity of the layout `m_transientSlots` currently holds. Empty before the first successful
+    /// build; a different key means the old arenas must be drained and rebuilt.
+    std::string m_transientPlanKey;
+    /// Host-visible root arenas, one per in-flight slot (B1b-4 / B2b). The host owns each layout.
+    static constexpr VkDeviceSize kRootCapacity = 64ULL * 1024;
+    std::vector<RootArena> m_rootArenas;
+    uint32_t m_currentRootSlot = 0;
+
+    /// Static slots reused across builds, keyed by descriptor content.
+    std::unordered_map<DescriptorKey, DescriptorSlot, DescriptorKeyHash> m_descriptorCache;
+    /// Pipelines reused across builds when no shared `PipelineCache` is injected, keyed on every input
+    /// that changes the created pipeline but not on any descriptor or layout state (B2c/#17). Owned here;
+    /// compiled nodes do not destroy them. With a shared cache injected this map stays empty and the
+    /// cache's entries are borrowed instead.
+    std::unordered_map<std::string, VkPipeline> m_pipelineCache;
+    /// The last plan's numbers, so a caller can ask what aliasing bought without reaching into the build.
+    /// One slot's plan: `m_transientSlots` holds `inFlightCount` copies bound at these offsets.
+    TransientMemoryPlan m_transientMemoryPlan;
+
+    ResourceDescRegistry m_resourceDescRegistry;
+    /// Graph-owned persistent resources, allocated at Build() through the injected allocator. The graph
+    /// owns the object; the allocator owns the memory and the concrete Vulkan class.
+    std::unordered_map<ResourceHandle, std::unique_ptr<IGraphResource>> m_ownedResources;
+    /// Per-node shader binding tables, allocated at Build() through the injected allocator.
+    std::unordered_map<std::string, std::unique_ptr<IGraphBuffer>> m_shaderBindingTables;
+    std::unordered_map<ResourceHandle, const IGraphResource*> m_importedResources;
+    /// The layout each imported image is in before every execution, when the caller stated one. Seeded
+    /// into the per-execution access state so the first-use barrier preserves the imported content
+    /// instead of discarding it through `VK_IMAGE_LAYOUT_UNDEFINED`. Absent for `UNDEFINED`.
+    std::unordered_map<ResourceHandle, VkImageLayout> m_importedImageLayouts;
+};
+
+RenderGraphBuilder::Impl::Impl(const RenderGraphServices& services, uint32_t inFlightCount)
     : m_services(RequireServices(services))
     , m_shaderAssetManager(m_services.device->GetDevice())
     , m_vkDevice(m_services.device->GetDevice())
@@ -185,7 +602,18 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint
     Initialise();
 }
 
-void RenderGraphBuilder::Initialise()
+RenderGraphBuilder::Impl::Impl(VkRenderDevice* renderDevice, uint32_t inFlightCount)
+    : m_ownedResourceAllocator(CreateVkGraphResourceAllocator(renderDevice))
+    , m_services(RequireServices(
+          RenderGraphServices{.device = renderDevice, .resourceAllocator = m_ownedResourceAllocator.get()}))
+    , m_shaderAssetManager(m_services.device->GetDevice())
+    , m_vkDevice(m_services.device->GetDevice())
+    , m_executor(m_services.device, inFlightCount)
+{
+    Initialise();
+}
+
+void RenderGraphBuilder::Impl::Initialise()
 {
     if (m_services.descriptorHeap == nullptr && m_services.device->IsDescriptorHeapEnabled())
     {
@@ -213,35 +641,7 @@ void RenderGraphBuilder::Initialise()
     m_minStorageBufferOffsetAlignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
 }
 
-RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount)
-    : m_ownedResourceAllocator(CreateVkGraphResourceAllocator(renderDevice))
-    , m_services(RequireServices(
-          RenderGraphServices{.device = renderDevice, .resourceAllocator = m_ownedResourceAllocator.get()}))
-    , m_shaderAssetManager(m_services.device->GetDevice())
-    , m_vkDevice(m_services.device->GetDevice())
-    , m_executor(m_services.device, inFlightCount)
-{
-    Initialise();
-}
-
-std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::ResolveBufferRange(const ResourceHandle& nodeName,
-                                                                             const ResolvedResourceUse& use,
-                                                                             const IGraphBuffer& buffer,
-                                                                             VkDescriptorType descriptorType) const
-{
-    if (!use.bufferRange.has_value())
-    {
-        return {0, buffer.GetSize()};
-    }
-
-    const bool bUniform = descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
-                          descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    const VkDeviceSize nAlignment = bUniform ? m_minUniformBufferOffsetAlignment : m_minStorageBufferOffsetAlignment;
-    ValidateBufferRange(nodeName, use.handle, *use.bufferRange, buffer.GetSize(), nAlignment);
-    return {static_cast<VkDeviceSize>(use.bufferRange->offset), static_cast<VkDeviceSize>(use.bufferRange->size)};
-}
-
-RenderGraphBuilder::~RenderGraphBuilder()
+RenderGraphBuilder::Impl::~Impl()
 {
     // Before destroying anything the GPU may still be using. `Execute(RenderGraphExecuteInfo)` submits
     // without waiting, so a builder destroyed right after a non-blocking Execute would free its pipelines
@@ -265,6 +665,94 @@ RenderGraphBuilder::~RenderGraphBuilder()
     }
     m_rootArenas.clear();
     m_vkDevice = VK_NULL_HANDLE;
+}
+
+RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount)
+    : m_impl(std::make_unique<Impl>(services, inFlightCount))
+{
+}
+
+RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount)
+    : m_impl(std::make_unique<Impl>(renderDevice, inFlightCount))
+{
+}
+
+RenderGraphBuilder::~RenderGraphBuilder() = default;
+
+const CompiledRenderGraph& RenderGraphBuilder::GetCompiledGraph() const { return m_impl->m_compiledGraph; }
+
+void RenderGraphBuilder::WaitIdle() { m_impl->WaitIdle(); }
+
+void RenderGraphBuilder::ReleaseCachedDeviceObjects() { m_impl->ReleaseCachedDeviceObjects(); }
+
+RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle, ResourceDesc desc)
+{
+    m_impl->AddResource(handle, std::move(desc));
+    return *this;
+}
+
+RenderGraphBuilder& RenderGraphBuilder::ImportResource(const ResourceHandle& handle, const IGraphResource* resource,
+                                                       VkImageLayout currentLayout)
+{
+    m_impl->ImportResource(handle, resource, currentLayout);
+    return *this;
+}
+
+std::optional<ResourceDesc> RenderGraphBuilder::GetResourceDesc(const ResourceHandle& handle) const
+{
+    return m_impl->GetResourceDesc(handle);
+}
+
+const IGraphResource* RenderGraphBuilder::ResolveResource(const ResourceHandle& handle) const
+{
+    return m_impl->ResolveResource(handle);
+}
+
+const TransientMemoryPlan& RenderGraphBuilder::GetTransientMemoryPlan() const { return m_impl->m_transientMemoryPlan; }
+
+void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo) { m_impl->AddNode(nodeCreateInfo); }
+
+void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::string& toNode)
+{
+    m_impl->AddDependency(fromNode, toNode);
+}
+
+void RenderGraphBuilder::Build() { m_impl->Build(); }
+
+void RenderGraphBuilder::Execute() { m_impl->Execute(); }
+
+void RenderGraphBuilder::SetTraceSink(std::function<void(RenderGraphTrace)> sink)
+{
+    m_impl->m_traceSink = std::move(sink);
+}
+
+void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info) { m_impl->Execute(info); }
+
+std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const { return m_impl->GetExecutionOrder(); }
+
+const RenderGraphExecutionPlan& RenderGraphBuilder::GetExecutionPlan() const
+{
+    return m_impl->m_compiledGraph.GetExecutionPlan();
+}
+
+std::string RenderGraphBuilder::ToMermaid() const { return m_impl->ToMermaid(); }
+
+std::string RenderGraphBuilder::ToDot() const { return m_impl->ToDot(); }
+
+std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::Impl::ResolveBufferRange(
+    const ResourceHandle& nodeName, const ResolvedResourceUse& use, const IGraphBuffer& buffer,
+    VkDescriptorType descriptorType) const
+{
+    if (!use.bufferRange.has_value())
+    {
+        return {0, buffer.GetSize()};
+    }
+
+    const bool bUniform = descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+                          descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    const VkDeviceSize nAlignment = bUniform ? m_minUniformBufferOffsetAlignment : m_minStorageBufferOffsetAlignment;
+    ValidateBufferRange(nodeName, use.handle, *use.bufferRange, buffer.GetSize(), nAlignment);
+    return {static_cast<VkDeviceSize>(use.bufferRange->offset), static_cast<VkDeviceSize>(use.bufferRange->size)};
 }
 
 namespace
@@ -353,7 +841,7 @@ std::string MakePipelineKey(QueueType queueType, const std::vector<std::uint64_t
 }
 }  // namespace
 
-bool RenderGraphBuilder::DescriptorKey::operator==(const DescriptorKey& other) const
+bool RenderGraphBuilder::Impl::DescriptorKey::operator==(const DescriptorKey& other) const
 {
     if (type != other.type || layout != other.layout || address != other.address || size != other.size)
     {
@@ -372,7 +860,7 @@ bool RenderGraphBuilder::DescriptorKey::operator==(const DescriptorKey& other) c
            view.subresourceRange.layerCount == other.view.subresourceRange.layerCount;
 }
 
-std::size_t RenderGraphBuilder::DescriptorKeyHash::operator()(const DescriptorKey& key) const
+std::size_t RenderGraphBuilder::Impl::DescriptorKeyHash::operator()(const DescriptorKey& key) const
 {
     std::size_t seed = std::hash<uint32_t>{}(static_cast<uint32_t>(key.type));
     seed = CombineDescriptorHash(seed, std::hash<uint32_t>{}(static_cast<uint32_t>(key.layout)));
@@ -398,15 +886,15 @@ std::size_t RenderGraphBuilder::DescriptorKeyHash::operator()(const DescriptorKe
     return seed;
 }
 
-void RenderGraphBuilder::WaitIdle() { m_executor.WaitIdle(); }
+void RenderGraphBuilder::Impl::WaitIdle() { m_executor.WaitIdle(); }
 
-void RenderGraphBuilder::ReleaseCachedDeviceObjects()
+void RenderGraphBuilder::Impl::ReleaseCachedDeviceObjects()
 {
     DestroyCachedPipelines();
     ReleaseCachedDescriptors();
 }
 
-void RenderGraphBuilder::DestroyCachedPipelines()
+void RenderGraphBuilder::Impl::DestroyCachedPipelines()
 {
     // Only the fallback map. A shared cache's entries belong to a caller-owned object that may serve
     // another builder or graph, so this builder must never destroy them.
@@ -417,7 +905,7 @@ void RenderGraphBuilder::DestroyCachedPipelines()
     m_pipelineCache.clear();
 }
 
-void RenderGraphBuilder::ReleaseCachedDescriptors()
+void RenderGraphBuilder::Impl::ReleaseCachedDescriptors()
 {
     if (m_services.descriptorHeap != nullptr)
     {
@@ -429,7 +917,7 @@ void RenderGraphBuilder::ReleaseCachedDescriptors()
     m_descriptorCache.clear();
 }
 
-void RenderGraphBuilder::EnsureRootArena(uint32_t slot)
+void RenderGraphBuilder::Impl::EnsureRootArena(uint32_t slot)
 {
     if (m_rootArenas.size() <= slot) m_rootArenas.resize(slot + 1);
     RootArena& arena = m_rootArenas[slot];
@@ -441,7 +929,7 @@ void RenderGraphBuilder::EnsureRootArena(uint32_t slot)
     arena.address = m_services.device->GetBufferDeviceAddress(arena.buffer);
 }
 
-RenderGraphRootSlice RenderGraphBuilder::AllocateRoot(size_t size, size_t alignment)
+RenderGraphRootSlice RenderGraphBuilder::Impl::AllocateRoot(size_t size, size_t alignment)
 {
     if (size == 0 || alignment == 0) throw std::runtime_error("RenderGraphBuilder: invalid root allocation");
     EnsureRootArena(m_currentRootSlot);
@@ -459,7 +947,7 @@ RenderGraphRootSlice RenderGraphBuilder::AllocateRoot(size_t size, size_t alignm
     return slice;
 }
 
-RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle, ResourceDesc desc)
+void RenderGraphBuilder::Impl::AddResource(const ResourceHandle& handle, ResourceDesc desc)
 {
     const ResourceLifetime lifetime = std::visit([](const auto& d) { return d.lifetime; }, desc);
     if (lifetime == ResourceLifetime::Imported)
@@ -472,11 +960,10 @@ RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle
     }
     ValidateResourceDesc(handle, desc);
     m_resourceDescRegistry[handle] = std::move(desc);
-    return *this;
 }
 
-RenderGraphBuilder& RenderGraphBuilder::ImportResource(const ResourceHandle& handle, const IGraphResource* resource,
-                                                       VkImageLayout currentLayout)
+void RenderGraphBuilder::Impl::ImportResource(const ResourceHandle& handle, const IGraphResource* resource,
+                                              VkImageLayout currentLayout)
 {
     if (currentLayout != VK_IMAGE_LAYOUT_UNDEFINED &&
         (resource == nullptr || resource->GetResourceKind() != ResourceKind::IMAGE))
@@ -496,16 +983,15 @@ RenderGraphBuilder& RenderGraphBuilder::ImportResource(const ResourceHandle& han
     {
         m_importedImageLayouts[handle] = currentLayout;
     }
-    return *this;
 }
 
-std::optional<ResourceDesc> RenderGraphBuilder::GetResourceDesc(const ResourceHandle& handle) const
+std::optional<ResourceDesc> RenderGraphBuilder::Impl::GetResourceDesc(const ResourceHandle& handle) const
 {
     auto it = m_resourceDescRegistry.find(handle);
     return it != m_resourceDescRegistry.end() ? std::optional<ResourceDesc>{it->second} : std::nullopt;
 }
 
-const IGraphResource* RenderGraphBuilder::ResolveResource(const ResourceHandle& handle) const
+const IGraphResource* RenderGraphBuilder::Impl::ResolveResource(const ResourceHandle& handle) const
 {
     return ResolveResourceForSlot(m_currentTransientSlot, handle);
 }
@@ -518,7 +1004,8 @@ namespace
 bool IsAliasedTransient(const ResourceDesc& desc);
 }  // namespace
 
-const IGraphResource* RenderGraphBuilder::ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const
+const IGraphResource* RenderGraphBuilder::Impl::ResolveResourceForSlot(uint32_t slot,
+                                                                       const ResourceHandle& handle) const
 {
     if (auto it = m_importedResources.find(handle); it != m_importedResources.end())
     {
@@ -546,7 +1033,7 @@ const IGraphResource* RenderGraphBuilder::ResolveResourceForSlot(uint32_t slot, 
     return nullptr;
 }
 
-bool RenderGraphBuilder::IsPerExecutionResource(const ResourceHandle& handle) const
+bool RenderGraphBuilder::Impl::IsPerExecutionResource(const ResourceHandle& handle) const
 {
     if (m_importedResources.find(handle) != m_importedResources.end()) return true;
     const auto desc = m_resourceDescRegistry.find(handle);
@@ -593,19 +1080,19 @@ private:
 };
 }  // namespace
 
-std::optional<ShaderAssetKey> RenderGraphBuilder::LoadShaderAsset(const std::string& shaderName)
+std::optional<ShaderAssetKey> RenderGraphBuilder::Impl::LoadShaderAsset(const std::string& shaderName)
 {
     if (m_services.shaderCache != nullptr) return m_services.shaderCache->LoadShader(shaderName);
     return m_shaderAssetManager.LoadShader(shaderName);
 }
 
-const ShaderAsset* RenderGraphBuilder::ResolveShaderAsset(const ShaderAssetKey& key) const
+const ShaderAsset* RenderGraphBuilder::Impl::ResolveShaderAsset(const ShaderAssetKey& key) const
 {
     if (m_services.shaderCache != nullptr) return m_services.shaderCache->GetShaderAsset(key);
     return m_shaderAssetManager.GetShaderAsset(key);
 }
 
-CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderGraphBuilder::RenderGraphNode& rgn)
+CompiledRenderGraphNode RenderGraphBuilder::Impl::CompileRenderGraphNode(const RenderGraphNode& rgn)
 {
     // Compile the pipeline and its descriptor-heap slots from the node
     CompiledRenderGraphNode result;
@@ -950,8 +1437,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
     return result;
 }
 
-void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
-                                                 const std::vector<VkShaderModule>& shaderModules)
+void RenderGraphBuilder::Impl::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
+                                                       const std::vector<VkShaderModule>& shaderModules)
 {
     if (shaderModules.size() < 3)
     {
@@ -1369,7 +1856,7 @@ void ValidateImageRoleFormat(const std::string& nodeName, const ResolvedResource
     }
 }
 
-void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
+void RenderGraphBuilder::Impl::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo)
 {
     const std::string& nodeName = nodeCreateInfo.nodeName;
 
@@ -1522,7 +2009,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
     rgn.execute = nodeCreateInfo.execute;
 }
 
-void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::string& toNode)
+void RenderGraphBuilder::Impl::AddDependency(const std::string& fromNode, const std::string& toNode)
 {
     if (m_renderGraphNodes.find(fromNode) == m_renderGraphNodes.end())
     {
@@ -1550,7 +2037,7 @@ void RenderGraphBuilder::AddDependency(const std::string& fromNode, const std::s
     }
 }
 
-void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::string>& executionOrder)
+void RenderGraphBuilder::Impl::ValidateTransientLifetimes(const std::vector<std::string>& executionOrder)
 {
     m_transientLiveRanges.clear();
     std::unordered_set<ResourceHandle> written;
@@ -1606,7 +2093,7 @@ void RenderGraphBuilder::ValidateTransientLifetimes(const std::vector<std::strin
     }
 }
 
-void RenderGraphBuilder::DestroyAliasedTransients()
+void RenderGraphBuilder::Impl::DestroyAliasedTransients()
 {
     // The caller must have drained the executor: Build() waits when the plan changes, and the destructor
     // waits before calling this. An execution in flight may still read these blocks through descriptors
@@ -1624,7 +2111,7 @@ void RenderGraphBuilder::DestroyAliasedTransients()
     m_transientPlanKey.clear();
 }
 
-std::vector<RenderGraphBuilder::TransientPlanInput> RenderGraphBuilder::GatherTransientPlanInputs(
+std::vector<RenderGraphBuilder::Impl::TransientPlanInput> RenderGraphBuilder::Impl::GatherTransientPlanInputs(
     const std::vector<std::string>& executionOrder) const
 {
     // A resource may share a slot only with one whose uses run on the same queue family. Within a family
@@ -1674,7 +2161,7 @@ std::vector<RenderGraphBuilder::TransientPlanInput> RenderGraphBuilder::GatherTr
     return inputs;
 }
 
-std::string RenderGraphBuilder::MakeTransientPlanKey(const std::vector<TransientPlanInput>& inputs) const
+std::string RenderGraphBuilder::Impl::MakeTransientPlanKey(const std::vector<TransientPlanInput>& inputs) const
 {
     // A byte string rather than a hash, like the pipeline key: two different declarations must not be able
     // to collide into reusing the wrong arena.
@@ -1712,7 +2199,7 @@ std::string RenderGraphBuilder::MakeTransientPlanKey(const std::vector<Transient
     return key;
 }
 
-RenderGraphBuilder::TransientSlotStorage RenderGraphBuilder::CreateTransientSlotStorage(
+RenderGraphBuilder::Impl::TransientSlotStorage RenderGraphBuilder::Impl::CreateTransientSlotStorage(
     const std::vector<TransientPlanInput>& inputs, std::vector<TransientMemoryRequest>* pRequests)
 {
     TransientSlotStorage storage;
@@ -1767,7 +2254,7 @@ RenderGraphBuilder::TransientSlotStorage RenderGraphBuilder::CreateTransientSlot
     return storage;
 }
 
-void RenderGraphBuilder::AllocateAndBindTransientBlocks(TransientSlotStorage& storage)
+void RenderGraphBuilder::Impl::AllocateAndBindTransientBlocks(TransientSlotStorage& storage)
 {
     for (const TransientMemoryBlock& block : m_transientMemoryPlan.blocks)
     {
@@ -1803,8 +2290,8 @@ void RenderGraphBuilder::AllocateAndBindTransientBlocks(TransientSlotStorage& st
     }
 }
 
-void RenderGraphBuilder::BuildAliasedTransients(const std::vector<TransientPlanInput>& inputs,
-                                                const std::string& planKey)
+void RenderGraphBuilder::Impl::BuildAliasedTransients(const std::vector<TransientPlanInput>& inputs,
+                                                      const std::string& planKey)
 {
     const uint32_t slotCount = m_executor.GetInFlightCount();
     if (planKey == m_transientPlanKey && m_transientSlots.size() == slotCount)
@@ -1839,7 +2326,7 @@ void RenderGraphBuilder::BuildAliasedTransients(const std::vector<TransientPlanI
     m_transientPlanKey = planKey;
 }
 
-void RenderGraphBuilder::Build()
+void RenderGraphBuilder::Impl::Build()
 {
     if (m_dependencyGraph.HasCycle())
     {
@@ -1985,11 +2472,11 @@ void RenderGraphBuilder::Build()
     }
 }
 
-bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn,
-                                        RenderGraphNodeContext& /*ctx*/,
-                                        std::unordered_set<ResourceHandle>& alreadyWritten,
-                                        std::vector<VkRenderingAttachmentInfo>& colorAttachments,
-                                        std::vector<VkClearValue>& clearValues)
+bool RenderGraphBuilder::Impl::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRenderGraphNode& rgn,
+                                              RenderGraphNodeContext& /*ctx*/,
+                                              std::unordered_set<ResourceHandle>& alreadyWritten,
+                                              std::vector<VkRenderingAttachmentInfo>& colorAttachments,
+                                              std::vector<VkClearValue>& clearValues)
 {
     colorAttachments.clear();
     clearValues.clear();
@@ -2084,8 +2571,8 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
     return true;
 }
 
-void RenderGraphBuilder::RecordPresentTransition(VkCommandBuffer cmdBuf,
-                                                 const std::vector<ResolvedResourceUse>& resourceUses)
+void RenderGraphBuilder::Impl::RecordPresentTransition(VkCommandBuffer cmdBuf,
+                                                       const std::vector<ResolvedResourceUse>& resourceUses)
 {
     std::vector<VkImageMemoryBarrier2> barriers;
     for (const auto& use : resourceUses)
@@ -2117,8 +2604,9 @@ void RenderGraphBuilder::RecordPresentTransition(VkCommandBuffer cmdBuf,
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vector<ResolvedResourceUse>& resourceUses,
-                                        uint32_t queueFamily, BarrierObserver* pObserver)
+void RenderGraphBuilder::Impl::RecordBarriers(VkCommandBuffer cmdBuf,
+                                              const std::vector<ResolvedResourceUse>& resourceUses,
+                                              uint32_t queueFamily, BarrierObserver* pObserver)
 {
     // Everything that decides *which* barriers this node needs lives in `DeriveBarrierBatch`, which is device-free
     // and therefore assertable - the assembly used to be inline here, where dropping an append left the suite green
@@ -2174,10 +2662,10 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily,
-                                                     uint32_t dstQueueFamily, bool bAcquire,
-                                                     const std::vector<ResourceHandle>& handles,
-                                                     BarrierObserver* pObserver)
+void RenderGraphBuilder::Impl::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uint32_t srcQueueFamily,
+                                                           uint32_t dstQueueFamily, bool bAcquire,
+                                                           const std::vector<ResourceHandle>& handles,
+                                                           BarrierObserver* pObserver)
 {
     if (bAcquire)
     {
@@ -2270,23 +2758,23 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     vkCmdPipelineBarrier2(cmdBuf, &dependencyInfo);
 }
 
-VkPipelineStageFlags2 RenderGraphBuilder::SupportedStages() const
+VkPipelineStageFlags2 RenderGraphBuilder::Impl::SupportedStages() const
 {
     return m_services.device != nullptr ? m_services.device->EnabledPipelineStages() : ~VkPipelineStageFlags2{0};
 }
 
-uint32_t RenderGraphBuilder::GetQueueFamilyForType(QueueType type) const
+uint32_t RenderGraphBuilder::Impl::GetQueueFamilyForType(QueueType type) const
 {
     return GetQueueFamilyForQueueType(type, GetQueueFamilies());
 }
 
-RenderGraphQueueFamilies RenderGraphBuilder::GetQueueFamilies() const
+RenderGraphQueueFamilies RenderGraphBuilder::Impl::GetQueueFamilies() const
 {
     return RenderGraphQueueFamilies{m_services.device->GetGraphicsQueueFamily(),
                                     m_services.device->GetComputeQueueFamily()};
 }
 
-void RenderGraphBuilder::EnsureMappingsReleased(const std::string& nodeName) const
+void RenderGraphBuilder::Impl::EnsureMappingsReleased(const std::string& nodeName) const
 {
     // Only aliased buffers can be host-mapped, and they are the reason the rule exists: the pointer
     // points into a block shared with other transients, so it must be released before the next node can
@@ -2311,7 +2799,7 @@ void RenderGraphBuilder::EnsureMappingsReleased(const std::string& nodeName) con
 /// The blocking form: records, submits, and waits for the GPU before returning. Kept as the
 /// default so every existing caller keeps the contract it had. The overload below does not wait,
 /// but the builder still runs one execution in flight, so calls serialise rather than overlap.
-void RenderGraphBuilder::Execute()
+void RenderGraphBuilder::Impl::Execute()
 {
     Execute(RenderGraphExecuteInfo{});
     m_executor.WaitIdle();
@@ -2396,7 +2884,7 @@ void EmitTraceToEnvironment(const RenderGraphTrace& trace)
 }
 }  // namespace
 
-RenderGraph::TraceGraph RenderGraphBuilder::BuildPlanGraph() const
+RenderGraph::TraceGraph RenderGraphBuilder::Impl::BuildPlanGraph() const
 {
     // The same three pieces a trace starts from, and the same views helper: the difference between this and a trace is
     // that nothing has executed, so there are no barriers, no timeline values and no timings to record - only the plan.
@@ -2406,7 +2894,7 @@ RenderGraph::TraceGraph RenderGraphBuilder::BuildPlanGraph() const
         RenderGraph::TracePlan(m_compiledGraph.GetExecutionPlan(), views.nodes, BuildTraceScope()));
 }
 
-std::string RenderGraphBuilder::ToMermaid() const
+std::string RenderGraphBuilder::Impl::ToMermaid() const
 {
     const RenderGraph::TraceGraph graph = BuildPlanGraph();
     // Nothing compiled yet: an empty document rather than a valid-but-contentless one, so a caller writing this to a
@@ -2418,7 +2906,7 @@ std::string RenderGraphBuilder::ToMermaid() const
     return RenderGraph::ToMermaid(graph);
 }
 
-std::string RenderGraphBuilder::ToDot() const
+std::string RenderGraphBuilder::Impl::ToDot() const
 {
     const RenderGraph::TraceGraph graph = BuildPlanGraph();
     if (graph.nodes.empty())
@@ -2428,7 +2916,7 @@ std::string RenderGraphBuilder::ToDot() const
     return RenderGraph::ToDot(graph);
 }
 
-TraceScope RenderGraphBuilder::BuildTraceScope() const
+TraceScope RenderGraphBuilder::Impl::BuildTraceScope() const
 {
     TraceScope scope;
     if (m_services.device == nullptr)
@@ -2449,7 +2937,7 @@ TraceScope RenderGraphBuilder::BuildTraceScope() const
     return scope;
 }
 
-void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
+void RenderGraphBuilder::Impl::Execute(const RenderGraphExecuteInfo& info)
 {
     m_resourceAccessStates.clear();
     // An imported image whose caller stated its layout is already in that layout; without this seed the
@@ -2760,6 +3248,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
     }
 }
 
-std::vector<std::string> RenderGraphBuilder::GetExecutionOrder() const { return m_dependencyGraph.TopologicalSort(); }
+std::vector<std::string> RenderGraphBuilder::Impl::GetExecutionOrder() const
+{
+    return m_dependencyGraph.TopologicalSort();
+}
 
 }  // namespace Muyo::RenderGraph
