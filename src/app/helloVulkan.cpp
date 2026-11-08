@@ -23,6 +23,7 @@
 #include "Camera.h"
 #include "Debug.h"
 #include "Debug/DebugUIOverlay.h"
+#include "Debug/Validation.h"
 #include "DescriptorHeapService.h"
 #include "DescriptorManager.h"
 #include "DrawCommandBuffer.h"
@@ -216,7 +217,9 @@ int main(int argc, char **argv)
 
     // Create Instace
     std::vector<const char *> vInstanceExtensions = GetRequiredInstanceExtensions();
-    GetRenderDevice()->Initialize(vInstanceExtensions, {});
+    // Host policy: this app opts in to validation and the debug messenger (#58). The device itself
+    // appends neither layer nor extension.
+    InitializeDeviceWithValidation(GetRenderDevice(), vInstanceExtensions);
     VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
 
     // Create swapchain

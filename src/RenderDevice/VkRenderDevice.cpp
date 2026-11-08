@@ -9,18 +9,16 @@
 #include <string>
 
 #include "Debug.h"
-#include "RenderResourceManager.h"
 #include "ResourceBarrier.h"
+#include "VkExtFuncsLoader.h"
 
 namespace Muyo
 {
 
-#define DEBUG_DEVICE
-#ifdef DEBUG_DEVICE
-static VkDebugRenderDevice renderDevice;
-#else
+// One process-wide device for the engine's hosts. It applies no debug/validation policy of its own: the
+// host chooses the instance layers/extensions and calls InitializeDebugMessenger if it wants the
+// callback (#58). A library client may construct its own VkRenderDevice instead.
 static VkRenderDevice renderDevice;
-#endif
 
 VkRenderDevice* GetRenderDevice() { return &renderDevice; }
 
@@ -67,6 +65,20 @@ const char* FindUnsupportedDeviceExtension(const std::vector<const char*>& vRequ
 void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
                                 const std::vector<const char*>& vLayerNames)
 {
+    // An initialized device owns an instance, a physical device and possibly a messenger, and the caller
+    // may own children of the instance (a surface, for example) that this class cannot see. Destroying the
+    // instance here would be invalid usage in that case, so require an explicit teardown. The previous
+    // behaviour overwrote the handle and leaked the old instance; this is loud instead of silent.
+    if (m_instance != VK_NULL_HANDLE)
+    {
+        FatalError(
+            "VkRenderDevice::Initialize called on an initialized device; call DestroyDevice (if needed) and "
+            "Unintialize first");
+    }
+    m_vInstanceLayers.clear();
+    m_vInstanceExtensions.clear();
+    m_bIsValidationLayerEnabled = false;
+
     // Runtime checks, not asserts (#35): a requested layer or extension that is not available is an
     // input error, and under NDEBUG the assert vanished, so a release build went on to create the
     // instance without the request and failed later with nothing naming what caused it.
@@ -102,6 +114,14 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
                    std::to_string(VK_VERSION_PATCH(m_uInstanceVersion)));
     }
 
+    // Record what the host asked for, only once everything that can throw before instance creation has
+    // passed. The device appends nothing: validation is enabled only if the caller named the layer, and
+    // no messenger is created here (#58). Owned strings, because a caller's list may be temporary.
+    m_vInstanceLayers.assign(vLayerNames.begin(), vLayerNames.end());
+    m_vInstanceExtensions.assign(vExtensionNames.begin(), vExtensionNames.end());
+    m_bIsValidationLayerEnabled = std::find(m_vInstanceLayers.begin(), m_vInstanceLayers.end(),
+                                            GetValidationLayerName()) != m_vInstanceLayers.end();
+
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Muyo";
@@ -110,14 +130,24 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
     appInfo.engineVersion = VK_MAKE_VERSION(1, 4, 0);
     appInfo.apiVersion = VK_API_VERSION_1_4;
 
+    // Derive the create-info lists from the recorded state rather than the caller's vectors: what the
+    // device reports as enabled is then exactly what `vkCreateInstance` was given, and a later edit
+    // cannot make the two disagree.
+    std::vector<const char*> vEnabledExtensions;
+    vEnabledExtensions.reserve(m_vInstanceExtensions.size());
+    for (const std::string& sExtension : m_vInstanceExtensions) vEnabledExtensions.push_back(sExtension.c_str());
+    std::vector<const char*> vEnabledLayers;
+    vEnabledLayers.reserve(m_vInstanceLayers.size());
+    for (const std::string& sLayer : m_vInstanceLayers) vEnabledLayers.push_back(sLayer.c_str());
+
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(vExtensionNames.size());
-    createInfo.ppEnabledExtensionNames = vExtensionNames.data();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(vEnabledExtensions.size());
+    createInfo.ppEnabledExtensionNames = vEnabledExtensions.data();
 
-    createInfo.enabledLayerCount = static_cast<uint32_t>(vLayerNames.size());
-    createInfo.ppEnabledLayerNames = vLayerNames.data();
+    createInfo.enabledLayerCount = static_cast<uint32_t>(vEnabledLayers.size());
+    createInfo.ppEnabledLayerNames = vEnabledLayers.data();
 
     VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &m_instance));
 
@@ -125,6 +155,29 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
 
     // Enumerate physical device supports these extensions and layers
     PickPhysicalDevice();
+}
+
+void VkRenderDevice::InitializeDebugMessenger()
+{
+    if (m_instance == VK_NULL_HANDLE)
+    {
+        FatalError("InitializeDebugMessenger called before Initialize");
+    }
+    if (m_debugMessenger.IsCreated()) return;  // idempotent: a host may call this from two setup paths
+    if (!IsInstanceExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
+    {
+        FatalError(std::string("InitializeDebugMessenger requires the instance extension ") +
+                   VK_EXT_DEBUG_UTILS_EXTENSION_NAME + " to have been enabled at Initialize");
+    }
+    // The messenger's callback aborts on a validation ERROR in every build configuration (AGENTS.md
+    // section 4). Installing it is the host's choice; the device does not infer it from the layer.
+    m_debugMessenger.Initialize(m_instance);
+}
+
+void VkRenderDevice::DestroyDebugMessenger()
+{
+    if (m_instance == VK_NULL_HANDLE || !m_debugMessenger.IsCreated()) return;
+    m_debugMessenger.Uninitialize(m_instance);
 }
 
 void VkRenderDevice::TransitImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
@@ -212,10 +265,16 @@ void VkRenderDevice::TransitImageLayout(VkCommandBuffer commandBuffer, VkImage i
     }
 }
 
+bool VkRenderDevice::IsInstanceExtensionEnabled(const char* sName) const
+{
+    return std::any_of(m_vInstanceExtensions.begin(), m_vInstanceExtensions.end(),
+                       [sName](const std::string& sEnabled) { return sEnabled == sName; });
+}
+
 void VkRenderDevice::PickPhysicalDevice()
 {
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, nullptr);
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
     // Not an assert: with no device, devices[0] below is out of bounds, so a release build crashed in
     // the next call rather than reporting that this machine has no usable GPU.
     if (deviceCount == 0)
@@ -224,7 +283,7 @@ void VkRenderDevice::PickPhysicalDevice()
     }
     // assert(deviceCount == 1 && "Has more than 1 physical device, need compatibility check");
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(GetRenderDevice()->GetInstance(), &deviceCount, devices.data());
+    vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
     // Pin by name across instance re-creations. Enumeration order is not guaranteed, and a caller that
     // re-creates the instance - the test host does, once per fixture - would otherwise silently move to a
@@ -337,7 +396,8 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     // Ignore any that a caller still supplies rather than forwarding them. Deliberately not an
     // assert: asserts compile out under NDEBUG, so the invariant would only hold in Debug builds,
     // and aborting a shipping build over a legacy argument is worse than dropping it. Validation
-    // belongs to the *instance* layer list, which VkDebugRenderDevice::Initialize applies.
+    // belongs to the *instance* layer list, which the host passes to VkRenderDevice::Initialize (or via
+    // InitializeDeviceWithValidation, which is this repository's opt-in default).
     if (!layers.empty())
     {
         std::cerr << "[WARNING]: VkRenderDevice::CreateDevice ignoring " << layers.size()
@@ -802,7 +862,7 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     createInfo.enabledLayerCount = 0;
     createInfo.ppEnabledLayerNames = nullptr;
 
-    VK_ASSERT(vkCreateDevice(GetRenderDevice()->GetPhysicalDevice(), &createInfo, nullptr, &m_device));
+    VK_ASSERT(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
 
     // Resolve device-level extension entry points against the created device. The instance-level loader
     // table is not sufficient here: it can return a trampoline for a command the device does not expose.
@@ -813,21 +873,30 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
         {
             FatalError("graphics queue family index is unset at queue retrieval");
         }
+        // Naming uses an extension command, so only call it when the extension was enabled. The
+        // headless/no-validation path enables no debug utils, and calling the entry point anyway is
+        // loader-dependent rather than a name that gets dropped.
+        const bool bCanNameObjects = IsInstanceExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        const auto nameQueue = [this, bCanNameObjects](VkQueue queue, const char* sName)
+        {
+            if (!bCanNameObjects) return;
+            setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(queue), VK_OBJECT_TYPE_QUEUE,
+                                    sName);
+        };
+
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.nGraphicsQueueFamily, 0, &m_graphicsQueue);
-        setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_graphicsQueue), VK_OBJECT_TYPE_QUEUE, "Graphics Queue");
+        nameQueue(m_graphicsQueue, "Graphics Queue");
 
         if (m_queueFamilyIndices.nPresentQueneFamily != -1)
         {
             vkGetDeviceQueue(m_device, m_queueFamilyIndices.nPresentQueneFamily, 0, &m_presentQueue);
             if (m_presentQueue == m_graphicsQueue)
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE,
-                                        "Graphics/Present Queue");
+                nameQueue(m_presentQueue, "Graphics/Present Queue");
             }
             else
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_presentQueue), VK_OBJECT_TYPE_QUEUE,
-                                        "Present Queue");
+                nameQueue(m_presentQueue, "Present Queue");
             }
         }
 
@@ -838,24 +907,20 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
             {
                 if (m_computeQueue == m_presentQueue)
                 {
-                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
-                                            "Graphics/Present/Compute Queue");
+                    nameQueue(m_computeQueue, "Graphics/Present/Compute Queue");
                 }
                 else
                 {
-                    setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
-                                            "Graphics/Compute Queue");
+                    nameQueue(m_computeQueue, "Graphics/Compute Queue");
                 }
             }
             else if (m_computeQueue == m_presentQueue)
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
-                                        "Prsent/Compute Queue");
+                nameQueue(m_computeQueue, "Prsent/Compute Queue");
             }
             else
             {
-                setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_computeQueue), VK_OBJECT_TYPE_QUEUE,
-                                        "Compute Queue");
+                nameQueue(m_computeQueue, "Compute Queue");
             }
         }
     }
@@ -873,6 +938,9 @@ void VkRenderDevice::DestroyDevice()
     (void)vkDeviceWaitIdle(m_device);
     vkDestroyDevice(m_device, nullptr);
     m_device = VK_NULL_HANDLE;
+    m_graphicsQueue = VK_NULL_HANDLE;
+    m_presentQueue = VK_NULL_HANDLE;
+    m_computeQueue = VK_NULL_HANDLE;
     m_bDescriptorHeapEnabled = false;
     m_bShaderUntypedPointersEnabled = false;
 }
@@ -920,8 +988,26 @@ void VkRenderDevice::DestroyCommandPools()
 
 void VkRenderDevice::Unintialize()
 {
-    vkDestroyInstance(m_instance, nullptr);
-    m_instance = VK_NULL_HANDLE;
+    // A live logical device is a Vulkan child of the instance: destroying the parent first is invalid
+    // usage and leaves m_device set for a later DestroyDevice to use after the instance is gone. This is
+    // caller input, so it is a runtime check, not an assert.
+    if (m_device != VK_NULL_HANDLE)
+    {
+        FatalError("VkRenderDevice::Unintialize called while a logical device exists; call DestroyDevice first");
+    }
+    // The messenger belongs to the instance and must die before it. Destroying it here means a host that
+    // called InitializeDebugMessenger cannot leave a dangling callback behind by forgetting the pair.
+    DestroyDebugMessenger();
+    if (m_instance != VK_NULL_HANDLE)
+    {
+        vkDestroyInstance(m_instance, nullptr);
+        m_instance = VK_NULL_HANDLE;
+    }
+    m_physicalDevice = VK_NULL_HANDLE;
+    m_uInstanceVersion = 0;
+    m_vInstanceLayers.clear();
+    m_vInstanceExtensions.clear();
+    m_bIsValidationLayerEnabled = false;
 }
 
 VkCommandBuffer VkRenderDevice::AllocateComputeCommandBuffer()
@@ -1127,39 +1213,6 @@ VkPipelineLayout VkRenderDevice::CreatePipelineLayout(const std::vector<VkDescri
 
     VK_ASSERT(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &pipelineLayout));
     return pipelineLayout;
-}
-
-// Debug device
-//
-void VkDebugRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
-                                     const std::vector<const char*>& vLayerNames)
-{
-    // Append debug extension and layer names to the device
-    std::vector<const char*> vDebugExtNames = vExtensionNames;
-    vDebugExtNames.push_back(GetValidationExtensionName());
-
-    std::vector<const char*> vDebugLayerNames = vLayerNames;
-    vDebugLayerNames.push_back(GetValidationLayerName());
-
-    VkRenderDevice::Initialize(vDebugExtNames, vDebugLayerNames);
-    m_debugMessenger.Initialize(m_instance);
-}
-
-void VkDebugRenderDevice::Unintialize()
-{
-    m_debugMessenger.Uninitialize(m_instance);
-    VkRenderDevice::Unintialize();
-}
-
-void VkDebugRenderDevice::CreateDevice(const std::vector<const char*>& vExtensionNames,
-                                       const std::vector<const char*>& /*vLayerNames*/, const VkSurfaceKHR* pSurface,
-                                       const std::vector<void*>& vpFeatures)
-{
-    // Validation is an *instance* layer and is already applied by VkDebugRenderDevice::Initialize.
-    // Device layers were removed in Vulkan 1.0, so passing the validation layer here fails device
-    // creation on any loader that enforces VUID-VkDeviceCreateInfo-enabledLayerCount-12384 (Vulkan
-    // SDK 1.4.363 onwards) - which aborts before a single test runs.
-    VkRenderDevice::CreateDevice(vExtensionNames, {}, pSurface, vpFeatures);
 }
 
 }  // namespace Muyo

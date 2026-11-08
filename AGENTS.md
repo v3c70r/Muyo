@@ -242,8 +242,10 @@ classes (a broken build, a stale reference, an unformatted line, a validation er
 GPU is spent on it. [#22](https://github.com/v3c70r/Muyo/issues/22) tracks what a hardware runner would
 add; the workflows that used to sit here unrun (2021, `actions/checkout@v2`, SDK 1.3.211) are deleted
 rather than left as configuration nothing executes.
-- **Tests are GPU-dependent.** Run them locally on a GPU. Validation is enabled in debug builds and
-  the debug callback asserts on `ERROR` severity, so a validation error fails a test.
+- **Tests are GPU-dependent.** Run them locally on a GPU. Validation is the host's choice, not the
+  device's (#58): `muyo_device` appends neither the layer nor the messenger, and the in-tree hosts opt
+  in through `InitializeDeviceWithValidation` in every configuration, so the debug callback asserts on
+  `ERROR` severity and a validation error fails a test. A consumer that does not opt in gets neither.
 - **A regression test must have teeth.** Before claiming a test covers a bug, confirm it *fails*
   without the fix — revert the fix, or check out the revision that had the bug. For example, the
   "read-write attachment keeps earlier content" test was confirmed to fail on `46307ba`.
@@ -298,7 +300,7 @@ tooling is adopted in passes, so the current state is visible rather than discov
 | Sanitizers (ASan + UBSan) | yes | `-DCMAKE_BUILD_TYPE=Sanitize`; suppressions in `san.supp`. `san.supp` carries a scoped entry for the Vulkan loader's terminator device enumeration (`setup_loader_term_phys_devs`). The CI job also runs `scripts/check_sanitizer_report.py` when the suite exited 1 with `All tests passed`: it fails when a leak's allocation is attributable to this repository and passes otherwise. The allocator's **first resolvable frame** decides, and an unsymbolised frame is always external, whatever module it names - including frames ASan attributes to the test binary's own address range, because unwinds through uninstrumented driver code land there (#189). A symbolised frame from this repository still fails the run. The complete sanitizer block is printed and `tests.err` uploaded on failure, because the previous filtered grep hid exactly the frames that named the leaker. **UB aborts**: `-fno-sanitize-recover=undefined` is set, without which a `runtime error:` prints and the run still exits 0. Runtime options live in `sanitizer_env` in `scripts/sanity.sh` and are duplicated in `.github/workflows/ci.yml` on purpose. |
 | ThreadSanitizer | yes | `-DCMAKE_BUILD_TYPE=Thread`. `catch_discover_tests` executes the binary at *build* time and TSan cannot start on a kernel that randomises mappings beyond its shadow layout (`FATAL: ThreadSanitizer: unexpected memory mapping`, kernel `vm.mmap_rnd_bits`), so `CMakeLists.txt` sets `CROSSCOMPILING_EMULATOR "setarch;<arch>;-R"` on `tests` for that configuration: without it the build stops at discovery with `Result: 66` and deletes the target, before any test runs. `scripts/sanity.sh thread` runs the **device-free** subset only (the cases tagged `[CaptureTool]`, `[TransientMemoryPlanner]`, `[RenderGraphTrace]`, `[PSODesc]`, `[LaneLayout]`) and states the case count with the report count, because a driver is uninstrumented and a clean device-case run is not a claim about the device path. Report-only until the baseline is enforced ([#183](https://github.com/v3c70r/Muyo/issues/183)); adoption is [#173](https://github.com/v3c70r/Muyo/issues/173). |
 | MemorySanitizer | **no, and not planned** | It needs every dependency instrumented, including libc and the Vulkan driver. Uninstrumented code produces false positives, and a GPU driver cannot be rebuilt. |
-| Vulkan validation layers | always | Enabled in debug builds; the callback asserts on `ERROR`, so a validation error fails a test. |
+| Vulkan validation layers | always | Host-selected, not device-imposed (#58): the in-tree hosts opt in through `InitializeDeviceWithValidation`; the callback asserts on `ERROR`, so a validation error fails a test. |
 
 Rules:
 

@@ -175,12 +175,21 @@ void DebugUtilsMessenger::Initialize(const VkInstance& instance)
 
 void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
 {
+    if (m_debugUtilsMessenger == VK_NULL_HANDLE) return;
     destroyDebugUtilsMessenger(instance, m_debugUtilsMessenger, nullptr);
+    m_debugUtilsMessenger = VK_NULL_HANDLE;
 }
 
 // Debug Utils markers
 // // Call add callback by query the extension
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType, const std::string& sName)
+{
+    return setDebugUtilsObjectName(GetRenderDevice()->GetDevice(), GetRenderDevice()->GetInstance(), objectHandle,
+                                   objectType, sName);
+}
+
+VkResult setDebugUtilsObjectName(VkDevice device, VkInstance instance, uint64_t objectHandle, VkObjectType objectType,
+                                 const std::string& sName)
 {
     // Set debug name for the pipeline
     VkDebugUtilsObjectNameInfoEXT info;
@@ -190,10 +199,9 @@ VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
     info.objectType = objectType;
     info.objectHandle = objectHandle;
 
-    auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(GetRenderDevice()->GetInstance(),
-                                                                        "vkSetDebugUtilsObjectNameEXT");
+    auto func = (PFN_vkSetDebugUtilsObjectNameEXT)vkGetInstanceProcAddr(instance, "vkSetDebugUtilsObjectNameEXT");
     if (func != nullptr)
-        return func(GetRenderDevice()->GetDevice(), &info);
+        return func(device, &info);
     else
         return VK_ERROR_EXTENSION_NOT_PRESENT;
 }

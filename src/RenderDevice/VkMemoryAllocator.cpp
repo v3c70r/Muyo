@@ -41,7 +41,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
 
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracingProperties = {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR, nullptr};
-    GetRenderDevice()->GetPhysicalDeviceProperties(raytracingProperties);
+    pDevice->GetPhysicalDeviceProperties(raytracingProperties);
 
     VmaPoolCreateInfo poolCreateInfo = {};
     poolCreateInfo.memoryTypeIndex = memTypeIndex;
@@ -61,7 +61,7 @@ void VkMemoryAllocator::Initalize(VkRenderDevice* pDevice)
     // Get BVH property
     VkPhysicalDeviceAccelerationStructurePropertiesKHR bvhProperty = {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR, nullptr};
-    GetRenderDevice()->GetPhysicalDeviceProperties(bvhProperty);
+    pDevice->GetPhysicalDeviceProperties(bvhProperty);
 
     VK_ASSERT(
         vmaFindMemoryTypeIndexForBufferInfo(m_allocator, &bufferCreateInfo, &sampleAllocCreateInfo, &memTypeIndex));

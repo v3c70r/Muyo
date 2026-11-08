@@ -276,12 +276,19 @@ file(GLOB muyo_SRC
     "src/*.cpp"
     "src/Debug/*.h"
     "src/Debug/*.cpp"
-    "src/RenderDevice/*.h"
-    "src/RenderDevice/*.cpp"
     "src/RenderResources/*.h"
     "src/RenderResources/*.cpp"
     "src/Scene/*.h"
     "src/Scene/*.cpp"
+    )
+
+# The device layer is its own target: instance, device, queues, memory, sync primitives, command pools and
+# the debug-messenger hook. The graph links it directly rather than receiving Vulkan device code through
+# the engine (#58). The glob stays for now because the surface is still being split; #53 owns turning it
+# into a stated list.
+file(GLOB muyo_device_SRC
+    "src/RenderDevice/*.h"
+    "src/RenderDevice/*.cpp"
     )
 
 add_library(muyo STATIC ${muyo_SRC})
@@ -308,8 +315,39 @@ FetchContent_Declare(
   GIT_TAG bfb2ca99e1e7e9684dc06546b552ee3eff4b10aa
 )
 FetchContent_MakeAvailable(VMA)
+
+# `muyo_device` is the bottom of the stack (docs/RenderGraph-Library-Design.md §2): instance, device,
+# queues, memory, sync primitives and command pools. It depends on Vulkan and VMA; a headless client links
+# it without the engine, a window or a surface. Validation-layer and debug-messenger *policy* is
+# deliberately not part of it; the device exposes the hook, the host decides (#58). STATIC for the same
+# reason as the other targets here: a shared/exported artifact is the packaging decision (#73).
+add_library(muyo_device STATIC ${muyo_device_SRC})
 target_compile_features(muyo PUBLIC cxx_std_20)
+target_compile_features(muyo_device PUBLIC cxx_std_20)
 target_compile_features(muyo_rg PUBLIC cxx_std_20)
+
+target_link_libraries(muyo_device PUBLIC ${Vulkan_LIBRARIES} VulkanMemoryAllocator)
+
+# `IsRayTracingSupported` is inline in the device's public header, so a consumer has to compile it with
+# the same definition as the library's translation units. `add_compile_definitions` is directory-scoped
+# and does not cross the target interface, so without this an RT build's consumer sees false while
+# VkMemoryAllocator.cpp compiled the RT path.
+if (FEATURE_RAY_TRACING)
+    target_compile_definitions(muyo_device PUBLIC FEATURE_RAY_TRACING)
+endif()
+
+# The device's public headers include each other by bare name ("VkRenderDevice.h"), so `src/RenderDevice`
+# is the whole include interface. `ScopedMarker` moved to `src/Debug/ScopedMarker.h`: it composes the
+# engine's capture-tool interface, which is host policy, and keeping it here made `muyo_device` depend on
+# an engine header and an engine link edge (#275). A consumer of `muyo_device` therefore needs no `src`
+# include and no `muyo` link.
+target_include_directories(muyo_device
+    PUBLIC
+        $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderDevice>
+    )
+# VMA is in VkMemoryAllocator.h's public interface, so a consumer compiles against its headers.
+target_include_directories(muyo_device SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
+
 
 # PUBLIC interface, so a consumer of these targets can compile against them. The include_directories()
 # calls above are directory-scoped and do not propagate across a project boundary, which is why
@@ -355,12 +393,13 @@ target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_
 # - and `muyo` compiles ShaderReflectionFetcher.cpp, which calls spvReflect*. Only the in-tree `tests`
 # target named it, so an embedder linking muyo_rg got "undefined reference to spvReflectCreateShaderModule"
 # from an object the linker pulled in on demand (filed by muyo-llm as Finding F1).
-target_link_libraries(muyo imgui imguizmo imnodes SPIRV-Reflect ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer)
+target_link_libraries(muyo imgui imguizmo imnodes SPIRV-Reflect ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer muyo_device)
 
-# muyo_rg does not stand alone today: it reaches into the engine for resource managers, the device
-# singleton and the shader reflection service. Declared rather than implied, so the coupling is visible
-# where a consumer meets it - and so #53 has one line to change when those become injected services.
-target_link_libraries(muyo_rg PUBLIC muyo)
+# muyo_rg does not stand alone today: it reaches into the engine for resource managers and the shader
+# reflection service. Declared rather than implied, so the coupling is visible where a consumer meets it -
+# and so #53 has one line to change when those become injected services. The device dependency is the
+# real bottom edge and is named separately, so it stays when the engine edge goes (#272/#53).
+target_link_libraries(muyo_rg PUBLIC muyo_device muyo)
 
 file(GLOB main_SRC
     "src/app/helloVulkan.cpp"

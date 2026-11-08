@@ -26,6 +26,7 @@
 #endif
 
 #include "Debug/RenderGraphTracePage.h"
+#include "Debug/Validation.h"
 #include "DescriptorHeapService.h"
 #include "DescriptorManager.h"
 #include "FrameSync.h"
@@ -81,7 +82,8 @@ int main()
 {
     if (!Window::Initialize("hello Vulkan (render graph)", kWidth, kHeight, /*bResizable=*/true)) return -1;
 
-    GetRenderDevice()->Initialize(InstanceExtensions(), {});
+    // Host policy: validation is opt-in, selected here exactly as the legacy app does (#58).
+    InitializeDeviceWithValidation(GetRenderDevice(), InstanceExtensions());
     VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
     const VkSurfaceKHR surface = Window::GetVulkanSurface(GetRenderDevice()->GetInstance());
 

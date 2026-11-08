@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "Debug/Validation.h"
 #include "GraphicsTestEnv.h"
 #include "ShaderAsset.h"
 #include "VkMemoryAllocator.h"
@@ -26,7 +27,92 @@ VkLayerProperties MakeLayer(const char* sName)
                  VK_MAX_EXTENSION_NAME_SIZE - 1);  // layerName is sized by the extension-name constant
     return properties;
 }
+
+/// Owns the process-wide device for the duration of a test case.
+///
+/// A failed `REQUIRE` unwinds out of the case, so cleanup written after the assertions would not run and
+/// the singleton would stay initialized for every later fixture. A destructor runs on both paths.
+struct ScopedDeviceLifetime
+{
+    Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
+
+    ~ScopedDeviceLifetime()
+    {
+        if (pDevice->GetDevice() != VK_NULL_HANDLE) pDevice->DestroyDevice();
+        pDevice->Unintialize();
+    }
+};
 }  // namespace
+
+TEST_CASE("VkRenderDevice: validation is opt-in and a headless device works without it", "[RenderDevice]")
+{
+    // #58. Every consumer used to pay for validation: `GetRenderDevice()` returned a
+    // `VkDebugRenderDevice` whose `Initialize` appended `VK_LAYER_KHRONOS_validation` and
+    // `VK_EXT_debug_utils`, then created a messenger. A library client cannot opt out of that, and an
+    // inference service pays for a layer it did not ask for.
+    //
+    // What this pins: the minimal call - no layer list, no surface - produces a working device with no
+    // validation layer and no messenger. On the old singleton the first two checks would be true, so
+    // the case fails if the appending policy comes back (mutate `Initialize` to append the layer and
+    // the test goes red). The device is real rather than a mock because the policy is about what
+    // `vkCreateInstance` was asked for.
+    ScopedDeviceLifetime lifetime;
+    Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
+
+    pDevice->Initialize({}, {});
+    // CHECK(!x), not CHECK_FALSE(x): Catch2's CHECK_FALSE expands through a flag OR that the
+    // clang-analyzer EnumCastOutOfRange check reports on the changed line. The assertion is the same.
+    CHECK(!pDevice->IsValidationLayerEnabled());
+    CHECK(!pDevice->HasDebugMessenger());
+    CHECK(pDevice->GetEnabledInstanceLayers().empty());
+    CHECK(pDevice->GetEnabledInstanceExtensions().empty());
+
+    // No surface: a headless client must not need one for device creation. The present queue is
+    // therefore absent, which is a legitimate configuration rather than a failure (AGENTS.md section 8).
+    pDevice->CreateDevice({}, {}, nullptr, {});
+    CHECK(pDevice->GetDevice() != VK_NULL_HANDLE);
+    CHECK(pDevice->GetPresentQueue() == VK_NULL_HANDLE);
+    CHECK(!pDevice->HasDebugMessenger());
+}
+
+TEST_CASE("VkRenderDevice: Initialize and Unintialize refuse to destroy a live instance hierarchy", "[RenderDevice]")
+{
+    // A fixture constructor that throws after `Initialize` never runs its destructor, so the next
+    // fixture calls `Initialize` again on a device that still owns an instance - and, in the test host,
+    // a surface. Replacing the instance silently would leak it, and destroying it would be invalid usage
+    // because the surface is a child this class cannot see. The contract is therefore explicit teardown,
+    // and both halves are checked here: Initialize refuses a live instance without touching it, and
+    // Unintialize refuses a live logical device.
+    ScopedDeviceLifetime lifetime;
+    Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
+
+    Muyo::InitializeDeviceWithValidation(pDevice, {});
+    REQUIRE(pDevice->GetInstance() != VK_NULL_HANDLE);
+    REQUIRE(pDevice->HasDebugMessenger());
+    REQUIRE(pDevice->IsValidationLayerEnabled());
+    const auto& extensions = pDevice->GetEnabledInstanceExtensions();
+    CHECK(std::find(extensions.begin(), extensions.end(), VK_EXT_DEBUG_UTILS_EXTENSION_NAME) != extensions.end());
+
+    CHECK_THROWS_WITH(pDevice->Initialize({}, {}),
+                      Catch::Matchers::ContainsSubstring("called on an initialized device"));
+    // The failed call left the live instance and its messenger alone.
+    CHECK(pDevice->GetInstance() != VK_NULL_HANDLE);
+    CHECK(pDevice->HasDebugMessenger());
+    CHECK(pDevice->IsValidationLayerEnabled());
+
+    // An explicit teardown allows a fresh, unvalidated instance; the old instance is gone and the new
+    // one has no messenger or validation layer.
+    pDevice->Unintialize();
+    pDevice->Initialize({}, {});
+    CHECK(!pDevice->HasDebugMessenger());
+    CHECK(!pDevice->IsValidationLayerEnabled());
+    CHECK(pDevice->GetEnabledInstanceLayers().empty());
+    CHECK(pDevice->GetEnabledInstanceExtensions().empty());
+
+    pDevice->CreateDevice({}, {}, nullptr, {});
+    CHECK(pDevice->GetDevice() != VK_NULL_HANDLE);
+    CHECK_THROWS_WITH(pDevice->Unintialize(), Catch::Matchers::ContainsSubstring("logical device exists"));
+}
 
 TEST_CASE("VkRenderDevice: an unavailable layer or instance extension fails at Initialize", "[RenderDevice]")
 {

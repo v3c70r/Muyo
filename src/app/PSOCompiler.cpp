@@ -10,6 +10,7 @@
 #include <iostream>
 #include <stdexcept>
 
+#include "Debug/Validation.h"
 #include "PipelineStateBuilder.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
@@ -162,7 +163,8 @@ private:
 int main()
 {
     std::vector<const char*> vInstanceExtensions = {};
-    Muyo::GetRenderDevice()->Initialize(vInstanceExtensions, {});
+    // Host policy: the compiler is a headless host, and still opts in to validation.
+    Muyo::InitializeDeviceWithValidation(Muyo::GetRenderDevice(), vInstanceExtensions);
 
     std::vector<const char*> vDeviceExtensions = {};
     Muyo::GetRenderDevice()->CreateDevice(vDeviceExtensions,          // Extensions

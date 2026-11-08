@@ -49,6 +49,11 @@ const char* FindUnsupportedDeviceExtension(const std::vector<const char*>& vRequ
 class VkRenderDevice
 {
 public:
+    /// @return True when this build was compiled with `FEATURE_RAY_TRACING`.
+    ///
+    /// A compile-time answer, not a device query: it says the ray-tracing code path exists, not that the
+    /// selected device supports it. Device support is checked by `CreateDevice` when the extensions are
+    /// requested.
     constexpr bool IsRayTracingSupported() const
     {
 #ifdef FEATURE_RAY_TRACING
@@ -88,6 +93,28 @@ public:
     /// @return The loader's supported instance version, recorded by `Initialize`.
     uint32_t GetInstanceVersion() const { return m_uInstanceVersion; }
 
+    /// @return True when `Initialize` was asked for `VK_LAYER_KHRONOS_validation`.
+    ///
+    /// This reflects the caller's request, not the layer's behaviour: the device appends neither the
+    /// layer nor its extension. A host that wants validation asks for it explicitly; see
+    /// `Muyo::InitializeDeviceWithValidation` for this repository's hosts' default.
+    bool IsValidationLayerEnabled() const { return m_bIsValidationLayerEnabled; }
+
+    /// @return True when a debug-utils messenger is currently installed by `InitializeDebugMessenger`.
+    ///
+    /// A device can be fully initialized and usable with this false; tests and the engine hosts select
+    /// validation at the call site (#58).
+    bool HasDebugMessenger() const { return m_debugMessenger.IsCreated(); }
+
+    /// @return The instance layers this device was initialized with, in request order.
+    ///
+    /// Recorded rather than inferred so a host can report what it actually enabled, and so the
+    /// validation-policy test can assert that the minimal initialization enables none.
+    const std::vector<std::string>& GetEnabledInstanceLayers() const { return m_vInstanceLayers; }
+
+    /// @return The instance extensions this device was initialized with, in request order.
+    const std::vector<std::string>& GetEnabledInstanceExtensions() const { return m_vInstanceExtensions; }
+
     /// @return The selected device's name. Stable across instance re-creations because `PickPhysicalDevice`
     ///         pins the device by name (#141).
     const std::string& GetPhysicalDeviceName() const { return m_pinnedPhysicalDeviceName; }
@@ -107,29 +134,125 @@ public:
     /// @return The stage bits a barrier mask may name on this device.
     VkPipelineStageFlags2 EnabledPipelineStages() const { return m_enabledStages; }
 
+    /// Creates the Vulkan instance and selects a physical device.
+    ///
+    /// Nothing is appended to either list. Validation is enabled only when `vLayers` names
+    /// `VK_LAYER_KHRONOS_validation`, and no debug messenger is created - call
+    /// `InitializeDebugMessenger` for that. This is deliberate: a library client must be able to link
+    /// `muyo_device` without paying for a validation layer it did not ask for (#58). This repository's
+    /// hosts select validation through `Muyo::InitializeDeviceWithValidation`.
+    ///
+    /// @param vExtensions Instance extensions to enable. Each must be reported by the loader.
+    /// @param vLayers Instance layers to enable. Each must be reported by the loader.
+    /// @throws std::runtime_error if a requested layer or extension is unavailable, the loader is older
+    ///         than Vulkan 1.4, or no physical device is enumerated. Thrown by `FatalError`, so it is
+    ///         reachable in every build configuration.
+    /// @note Must be called before `CreateDevice`. Calling it on an initialized device throws rather than
+    ///       replacing the instance: the caller may own instance children this class cannot see (a
+    ///       surface, for example), so destroying the parent would be invalid usage. Call `Unintialize`
+    ///       first.
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers);
 
+    /// Destroys the debug messenger, if one was created, and then the instance. Idempotent.
+    ///
+    /// @pre `DestroyDevice` has run: a live logical device is a child of the instance and destroying the
+    ///      parent first is invalid usage.
+    /// @throws std::runtime_error if called while `GetDevice()` is non-null.
+    /// @note A host that called `InitializeDebugMessenger` does not have to call
+    ///       `DestroyDebugMessenger` separately: this does it before destroying the instance.
     virtual void Unintialize();
 
-    virtual void CreateDevice(const std::vector<const char*>& extensions, const std::vector<const char*>& layers,
-                              const VkSurfaceKHR* pSurface, const std::vector<void*>& vpFeatures);
+    /// Creates the debug-utils messenger on this device's instance.
+    ///
+    /// The device never creates one by itself. This is the hook a host calls after opting in to
+    /// `VK_EXT_debug_utils` at `Initialize`, so diagnostics - including the callback that aborts on a
+    /// validation error - are the caller's choice rather than a cost imposed by linking the library.
+    ///
+    /// Preconditions: `Initialize` succeeded, and `VK_EXT_debug_utils` was in the extension list.
+    /// Idempotent: a second call returns without creating a second messenger.
+    /// @throws std::runtime_error if called before `Initialize`, or if the extension was not enabled.
+    /// @note Aborts via `VK_ASSERT` if the loader does not provide `vkCreateDebugUtilsMessengerEXT` or
+    ///       the call fails; a missing messenger would silently discard validation messages.
+    void InitializeDebugMessenger();
 
+    /// Destroys the messenger installed by `InitializeDebugMessenger`. Idempotent.
+    void DestroyDebugMessenger();
+
+    /// Creates the logical device, its queues, and records which pipeline stages the feature chain enables.
+    ///
+    /// Every requested device extension and every required core feature is verified before
+    /// `vkCreateDevice`, so a missing one fails here naming it instead of surfacing as a bare
+    /// `VkResult` later. The device-level extension entry points are then resolved against the new
+    /// device.
+    ///
+    /// @param extensions Device extensions to enable; each is checked against the physical device.
+    /// @param layers Ignored, and a warning is printed when non-empty: device layers were removed in
+    ///        Vulkan 1.0. Validation is an instance layer, handled by `Initialize`.
+    /// @param pSurface Optional. When null, no present-capable queue family is selected and
+    ///        `GetPresentQueue()` stays `VK_NULL_HANDLE`; a headless client does not need a surface.
+    /// @param vpFeatures Optional feature structs appended to the chain the device assembles. The chain
+    ///        is owned by the caller and must outlive the call; the device owns the heap, cooperative
+    ///        matrix and untyped-pointer structs it appends.
+    /// @throws std::runtime_error if an extension is unsupported, a required feature is absent, the
+    ///         descriptor-heap extensions are requested without each other, or the caller's feature
+    ///         chain duplicates a struct the device owns.
+    /// @note Aborts via `VK_ASSERT` if `vkCreateDevice` itself returns an error.
+    virtual void CreateDevice(const std::vector<const char*>& extensions, const std::vector<const char*>& layers,
+                              const VkSurfaceKHR* pSurface = nullptr, const std::vector<void*>& vpFeatures = {});
+
+    /// Waits for the device to drain and destroys it. Idempotent.
+    ///
+    /// @note The wait is best-effort: a lost device returns an error, which is not asserted, and the
+    ///       device is destroyed anyway.
     void DestroyDevice();
 
+    /// Records an image layout transition into `commandBuffer`, or executes it immediately when null.
+    ///
+    /// @param commandBuffer Destination command buffer, or `VK_NULL_HANDLE` to submit on the immediate
+    ///        queue and wait.
+    /// @param image Image to transition. Must not be `VK_NULL_HANDLE`.
+    /// @param oldLayout Current layout; `VK_IMAGE_LAYOUT_UNDEFINED` discards the contents.
+    /// @param newLayout Target layout.
+    /// @param nMipCount Mip levels covered by the barrier.
+    /// @param nLayerCount Array layers covered by the barrier.
+    /// @throws std::invalid_argument for a layout pair this helper does not implement; use
+    ///         `ImageResourceBarrier` for anything not in its table.
     void TransitImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout oldLayout,
                             VkImageLayout newLayout, uint32_t nMipCount = 1, uint32_t nLayerCount = 1);
 
+    /// Creates the command pools `Allocate*CommandBuffer` use. Call after `CreateDevice`.
+    /// @note Also creates the compute pool when a compute family exists. Aborts via `VK_ASSERT` on
+    ///       pool-creation failure.
     void CreateCommandPools();
+
+    /// Destroys every command pool. Call before `DestroyDevice`; command buffers must be freed first.
     void DestroyCommandPools();
+
+    /// @return The logical device, or `VK_NULL_HANDLE` before `CreateDevice`.
     VkDevice& GetDevice() { return m_device; }
+    /// @return The selected physical device, or `VK_NULL_HANDLE` before `Initialize` or after
+    ///         `Unintialize` (the instance's child handles are invalid once it is destroyed).
     VkPhysicalDevice& GetPhysicalDevice() { return m_physicalDevice; }
+    /// @return The graphics queue, or `VK_NULL_HANDLE` before `CreateDevice`.
     VkQueue& GetGraphicsQueue() { return m_graphicsQueue; }
+    /// @return The queue immediate commands are submitted on; currently the graphics queue.
     VkQueue& GetImmediateQueue() { return m_graphicsQueue; }
+    /// @return The present queue, or `VK_NULL_HANDLE` when no surface was supplied to `CreateDevice` or the
+    ///         device has no present-capable family.
     VkQueue& GetPresentQueue() { return m_presentQueue; }
+    /// @return The compute queue, or `VK_NULL_HANDLE` when no compute family exists.
     VkQueue& GetComputeQueue() { return m_computeQueue; }
-    // Queue family indices, needed for cross-queue resource ownership transfers.
+
+    /// @return The graphics family index selected by `CreateDevice`.
     uint32_t GetGraphicsQueueFamily() const { return static_cast<uint32_t>(m_queueFamilyIndices.nGraphicsQueueFamily); }
+    /// @return The compute family index, or `UINT32_MAX` when none was found: the member is `-1` and is
+    ///         cast here. Call `IsComputeQueueDedicated` before treating it as an independent family.
     uint32_t GetComputeQueueFamily() const { return static_cast<uint32_t>(m_queueFamilyIndices.nComputeQueueFamily); }
+    /// @return True when a compute-capable family exists and differs from the graphics family.
+    ///
+    /// False covers both "no compute-capable family" (`GetComputeQueueFamily()` is `UINT32_MAX`) and
+    /// "compute shares the graphics family". In either case the async-compute path is not exercised; a
+    /// run must state that rather than treat it as a failure (AGENTS.md section 8).
     bool IsComputeQueueDedicated() const
     {
         return m_queueFamilyIndices.nComputeQueueFamily >= 0 &&
@@ -155,28 +278,50 @@ public:
         return m_vCooperativeMatrixProperties;
     }
 
+    /// @return The Vulkan instance, or `VK_NULL_HANDLE` before `Initialize`.
     VkInstance& GetInstance() { return m_instance; }
 
+    /// Overrides the logical-device handle. For test injection; `CreateDevice` is the normal path.
     void SetDevice(VkDevice device) { m_device = device; }
+    /// Overrides the physical-device handle. For test injection; `Initialize` is the normal path.
     void SetPhysicalDevice(VkPhysicalDevice physicalDevice) { m_physicalDevice = physicalDevice; }
-
+    /// Overrides the instance handle. For test injection; `Initialize` is the normal path.
     void SetInstance(VkInstance instance) { m_instance = instance; }
 
-    // Command buffer allocations
+    /// @name Command buffer allocations
+    /// Each returns a primary command buffer from the named pool. `CreateCommandPools` must have run.
+    /// @note Aborts via `VK_ASSERT` if Vulkan fails to allocate. The matching `Free*` must be called
+    ///       before `DestroyCommandPools`.
+    ///@{
+    /// @return A command buffer from the compute pool.
     VkCommandBuffer AllocateComputeCommandBuffer();
+    /// @param[in,out] commandBuffer Buffer to free; set to a released handle on return.
     void FreeComputeCommandBuffer(VkCommandBuffer& commandBuffer);
 
+    /// @return A command buffer for resources that live for the process, from the main pool.
     VkCommandBuffer AllocateStaticPrimaryCommandbuffer();
 
+    /// @param[in,out] commandBuffer Buffer to free; set to a released handle on return.
     void FreeStaticPrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
 
+    /// @return A per-frame command buffer from the reusable pool.
     VkCommandBuffer AllocateReusablePrimaryCommandbuffer();
+    /// @param[in,out] commandBuffer Buffer to free; set to a released handle on return.
     void FreeReusablePrimaryCommandbuffer(VkCommandBuffer& commandBuffer);
 
+    /// @return A one-shot command buffer from the transient pool.
     VkCommandBuffer AllocateImmediateCommandBuffer();
+    /// @param[in,out] commandBuffer Buffer to free; set to a released handle on return.
     void FreeImmediateCommandBuffer(VkCommandBuffer& commandBuffer);
+    ///@}
 
-    // Comamnd buffer executions
+    /// Records `fImmediateGPUTask` into a one-shot command buffer, submits it and waits for completion.
+    ///
+    /// @param fImmediateGPUTask Callable taking a `VkCommandBuffer`; it records into the buffer the
+    ///        helper begins and ends, and must not begin or end that buffer itself.
+    /// @note This is synchronous by design: it calls `vkQueueWaitIdle`, so it is for setup/teardown work,
+    ///       not per-frame submission. Submission results are not checked here; use `SubmitCommandBuffers`
+    ///       when a failure must be reported.
     template <typename Func>
     void ExecuteImmediateCommand(Func fImmediateGPUTask)
     {
@@ -201,19 +346,47 @@ public:
         FreeImmediateCommandBuffer(immediateCmdBuf);
     }
 
-    // Helper functions
+    /// Creates a repeat-addressed, linearly filtered sampler with the engine's defaults.
+    /// @return The sampler handle.
+    /// @note Aborts via `VK_ASSERT` if `vkCreateSampler` fails.
     VkSampler CreateSampler();
 
+    /// Adds a barrier recorded by `IResourceBarrier::AddToCommandBuffer` to `cmdBuf`.
+    /// @param cmdBuf Command buffer being recorded; must be in the recording state.
+    /// @param resourceBarrier Barrier implementation to record.
     void AddResourceBarrier(VkCommandBuffer cmdBuf, IResourceBarrier& resourceBarrier);
 
+    /// Submits command buffers with binary semaphores and an optional fence, through sync2.
+    ///
+    /// @param vCmdBuffers Buffers to submit; may be empty when the submission only chains semaphores.
+    /// @param queue Queue to submit on. Must belong to this device.
+    /// @param waitSemaphores Binary semaphores to wait on.
+    /// @param signalSemaphores Binary semaphores to signal.
+    /// @param stageFlags Wait stage per wait semaphore; a missing entry falls back to
+    ///        `VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT`.
+    /// @param signalFence Optional fence signalled by the submission.
+    /// @note Aborts via `VK_ASSERT` if `vkQueueSubmit2` fails. The caller owns every handle.
     void SubmitCommandBuffers(std::vector<VkCommandBuffer>& vCmdBuffers, VkQueue queue,
                               std::vector<VkSemaphore>& waitSemaphores, std::vector<VkSemaphore>& signalSemaphores,
                               std::vector<VkPipelineStageFlags2> stageFlags, VkFence signalFence = VK_NULL_HANDLE);
+
+    /// Submits `vCmdBuffers` on the graphics queue, then waits for that queue to go idle.
+    /// @param vCmdBuffers Buffers to submit.
+    /// @note Synchronous; aborts via `VK_ASSERT` on submission or wait failure.
     void SubmitCommandBuffersAndWait(std::vector<VkCommandBuffer>& vCmdBuffers);
 
+    /// @param buffer Buffer created with `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT`.
+    /// @return The buffer's device address. A buffer without the usage bit is invalid usage; this
+    ///         helper does not verify it.
     VkDeviceAddress GetBufferDeviceAddress(VkBuffer buffer) const;
 
-    // Get physical device properties, neet to manually fill the sType before passing into to this function template
+    /// Queries chained physical-device properties into `property`.
+    ///
+    /// @param property A property struct with `sType` set; it is chained into a
+    ///        `VkPhysicalDeviceProperties2` and overwritten with the device's values.
+    /// @note The `sType != 0` check is an `assert`: it catches a programmer error only reachable by
+    ///       editing the call site, and a release build's `vkGetPhysicalDeviceProperties2` would reject
+    ///       the chain anyway.
     template <typename VkPropertyType>
     void GetPhysicalDeviceProperties(VkPropertyType& property)
     {
@@ -222,6 +395,11 @@ public:
         vkGetPhysicalDeviceProperties2(m_physicalDevice, &property2);
     }
 
+    /// Creates a pipeline layout from explicit set layouts and push-constant ranges.
+    /// @param descriptorSetLayouts Set layouts the layout is compatible with; may be empty.
+    /// @param pushConstantRanges Push-constant ranges exposed to the pipeline; may be empty.
+    /// @return The layout. Destroy it with `vkDestroyPipelineLayout` once no pipeline uses it.
+    /// @note Aborts via `VK_ASSERT` if `vkCreatePipelineLayout` fails.
     VkPipelineLayout CreatePipelineLayout(const std::vector<VkDescriptorSetLayout>& descriptorSetLayouts,
                                           const std::vector<VkPushConstantRange>& pushConstantRanges);
 
@@ -276,6 +454,9 @@ private:  // helper functions to create render device
     ///
     /// @param pFeatureChain The `VkPhysicalDeviceFeatures2` chain `CreateDevice` assembled, or null.
     void RecordEnabledStages(const void* pFeatureChain);
+    /// @param sName Instance extension name.
+    /// @return True when `Initialize` was asked to enable it.
+    bool IsInstanceExtensionEnabled(const char* sName) const;
     void PickPhysicalDevice();
     VkCommandBuffer AllocatePrimaryCommandbuffer(CommandPools pool);
     void FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);
@@ -300,8 +481,14 @@ private:  // Members
 
     std::array<VkCommandPool, NUM_CMD_POOLS> m_aCommandPools;
 
-    bool m_bIsValidationEnabled = false;
-    std::vector<const char*> m_vLayers;
+    /// The instance layers and extensions this device was asked for, kept as owned strings so a host's
+    /// temporary list cannot dangle. `m_bIsValidationLayerEnabled` is derived once, at `Initialize`.
+    std::vector<std::string> m_vInstanceLayers;
+    std::vector<std::string> m_vInstanceExtensions;
+    bool m_bIsValidationLayerEnabled = false;
+
+    /// Installed only when the host calls `InitializeDebugMessenger`; the device never creates one itself.
+    DebugUtilsMessenger m_debugMessenger;
 
     /// Cooperative matrix, queried at device creation whether or not it is requested, so a consumer can
     /// ask before deciding and the answer appears in the log.
@@ -337,20 +524,12 @@ protected:
     VkInstance m_instance = VK_NULL_HANDLE;
 };
 
-// Debug device
-
-class VkDebugRenderDevice : public VkRenderDevice
-{
-    virtual void Initialize(const std::vector<const char*>& vExtensions,
-                            const std::vector<const char*>& vLayers) override;
-    virtual void Unintialize() override;
-    virtual void CreateDevice(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers,
-                              const VkSurfaceKHR* pSurface = nullptr,
-                              const std::vector<void*>& vpFeatures = {}) override;
-
-private:
-    DebugUtilsMessenger m_debugMessenger;
-};
-
+/// @return The process-wide device singleton. It applies no validation or debug-messenger policy: call
+///         `Initialize` with the layers and extensions the host wants, and `InitializeDebugMessenger` if
+///         it wants the callback (#58).
+///
+/// A library client that needs more than one device, or wants ownership of the lifetime, constructs its
+/// own `VkRenderDevice`; the singleton is a convenience for the engine's hosts and must not be required
+/// by the device layer's own logic.
 VkRenderDevice* GetRenderDevice();
 }  // namespace Muyo
