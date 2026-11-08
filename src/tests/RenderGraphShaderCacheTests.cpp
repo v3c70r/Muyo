@@ -161,13 +161,15 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: two builders reuse 
 TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "ShaderCache: a shader can be supplied from memory", "[ShaderCache]")
 {
     // Device-only, so this runs on every machine the suite runs on: the provider is asked for words that
-    // come from a translation unit's input rather than a file. `memoryOnly.comp.heap` deliberately does
-    // not exist under `shaders/`, so nothing here can succeed through the file path.
+    // come from a translation unit's input rather than a file. `memoryOnly.comp` deliberately does not
+    // exist under `shaders/`, so nothing here can succeed through the file path. The words come from the
+    // non-heap variant: this case must run on a device without `shaderUntypedPointers` too (CI's
+    // llvmpipe), and creating a module from heap SPIR-V there is a validation error.
     VkRenderDevice* device = GetRenderDevice();
     const std::vector<uint32_t> words =
-        Muyo::ReadSpirvFile(std::filesystem::path("shaders") / "testSpecConstant.comp.heap.spv");
+        Muyo::ReadSpirvFile(std::filesystem::path("shaders") / "testSpecConstant.comp.slang.spv");
     REQUIRE(!words.empty());
-    const std::string shaderName = "memoryOnly.comp.heap";
+    const std::string shaderName = "memoryOnly.comp";
     const MemoryShaderSource source(shaderName, words);
 
     // The cache contract with an explicit source: the key hashes the words the provider returned, and
@@ -256,10 +258,11 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "ShaderCache: a non-default search path 
     REQUIRE(!ec);
 
     // Copy the shader under a name that exists only in the custom directory, so the default path cannot
-    // supply it: success below is evidence about the configured search path and nothing else.
-    const std::string shaderName = "searchPathOnly.comp.heap";
+    // supply it: success below is evidence about the configured search path and nothing else. The
+    // non-heap variant keeps this case runnable on a device without `shaderUntypedPointers`.
+    const std::string shaderName = "searchPathOnly.comp";
     const std::filesystem::path spvPath = searchPath / (shaderName + ".spv");
-    std::filesystem::copy_file(std::filesystem::path("shaders") / "testSpecConstant.comp.heap.spv", spvPath,
+    std::filesystem::copy_file(std::filesystem::path("shaders") / "testSpecConstant.comp.slang.spv", spvPath,
                                std::filesystem::copy_options::overwrite_existing, ec);
     REQUIRE(!ec);
 
@@ -286,14 +289,15 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "ShaderCache: the default file source lo
 {
     // Every in-tree consumer supplies no provider, so the historical `shaders/<name>.spv` lookup is the
     // path that must keep working. The explicit `FileShaderSourceProvider()` is checked to be the same
-    // lookup, so a host that constructs one to change nothing still gets nothing different.
+    // lookup, so a host that constructs one to change nothing still gets nothing different. The
+    // non-heap variant keeps this case runnable on a device without `shaderUntypedPointers`.
     VkRenderDevice* device = GetRenderDevice();
     const std::vector<uint32_t> expected =
-        Muyo::ReadSpirvFile(std::filesystem::path("shaders") / "testSpecConstant.comp.heap.spv");
+        Muyo::ReadSpirvFile(std::filesystem::path("shaders") / "testSpecConstant.comp.slang.spv");
     REQUIRE(!expected.empty());
 
     ShaderCache cache(device->GetDevice());
-    const std::optional<ShaderAssetKey> key = cache.LoadShader("testSpecConstant.comp.heap");
+    const std::optional<ShaderAssetKey> key = cache.LoadShader("testSpecConstant.comp.slang");
     REQUIRE(key.has_value());
     CHECK(key->contentHash == HashSpirv(expected));
     const ShaderAsset* asset = cache.GetShaderAsset(*key);
@@ -303,7 +307,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "ShaderCache: the default file source lo
 
     const FileShaderSourceProvider defaultSource;
     CHECK(defaultSource.GetSearchPath() == std::filesystem::path("shaders"));
-    const std::optional<ShaderAssetKey> viaProvider = cache.LoadShader("testSpecConstant.comp.heap", defaultSource);
+    const std::optional<ShaderAssetKey> viaProvider = cache.LoadShader("testSpecConstant.comp.slang", defaultSource);
     REQUIRE(viaProvider.has_value());
     CHECK(*viaProvider == *key);  // same name and content: a hit, not a second module
     CHECK(cache.GetModuleCreateCount() == 1);
