@@ -323,7 +323,7 @@ their `PUBLIC` include directories. The installed headers are a stated set rathe
 | `include/Muyo/detail/thirdparty/` | VMA and SPIRV-Reflect, which the public headers name |
 
 VMA and SPIRV-Reflect are exported targets too, not dependencies a consumer has to find. **Vulkan is the one
-external dependency**, and `muyo_rgConfig.cmake` looks it up with `find_dependency(Vulkan REQUIRED)`, so a
+external dependency**, and `muyo_rgConfig.cmake` looks it up with `find_dependency(Vulkan)`, so a
 missing SDK fails at the consumer's configure step with a message naming Vulkan instead of at a compile or
 link later. `render_graph_docs.py --check` compares the two CMake header lists against the stated surface, so
 the install set cannot drift from #53's lists silently.

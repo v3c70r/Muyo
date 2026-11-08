@@ -18,7 +18,7 @@ include(CMakeFindDependencyMacro)
 # The device layer is Vulkan-only (`docs/RenderGraph-Library-Design.md` section 2), so a missing SDK
 # is the expected external failure. `find_dependency` forwards REQUIRED and turns a miss into
 # `muyo_rg_FOUND = FALSE` with a message naming Vulkan, which is what the out-of-tree probe checks.
-find_dependency(Vulkan REQUIRED)
+find_dependency(Vulkan)
 
 # `Vulkan::Vulkan` was added to FindVulkan in CMake 3.17, and this project's stated minimum is 3.11.
 # A consumer on an older CMake still has the legacy `Vulkan_LIBRARIES` / `Vulkan_INCLUDE_DIR`

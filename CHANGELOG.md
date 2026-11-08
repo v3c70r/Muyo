@@ -36,7 +36,7 @@ commit that deprecated it (#87).
   `find_package(muyo_rg 0.1 REQUIRED)` and link `Muyo::muyo_rg` without the source tree. The installed
   include set is the stated public surface under `include/RenderGraph/`; the internal graph headers the
   public headers' private members use are installed under `include/Muyo/detail/RenderGraph/` and are not
-  API. `muyo_rgConfig.cmake` looks up Vulkan with `find_dependency(Vulkan REQUIRED)`, so a missing SDK
+  API. `muyo_rgConfig.cmake` looks up Vulkan with `find_dependency(Vulkan)`, so a missing SDK
   fails at the consumer's configure step naming Vulkan, and the version file uses `SameMinorVersion`
   while the major is 0, so `find_package(muyo_rg 0.1)` rejects a 0.2 package (#73).
 
