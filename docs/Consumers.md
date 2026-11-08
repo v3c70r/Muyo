@@ -7,6 +7,10 @@ issue that owns each gap — so "library boundary" is a checkable list rather th
 It is deliberately short. A guarantee with no consumer behind it is a guess; a consumer with no
 guarantee named is a hidden dependency waiting to be broken.
 
+This file describes **version `0.1.0`** of the library (`MUYO_RG_VERSION`; the macros are in the
+generated `<muyo_rg/version.h>`, the documented constants in `RenderGraph/MuyoVersion.h`). A row is a
+claim about that version and no other.
+
 ## Consumers
 
 | Consumer | Kind | Where | What it exercises |
@@ -64,8 +68,11 @@ tracking issue and, where it blocks a consumer, is marked.
 - **First-party consumers are named as well.** `muyo-llm`, and `helloVulkan` as it adopts the graph, are
   how the library's coverage is measured rather than only who consumes it, so a change that breaks one
   names it and does not merge with that upgrade unplanned.
-- **Rows describe the current version.** Only the current version is supported, so a first-party consumer
-  that has not upgraded leaves its rows stale - and a stale row is not evidence about the library.
+- **Rows describe the current version, `0.1.0`.** Only the current version is supported, so a first-party
+  consumer that has not upgraded leaves its rows stale - and a stale row is not evidence about the library.
+  The version a row is written against is read from `MUYO_RG_VERSION` (`<muyo_rg/version.h>`, or the
+  constants in `RenderGraph/MuyoVersion.h`); a change that moves it updates the referent above in the same
+  PR.
 - **A new consumer adds its row here before it adds code.** The row states which guarantees it
   relies on, so a gap is visible while it is cheap to fix.
 - **A consumer-driven change follows the normal process.** File an issue first if the roadmap does not

@@ -13,6 +13,13 @@ context, so fill this in for someone reading the diff cold.
 <!-- Scope boundaries a reviewer should not have to guess at. For a refactor: state that behaviour
      is unchanged. -->
 
+## Which guarantee changes?
+
+<!-- If this changes a guarantee in docs/Consumers.md, name it and say whether the guarantee is
+     added, changed or removed. Write "none" when it does not. A change that breaks one is listed
+     under `Changed` in CHANGELOG.md, names the first-party consumer that has to move, and carries
+     the `api-change` label. -->
+
 ## Verification
 
 <!-- Reproduced by the developer before merge. A reviewer with the hardware re-runs when available;
@@ -40,4 +47,6 @@ context, so fill this in for someone reading the diff cold.
 - [ ] One concern per PR (mechanical refactors separate from behaviour changes).
 - [ ] Branch based on an up-to-date `master`.
 - [ ] New behaviour has a test with teeth, or the PR says why a test is impractical.
+- [ ] `CHANGELOG.md` has an entry under `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed`.
+- [ ] If a `docs/Consumers.md` guarantee changes, this PR names it and carries the `api-change` label.
 - [ ] `AGENTS.md` updated if the process itself changed.

@@ -1,0 +1,43 @@
+#pragma once
+
+/// @file
+/// Compile-time version of the `muyo_rg` RenderGraph library.
+///
+/// **Generated** by CMake from `cmake/MuyoVersion.h.in` using the version declared by
+/// `project(Muyo VERSION ...)`; do not edit the copy in the build tree. Include
+/// `RenderGraph/MuyoVersion.h` for the Doxygen-documented constants, or this header directly when a
+/// preprocessor comparison is what is needed.
+///
+/// The components use Vulkan's layout, so the combined integer is comparable across versions:
+/// `#if MUYO_RG_VERSION >= MUYO_RG_MAKE_VERSION(0, 1, 0)`.
+
+/// Major component of the library version.
+#define MUYO_RG_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+
+/// Minor component of the library version.
+#define MUYO_RG_VERSION_MINOR @PROJECT_VERSION_MINOR@
+
+/// Patch component of the library version.
+#define MUYO_RG_VERSION_PATCH @PROJECT_VERSION_PATCH@
+
+/// Compose a version integer from its components.
+///
+/// The layout is Vulkan's `VK_MAKE_API_VERSION` with the variant fixed at 0, because this library has
+/// no variant line: major in bits 22-28, minor in bits 12-21 and patch in bits 0-11. The result is
+/// deliberately cast-free, unlike Vulkan's macro, so it is a preprocessor integer and can be used in
+/// `#if`:
+///
+/// @code
+/// #if MUYO_RG_VERSION >= MUYO_RG_MAKE_VERSION(0, 1, 0)
+/// ...
+/// #endif
+/// @endcode
+#define MUYO_RG_MAKE_VERSION(major, minor, patch) \
+    (((major) << 22) | ((minor) << 12) | (patch))
+
+/// The library version as one comparable integer.
+#define MUYO_RG_VERSION \
+    MUYO_RG_MAKE_VERSION(MUYO_RG_VERSION_MAJOR, MUYO_RG_VERSION_MINOR, MUYO_RG_VERSION_PATCH)
+
+/// The library version as a `"major.minor.patch"` string literal.
+#define MUYO_RG_VERSION_STRING "@PROJECT_VERSION@"
