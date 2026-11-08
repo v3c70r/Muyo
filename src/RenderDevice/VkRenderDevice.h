@@ -127,9 +127,11 @@ public:
     /// "every stage that could touch this resource" and filters the result through this.
     ///
     /// The value comes from the create-info chain the caller passed, **not** from a compile-time guess about
-    /// what this engine uses: `helloVulkan` enables the mesh shader feature while the render-graph app passes
-    /// no feature structures at all, so a constant would be wrong for one of them - and wrong in the
-    /// dangerous direction, reporting a stage unusable on a device that enabled it.
+    /// what this engine uses: the ray-tracing host and the RT fixture pass the ray-tracing feature structs
+    /// while a raster-only host passes none, and a caller may enable another feature itself - the
+    /// mesh-shader branch in `RecordEnabledStages` exists for exactly that caller (#265). A constant would be
+    /// wrong for one of them - and wrong in the dangerous direction, reporting a stage unusable on a device
+    /// that enabled it.
     ///
     /// @return The stage bits a barrier mask may name on this device.
     VkPipelineStageFlags2 EnabledPipelineStages() const { return m_enabledStages; }

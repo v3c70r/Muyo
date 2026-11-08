@@ -420,8 +420,14 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
 
     VkPhysicalDeviceFeatures2 features2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     features2.features.multiDrawIndirect = VK_TRUE;
-    // TODO(#265): no built shader declares OpCapability Int64; this enable has no consumer. Drop it or
-    // name a consumer. shaderStorageImageRead/WriteWithoutFormat are used by testPrimary.rgen.
+    // shaderInt64 has a consumer: the descriptor-heap ray-generation modules (`testPrimary.rgen.heap`,
+    // `heapProbe.rgen.heap`) declare OpCapability Int64 because `RaytracingAccelerationStructure.Handle()`
+    // lowers the 64-bit heap handle into an untyped pointer. Check the built tree with
+    //   for f in build/shaders/*.spv; do spirv-dis "$f" | grep -q 'OpCapability Int64' && echo "$f"; done
+    // -> those two of 44 modules. Dropping this enable fails their vkCreateShaderModule with
+    // VUID-VkShaderModuleCreateInfo-pCode-08740 ("SPIR-V Capability Int64 was declared, but ... shaderInt64"),
+    // so the requirement is real rather than a carried-over enable (#265).
+    // shaderStorageImageRead/WriteWithoutFormat are used by testPrimary.rgen (and its heap variant).
     features2.features.shaderInt64 = VK_TRUE;
     features2.features.shaderStorageImageReadWithoutFormat = VK_TRUE;
     features2.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;

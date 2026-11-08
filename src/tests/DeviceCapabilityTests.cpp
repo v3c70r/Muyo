@@ -214,6 +214,50 @@ TEST_CASE("VkRenderDevice: requested device extensions are resolved against what
           "VK_EXT_missing");
 }
 
+TEST_CASE("VkRenderDevice: a caller-supplied mesh-shader chain still reaches the stage filter", "[RenderDevice]")
+{
+    // #265. `helloVulkan` stopped requesting VK_EXT_mesh_shader because no built shader declares a mesh
+    // stage, but the feature is not dead in the device layer: `RecordEnabledStages` reads the caller's
+    // chain, so a host that builds its own mesh pipeline still gets the stage bits it asked for. This pins
+    // that half, because the branch would otherwise look deletable now that the engine no longer asks for
+    // it itself. A device without the extension skips with its reason; the claim is about the filter, not
+    // about this machine.
+    ScopedDeviceLifetime lifetime;
+    Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
+    Muyo::InitializeDeviceWithValidation(pDevice, {});
+
+    const VkPhysicalDevice physicalDevice = pDevice->GetPhysicalDevice();
+    uint32_t nExtensionCount = 0;
+    Muyo::VK_ASSERT(vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &nExtensionCount, nullptr));
+    std::vector<VkExtensionProperties> extensions(nExtensionCount);
+    Muyo::VK_ASSERT(vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &nExtensionCount, extensions.data()));
+    if (!Muyo::HasDeviceExtension(extensions, VK_EXT_MESH_SHADER_EXTENSION_NAME))
+    {
+        SKIP("this device does not expose " << VK_EXT_MESH_SHADER_EXTENSION_NAME
+                                            << "; the caller-supplied chain cannot be exercised");
+    }
+
+    VkPhysicalDeviceMeshShaderFeaturesEXT supportedMesh{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
+    VkPhysicalDeviceFeatures2 supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    supported.pNext = &supportedMesh;
+    vkGetPhysicalDeviceFeatures2(physicalDevice, &supported);
+    if (supportedMesh.meshShader != VK_TRUE)
+    {
+        SKIP("this device exposes " << VK_EXT_MESH_SHADER_EXTENSION_NAME << " but reports meshShader = VK_FALSE");
+    }
+
+    VkPhysicalDeviceMeshShaderFeaturesEXT requestedMesh{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT};
+    requestedMesh.meshShader = VK_TRUE;
+    pDevice->CreateDevice({VK_EXT_MESH_SHADER_EXTENSION_NAME}, {}, nullptr, {&requestedMesh});
+
+    const VkPipelineStageFlags2 enabled = pDevice->EnabledPipelineStages();
+    CHECK((enabled & VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT) != 0);
+    // Only meshShader was set: taskShader stays off, so the task bit must not appear.
+    CHECK((enabled & VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT) == 0);
+    // The engine's own always-on bits are unaffected by a caller-supplied feature struct.
+    CHECK((enabled & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
+}
+
 TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "VkRenderDevice: the cooperative-matrix query agrees with the device",
                  "[RenderDevice]")
 {

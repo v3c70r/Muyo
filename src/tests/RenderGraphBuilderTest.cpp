@@ -1914,9 +1914,10 @@ TEST_CASE("RenderGraphBuilder: an imported image's stated layout is the first ba
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the stage filter reflects what the device enabled",
                  "[RenderGraphBuilder]")
 {
-    // Review N2. The set is a property of the create-info chain, not of the build: `helloVulkan` enables the
-    // mesh shader feature and the render-graph app passes no feature structures, so a compile-time constant
-    // would report a stage unusable on a device that enabled it. The fixture creates the RG-shaped device.
+    // Review N2. The set is a property of the create-info chain, not of the build: the fixture passes the
+    // ray-tracing feature structs only in the RT configuration and no geometry/tessellation/mesh-shader
+    // structs at all, so a compile-time constant would report a stage unusable on a device that enabled it.
+    // The fixture creates the RG-shaped device.
     const VkPipelineStageFlags2 enabled = GetRenderDevice()->EnabledPipelineStages();
     CHECK((enabled & VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT) != 0);
     CHECK((enabled & VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT) != 0);

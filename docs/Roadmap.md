@@ -251,7 +251,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | Every `TODO(#n)`-style marker under `src/` names an open issue (`#253`, `#265`, `#274`, `#279`) or is a historical comment; the lowercase `// todo: remove this` in `Swapchain.h` is outside that set and owned by the A1.5 debt row. #268 closed the two markers the reconciliation had retargeted: the glTF point-light `range` work is now #279, and the `DockSpace` viewport setup stays in `DebugUI` by decision. It also removed three `TODO(#17)` notes whose issue had closed, so this row no longer counts #17. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
+| **TODO hygiene** | Every `TODO(#n)`-style marker under `src/` names an open issue (`#253`, `#274`, `#279`) or is a historical comment; the lowercase `// todo: remove this` in `Swapchain.h` is outside that set and owned by the A1.5 debt row. #268 closed the two markers the reconciliation had retargeted: the glTF point-light `range` work is now #279, and the `DockSpace` viewport setup stays in `DebugUI` by decision. It also removed three `TODO(#17)` notes whose issue had closed, so this row no longer counts #17. #265 removed its two markers by resolving the question they asked: the `shaderInt64` enable now names the descriptor-heap ray-generation modules that declare `OpCapability Int64`, and `helloVulkan` stopped requesting `VK_EXT_mesh_shader` because no built shader declares a mesh stage. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
@@ -285,7 +285,7 @@ are not listed here, for the reason above.
   (`#20` ✅; increment 1 was the #111 UI pass, accepted double conversion) → `#48` ✅ → the deletion
   (`#51` ✅). #49 (RSM) was closed as superseded when the recorded-only RSM code was deleted.
 - **P1 closure** — `#59` (cost) with `#197` (timings, its data source); the RT gate
-  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`/`#265`. `#59` is now the
+  `#19`/`#223`/`#238`/`#253`; the heap follow-ups `#222`/`#233`/`#234`/`#262`. `#59` is now the
   chain that decides P1's end date, and it must choose a reference because the legacy path is gone.
 - **Descriptor fallback** — #15 closed as superseded once B1 landed; it is no longer on any path. #16 and
   #12 are closed. #83 and #40 closed with B2, not after adoption.

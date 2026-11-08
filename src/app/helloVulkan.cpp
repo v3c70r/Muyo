@@ -173,7 +173,6 @@ std::vector<const char *> GetRequiredDeviceExtensions()
 {
     std::vector<const char *> vDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_EXT_MESH_SHADER_EXTENSION_NAME,
         VK_KHR_SPIRV_1_4_EXTENSION_NAME,
 
         VK_KHR_MULTIVIEW_EXTENSION_NAME,
@@ -239,17 +238,6 @@ int main(int argc, char **argv)
     accStructFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
     accStructFeature.accelerationStructure = VK_TRUE;
 
-    // Mesh shader feature
-    // TODO(#265): no mesh shader remains after #263 deleted the pass and its shaders; decide whether to
-    // stop requesting the extension and pushing this feature.
-    VkPhysicalDeviceMeshShaderFeaturesEXT meshShaderFeature = {};
-    meshShaderFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;
-    meshShaderFeature.taskShader = VK_FALSE;
-    meshShaderFeature.meshShader = VK_TRUE;
-    meshShaderFeature.multiviewMeshShader = VK_FALSE;
-    meshShaderFeature.primitiveFragmentShadingRateMeshShader = VK_FALSE;
-    meshShaderFeature.meshShaderQueries = VK_FALSE;
-
     std::vector<void *> features;
     // features.push_back(&bufferDeviceAddressFeatrues);
     if (GetRenderDevice()->IsRayTracingSupported())
@@ -258,7 +246,6 @@ int main(int argc, char **argv)
         features.push_back(&accStructFeature);
     }
 
-    features.push_back(&meshShaderFeature);
     GetRenderDevice()->CreateDevice(GetRequiredDeviceExtensions(),  // Extensions
                                     std::vector<const char *>(),    // Layers
                                     &surface, features);
