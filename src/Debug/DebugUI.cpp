@@ -137,7 +137,9 @@ void VerticalTabsPage::Render() const
 
 void DockSpace::Render() const
 {
-    // TODO(#268): move this part outside DebugUI, or record why it stays.
+    // Deliberately stays in DebugUI (#268): the dock-space host is ImGui layout, and the overlay that
+    // owns the pages is what renders it. Moving the viewport setup into the host would split one page's
+    // Render() across two owners for no gain.
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);

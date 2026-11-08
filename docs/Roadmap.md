@@ -251,7 +251,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | Every marker under `src/` now names an open issue (`#17`, `#253`, `#265`, `#268`) or is a historical comment. The reconciliation retargeted the two stale closed references (`TODO(#20)` in `Scene.cpp`/`SceneImporter.cpp`, `TODO(#48)` in `DebugUI.cpp`), and removed debt rows for `TODO(A2)` and `Texture.h` after their markers had already gone. #268 covers the glTF point-light `range` and the `DockSpace` move. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
+| **TODO hygiene** | Every `TODO(#n)`-style marker under `src/` names an open issue (`#253`, `#265`, `#274`, `#278`, `#279`) or is a historical comment; the lowercase `// todo: remove this` in `Swapchain.h` is outside that set and owned by the A1.5 debt row. #268 closed the two markers the reconciliation had retargeted: the glTF point-light `range` work is now #279, and the `DockSpace` viewport setup stays in `DebugUI` by decision. It also removed three `TODO(#17)` notes whose issue had closed, so this row no longer counts #17. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
@@ -260,7 +260,6 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | --- | --- | --- |
 | Legacy rows: `TODO` under `src/RenderPasses/`, the `helloVulkan` resize hook, the old frame-sync bugs, the `RenderPassParameters` assert | **Deleted with #51** | The files and callers are gone. The remaining resize issue is #186 (Backlog), not this table. |
 | `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. |
-| The three `PipelineStateBuilder.h` markers (finish other builders, add more builders, create setters) | **#17 A5** | Pipeline and shader caching is where that builder set is either finished or shown to be unnecessary. This is why `#17` carries `Debt: Subsumes debt` — a field verdict needs an explanation here, the same way a table verdict needed a field. |
 
 ### Not on the parity path — schedule after P3
 
