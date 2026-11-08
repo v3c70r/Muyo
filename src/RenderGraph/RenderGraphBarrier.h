@@ -1,4 +1,5 @@
 #pragma once
+// Internal to muyo_rg: implementation detail, not part of the public surface. See docs/RenderGraph.md.
 #include <vulkan/vulkan.h>
 
 #include <optional>

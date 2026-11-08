@@ -24,6 +24,7 @@
 #include "RenderGraphResourceDesc.h"
 #include "RenderGraphShader.h"
 #include "RenderGraphTrace.h"
+#include "ShaderAssetManager.h"
 #include "TransientMemoryPlanner.h"
 #include "TransientResources.h"
 

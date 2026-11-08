@@ -64,6 +64,62 @@ following while the library and its consumers evolve:
 | Node | `RenderGraphNodeCreateInfo` | A pass: queue, shaders, resources, PSO, execute callback. |
 | Builder | `RenderGraphBuilder` | Declares the graph, `Build()` compiles it, `Execute()` runs it. |
 
+## Public surface
+
+`muyo_rg` has a **stated public surface**: the headers below are API, and a consumer may include them.
+Everything else under `src/RenderGraph/` is implementation detail. Internal headers are reachable because
+the public headers' private members include them, but a consumer must not include or name them; the
+promise is about the public list, not about what the preprocessor can see.
+
+The list is canonical in `scripts/render_graph_docs.py` (`PUBLIC_HEADERS` / `INTERNAL_HEADERS`) and is
+reproduced in the checked block below. `python3 scripts/render_graph_docs.py --check` fails when a new
+header under `src/RenderGraph/` is not classified, when a listed header is missing, or when this block
+and the lists disagree. The Doxygen reference covers exactly the public headers, so `RenderGraph-api.md`
+is the surface rather than the directory.
+
+<!-- public-surface:begin -->
+**Public headers (API):**
+
+- `CompiledRenderGraph.h`
+- `MuyoVersion.h`
+- `PipelineCache.h`
+- `PSODesc.h`
+- `RenderGraphBuilder.h`
+- `RenderGraphExecuteInfo.h`
+- `RenderGraphExecutionPlan.h`
+- `RenderGraphNodeContext.h`
+- `RenderGraphNodeResource.h`
+- `RenderGraphResourceDesc.h`
+- `RenderGraphResourceHandle.h`
+- `RenderGraphResources.h`
+- `RenderGraphShader.h`
+- `RenderGraphTrace.h`
+- `ShaderCache.h`
+- `TransientMemoryPlan.h`
+
+**Internal headers (not API):**
+
+- `DependencyGraph.h`
+- `RenderGraphBarrier.h`
+- `RenderGraphExecutor.h`
+- `RenderGraphTraceRecorder.h`
+- `ResourceUseResolver.h`
+- `ShaderAssetManager.h`
+- `TransientMemoryPlanner.h`
+- `TransientResources.h`
+<!-- public-surface:end -->
+
+The line is drawn by type, not only by file. `RenderGraphExecuteInfo.h` holds the `Execute()` sync
+argument, `TransientMemoryPlan.h` what `GetTransientMemoryPlan()` returns, and `RenderGraphTrace.h` the
+trace data a sink receives; the executor, planner and recorder that produce them are internal. The
+device-facing allocator interface lives in `RenderGraphResources.h`, because a consumer with its own
+memory manager implements it.
+
+A consumer of the public headers needs Vulkan, VMA and SPIRV-Reflect: `BufferResourceDesc::memoryProperties`
+and the allocator interface speak `VmaMemoryUsage`, and `ShaderAsset` carries the reflection object. Those
+are part of the declared interface until #293 removes the VMA vocabulary; making them installable
+is the packaging work (#73).
+
 ## Resource lifetimes
 
 Every graph-owned resource declares a `ResourceLifetime`, and the three values differ in what content a
@@ -388,6 +444,23 @@ Every declaration error is reported at the call that declared it or at `Build()`
 **each message names the graph entity** — the node, the resource, the binding — rather than a Vulkan
 handle. Find the bracketed part of the message in this table to see its cause and fix.
 
+The failure **contract** covers more than the table:
+
+- **A declaration or configuration error throws a standard exception, in every build configuration.**
+  The graph's declaration, build and service checks throw `std::runtime_error`; the public
+  enum-to-Vulkan conversions throw `std::invalid_argument` for a value outside its range. The process
+  stays alive and a caller can catch the error, fix the declaration and build a graph again; a failed
+  `Build()` compiles nothing and leaves the device usable. It is not a promise that the *same* builder
+  is reusable after a failed `Build()` - construct a new one.
+- **A failed Vulkan call aborts the process.** `VK_ASSERT` reports `[FATAL]: Vulkan call failed with
+  <VkResult>` and the call site, then aborts — it is not catchable. A validation-layer `ERROR` is the same
+  class through `FatalAbort`, when the host has installed the callback. There is no error-code return and
+  no host-installed handler; `docs/RenderGraph-Library-Design.md` §3 records why, and what would reopen
+  the decision.
+
+That split is checkable: `[ErrorReporting]` covers the thrown and aborted paths, and the declaration
+failures are the `CHECK_THROWS_*` cases beside the messages below.
+
 `Build()` validates in this order: cycle → transient lifetimes → descriptor bindings → allocation. A test
 for a later check therefore has to satisfy the earlier ones (usually by declaring the resources
 `Persistent`).
@@ -423,7 +496,7 @@ warns once, and `VkRenderDevice::IsComputeQueueDedicated()` is the query an app 
 ## Documentation
 
 - **API reference** — `RenderGraph-api.md` (same directory), generated from the Doxygen comments
-  in `src/RenderGraph/*.h`.
+  in the **public headers listed under Public surface above**.
 - **Coverage** — the `render_graph_docs` build target runs Doxygen with `WARN_AS_ERROR`, so an
-  undocumented public entity fails the build.
+  undocumented public entity in that set fails the build.
 - Regenerate with `cmake --build <build-dir> --target render_graph_docs`.

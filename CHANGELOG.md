@@ -48,6 +48,13 @@ commit that deprecated it (#87).
   remains, documented as singleton-only (#274, #276, #291).
 - **The legacy renderer path is gone.** `helloVulkan`'s frame is graph nodes, and `RenderPassManager`, the
   recorded-only legacy passes and `src/RenderPasses/` are deleted (#20, #51, #257–#264).
+- **The public surface and the error-reporting contract are stated.** Sixteen headers under
+  `src/RenderGraph/` are API; `RenderGraphExecuteInfo.h` and `TransientMemoryPlan.h` are public so the
+  value passed to `Execute()` and the plan returned by `GetTransientMemoryPlan()` stay documented, while
+  the executor, planner, trace recorder, barrier derivation and shader manager are internal detail and
+  leave the reference. `render_graph_docs.py --check` fails on an unclassified header or a stale list.
+  Declaration and configuration errors throw a standard exception; failed Vulkan calls abort with their
+  result and call site; no host error handler is installed (#53).
 
 ### Deprecated
 

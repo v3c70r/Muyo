@@ -91,7 +91,8 @@ the one deliberate double conversion, kept as accepted debt.
 [RenderGraph-Library-Design.md](RenderGraph-Library-Design.md).** It holds the stack
 (`device → graph → pipeline → host`), which layer owns what, the decisions already made — C++ headers now
 with a C ABI wrapped later if a non-C++ client appears; the device as a shared library rather than an
-inverted dependency; error reporting left open on purpose — and the one piece of app policy that has to
+inverted dependency; error reporting decided (declaration/configuration errors throw, failed Vulkan calls
+abort) — and the one piece of app policy that has to
 come out of the device layer (validation setup).
 
 Two pieces of work are imminent and would bake in assumptions that are expensive to remove. This section
@@ -128,7 +129,7 @@ state, and neither should try to carry the other's half.
 | **Device, allocator and descriptor allocation injected, not global** | The injection (#85) replaced the singleton lookups inside `src/RenderGraph/`; **two** globals remain — `GetRenderResourceManager()` in the transitional `RenderGraphBuilder(VkRenderDevice*)` delegation, and `GetMemoryAllocator()` in the transient-buffer path — and the graph still subclasses the engine's concrete `BufferResource`/`ImageResource` types. A library cannot own the engine's singletons or resource types. #272 is the resource half of this: the narrow interface it defines is what makes the target split (device + graph in this repository, the renderer in a consumer repo) possible. |
 | **Compute-only is a first-class profile** | No surface, no present, possibly no colour attachments. Nothing on the execution path may require a graphics family or a swapchain. |
 | **Long-lived resources are first-class** | Weights and a KV cache live for the process, not a frame. The transient/persistent split (`#15`, `#16`) has to serve that, not only per-frame render targets. |
-| **A stated public surface** | Every header in `src/RenderGraph/` is public today, reflection and descriptor internals included. Deciding what is API and what is detail is a prerequisite for shipping, and cheapest while there is one consumer. |
+| **A stated public surface** | Every header in `src/RenderGraph/` used to be public, reflection and descriptor internals included. #53 now states the list (`docs/RenderGraph.md` "Public surface", enforced by `render_graph_docs.py`); a new header must be classified, and moving a type across the line is a breaking change. |
 | **Diagnostics an agent can act on** | The library's consumers include coding agents, which read a log with no debugger and no follow-up question. That means failing at `Build()` on declaration errors, naming the graph node and resource rather than the handle, attributing GPU errors through debug labels, and documenting preconditions and failure modes. Cheap while the graph is small; a rewrite once errors are shaped like `VkBuffer 0x…`. |
 
 ### What had to land before the big P1 capabilities
@@ -138,9 +139,10 @@ state, and neither should try to carry the other's half.
 and `#16`**, because those two rewrote the descriptor and transient paths; writing them against the
 singletons would have replicated the coupling at scale and then had to be redone, which is the expensive
 retrofit the constraints table warns about. It **landed in #85**, which is why `#15` and `#16` were written
-against `RenderGraphServices` now. The rest of `#53` (public/private header split, standalone build,
-packaging, client-supplied shader source) does not gate the P1 capabilities and can follow or run in
-parallel — it gates the library track, which is where its two Consumers.md rows sit.
+against `RenderGraphServices` now. The rest of `#53` (the public/private header split, the error-reporting
+decision, the standalone build) landed through #272 and the stated-surface work; packaging (#73) and
+client-supplied shader source (#292) do not gate the P1 capabilities and can follow or run in parallel —
+they gate the library track, which is where their Consumers.md rows sit.
 
 The reason to say it rather than leave it implied: "L overlaps P1 and constrains it" is a direction, not
 an order, and the difference is one doubled workstream.

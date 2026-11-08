@@ -10,6 +10,14 @@ Modes
   --check             Fail if any public entity is undocumented or if the
                       checked-in docs/RenderGraph-api.md is out of date.
 
+The INPUT set is the **stated public surface**, not every header under
+src/RenderGraph/. `PUBLIC_HEADERS` below is the canonical list; the HTML/XML
+reference, the coverage check and the generated Markdown all cover exactly it.
+`INTERNAL_HEADERS` is every other header in that directory, and `--check` fails
+when a header is in neither list (a new header must be classified), when a listed
+header is missing, or when the "public-surface" block in docs/RenderGraph.md
+disagrees with the lists. See docs/RenderGraph.md, "Public surface".
+
 Doxygen is looked up in $DOXYGEN, then on PATH, then in <repo>/.tools.
 Run docs/README.md for how to obtain it without root.
 """
@@ -19,6 +27,7 @@ from __future__ import annotations
 import argparse
 import filecmp
 import os
+import re
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -33,6 +42,113 @@ DOXYFILE_TEMPLATE = os.path.join(DOCS_DIR, "Doxyfile.render_graph")
 GENERATED_MD = os.path.join(DOCS_DIR, "RenderGraph-api.md")
 COVERAGE_CHECKER = os.path.join(DOCS_DIR, "check_api_coverage.py")
 MD_GENERATOR = os.path.join(DOCS_DIR, "gen_api_md.py")
+
+# ── The stated public surface ─────────────────────────────────────────────────
+# Canonical, and the only place the list is defined. docs/RenderGraph.md has a checked block with the
+# same names, and verify_header_classification() fails when the two disagree or when a header under
+# src/RenderGraph/ is in neither list. Keep the lists sorted; the doc block is compared as a set.
+PUBLIC_HEADERS = [
+    "CompiledRenderGraph.h",
+    "MuyoVersion.h",
+    "PipelineCache.h",
+    "PSODesc.h",
+    "RenderGraphBuilder.h",
+    "RenderGraphExecuteInfo.h",
+    "RenderGraphExecutionPlan.h",
+    "RenderGraphNodeContext.h",
+    "RenderGraphNodeResource.h",
+    "RenderGraphResourceDesc.h",
+    "RenderGraphResourceHandle.h",
+    "RenderGraphResources.h",
+    "RenderGraphShader.h",
+    "RenderGraphTrace.h",
+    "ShaderCache.h",
+    "TransientMemoryPlan.h",
+]
+
+# Implementation detail: compiled against by the public headers' private members, but not API. A consumer
+# must not include or name these, and the docs reference does not cover them.
+INTERNAL_HEADERS = [
+    "DependencyGraph.h",
+    "RenderGraphBarrier.h",
+    "RenderGraphExecutor.h",
+    "RenderGraphTraceRecorder.h",
+    "ResourceUseResolver.h",
+    "ShaderAssetManager.h",
+    "TransientMemoryPlanner.h",
+    "TransientResources.h",
+]
+
+# Markdown pages that belong to the reference. The overview is also the main page.
+PUBLIC_DOCS = ["RenderGraph.md"]
+
+# Markers in docs/RenderGraph.md. The block between them lists both sets verbatim and is checked.
+PUBLIC_SURFACE_BEGIN = "<!-- public-surface:begin -->"
+PUBLIC_SURFACE_END = "<!-- public-surface:end -->"
+
+
+def header_path(name: str) -> str:
+    """Return the absolute path of a header in src/RenderGraph/."""
+    return os.path.join(HEADER_DIR, name)
+
+
+def public_inputs() -> list[str]:
+    """Return the Doxygen INPUT files: the public headers, then the public markdown pages."""
+    return [header_path(name) for name in PUBLIC_HEADERS] + [os.path.join(DOCS_DIR, name) for name in PUBLIC_DOCS]
+
+
+def _documented_header_names() -> set[str]:
+    """Return the .h names listed in the checked block in docs/RenderGraph.md.
+
+    Returns an empty set when the markers are absent; the caller reports that as a missing block rather
+    than as a silently empty list.
+    """
+    with open(OVERVIEW, encoding="utf-8") as handle:
+        text = handle.read()
+    if PUBLIC_SURFACE_BEGIN not in text or PUBLIC_SURFACE_END not in text:
+        return set()
+    block = text.split(PUBLIC_SURFACE_BEGIN, 1)[1].split(PUBLIC_SURFACE_END, 1)[0]
+    return set(re.findall(r"`([A-Za-z0-9_.-]+\.h)`", block))
+
+
+def verify_header_classification() -> list[str]:
+    """Return the reasons the header lists and docs/RenderGraph.md disagree.
+
+    This is what makes the surface checkable rather than a prose claim: a header added to
+    src/RenderGraph/ without a decision is an error, and so is editing one list without the other.
+    """
+    errors: list[str] = []
+    if len(set(PUBLIC_HEADERS)) != len(PUBLIC_HEADERS):
+        errors.append("PUBLIC_HEADERS contains a duplicate")
+    if len(set(INTERNAL_HEADERS)) != len(INTERNAL_HEADERS):
+        errors.append("INTERNAL_HEADERS contains a duplicate")
+    overlap = set(PUBLIC_HEADERS) & set(INTERNAL_HEADERS)
+    if overlap:
+        errors.append("classified as both public and internal: " + ", ".join(sorted(overlap)))
+
+    on_disk = {name for name in os.listdir(HEADER_DIR) if name.endswith(".h")}
+    classified = set(PUBLIC_HEADERS) | set(INTERNAL_HEADERS)
+    for name in sorted(on_disk - classified):
+        errors.append(
+            f"{name} is under src/RenderGraph/ but is neither public nor internal; "
+            "add it to PUBLIC_HEADERS or INTERNAL_HEADERS in scripts/render_graph_docs.py"
+        )
+    for name in sorted(classified - on_disk):
+        errors.append(f"{name} is listed in scripts/render_graph_docs.py but does not exist under src/RenderGraph/")
+
+    documented = _documented_header_names()
+    if not documented:
+        errors.append(
+            "docs/RenderGraph.md has no public-surface block; expected the list between "
+            f"{PUBLIC_SURFACE_BEGIN} and {PUBLIC_SURFACE_END}"
+        )
+    elif documented != classified:
+        if documented - classified:
+            errors.append("docs/RenderGraph.md lists an unclassified header: " + ", ".join(sorted(documented - classified)))
+        if classified - documented:
+            errors.append("docs/RenderGraph.md omits: " + ", ".join(sorted(classified - documented)))
+
+    return errors
 
 
 def doxygen_version(doxygen: str) -> str:
@@ -63,7 +179,7 @@ def render_doxyfile(output_dir: str, warn_log: str) -> str:
     with open(DOXYFILE_TEMPLATE, encoding="utf-8") as handle:
         config = handle.read()
     config = config.replace("@DOXYGEN_OUTPUT_DIR@", output_dir)
-    config = config.replace("@RENDERGRAPH_HEADER_DIR@", HEADER_DIR)
+    config = config.replace("@RENDERGRAPH_PUBLIC_INPUTS@", " \\\n                         ".join(public_inputs()))
     config = config.replace("@RENDERGRAPH_OVERVIEW@", OVERVIEW)
     config = config.replace("@DOXYGEN_WARNLOG@", warn_log)
     # Graphviz is optional: enable graphs when `dot` is available.
@@ -214,6 +330,16 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="verify coverage and that the Markdown is current")
     parser.add_argument("--output-dir", default=os.environ.get("RENDER_GRAPH_DOCS_DIR", os.path.join(REPO_ROOT, "build", "docs", "render_graph")))
     args = parser.parse_args()
+
+    # The surface is the contract, so a stale or incomplete classification fails before Doxygen is
+    # needed: that keeps the check useful on a machine without the docs toolchain.
+    classification_errors = verify_header_classification()
+    if classification_errors:
+        print("render_graph_docs: the stated public header surface is out of date:")
+        for error in classification_errors:
+            print(f"  - {error}")
+        print("  Update scripts/render_graph_docs.py and the public-surface block in docs/RenderGraph.md.")
+        return 1
 
     doxygen = find_doxygen()
     if doxygen is None:

@@ -59,9 +59,10 @@ inline VkImageUsageFlags EffectiveImageUsageFlags(VkPhysicalDevice physicalDevic
 /// An opaque handle to memory the injected allocator owns.
 ///
 /// The graph plans aliasing - which resources share a block and at what offsets - but it does not own the
-/// memory. A block therefore crosses the boundary as this handle rather than as a VMA type, so a caller
-/// whose allocator is not VMA's can implement `IGraphResourceAllocator` without including `vk_mem_alloc.h`.
-/// The concrete allocator is the only thing that interprets `pImpl`.
+/// memory. A block therefore crosses the boundary as this handle rather than as a VMA type, and the concrete
+/// allocator is the only thing that interprets `pImpl`. The rest of `IGraphResourceAllocator` still speaks
+/// `VmaMemoryUsage`, so an implementation does include `vk_mem_alloc.h` today; the block handle keeps the
+/// *allocation* opaque while that VMA vocabulary remains part of the stated surface.
 struct GraphMemoryBlock
 {
     void* pImpl = nullptr;  ///< Allocator-private identity; null means "no block".

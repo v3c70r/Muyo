@@ -429,8 +429,9 @@ target_include_directories(muyo SYSTEM
     )
 
 # RenderGraphResourceDesc.h uses VmaMemoryUsage in a public struct, so VMA is part of muyo_rg's
-# interface whether or not that is desirable - a consumer cannot compile the public surface without it.
-# #53 removes VMA from the surface; until then it has to be reachable.
+# stated public interface whether or not that is desirable - a consumer cannot compile the surface
+# without it. Removing the VMA vocabulary is #293; until then VMA has to be reachable, and
+# docs/RenderGraph.md says so under "Public surface".
 target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
 
 # The graph's own headers include each other by bare name, so `src/RenderGraph` is part of its interface,
@@ -625,6 +626,7 @@ add_executable(tests
     src/tests/DescriptorHeapProbeTests.cpp
     src/tests/DescriptorHeapServiceTests.cpp
     src/tests/DeviceCapabilityTests.cpp
+    src/tests/ErrorReportingTests.cpp
     src/tests/FrameSyncTest.cpp
     src/tests/RenderGraphBuilderTest.cpp
     src/tests/RenderGraphFinalNodeTest.cpp

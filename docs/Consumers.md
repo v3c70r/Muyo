@@ -50,13 +50,14 @@ tracking issue and, where it blocks a consumer, is marked.
 | A node can bind a byte range of a buffer, so one arena serves many tensors | muyo-llm | holds | — |
 | Graph-managed transients have a defined lifetime and aliasing policy | muyo-llm | holds | — |
 | Device, allocator and descriptor allocation are injected, not global | muyo-llm | holds | — |
-| The graph's resource dependency is a narrow interface it owns — no engine resource types or global lookups in its public headers | muyo-renderer, muyo-llm | **gap** | #272 |
-| A stated public surface (what is API and what is detail) | all | **gap** | #53 |
+| The graph's resource dependency is a narrow interface it owns — no engine resource types or global lookups in its public headers | muyo-renderer, muyo-llm | holds | — (landed in #272) |
+| A stated public surface (what is API and what is detail) | all | holds | — (listed in `docs/RenderGraph.md`, checked by `render_graph_docs.py`) |
 | Specialization constants are applied at pipeline creation | muyo-llm | holds | — |
 | Cooperative matrix can be enabled at device creation | muyo-llm | holds | — |
 | Cooperative matrix property sets can be read, to pick a kernel shape | muyo-llm | **gap** | #72 |
-| A client can supply SPIR-V bytes / a shader search path, not only a file name | muyo-llm | **gap** | #53 |
+| A client can supply SPIR-V bytes / a shader search path, not only a file name | muyo-llm | **gap** | #292 |
 | Declaration errors fail at `Build()`, naming the graph entity | muyo-llm | holds | — |
+| Declaration and configuration errors throw a standard exception a caller can catch, and never abort; a failed Vulkan call aborts with its result and call site | muyo-llm, muyo-renderer | holds | — |
 
 ## Rules for consumers and for changes
 
