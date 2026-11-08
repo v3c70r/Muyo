@@ -30,14 +30,14 @@ std::optional<ShaderAssetKey> ShaderCache::LoadShader(const std::string& shaderN
 {
     const std::filesystem::path shaderPath = std::filesystem::path("shaders") / (shaderName + ".spv");
 
-    SpirvCode spirv = ReadSpv(shaderPath);
+    std::vector<uint32_t> spirv = Muyo::ReadSpirvFile(shaderPath);
     if (spirv.empty()) return std::nullopt;
 
     const ShaderAssetKey key{ShaderKey(shaderName), HashSpirv(spirv)};
     if (m_assets.find(key) != m_assets.end()) return key;
 
     // Reflection first: if it throws, no module has been created that would leak.
-    ShaderReflection reflection = FetchShaderReflection(spirv);
+    Muyo::ShaderReflection reflection = Muyo::FetchShaderReflection(spirv);
 
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;

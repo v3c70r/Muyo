@@ -326,7 +326,11 @@ target_compile_features(muyo PUBLIC cxx_std_20)
 target_compile_features(muyo_device PUBLIC cxx_std_20)
 target_compile_features(muyo_rg PUBLIC cxx_std_20)
 
-target_link_libraries(muyo_device PUBLIC ${Vulkan_LIBRARIES} VulkanMemoryAllocator)
+# SPIRV-Reflect is PUBLIC because `ShaderReflectionFetcher.h` moved here with the reflection code: a
+# consumer of `muyo_device` that includes it compiles against `spirv_reflect.h`. The reflection and the
+# VMA graph resources are device-level code (they talk to Vulkan, not to the renderer), which is what lets
+# `muyo_rg` link the device alone (#272).
+target_link_libraries(muyo_device PUBLIC ${Vulkan_LIBRARIES} VulkanMemoryAllocator SPIRV-Reflect)
 
 # `IsRayTracingSupported` is inline in the device's public header, so a consumer has to compile it with
 # the same definition as the library's translation units. `add_compile_definitions` is directory-scoped
@@ -344,6 +348,12 @@ endif()
 target_include_directories(muyo_device
     PUBLIC
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderDevice>
+        # `VkGraphResourceAllocator.h` implements the graph-owned resource interface, whose header lives
+        # in `src/RenderGraph`; a consumer that includes the allocator therefore needs that path. This is
+        # an include edge, not a link edge: the interface is pure virtual and header-only, and
+        # `muyo_device` links nothing from `muyo_rg` (#272).
+        $<BUILD_INTERFACE:${MUYO_ROOT}/src>
+        $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderGraph>
     )
 # VMA is in VkMemoryAllocator.h's public interface, so a consumer compiles against its headers.
 target_include_directories(muyo_device SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
@@ -388,6 +398,14 @@ target_include_directories(muyo SYSTEM
 # #53 removes VMA from the surface; until then it has to be reachable.
 target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
 
+# The graph's own headers include each other by bare name, so `src/RenderGraph` is part of its interface,
+# and `src` is what makes `RenderGraph/...` resolvable to a consumer that links the target.
+target_include_directories(muyo_rg
+    PUBLIC
+        $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderGraph>
+        $<BUILD_INTERFACE:${MUYO_ROOT}/src>
+    )
+
 # SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: RenderGraphBuilder.h includes
 # ShaderReflectionFetcher.h, which includes spirv_reflect.h, so a consumer compiles against its headers
 # - and `muyo` compiles ShaderReflectionFetcher.cpp, which calls spvReflect*. Only the in-tree `tests`
@@ -395,11 +413,11 @@ target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_
 # from an object the linker pulled in on demand (filed by muyo-llm as Finding F1).
 target_link_libraries(muyo imgui imguizmo imnodes SPIRV-Reflect ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer muyo_device)
 
-# muyo_rg does not stand alone today: it reaches into the engine for resource managers and the shader
-# reflection service. Declared rather than implied, so the coupling is visible where a consumer meets it -
-# and so #53 has one line to change when those become injected services. The device dependency is the
-# real bottom edge and is named separately, so it stays when the engine edge goes (#272/#53).
-target_link_libraries(muyo_rg PUBLIC muyo_device muyo)
+# The graph depends on the device and on nothing else. Resource allocation is injected as
+# `RenderGraph::IGraphResourceAllocator`, implemented by `muyo_device`'s `VkGraphResourceAllocator`;
+# shader reflection lives in `muyo_device` too. The engine link edge is gone (#272), and #53's header
+# split/packaging is separate.
+target_link_libraries(muyo_rg PUBLIC muyo_device)
 
 file(GLOB main_SRC
     "src/app/helloVulkan.cpp"
@@ -587,6 +605,14 @@ target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/Ren
 # covering for it rather than the libraries (#76).
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo muyo_rg)
 include(Catch)
+
+# The graph's own test binary: it links `muyo_rg` and `muyo_device` and nothing from the engine. This is
+# issue #272's "`muyo_rg` builds and its tests run without linking `muyo`" as an executable rather than a
+# claim: a reintroduced engine dependency fails this link.
+add_executable(rg_tests src/tests/RenderGraphStandaloneTests.cpp)
+target_include_directories(rg_tests PRIVATE ${catch2_SOURCE_DIR}/src)
+target_link_libraries(rg_tests PRIVATE Catch2::Catch2WithMain muyo_rg muyo_device)
+catch_discover_tests(rg_tests)
 
 # ThreadSanitizer cannot start on a kernel that randomises mappings beyond its shadow layout: every
 # invocation, including the one `catch_discover_tests` performs at *build* time, dies with

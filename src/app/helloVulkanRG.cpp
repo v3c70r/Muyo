@@ -39,6 +39,7 @@
 #include "Texture.h"
 #include "VertexBuffer.h"
 #include "VkExtFuncsLoader.h"
+#include "VkGraphResourceAllocator.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 
@@ -183,9 +184,12 @@ int main()
         // pass starts (the upload records vkCmdCopyBuffer). Inject the same service the UI sampler is
         // acquired from, or the pushed sampler index and the bound resource heap would be different
         // heaps.
+        // The graph's allocator, implemented by the device: the graph owns the policy and receives the
+        // mechanism (#272). It must outlive the builder, which releases its resources through it.
+        const auto graphAllocator = CreateVkGraphResourceAllocator(GetRenderDevice());
         RenderGraphBuilder builder(
             RenderGraphServices{
-                .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap},
+                .device = GetRenderDevice(), .resourceAllocator = graphAllocator.get(), .descriptorHeap = &uiHeap},
             kImagesInFlight);
         // Record every execution for the lane view. The sink's presence is what turns tracing on, and it costs
         // one null check per node when the page is not shown.

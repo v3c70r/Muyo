@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "ShaderAsset.h"
+#include "RenderGraphShader.h"
 
 namespace Muyo::RenderGraph
 {

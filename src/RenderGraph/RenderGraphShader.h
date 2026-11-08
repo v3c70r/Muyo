@@ -3,43 +3,57 @@
 
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 
-#include "ShaderReflection.h"
 #include "ShaderReflectionFetcher.h"
-namespace Muyo
-{
-// Centralized shader manager
 
+namespace Muyo::RenderGraph
+{
+/// FNV-1a hash of a shader's name, used as one half of `ShaderAssetKey`.
+///
+/// A hash rather than the string keeps the key trivially copyable and cheap to compare; the collision
+/// risk is accepted because a collision also has to agree on `contentHash` to be mistaken for a hit.
 class ShaderKey
 {
 public:
+    /// The stored hash type.
     using Value = uint32_t;
 
+    /// Construct the zero (invalid) key.
     constexpr ShaderKey() = default;
+    /// @param s Shader name, without the `.spv` suffix.
     explicit constexpr ShaderKey(std::string_view s) : m_value(Hash(s)) {}
 
+    /// @return The hash.
     constexpr Value GetValue() const { return m_value; }
 
-    // Required for std::map
+    /// @param rhs Key to compare.
+    /// @return True when this key sorts before `rhs`; required for `std::map`.
     constexpr bool operator<(const ShaderKey& rhs) const noexcept { return m_value < rhs.m_value; }
 
-    constexpr bool operator==(const ShaderKey&) const = default;
+    /// @param rhs Key to compare.
+    /// @return True when both keys hold the same hash.
+    constexpr bool operator==(const ShaderKey& rhs) const = default;
 
+    /// Hashes a `ShaderKey` for the `std::unordered_map` used by the caches.
     struct Hasher
     {
+        /// @param key Key to hash.
+        /// @return Its hash.
         size_t operator()(const ShaderKey& key) const noexcept { return std::hash<uint64_t>{}(key.GetValue()); }
     };
+    /// @return True when this key names a shader rather than the default-constructed zero.
     constexpr bool IsValid() const { return m_value != 0; }
 
 private:
-    Value m_value = 0;
+    Value m_value = 0;  ///< The hash, or zero for the invalid key.
 
+    /// @param s Shader name.
+    /// @return Its FNV-1a hash.
     static constexpr Value Hash(std::string_view s)
     {
         uint32_t h = 2166136261U;
@@ -87,7 +101,7 @@ struct ShaderAssetKey
 /// It must stay so: changing either the iteration order or the constant changes every pipeline key and
 /// turns a shared cache into a cold one. The module cache and the pipeline cache therefore agree on
 /// what "the same shader" means.
-inline uint64_t HashSpirv(const SpirvCode& code)
+inline uint64_t HashSpirv(const std::vector<uint32_t>& code)
 {
     uint64_t hash = 1469598103934665603ULL;
     for (const uint32_t word : code)
@@ -98,30 +112,26 @@ inline uint64_t HashSpirv(const SpirvCode& code)
     return hash;
 }
 
+/// One loaded shader: its identity, SPIR-V words, module and reflection.
 struct ShaderAsset
 {
-    ShaderAssetKey key;
-    std::vector<uint32_t> spirv;
-    VkShaderModule shaderModule;
-    ShaderReflection shaderReflection;
+    ShaderAssetKey key;                       ///< Identity of the loaded content.
+    std::vector<uint32_t> spirv;              ///< The SPIR-V words the module was created from.
+    VkShaderModule shaderModule;              ///< The module the graph's pipelines use.
+    Muyo::ShaderReflection shaderReflection;  ///< Reflection of `spirv`, used to compile descriptors.
 };
 
-inline SpirvCode ReadSpv(const std::filesystem::path& spvPath)
-{
-    std::ifstream file(spvPath, std::ios::binary | std::ios::ate);
-    if (!file) throw std::runtime_error("Failed to open file");
-    std::streamsize size = file.tellg();
-    if (size % sizeof(uint32_t) != 0) throw std::runtime_error("SPIR-V file size is not a multiple of 4");
-    file.seekg(0, std::ios::beg);
-    SpirvCode code(static_cast<size_t>(size) / sizeof(uint32_t));
-    if (!file.read(reinterpret_cast<char*>(code.data()), size)) throw std::runtime_error("Failed to read file");
-    return code;
-}
-
+/// Loads and owns shader modules for one device.
+///
+/// The graph-owned counterpart of the engine's former `ShaderAssetManager`, moved so the graph's public
+/// headers no longer include the engine's shader header (#272). A builder without an injected
+/// `ShaderCache` owns one of these and its modules live as long as the builder.
 class ShaderAssetManager
 {
 public:
+    /// @param device Device the modules are created on; must outlive this manager.
     explicit ShaderAssetManager(VkDevice device) : m_device(device) {}
+    /// Destroy every module this manager created.
     ~ShaderAssetManager()
     {
         for (auto& [key, asset] : m_shaderAssets)
@@ -130,11 +140,20 @@ public:
         }
     }
 
+    /// Owns Vulkan handles, so copying would double-destroy a module.
+    ShaderAssetManager(const ShaderAssetManager&) = delete;
+    /// See the copy constructor.
+    ShaderAssetManager& operator=(const ShaderAssetManager&) = delete;
+
+    /// Load `shaders/<shaderName>.spv`, or return the identity of the entry already loaded.
+    /// @param shaderName Shader name without the `.spv` suffix.
+    /// @return The entry's key, or `std::nullopt` when the file is empty or the module cannot be created.
+    /// @throws std::runtime_error when the file cannot be read.
     std::optional<ShaderAssetKey> LoadShader(const std::string& shaderName)
     {
-        std::filesystem::path shaderPath = std::filesystem::path("shaders") / (shaderName + ".spv");
+        const std::filesystem::path shaderPath = std::filesystem::path("shaders") / (shaderName + ".spv");
 
-        SpirvCode spirv = ReadSpv(shaderPath);
+        std::vector<uint32_t> spirv = Muyo::ReadSpirvFile(shaderPath);
         if (spirv.empty())
         {
             return std::nullopt;
@@ -148,36 +167,34 @@ public:
         }
 
         // Reflection first: if it throws, no module has been created that would leak.
-        ShaderReflection reflection = FetchShaderReflection(spirv);
+        Muyo::ShaderReflection reflection = Muyo::FetchShaderReflection(spirv);
 
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = spirv.size() * sizeof(uint32_t);
         createInfo.pCode = spirv.data();
 
-        VkShaderModule shaderModule;
+        VkShaderModule shaderModule = VK_NULL_HANDLE;
         if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
         {
             return std::nullopt;  // Failed to create shader module
         }
 
         ShaderAsset asset{.key = key, .spirv = spirv, .shaderModule = shaderModule, .shaderReflection = reflection};
-        m_shaderAssets[key] = asset;
+        m_shaderAssets[key] = std::move(asset);
         return key;
     }
 
+    /// @param key Key returned by `LoadShader`.
+    /// @return The asset for `key`, or nullptr when it is not loaded.
     const ShaderAsset* GetShaderAsset(const ShaderAssetKey& key) const
     {
-        auto it = m_shaderAssets.find(key);
-        if (it != m_shaderAssets.end())
-        {
-            return &it->second;
-        }
-        return nullptr;
+        const auto it = m_shaderAssets.find(key);
+        return it == m_shaderAssets.end() ? nullptr : &it->second;
     }
 
 private:
-    VkDevice m_device;
-    std::unordered_map<ShaderAssetKey, ShaderAsset, ShaderAssetKey::Hasher> m_shaderAssets;
+    VkDevice m_device;  ///< Device owning the modules.
+    std::unordered_map<ShaderAssetKey, ShaderAsset, ShaderAssetKey::Hasher> m_shaderAssets;  ///< Loaded entries.
 };
-}  // namespace Muyo
+}  // namespace Muyo::RenderGraph

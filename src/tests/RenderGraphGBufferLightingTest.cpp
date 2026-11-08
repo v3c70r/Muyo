@@ -73,7 +73,7 @@ struct Rgba
 /// Copy an RGBA16F target back to the host. The caller states the layout the graph left it in: a
 /// colour target whose last use is a write stays COLOR_ATTACHMENT_OPTIMAL, one that a later node
 /// sampled is SHADER_READ_ONLY_OPTIMAL.
-std::vector<Rgba> ReadColor(const ImageResource* pImage, VkImageLayout currentLayout)
+std::vector<Rgba> ReadColor(const IGraphImage* pImage, VkImageLayout currentLayout)
 {
     const size_t pixelCount = static_cast<size_t>(kExtent) * kExtent;
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, pixelCount * 8);
@@ -113,7 +113,7 @@ std::vector<Rgba> ReadColor(const ImageResource* pImage, VkImageLayout currentLa
 }
 
 /// Copy a D32 depth target back to the host.
-std::vector<float> ReadDepth(const ImageResource* pImage)
+std::vector<float> ReadDepth(const IGraphImage* pImage)
 {
     const size_t pixelCount = static_cast<size_t>(kExtent) * kExtent;
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, pixelCount * 4);
@@ -187,7 +187,7 @@ struct GBufferHarness
     void Run() { builder->Execute(); }
 };
 
-std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting)
+std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting, RenderGraph::IGraphResourceAllocator& allocator)
 {
     auto pHarness = std::make_unique<GBufferHarness>();
     GBufferHarness& harness = *pHarness;
@@ -293,11 +293,10 @@ std::unique_ptr<GBufferHarness> MakeHarness(bool bAddLighting)
     harness.pLightCount = GetRenderResourceManager()->GetUniformBuffer<uint32_t>("GBufferTestLightCount");
     harness.pLightCount->SetData(0u);
 
-    harness.builder =
-        std::make_unique<RenderGraphBuilder>(RenderGraphServices{.device = GetRenderDevice(),
-                                                                 .resourceManager = GetRenderResourceManager(),
-                                                                 .descriptorHeap = &harness.heap},
-                                             1);
+    harness.builder = std::make_unique<RenderGraphBuilder>(
+        RenderGraphServices{
+            .device = GetRenderDevice(), .resourceAllocator = &allocator, .descriptorHeap = &harness.heap},
+        1);
     RenderGraphBuilder& builder = *harness.builder;
 
     const auto addColorTarget = [&builder](const char* name)
@@ -554,17 +553,17 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: GBUFFER node writes the f
         SKIP("descriptor heap not enabled on this device; the GBUFFER node is heap-only");
     }
 
-    auto pHarness = MakeHarness(/*bAddLighting=*/false);
+    auto pHarness = MakeHarness(/*bAddLighting=*/false, *GetGraphAllocator());
     pHarness->Run();
 
-    const auto* pPosition = dynamic_cast<const ImageResource*>(pHarness->builder->ResolveResource("GBufferPositionAO"));
+    const auto* pPosition = dynamic_cast<const IGraphImage*>(pHarness->builder->ResolveResource("GBufferPositionAO"));
     const auto* pAlbedo =
-        dynamic_cast<const ImageResource*>(pHarness->builder->ResolveResource("GBufferAlbedoTransmittance"));
+        dynamic_cast<const IGraphImage*>(pHarness->builder->ResolveResource("GBufferAlbedoTransmittance"));
     const auto* pNormal =
-        dynamic_cast<const ImageResource*>(pHarness->builder->ResolveResource("GBufferNormalRoughness"));
+        dynamic_cast<const IGraphImage*>(pHarness->builder->ResolveResource("GBufferNormalRoughness"));
     const auto* pMetalness =
-        dynamic_cast<const ImageResource*>(pHarness->builder->ResolveResource("GbufferMetalnessTranslucency"));
-    const auto* pDepth = dynamic_cast<const ImageResource*>(pHarness->builder->ResolveResource("GBufferDepth"));
+        dynamic_cast<const IGraphImage*>(pHarness->builder->ResolveResource("GbufferMetalnessTranslucency"));
+    const auto* pDepth = dynamic_cast<const IGraphImage*>(pHarness->builder->ResolveResource("GBufferDepth"));
     REQUIRE(pPosition != nullptr);
     REQUIRE(pAlbedo != nullptr);
     REQUIRE(pNormal != nullptr);
@@ -667,13 +666,13 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: direct OPAQUE_LIGHTING is
         SKIP("descriptor heap not enabled on this device; the LIGHTING node is heap-only");
     }
 
-    auto pHarness = MakeHarness(/*bAddLighting=*/true);
+    auto pHarness = MakeHarness(/*bAddLighting=*/true, *GetGraphAllocator());
     const uint32_t center = kExtent / 2;
 
     // The GBuffer must have survived the node boundary and the sampled layout transition; otherwise a
     // black composite would say nothing about the lighting shader.
     const auto* pAlbedo =
-        dynamic_cast<const ImageResource*>(pHarness->builder->ResolveResource("GBufferAlbedoTransmittance"));
+        dynamic_cast<const IGraphImage*>(pHarness->builder->ResolveResource("GBufferAlbedoTransmittance"));
     REQUIRE(pAlbedo != nullptr);
     pHarness->Run();
     const Rgba gbufferAlbedo = PixelAt(ReadColor(pAlbedo, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL), center, center);
@@ -684,7 +683,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: direct OPAQUE_LIGHTING is
     // No lights. There is no IBL ambient and no RSM term, so the composite must be black everywhere.
     pHarness->pLightCount->SetData(0u);
     pHarness->Run();
-    const auto* pComposite = dynamic_cast<const ImageResource*>(pHarness->builder->ResolveResource("Composite"));
+    const auto* pComposite = dynamic_cast<const IGraphImage*>(pHarness->builder->ResolveResource("Composite"));
     REQUIRE(pComposite != nullptr);
     const std::vector<Rgba> unlit = ReadColor(pComposite, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     REQUIRE(CountNonBlack(unlit) == 0);

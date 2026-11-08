@@ -98,7 +98,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: two builders share 
     CHECK(cache.GetDevice() == device->GetDevice());
 
     const RenderGraphServices services{
-        .device = device, .resourceManager = GetRenderResourceManager(), .pipelineCache = &cache};
+        .device = device, .resourceAllocator = GetGraphAllocator(), .pipelineCache = &cache};
     const RenderGraphNodeCreateInfo node = MakeCacheNode("SharedCacheNode", "SharedCacheOut", 7);
 
     VkPipeline firstPipeline = VK_NULL_HANDLE;
@@ -165,11 +165,8 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "PipelineCache: serialized data round-tr
     REQUIRE(pOut != nullptr);
 
     const RenderGraphNodeCreateInfo node = MakeCacheNode("SerializedCacheNode", "SerializedCacheOut", 7);
-    const auto servicesFor = [device](PipelineCache* cache)
-    {
-        return RenderGraphServices{
-            .device = device, .resourceManager = GetRenderResourceManager(), .pipelineCache = cache};
-    };
+    const auto servicesFor = [this, device](PipelineCache* cache)
+    { return RenderGraphServices{.device = device, .resourceAllocator = GetGraphAllocator(), .pipelineCache = cache}; };
 
     std::vector<std::uint8_t> saved;
     {

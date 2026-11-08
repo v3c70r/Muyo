@@ -99,7 +99,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: two builders reuse 
     CHECK(cache.GetModuleCreateCount() == 2);
 
     const RenderGraphServices services{
-        .device = device, .resourceManager = GetRenderResourceManager(), .shaderCache = &cache};
+        .device = device, .resourceAllocator = GetGraphAllocator(), .shaderCache = &cache};
     RenderGraphNodeCreateInfo node = MakeShaderCacheNode("ShaderCacheNode");
 
     VkPipeline firstPipeline = VK_NULL_HANDLE;

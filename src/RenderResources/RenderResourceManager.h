@@ -15,16 +15,12 @@ namespace Muyo
 
 inline bool FormatSupportsOptimalTilingDepthAttachment(VkFormat format)
 {
-    VkFormatProperties properties;
-    vkGetPhysicalDeviceFormatProperties(GetRenderDevice()->GetPhysicalDevice(), format, &properties);
-    return (properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U;
+    return RenderGraph::FormatSupportsOptimalTilingDepthAttachment(GetRenderDevice()->GetPhysicalDevice(), format);
 }
 
 inline bool FormatSupportsOptimalTilingColorAttachment(VkFormat format)
 {
-    VkFormatProperties properties;
-    vkGetPhysicalDeviceFormatProperties(GetRenderDevice()->GetPhysicalDevice(), format, &properties);
-    return properties.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+    return RenderGraph::FormatSupportsOptimalTilingColorAttachment(GetRenderDevice()->GetPhysicalDevice(), format);
 }
 
 /// The usage flags an image of this format is created with, before the caller's own are added.
@@ -40,11 +36,7 @@ inline bool FormatSupportsOptimalTilingColorAttachment(VkFormat format)
 /// @return The flags to create the image with.
 inline VkImageUsageFlags EffectiveImageUsageFlags(VkFormat format, VkImageUsageFlags nAdditionalUsageFlags)
 {
-    const bool bIsColorAttachment =
-        FormatSupportsOptimalTilingColorAttachment(format) && !FormatSupportsOptimalTilingDepthAttachment(format);
-    return nAdditionalUsageFlags |
-           (bIsColorAttachment ? VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT
-                               : VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    return RenderGraph::EffectiveImageUsageFlags(GetRenderDevice()->GetPhysicalDevice(), format, nAdditionalUsageFlags);
 }
 
 class RenderResourceManager

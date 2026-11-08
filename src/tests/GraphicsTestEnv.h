@@ -1,6 +1,7 @@
 #pragma once
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -10,10 +11,12 @@
 #include "Material.h"
 #include "MeshResourceManager.h"
 #include "PerObjResourceManager.h"
+#include "RenderGraph/RenderGraphResources.h"
 #include "RenderResourceManager.h"
 #include "SamplerManager.h"
 #include "SceneManager.h"
 #include "VkExtFuncsLoader.h"
+#include "VkGraphResourceAllocator.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 
@@ -73,6 +76,9 @@ public:
     /// pinned device is no longer enumerated (#157). A test whose claim is about "the device" has to know
     /// when that fallback moved the run, so it can scope the claim to the device the run started on.
     static const std::string &GetFirstDeviceName() { return s_firstDeviceName; }
+
+    /// @return The graph's resource allocator, valid for the lifetime of this fixture.
+    RenderGraph::IGraphResourceAllocator *GetGraphAllocator() const { return m_graphAllocator.get(); }
 
 private:
     /// Runs the construction steps. Called from the constructor, so a throw can be caught and cleaned up.
@@ -195,6 +201,9 @@ private:
         m_bCommandPoolsCreated = true;
         GetMemoryAllocator()->Initalize(GetRenderDevice());
         m_bMemoryAllocatorInitialized = true;
+        // The graph's VMA-backed allocator, the device-side implementation of the graph-owned resource
+        // interface (#272). One per fixture: builders own their resources and release them through it.
+        m_graphAllocator = CreateVkGraphResourceAllocator(GetRenderDevice());
         GetRenderResourceManager()->Initialize();
         GetDescriptorManager()->CreateDescriptorPool();
         m_bDescriptorPoolCreated = true;
@@ -203,7 +212,6 @@ private:
         GetSamplerManager()->createSamplers();
         m_bSamplersCreated = true;
     }
-
     /// Tears down everything this fixture created, child before parent.
     ///
     /// Called by the destructor and by the constructor's `catch`, so it runs against partial construction:
@@ -235,6 +243,9 @@ private:
             GetRenderDevice()->DestroyCommandPools();
             m_bCommandPoolsCreated = false;
         }
+        // The graph allocator holds no Vulkan objects of its own, but reset it while the memory allocator
+        // it refers to is still alive, and before the fixture's own teardown releases that allocator.
+        m_graphAllocator.reset();
         if (m_bMemoryAllocatorInitialized)
         {
             GetMemoryAllocator()->Unintialize();
@@ -253,6 +264,8 @@ protected:
     DrawLists m_mDrawList;
 
 private:
+    /// Device-side implementation of the graph's resource/allocator interface (#272).
+    std::unique_ptr<RenderGraph::IGraphResourceAllocator> m_graphAllocator;
     /// Does the loader offer this instance extension? Asked before `vkCreateInstance`, because enabling
     /// an absent one fails instance creation for every test rather than only the surface ones.
     static bool HasInstanceExtension(const char *name)

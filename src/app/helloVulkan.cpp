@@ -48,6 +48,7 @@
 #include "Texture.h"
 #include "UniformBuffer.h"
 #include "VkExtFuncsLoader.h"
+#include "VkGraphResourceAllocator.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 
@@ -458,10 +459,11 @@ int main(int argc, char **argv)
 
             // One builder for the process: Build() is per frame, and the resource/pipeline/descriptor caches
             // make an unchanged declaration cheap. Only the acquired swapchain image changes per frame.
-            RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
-                                                           .resourceManager = GetRenderResourceManager(),
-                                                           .descriptorHeap = &heap},
-                                       kImagesInFlight);
+            const auto graphAllocator = CreateVkGraphResourceAllocator(GetRenderDevice());
+            RenderGraphBuilder builder(
+                RenderGraphServices{
+                    .device = GetRenderDevice(), .resourceAllocator = graphAllocator.get(), .descriptorHeap = &heap},
+                kImagesInFlight);
             TextureResource *pEnvMap = GetRenderResourceManager()->GetResource<TextureResource>("EnvMap");
             if (pEnvMap == nullptr)
             {

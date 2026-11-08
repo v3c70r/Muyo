@@ -631,6 +631,18 @@ The barrier(s) one use needs: image and buffer lists, plus the device-wide memor
 
 ## `RenderGraphBuilder.h`
 
+### `class Muyo::RenderGraph::IGraphCaptureMarker`
+
+The host's capture-tool marker for a node scope.
+
+A capture backend is host policy, and the graph must not reach one: src/Debug/ScopedMarker.h composes this behaviour for the engine, and the graph used to depend on it just to emit a node marker (#272). A host that wants marker scopes implements this interface around its backend and passes it in RenderGraphServices::captureMarker; without one the graph emits only the Vulkan debug label.
+
+| Member | Description |
+| --- | --- |
+| `virtual ~IGraphCaptureMarker()=default` | Destroy the marker. The host owns it and must outlive the builder that refers to it. |
+| `virtual void Begin(const std::string &name)=0` | Open a marker for a node. Parameters: `name` - Marker name, which is the node's name |
+| `virtual void End()=0` | Close the marker opened by the matching Begin. |
+
 ### `constexpr int MAX_SHADER_STAGES`
 
 Maximum number of shader stages a node may declare (vertex + fragment, or raygen/miss/hit...).
@@ -639,22 +651,22 @@ Maximum number of shader stages a node may declare (vertex + fragment, or raygen
 
 Declares and runs a render graph.
 
-Typical use: RenderGraphBuilderbuilder(RenderGraphServices{.device=GetRenderDevice(), .resourceManager=GetRenderResourceManager(), .descriptorHeap=&heap}); builder.AddResource("Color",ImageResourceDesc{.format=...,.extent=...,.usage=...}); builder.ImportResource("Vertices",meshManager.m_pVertexBuffer); builder.AddNode({.nodeName="Opaque",.queueType=QueueType::GRAPHICS,...}); builder.Build(); builder.Execute();
+Typical use: RenderGraphBuilderbuilder(RenderGraphServices{.device=device, .resourceAllocator=&allocator, .descriptorHeap=&heap}); builder.AddResource("Color",ImageResourceDesc{.format=...,.extent=...,.usage=...}); builder.ImportResource("Vertices",meshManager.m_pVertexBuffer); builder.AddNode({.nodeName="Opaque",.queueType=QueueType::GRAPHICS,...}); builder.Build(); builder.Execute();
 
 Build() is idempotent for a fixed declaration: it topologically sorts the nodes, allocates graph-owned resources, writes descriptor-heap slots, compiles pipelines and plans barriers. A repeated build reuses the allocations, the compiled pipelines, the descriptor slots and - crucially - the per-slot transient arenas, so a per-frame Build() does not reallocate a graph-owned transient. A changed transient declaration or plan drains every in-flight execution before the old arenas are destroyed; an unchanged plan never drains. Execute() records and submits the frame, splitting work across queues when nodes opt into async compute.
 
 | Member | Description |
 | --- | --- |
 | `RenderGraphBuilder(const RenderGraphServices &services, uint32_t inFlightCount=1)` | Parameters: `services` - The device, resource allocator and descriptor allocator the graph uses. Each is required; a missing one is reported by name rather than dereferenced later, and the check throws so it survives NDEBUG; `inFlightCount` - How many executions may be in flight at once. The default of 1 serialises them. Above 1, each slot owns its command buffers, root arena and a complete copy of the graph's transients (see GetTransientMemoryPlan()), and imported resources are bound per execution from that slot's descriptor ring. A graph-owned Persistent resource is shared by every execution and is therefore rejected above one slot; a caller that needs per-execution content imports it and re-points the handle between executions (#83) |
-| `RenderGraphBuilder(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | Transitional: fills the remaining services from the engine's globals, for the callers that still use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is why it is documented as the transition rather than as an equal alternative. Parameters: `renderDevice` - Device used to create pipelines, command buffers and synchronisation; `inFlightCount` - See the services constructor; the default serialises executions |
+| `RenderGraphBuilder(VkRenderDevice *renderDevice, uint32_t inFlightCount=1)` | Convenience: creates the device's VMA-backed resource allocator for renderDevice. Parameters: `renderDevice` - Device used to create pipelines, command buffers and synchronisation; `inFlightCount` - See the services constructor; the default serialises executions |
 | `~RenderGraphBuilder()` | Releases the pipelines this builder created and its command buffers. A pipeline borrowed from an injected PipelineCache is not released: that cache owns it and may still serve another builder. |
 | `const CompiledRenderGraph & GetCompiledGraph() const` | Returns: The graph compiled by the last successful Build(); empty before the first and after a failed Build. Exposed for diagnostics and tests that inspect the compiled pipelines. |
 | `void WaitIdle()` | Block until every submitted execution has completed. Does not record or submit work; use it before reading back an imported resource written by a non-blocking Execute(). |
 | `void ReleaseCachedDeviceObjects()` | Release the descriptor slots and the pipelines this builder owns from earlier Builds. Call only when every execution that used them has completed - the app's swapchain recreation does this right after vkDeviceWaitIdle. The next Build recreates what it needs; graph-owned resources are untouched. |
 | `RenderGraphBuilder & AddResource(const ResourceHandle &handle, ResourceDesc desc)` | Declare a graph-owned resource. It is allocated at Build() from desc. Parameters: `handle` - Name the graph and the nodes use for it; `desc` - Allocation: buffer size, or image format/extent/usage, plus its lifetime Returns: *this for chaining. Throws: `std::runtime_error` - if desc cannot describe an allocation - a zero count/stride, a zero extent, VK_FORMAT_UNDEFINED, zero mips/layers, or usage == 0 - or if it asks for ResourceLifetime::Imported; use ImportResource for a resource the graph does not own |
-| `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IRenderResource *resource, VkImageLayout currentLayout=VK_IMAGE_LAYOUT_UNDEFINED)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. Parameters: `handle` - Name the graph and the nodes use for it; `resource` - The resource; the graph never frees it; `currentLayout` - For an imported image, the layout it is in when an execution begins. The default, VK_IMAGE_LAYOUT_UNDEFINED, promises nothing about its contents: the first node to use it transitions from UNDEFINED, which discards them. A caller importing content produced outside the graph - a scene pass that has not been ported yet, or a capture - passes the layout that content is in, and the graph's first-use barrier transitions from there instead. The graph cannot see the caller's outside writes, so the statement has to stay true for every execution; re-import when the layout changes. A non-UNDEFINED layout on a non-image is rejected Returns: *this for chaining. |
+| `RenderGraphBuilder & ImportResource(const ResourceHandle &handle, const IGraphResource *resource, VkImageLayout currentLayout=VK_IMAGE_LAYOUT_UNDEFINED)` | Register an externally owned resource (mesh buffers, scene data, TLAS...). Not allocated or freed by the graph. Parameters: `handle` - Name the graph and the nodes use for it; `resource` - The resource; the graph never frees it; `currentLayout` - For an imported image, the layout it is in when an execution begins. The default, VK_IMAGE_LAYOUT_UNDEFINED, promises nothing about its contents: the first node to use it transitions from UNDEFINED, which discards them. A caller importing content produced outside the graph - a scene pass that has not been ported yet, or a capture - passes the layout that content is in, and the graph's first-use barrier transitions from there instead. The graph cannot see the caller's outside writes, so the statement has to stay true for every execution; re-import when the layout changes. A non-UNDEFINED layout on a non-image is rejected Returns: *this for chaining. |
 | `std::optional< ResourceDesc > GetResourceDesc(const ResourceHandle &handle) const` | Returns: The allocation description for a graph-owned resource, if any. |
-| `const IRenderResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. Parameters: `handle` - Resource handle Returns: The resource, or nullptr when the handle names nothing the graph can see. |
+| `const IGraphResource * ResolveResource(const ResourceHandle &handle) const` | Resolve a handle to the resource it names: a transient the graph owns (bound into an aliasing block), one the caller imported, or one the engine's resource manager owns. Parameters: `handle` - Resource handle Returns: The resource, or nullptr when the handle names nothing the graph can see. |
 | `const TransientMemoryPlan & GetTransientMemoryPlan() const` | Returns: The last build's transient memory plan: the blocks, their slots, and the two byte totals for one in-flight slot. The builder allocates one copy of this plan per slot, so the graph's total transient memory is reservedBytes * inFlightCount; the plan is shared because every slot binds the same resources at the same offsets. reservedBytes < individualBytes is what sharing memory looks like from outside, and reservedBytes == individualBytes is a legitimate answer for a graph whose transients all overlap in time. Empty before the first build. |
 | `void AddNode(const RenderGraphNodeCreateInfo &nodeCreateInfo)` | Declare a node. Throws: `std::runtime_error` - if the name is already used; a resource use names something neither declared with AddResource nor imported; a use's kind or usage does not agree with the resource it names (a sampled-only image bound as STORAGE_IMAGE, an image role on a buffer); a node's shader count does not match its queue type; a non-CPU node has no execute callback; or its attachments resolve to different extents |
 | `void AddDependency(const std::string &fromNode, const std::string &toNode)` | Add an ordering edge: toNode runs after fromNode. Throws if either node is unknown or if the edge would create a cycle. |
@@ -696,9 +708,10 @@ Deliberately not here yet: a shader source provider (the graph still loads .spv 
 | Member | Description |
 | --- | --- |
 | `VkRenderDevice * device` | Device the graph creates pipelines, command buffers and synchronisation with. Required. |
-| `RenderResourceManager * resourceManager` | Allocates and owns the graph's declared resources. Required. |
+| `IGraphResourceAllocator * resourceAllocator` | Allocates the graph's declared resources. Required. |
 | `DescriptorHeapService * descriptorHeap` | The B-track heap service. Required for every GPU node since B1b; the graph rejects a missing service by name. The descriptor-set allocator is no longer a graph service. |
 | `PipelineCache * pipelineCache` | Optional pipeline cache shared by every builder that is given the same instance (#17). |
+| `IGraphCaptureMarker * captureMarker` | Optional host capture-tool marker, opened and closed around each node's recorded scope. |
 | `ShaderCache * shaderCache` | Optional shader module/reflection cache shared by every builder that is given the same instance (#17). When null, each builder loads and owns its shader modules as before. |
 
 ### `std::unordered_map< ResourceHandle, ResourceDesc > ResourceDescRegistry`
@@ -865,8 +878,7 @@ The graph has already recorded the barriers, opened the render pass (graphics no
 | Member | Description |
 | --- | --- |
 | `QueueType queueType` | Queue this node is running on. |
-| `RenderResourceManager & resourceManager` | Allocates and owns graph-declared resources. |
-| `std::function< const IRenderResource *(const ResourceHandle &)> resolveResource` | Resolve a handle the way the graph does: its own transients first (whose memory belongs to an aliasing block and which are therefore deliberately not registered with the manager), then ones the caller imported, then the manager's. Set by whoever executes; a context built without it falls back to the manager alone. |
+| `std::function< const IGraphResource *(const ResourceHandle &)> resolveResource` | Resolve a handle the way the graph does: an imported resource first, then the execution slot's transient copy, then a graph-owned persistent resource. Set by the builder; a context built without it resolves nothing. |
 | `VkCommandBuffer commandBuffer` | Command buffer to record into. |
 | `VkPipeline pipeline` | Bound pipeline. |
 | `VkPipelineBindPoint bindingPoint` | Bind point for the pipeline. |
@@ -880,7 +892,7 @@ The graph has already recorded the barriers, opened the render pass (graphics no
 | `void FlushRoot()` | Make host root writes visible to this command buffer's shader reads. |
 | `std::optional< uint32_t > GetHeapIndex(const ResourceHandle &handle, ResourceUsage usage) const` | Returns: The heap index for a use, if this node registered it. |
 | `void PushData(uint32_t offset, std::span< const std::byte > bytes)` | Record opaque root data for this node. Offsets are host-defined; the graph only bounds them by the device's push-data limit. The pipeline has no layout, so this backs the shader's push block. Throws: `std::runtime_error` - when the node is not a heap node or the range exceeds the device limit |
-| `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). Parameters: `T` - Concrete resource type (e.g. BufferResource, RenderTarget); `handle` - Resource name used in the node's resourceUses Returns: The resource, or nullptr if it is not of type T. |
+| `T * GetResource(const ResourceHandle &handle) const` | Resolve a graph-declared resource to its concrete pointer (allocated at Build()). Parameters: `T` - Concrete resource type. For a graph-declared buffer or image that is IGraphBuffer or IGraphImage; for an imported one it may be the consumer's own class (the engine's VertexBuffer<Vertex>, RenderTarget, ...), because a consumer resource implements the graph interface and keeps its derived type; `handle` - Resource name used in the node's resourceUses Returns: The resource, or nullptr if it is not of type T. |
 
 ### `struct Muyo::RenderGraph::RenderGraphRootSlice`
 
@@ -1062,19 +1074,20 @@ Both checks exist because neither is caught where the mistake is made: an out-of
 
 ## `RenderGraphResourceDesc.h`
 
-### `IRenderResource * Muyo::RenderGraph::AllocateResource(const ResourceDesc &desc, RenderResourceManager &renderResourceManager, const ResourceHandle &handle)`
+### `std::unique_ptr< IGraphResource > Muyo::RenderGraph::AllocateResource(const ResourceDesc &desc, IGraphResourceAllocator &allocator, VkPhysicalDevice physicalDevice, const ResourceHandle &handle)`
 
-Allocate a physical resource from a desc. The render graph calls this at Build() time.
+Allocate a physical resource from a desc through the injected allocator.
 
-Uses the existing RenderResourceManager as the backend allocator and returns the existing resource if the handle is already allocated, so repeated builds reuse it.
+The graph does not know whether the result is VMA-backed, and that is the point of #272: the concrete type is the allocator's (VkGraphResourceAllocator in muyo_device), and the graph holds it through IGraphResource.
 
 | Parameter | Description |
 | --- | --- |
 | `desc` | Allocation description (buffer or image). |
-| `renderResourceManager` | Backend allocator. |
-| `handle` | Name to allocate under. |
+| `allocator` | Allocator the graph was given. |
+| `physicalDevice` | Physical device the image format is queried against. |
+| `handle` | Name to allocate under; used as the debug name. |
 
-**Returns** — The allocated (or pre-existing) resource.
+**Returns** — The allocated resource.
 
 ### `struct Muyo::RenderGraph::BufferResourceDesc`
 
@@ -1101,6 +1114,15 @@ Describes the allocation of an image (render target / storage image / texture).
 | `VkImageUsageFlags usage` | Vulkan image usage flags. |
 | `ResourceLifetime lifetime` | Lifetime relative to the graph. |
 
+### `VkImageCreateInfo Muyo::RenderGraph::MakeImageCreateInfo(VkPhysicalDevice physicalDevice, const ImageResourceDesc &desc)`
+
+| Parameter | Description |
+| --- | --- |
+| `physicalDevice` | Physical device the format is queried against. |
+| `desc` | Image declaration. |
+
+**Returns** — The create info an image of desc is created with.
+
 ### `std::variant< BufferResourceDesc, ImageResourceDesc > ResourceDesc`
 
 The complete set of resource types the graph knows how to allocate.
@@ -1115,16 +1137,17 @@ How long a resource lives relative to the graph.
 | `Persistent` | Survives the frame boundary (e.g. TAA history, accumulation buffers). |
 | `Imported` | Externally owned (old pass system, swapchain images); graph does not allocate. |
 
-### `bool Muyo::RenderGraph::ResourceMatchesDesc(const IRenderResource &resource, const ResourceDesc &desc)`
+### `bool Muyo::RenderGraph::ResourceMatchesDesc(VkPhysicalDevice physicalDevice, const IGraphResource &resource, const ResourceDesc &desc)`
 
-EffectiveImageUsageFlags derives from the format. Buffers compare usage, memory usage and capacity: a host write that grows a buffer's size within its capacity is not a declaration change, so it must not force a recreation.
+Images compare the full create info the allocator would use, including the attachment bits EffectiveImageUsageFlags derives from the format. Buffers compare usage, memory usage and capacity: a host write that grows a buffer's size within its capacity is not a declaration change, so it must not force a recreation.
 
 | Parameter | Description |
 | --- | --- |
+| `physicalDevice` | Physical device the image format is queried against. |
 | `resource` | Existing resource to test. |
 | `desc` | Declaration from this Build(). |
 
-**Returns** — True when resource already has the characteristics desc declares, so Build() may reuse it. This is the descriptor-keyed half of the reuse rule (#209): a changed extent, format, usage or a size that no longer fits is a mismatch and the resource is recreated; a repeated Build() with the same declaration reuses the same object.
+**Returns** — True when resource already has the characteristics desc declares, so Build() may reuse it.
 
 
 ## `RenderGraphResourceHandle.h`
@@ -1138,6 +1161,234 @@ FNV-1a 64-bit string hash. Reserved for a future hashed resource handle.
 Stable string name identifying a resource, node or imported object in the graph.
 
 The same name used in AddResource / ImportResource is how nodes refer to it in their ResourceUse lists.
+
+
+## `RenderGraphResources.h`
+
+### `VkImageUsageFlags Muyo::RenderGraph::EffectiveImageUsageFlags(VkPhysicalDevice physicalDevice, VkFormat format, VkImageUsageFlags additionalUsageFlags)`
+
+The usage flags an image of this format is created with, before the caller's own are added.
+
+A shared function rather than a line inside one allocator because two paths create images: the engine's resource manager and the graph allocating a transient unbound so it can be bound into a shared block. If those two disagreed about the usage flags, the same declaration would produce two different create infos - which is exactly what the graph's aliasing classes assume cannot happen, since they key an image on its create info.
+
+| Parameter | Description |
+| --- | --- |
+| `physicalDevice` | Physical device the format is queried against. |
+| `format` | Image format. |
+| `additionalUsageFlags` | Usage flags the caller asked for. |
+
+**Returns** — The flags to create the image with.
+
+### `bool Muyo::RenderGraph::FormatSupportsOptimalTilingColorAttachment(VkPhysicalDevice physicalDevice, VkFormat format)`
+
+| Parameter | Description |
+| --- | --- |
+| `physicalDevice` | Physical device to ask. |
+| `format` | Image format. |
+
+**Returns** — True when the format supports an optimal-tiling colour attachment.
+
+### `bool Muyo::RenderGraph::FormatSupportsOptimalTilingDepthAttachment(VkPhysicalDevice physicalDevice, VkFormat format)`
+
+| Parameter | Description |
+| --- | --- |
+| `physicalDevice` | Physical device to ask. |
+| `format` | Image format. |
+
+**Returns** — True when the format supports an optimal-tiling depth/stencil attachment.
+
+### `enum GraphBufferPool`
+
+Which allocation pool a buffer belongs to.
+
+A graph-owned enum rather than the device allocator's PoolType, so the graph can ask for the shader-binding-table alignment without including a device header. VMA's SBT pool exists because a shader binding table's device address must meet shaderGroupBaseAlignment; the caller states the intent and the implementation maps it.
+
+| Value | Description |
+| --- | --- |
+| `Default` | VMA's default allocation path. |
+| `ShaderBindingTable` | Aligned for ray-tracing shader groups. |
+
+### `struct Muyo::RenderGraph::GraphMemoryBlock`
+
+An opaque handle to memory the injected allocator owns.
+
+The graph plans aliasing - which resources share a block and at what offsets - but it does not own the memory. A block therefore crosses the boundary as this handle rather than as a VMA type, so a caller whose allocator is not VMA's can implement IGraphResourceAllocator without including vk_mem_alloc.h. The concrete allocator is the only thing that interprets pImpl.
+
+| Member | Description |
+| --- | --- |
+| `void * pImpl` | Allocator-private identity; null means "no block". |
+| `bool IsNull() const` | Returns: True when this handle names no block. |
+
+### `class Muyo::RenderGraph::IGraphAccelerationStructure`
+
+An acceleration structure the graph can bind and barrier.
+
+A vkCmdPipelineBarrier2 has no barrier type for an acceleration structure, so a queue-family handover is expressed as a buffer barrier on GetBackingBuffer(). That is why the interface exposes the backing buffer and not only the structure handle.
+
+| Member | Description |
+| --- | --- |
+| `virtual const VkAccelerationStructureKHR & GetAccelerationStructure() const =0` | Returns: The structure handle. |
+| `virtual VkDeviceAddress GetDeviceAddress() const =0` | Returns: The device address used to write the structure into a descriptor heap. |
+| `virtual VkBuffer GetBackingBuffer() const =0` | Returns: The buffer the structure's memory lives in. |
+
+### `class Muyo::RenderGraph::IGraphBuffer`
+
+A buffer the graph can address, look at and map without knowing whose class it is.
+
+Implemented by the graph's own transients, by the device's VMA-backed resources (VkGraphResourceAllocator) and by the engine's BufferResource, so an imported buffer and a graph-allocated one are the same thing to the barrier, descriptor and binding paths. This is what replaces the graph's old cast to the engine's concrete buffer class: the graph asks a resource what it is instead of asking whether it is one particular engine class.
+
+| Member | Description |
+| --- | --- |
+| `virtual VkBuffer buffer() const =0` | Returns: The Vulkan buffer handle, or VK_NULL_HANDLE before one has been adopted. |
+| `virtual size_t GetSize() const =0` | Returns: The declared size in bytes. |
+| `virtual size_t GetCapacity() const =0` | Returns: The allocated capacity in bytes, which is at least GetSize(). |
+| `virtual VkBufferUsageFlags GetBufferUsage() const =0` | Returns: The Vulkan usage flags the buffer was created with. |
+| `virtual VmaMemoryUsage GetMemoryUsage() const =0` | Returns: The memory usage the buffer was created with. |
+| `virtual void * Map()=0` | Map this resource's memory on the host. Returns: A host pointer to the start of its storage, or nullptr when it has none. |
+| `virtual void Unmap()=0` | Release a mapping Map took. |
+| `virtual void SetData(const void *pData, size_t size)=0` | Upload content into this buffer. Parameters: `pData` - Source bytes, or nullptr to size the buffer without uploading; `size` - Byte count, at most the storage the resource has |
+
+### `class Muyo::RenderGraph::IGraphImage`
+
+An image the graph can barrier, describe and bind without knowing whose class it is.
+
+The image counterpart of IGraphBuffer, and the reason the graph no longer casts to the engine's ImageResource: an imported swapchain image, an engine render target and a graph transient all answer these questions.
+
+| Member | Description |
+| --- | --- |
+| `virtual VkImage getImage() const =0` | Returns: The Vulkan image handle. |
+| `virtual VkImageView getView() const =0` | Returns: The image's view. |
+| `virtual const VkImageViewCreateInfo & GetImageViewCreateInfo() const =0` | Returns: The create-info used for the view, for descriptor-heap writes that need its description. |
+| `virtual VkFormat GetImageFormat() const =0` | Returns: The image's format. |
+| `virtual VkExtent2D GetImageExtent() const =0` | Returns: The image's extent. |
+| `virtual VkImageUsageFlags GetImageUsage() const =0` | Returns: The usage flags the image was created with. |
+| `virtual uint32_t GetImageMipCount() const =0` | Returns: The created mip level count. |
+| `virtual uint32_t GetImageLayerCount() const =0` | Returns: The created array layer count. |
+
+### `class Muyo::RenderGraph::IGraphResource`
+
+The one thing every resource answers: what kind of Vulkan object it is.
+
+The graph's barrier, descriptor and binding paths switch on GetResourceKind() instead of casting to a concrete engine class. The kind is a property of the resource rather than of its C++ type, which is what lets an imported engine resource and a graph-owned transient be handled by the same code.
+
+| Member | Description |
+| --- | --- |
+| `virtual ~IGraphResource()=default` | Destroy the resource. A consumer-owned resource is destroyed by its owner, not by the graph. |
+| `virtual ResourceKind GetResourceKind() const =0` | Returns: The concrete Vulkan object kind behind this resource. |
+| `virtual VkObjectType GetVkObjectType() const =0` | Returns: The Vulkan object type, for debug labels and validation messages. |
+| `virtual void SetDebugName(const std::string &name) const =0` | Parameters: `name` - Debug name to attach to the Vulkan object |
+
+### `class Muyo::RenderGraph::IGraphResourceAllocator`
+
+What the graph needs from a resource allocator, and nothing more.
+
+The graph owns the policy - transient lifetimes, aliasing, which resource is reused - and receives the mechanism as this interface. muyo_device's VkGraphResourceAllocator is the VMA-backed implementation; a consumer with its own memory manager implements the same interface instead (docs/RenderGraph-Library-Design.md section 4).
+
+Every method is on the allocator rather than on the resource because the graph's transients create a resource unbound, query its requirements, decide the aliasing offsets and only then bind it. A helper that allocated resource and memory together could not do that.
+
+| Member | Description |
+| --- | --- |
+| `virtual ~IGraphResourceAllocator()=default` | Destroy the allocator. Resources it created must already be destroyed. |
+| `virtual std::unique_ptr< IGraphBuffer > CreateBuffer(size_t size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, const std::string &debugName, GraphBufferPool pool=GraphBufferPool::Default)=0` | Create a buffer and the memory it owns. Parameters: `size` - Buffer size in bytes; `usage` - Vulkan buffer usage flags; `memoryUsage` - Intended memory usage; `debugName` - Name used for the Vulkan debug label; may be empty; `pool` - Allocation pool the buffer needs Returns: The buffer, owned by the caller. |
+| `virtual std::unique_ptr< IGraphImage > CreateImage(const VkImageCreateInfo &imageInfo, VmaMemoryUsage memoryUsage, const std::string &debugName)=0` | Create an image and the memory it owns. Parameters: `imageInfo` - Image create info, without a memory binding; `memoryUsage` - Intended memory usage; `debugName` - Name used for the Vulkan debug label; may be empty Returns: The image, owned by the caller. |
+| `virtual VkBuffer CreateUnboundBuffer(VkDeviceSize size, VkBufferUsageFlags usage)=0` | Create a buffer with no memory bound to it. Parameters: `size` - Buffer size in bytes; `usage` - Vulkan buffer usage flags Returns: The unbound buffer. Destroy it with DestroyUnboundBuffer. |
+| `virtual void DestroyUnboundBuffer(VkBuffer buffer)=0` | Destroy a buffer created by CreateUnboundBuffer; its memory belongs to a block. Parameters: `buffer` - Buffer to destroy |
+| `virtual VkMemoryRequirements QueryBufferRequirements(VkBuffer buffer) const =0` | Parameters: `buffer` - A buffer created by CreateUnboundBuffer Returns: Its memory requirements. |
+| `virtual VkImage CreateUnboundImage(const VkImageCreateInfo &imageInfo)=0` | Create an image with no memory bound to it. Parameters: `imageInfo` - Image create info Returns: The unbound image. Destroy it with DestroyUnboundImage. |
+| `virtual void DestroyUnboundImage(VkImage image)=0` | Destroy an image created by CreateUnboundImage; its memory belongs to a block. Parameters: `image` - Image to destroy |
+| `virtual VkMemoryRequirements QueryImageRequirements(VkImage image) const =0` | Parameters: `image` - An image created by CreateUnboundImage Returns: Its memory requirements. |
+| `virtual GraphMemoryBlock AllocateAliasingBlock(const VkMemoryRequirements &requirements, VmaMemoryUsage memoryUsage)=0` | Allocate memory with no resource bound to it. Parameters: `requirements` - Combined requirements of everything that will alias this block; `memoryUsage` - Intended usage of the block Returns: The block. Free it with FreeAliasingBlock once everything bound to it is destroyed. |
+| `virtual void BindBufferToBlock(VkBuffer buffer, GraphMemoryBlock block, VkDeviceSize offset)=0` | Bind an already-created buffer to a byte offset of an aliasing block. Parameters: `buffer` - Buffer to bind; `block` - The block; `offset` - Byte offset inside the block |
+| `virtual void BindImageToBlock(VkImage image, GraphMemoryBlock block, VkDeviceSize offset)=0` | Bind an already-created image to a byte offset of an aliasing block. Parameters: `image` - Image to bind; `block` - The block; `offset` - Byte offset inside the block |
+| `virtual void FreeAliasingBlock(GraphMemoryBlock block)=0` | Free an aliasing block. Every resource bound to it must already be destroyed. Parameters: `block` - The block to free |
+| `virtual void AllocateBuffer(size_t size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkBuffer &buffer, GraphMemoryBlock &memory)=0` | Allocate a buffer and the memory it owns, through out-parameters. Parameters: `size` - Size in bytes; `usage` - Vulkan buffer usage flags; `memoryUsage` - Intended memory usage; `buffer` - Receives the buffer; `memory` - Receives the block owning its memory |
+| `virtual void FreeBuffer(VkBuffer &buffer, GraphMemoryBlock &memory)=0` | Free a buffer and its memory. Parameters: `buffer` - Buffer to destroy; left as a destroyed handle on return; `memory` - Memory to free; left null on return |
+| `virtual void * MapMemory(GraphMemoryBlock block, VkDeviceSize offset=0)=0` | Parameters: `block` - Block to map; `offset` - Byte offset inside the block; zero maps its start Returns: A host pointer to the requested bytes. |
+| `virtual void UnmapMemory(GraphMemoryBlock block)=0` | Release a mapping taken by MapMemory. Parameters: `block` - The mapped block |
+| `virtual VkImageView CreateImageView(const VkImageViewCreateInfo &createInfo)=0` | Create an image view. Parameters: `createInfo` - View create info Returns: The view. |
+| `virtual void DestroyImageView(VkImageView view)=0` | Destroy a view created by CreateImageView. Parameters: `view` - View to destroy |
+
+
+## `RenderGraphShader.h`
+
+### `uint64_t Muyo::RenderGraph::HashSpirv(const std::vector< uint32_t > &code)`
+
+| Parameter | Description |
+| --- | --- |
+| `code` | Shader SPIR-V words. |
+
+**Returns** — A word-wise FNV-1a hash identifying the shader content.
+
+### `struct Muyo::RenderGraph::ShaderAsset`
+
+One loaded shader: its identity, SPIR-V words, module and reflection.
+
+| Member | Description |
+| --- | --- |
+| `ShaderAssetKey key` | Identity of the loaded content. |
+| `std::vector< uint32_t > spirv` | The SPIR-V words the module was created from. |
+| `VkShaderModule shaderModule` | The module the graph's pipelines use. |
+| `Muyo::ShaderReflection shaderReflection` | Reflection of spirv, used to compile descriptors. |
+
+### `struct Muyo::RenderGraph::ShaderAssetKey`
+
+Identity of a loaded shader: its name plus the content it was loaded from.
+
+The name alone is not enough to identify a compiled shader: the .spv file can be rebuilt while the process is running, and a module/reflection pair keyed only on the name would then be served for content it does not match. The content hash makes that a miss instead. It is also what lets a shared cache keep both the old and the new module alive, instead of invalidating a builder that still refers to the old one.
+
+| Member | Description |
+| --- | --- |
+| `ShaderKey name` | FNV-1a hash of the shader name (no .spv suffix). |
+| `uint64_t contentHash` | Hash of the SPIR-V words; see HashSpirv(). |
+| `constexpr bool IsValid() const` | Returns: True when both halves name a loaded shader. |
+| `constexpr bool operator==(const ShaderAssetKey &other) const =default` | Parameters: `other` - Key to compare Returns: True when both keys name the same content of the same shader. |
+
+### `struct Muyo::RenderGraph::ShaderAssetKey::Hasher`
+
+Hashes both halves of the key for the cache maps.
+
+| Member | Description |
+| --- | --- |
+| `size_t operator()(const ShaderAssetKey &key) const noexcept` | Parameters: `key` - Key to hash Returns: Hash over the name and content. |
+
+### `class Muyo::RenderGraph::ShaderAssetManager`
+
+Loads and owns shader modules for one device.
+
+The graph-owned counterpart of the engine's former ShaderAssetManager, moved so the graph's public headers no longer include the engine's shader header (#272). A builder without an injected ShaderCache owns one of these and its modules live as long as the builder.
+
+| Member | Description |
+| --- | --- |
+| `ShaderAssetManager(VkDevice device)` | Parameters: `device` - Device the modules are created on; must outlive this manager |
+| `~ShaderAssetManager()` | Destroy every module this manager created. |
+| `ShaderAssetManager(const ShaderAssetManager &)=delete` | Owns Vulkan handles, so copying would double-destroy a module. |
+| `ShaderAssetManager & operator=(const ShaderAssetManager &)=delete` | See the copy constructor. |
+| `std::optional< ShaderAssetKey > LoadShader(const std::string &shaderName)` | Load shaders/<shaderName>.spv, or return the identity of the entry already loaded. Parameters: `shaderName` - Shader name without the .spv suffix Returns: The entry's key, or std::nullopt when the file is empty or the module cannot be created. Throws: `std::runtime_error` - when the file cannot be read |
+| `const ShaderAsset * GetShaderAsset(const ShaderAssetKey &key) const` | Parameters: `key` - Key returned by LoadShader Returns: The asset for key, or nullptr when it is not loaded. |
+
+### `class Muyo::RenderGraph::ShaderKey`
+
+FNV-1a hash of a shader's name, used as one half of ShaderAssetKey.
+
+A hash rather than the string keeps the key trivially copyable and cheap to compare; the collision risk is accepted because a collision also has to agree on contentHash to be mistaken for a hit.
+
+| Member | Description |
+| --- | --- |
+| `uint32_t Value` | The stored hash type. |
+| `constexpr ShaderKey()=default` | Construct the zero (invalid) key. |
+| `constexpr ShaderKey(std::string_view s)` | Parameters: `s` - Shader name, without the .spv suffix |
+| `constexpr Value GetValue() const` | Returns: The hash. |
+| `constexpr bool operator<(const ShaderKey &rhs) const noexcept` | Parameters: `rhs` - Key to compare Returns: True when this key sorts before rhs; required for std::map. |
+| `constexpr bool operator==(const ShaderKey &rhs) const =default` | Parameters: `rhs` - Key to compare Returns: True when both keys hold the same hash. |
+| `constexpr bool IsValid() const` | Returns: True when this key names a shader rather than the default-constructed zero. |
+
+### `struct Muyo::RenderGraph::ShaderKey::Hasher`
+
+Hashes a ShaderKey for the std::unordered_map used by the caches.
+
+| Member | Description |
+| --- | --- |
+| `size_t operator()(const ShaderKey &key) const noexcept` | Parameters: `key` - Key to hash Returns: Its hash. |
 
 
 ## `RenderGraphTrace.h`
@@ -1752,35 +2003,53 @@ The plan's whole claim is "same slot, therefore never live at the same time", an
 
 A transient buffer whose memory belongs to an aliasing block rather than to the buffer.
 
-The graph creates these with VkMemoryAllocator::CreateUnboundBuffer and binds them into a block itself, so the buffer and its memory have different owners. BufferResource already expresses that shape, and it is worth spelling out why nothing is overridden: the constructor that takes no size allocates nothing, the handles are protected, and the inherited destructor calls FreeBuffer(buffer, allocation) - which with a null allocation is vmaDestroyBuffer(allocator, buffer, VK_NULL_HANDLE): it destroys the buffer and frees no memory. The block's owner frees the memory, after every resource bound into it is gone.
+The graph creates these with IGraphResourceAllocator::CreateUnboundBuffer and binds them into a block itself, so the buffer and its memory have different owners. The resource implements the graph-owned IGraphBuffer interface, which is what the barrier and descriptor paths identify it by - no engine class is involved, so an aliased transient cannot be silently skipped for being "not a `BufferResource`" (#272).
 
-It stays a BufferResource on purpose. The graph's barrier path and its descriptor path both identify resources with dynamic_cast<const BufferResource*>; an aliased buffer that were merely some IRenderResource would be silently skipped by both, which is the kind of failure that shows up as a wrong barrier rather than as an error.
-
-One consequence worth knowing before it surprises someone: this resource cannot be mapped through BufferResource::Map, which maps the resource's own allocation and there is none. A caller that needs the bytes on the host copies out of it, which is what the readback cases in the suite do. A mapping accessor for graph-owned transients is a follow-up rather than an omission.
+The allocator's ownership rule makes the destructor simple: destroying an unbound buffer releases the buffer and frees no memory. The block's owner frees the memory, after every resource bound into it is gone.
 
 | Member | Description |
 | --- | --- |
-| `TransientBufferResource(size_t nSize, VkBufferUsageFlags nUsage, VmaMemoryUsage nMemoryUsage)` | Parameters: `nSize` - Buffer size in bytes. The buffer itself is created by Adopt, not here; `nUsage` - Vulkan buffer usage flags; `nMemoryUsage` - The declared memory usage, which decides whether SetData can write through a host mapping or has to travel by transfer |
+| `TransientBufferResource(size_t nSize, VkBufferUsageFlags nUsage, VmaMemoryUsage nMemoryUsage, IGraphResourceAllocator &allocator, VkRenderDevice &device)` | Parameters: `nSize` - Buffer size in bytes. The buffer itself is created by Adopt, not here; `nUsage` - Vulkan buffer usage flags; `nMemoryUsage` - The declared memory usage, which decides whether SetData can write through a host mapping or has to travel by transfer; `allocator` - Allocator that created the buffer and owns the block it is bound into; `device` - Device used for the staging copy and for debug labels |
+| `~TransientBufferResource() override` | Destroy the unbound buffer. Its memory belongs to the block, which the graph frees afterwards. |
 | `void Adopt(VkBuffer buffer)` | Take ownership of the unbound buffer the allocator created for this resource. Parameters: `buffer` - Buffer this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns |
-| `void BindTo(VmaAllocation block, VkDeviceSize nOffset)` | Record the block and offset this resource was bound at, so a host mapping can find its bytes. Parameters: `block` - The block the buffer is bound into. Not owned, and outlived by nothing: the graph destroys every resource before it frees any block; `nOffset` - Byte offset of this buffer inside that block |
+| `void BindTo(GraphMemoryBlock block, VkDeviceSize nOffset)` | Record the block and offset this resource was bound at, so a host mapping can find its bytes. Parameters: `block` - The block the buffer is bound into. Not owned, and outlived by nothing: the graph destroys every resource before it frees any block; `nOffset` - Byte offset of this buffer inside that block |
+| `VkBuffer buffer() const override` | Returns: The Vulkan buffer handle. |
+| `size_t GetSize() const override` | Returns: The size the buffer was created with, which is what the block's plan reserved for it. |
+| `size_t GetCapacity() const override` | Returns: The size the buffer was created with; an aliased buffer cannot grow. |
+| `VkBufferUsageFlags GetBufferUsage() const override` | Returns: The Vulkan usage flags the buffer was created with. |
+| `VmaMemoryUsage GetMemoryUsage() const override` | Returns: The declared memory usage. |
+| `ResourceKind GetResourceKind() const override` | Returns: ResourceKind::BUFFER. |
+| `VkObjectType GetVkObjectType() const override` | Returns: VK_OBJECT_TYPE_BUFFER. |
+| `void SetDebugName(const std::string &name) const override` | Label the buffer for the validation layer and a capture tool. Parameters: `name` - Debug name to attach |
 | `void * Map() override` | Map this resource's bytes on the host. Returns: A host pointer to the start of this resource's storage, or nullptr when it is not bound yet. |
 | `void Unmap() override` | Release the mapping Map took. A resource that is not mapped is left alone, so a path that unmaps defensively cannot release the block out from under a member that still holds a pointer into it. |
 | `void SetData(const void *pData, size_t size) override` | Upload content into this buffer. Parameters: `pData` - Source bytes; `size` - Byte count, at most the size this resource was planned at |
 | `bool IsMapped() const` | Returns: True while this resource holds a host mapping. The graph's contract is that a mapping does not outlive the node whose use declared the resource, because that is what makes its slot exclusively its own for as long as the pointer is held. |
 | `size_t GetAliasedSize() const` | Returns: The size the buffer was created with, which is what the block's plan reserved for it. |
-| `~TransientBufferResource() override` | Unmap before the base destructor destroys the buffer. The block is freed after every resource bound into it is gone, so this runs while the mapping is still valid - which is the whole reason the graph's teardown order is resources first, blocks second. |
 
 ### `class Muyo::RenderGraph::TransientImageResource`
 
 A transient image whose memory belongs to an aliasing block rather than to the image.
 
-Derives from ImageResource rather than from TextureResource: the graph's barrier, descriptor and binding paths all identify images with dynamic_cast<const ImageResource*>, so that is the whole requirement, and TextureResource adds a sampler and pixel loading that a render-graph target has no use for.
+The image counterpart of TransientBufferResource: it implements the graph-owned IGraphImage interface, so the barrier and descriptor paths need no engine class to recognise it.
 
-The memory half is the same trick as the buffer's. m_allocation stays null, so the inherited destructor's FreeImage(image, VK_NULL_HANDLE) is vmaDestroyImage(allocator, image, VK_NULL_HANDLE) - it destroys the image and frees no memory, which is right because the block owns the memory and the graph frees the block after every image bound into it is gone. The view is not aliased: a view belongs to one resource and is created and destroyed as usual.
+The allocator's ownership rule makes the destructor simple again: destroying an unbound image releases the image and frees no memory, which is right because the block owns the memory and the graph frees the block after every image bound into it is gone. The view is not aliased: a view belongs to one resource and is created and destroyed as usual.
 
 | Member | Description |
 | --- | --- |
-| `TransientImageResource(const ImageResourceDesc &desc, VkImageUsageFlags usage)` | Parameters: `desc` - The image declaration, which is also its aliasing class; `usage` - The usage flags to create it with - EffectiveImageUsageFlags of the declaration, so that this path and the resource manager's cannot disagree about what an image is |
+| `TransientImageResource(const VkImageCreateInfo &imageInfo, IGraphResourceAllocator &allocator, VkRenderDevice &device)` | Parameters: `imageInfo` - The create info the allocator created the image with; also the aliasing identity; `allocator` - Allocator that created the image and owns the block it is bound into; `device` - Device used to create the view and for debug labels |
+| `~TransientImageResource() override` | Destroy the view and then the unbound image; its memory belongs to the block. |
 | `const VkImageCreateInfo & ImageInfoForCreate() const` | Returns: The create info this image must be created with, which the caller needs because the allocator creates it before the resource can own it. |
-| `void Adopt(VkImage image)` | Take ownership of the unbound image the allocator created, and create its view. Parameters: `image` - Image this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns. The view is created from it here because a view cannot exist before its image does |
+| `void Adopt(VkImage image)` | Take ownership of the unbound image the allocator created. Parameters: `image` - Image this resource owns, binds into a block, and destroys - without freeing its memory, which the block owns |
 | `void CreateView()` | Create this image's view. |
+| `VkImage getImage() const override` | Returns: The Vulkan image handle. |
+| `VkImageView getView() const override` | Returns: The image's view. |
+| `const VkImageViewCreateInfo & GetImageViewCreateInfo() const override` | Returns: The view create info. |
+| `VkFormat GetImageFormat() const override` | Returns: The image's format. |
+| `VkExtent2D GetImageExtent() const override` | Returns: The image's extent. |
+| `VkImageUsageFlags GetImageUsage() const override` | Returns: The usage flags the image was created with. |
+| `uint32_t GetImageMipCount() const override` | Returns: The created mip level count. |
+| `uint32_t GetImageLayerCount() const override` | Returns: The created array layer count. |
+| `ResourceKind GetResourceKind() const override` | Returns: ResourceKind::IMAGE. |
+| `VkObjectType GetVkObjectType() const override` | Returns: VK_OBJECT_TYPE_IMAGE. |
+| `void SetDebugName(const std::string &name) const override` | Label the image for the validation layer and a capture tool. Parameters: `name` - Debug name to attach |

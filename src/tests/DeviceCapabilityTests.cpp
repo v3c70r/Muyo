@@ -8,7 +8,7 @@
 
 #include "Debug/Validation.h"
 #include "GraphicsTestEnv.h"
-#include "ShaderAsset.h"
+#include "ShaderReflectionFetcher.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
 
@@ -289,7 +289,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv,
     for (const std::string& shaderPath : shaderPaths)
     {
         INFO("shader: " << shaderPath << " (rebuild the Shaders target if this is missing)");
-        Muyo::SpirvCode spirv = Muyo::ReadSpv(shaderPath);
+        Muyo::SpirvCode spirv = Muyo::ReadSpirvFile(shaderPath);
         REQUIRE(spirv.size() > 0);
 
         VkShaderModuleCreateInfo createInfo{};
