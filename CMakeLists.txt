@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.10.0)
+# 3.11 is required by `SameMinorVersion` in the package version file (#73); the rest of this file
+# already used newer commands in practice. The 0.x compatibility decision is recorded in
+# docs/RenderGraph-Library-Design.md, "Versioning the library".
+cmake_minimum_required(VERSION 3.11)
 # The language level is a directory default declared before project(), so every later-created target -
 # including the third-party subdirectories - inherits C++20, and CMAKE_CXX_FLAGS does not have to
 # carry it. CMAKE_CXX_EXTENSIONS OFF maps to the strict flag, as before (#68).
@@ -6,6 +9,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 project(Muyo VERSION 0.1.0)
+
+# Install destinations and the package helpers are used by the `muyo_rg` package rules, which the
+# target definitions below point at through their INSTALL_INTERFACE include directories (#73).
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 # Root of this project, correct whether it is the top-level build or a subdirectory.
 # CMAKE_SOURCE_DIR / CMAKE_BINARY_DIR resolve to the *consumer's* root when this project is
@@ -32,12 +40,15 @@ configure_file(
 # True when this project is the root of the build. Everything guarded by it - the demo app, the PSO
 # compiler, the test suite, the docs check - is for developing this project rather than consuming it,
 # and the guard is what keeps the Catch2 fetch, a network dependency, out of an embedder's configure.
-# PROJECT_IS_TOP_LEVEL is the idiomatic spelling but needs CMake 3.21; this file declares 3.10, where
+# PROJECT_IS_TOP_LEVEL is the idiomatic spelling but needs CMake 3.21; this file declares 3.11, where
 # it would silently evaluate to false and the tests would quietly never be built.
 set(MUYO_TOP_LEVEL FALSE)
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(MUYO_TOP_LEVEL TRUE)
 endif()
+# An embedder that takes this project as a subdirectory keeps its own install and export decisions, so
+# the package rules are opt-in there and on by default at the top level (#73).
+option(MUYO_RG_INSTALL "Generate the muyo_rg install rules and CMake package" ${MUYO_TOP_LEVEL})
 # Compile time features
 option (FEATURE_RAY_TRACING "Compile with ray tracing feature" off)
 option (FEATURE_SYNCHRONIZATION2 "Compile with ray tracing feature" off)
@@ -71,6 +82,10 @@ if (NOT ${glfw3_FOUND})
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+# A vendored dependency's install rules belong to the embedder, not to the prefix this project is
+# installed into: with GLFW_INSTALL left on, `cmake --install` tried to install `libglfw3.a` and failed
+# unless the demo had been built. Muyo's package installs only its own targets and headers (#73).
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 execute_process(COMMAND bash -c "echo $WAYLAND_DISPLAY"
                 OUTPUT_VARIABLE WAYLAND_SESSION
                 OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -145,6 +160,9 @@ include_directories(${MUYO_ROOT}/thirdparty/stb)
 add_library(stb ${MUYO_ROOT}/thirdparty/stb/stb.cpp)
 
 ## meshoptimizer
+# Same reason as GLFW_INSTALL above: a vendored target's install rules would otherwise put
+# `libmeshoptimizer.a` in Muyo's prefix and make `cmake --install` require a full dev build (#73).
+set(MESHOPT_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory(${MUYO_ROOT}/thirdparty/meshoptimizer)
 include_directories(${MUYO_ROOT}/thirdparty/meshoptimizer/src)
 
@@ -365,7 +383,14 @@ muyo_enable_deprecation_errors(muyo_rg)
 # consumer of `muyo_device` that includes it compiles against `spirv_reflect.h`. The reflection and the
 # VMA graph resources are device-level code (they talk to Vulkan, not to the renderer), which is what lets
 # `muyo_rg` link the device alone (#272).
-target_link_libraries(muyo_device PUBLIC ${Vulkan_LIBRARIES} VulkanMemoryAllocator SPIRV-Reflect)
+# `${Vulkan_LIBRARIES}` is a path on the build machine and would make the installed target
+# non-relocatable, so only the build interface names it; the install interface names the imported
+# `Vulkan::Vulkan` target, which `muyo_rgConfig.cmake` creates through `find_dependency(Vulkan)` (#73).
+target_link_libraries(muyo_device PUBLIC
+    $<BUILD_INTERFACE:${Vulkan_LIBRARIES}>
+    $<INSTALL_INTERFACE:Vulkan::Vulkan>
+    VulkanMemoryAllocator
+    SPIRV-Reflect)
 
 # `IsRayTracingSupported` is inline in the device's public header, so a consumer has to compile it with
 # the same definition as the library's translation units. `add_compile_definitions` is directory-scoped
@@ -389,6 +414,12 @@ target_include_directories(muyo_device
         # `muyo_device` links nothing from `muyo_rg` (#272).
         $<BUILD_INTERFACE:${MUYO_ROOT}/src>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderGraph>
+        # The installed layout mirrors the build one under `include/` (#73). `include/RenderDevice` is
+        # the device's own bare-name root; `include` and `include/RenderGraph` are what
+        # `VkGraphResourceAllocator.h` needs for `"RenderGraphResources.h"`.
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/RenderDevice>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/RenderGraph>
     )
 # VMA is in VkMemoryAllocator.h's public interface, so a consumer compiles against its headers.
 target_include_directories(muyo_device SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
@@ -438,12 +469,20 @@ target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_
 # and `src` is what makes `RenderGraph/...` resolvable to a consumer that links the target. The generated
 # directory is part of the interface for the same reason as the source ones: `MuyoVersion.h` includes
 # `<muyo_rg/version.h>`, which only exists in the build tree. A consumer gets it by linking `muyo_rg`, not
-# by adding the build directory itself. The INSTALL_INTERFACE half belongs with the install rules (#73).
+# by adding the build directory itself.
+#
+# The install interface mirrors that layout under the prefix (#73): `include/RenderGraph` is the stated
+# public surface, `include` makes `RenderGraph/...` and the generated `muyo_rg/version.h` resolvable,
+# and `include/Muyo/detail/RenderGraph` carries the internal headers the public headers' private
+# members use - #53 records that the packaging set has to install those too.
 target_include_directories(muyo_rg
     PUBLIC
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderGraph>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src>
         $<BUILD_INTERFACE:${MUYO_RG_GENERATED_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/RenderGraph>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/RenderGraph>
     )
 
 # SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: RenderGraphBuilder.h includes
@@ -458,6 +497,123 @@ target_link_libraries(muyo imgui imguizmo imnodes SPIRV-Reflect ${Vulkan_LIBRARI
 # shader reflection lives in `muyo_device` too. The engine link edge is gone (#272), and #53's header
 # split/packaging is separate.
 target_link_libraries(muyo_rg PUBLIC muyo_device)
+
+if(MUYO_RG_INSTALL)
+    # ── Install rules and the `muyo_rg` CMake package (#73) ──────────────────────
+    #
+    # A consumer takes the library from an installed prefix:
+    #
+    #     find_package(muyo_rg 0.1 REQUIRED)
+    #     target_link_libraries(app PRIVATE Muyo::muyo_rg)
+    #
+    # What ships is a stated set rather than "everything under a directory". The two graph lists below are
+    # the same names as `PUBLIC_HEADERS` / `INTERNAL_HEADERS` in `scripts/render_graph_docs.py` (#53); the
+    # docs check compares them, so a header classified there but not installed here fails `sanity.sh docs`
+    # instead of drifting silently. The internal graph headers are installed because the public headers'
+    # private members include them, which #53 records as a property of the packaging set ("the promise is
+    # about what a consumer may name, not about what the preprocessor can see"). They are installed under
+    # `Muyo/detail/`, not beside the public headers, so the public include directory is the stated surface.
+    set(MUYO_RG_PUBLIC_HEADERS
+        CompiledRenderGraph.h
+        MuyoVersion.h
+        PipelineCache.h
+        PSODesc.h
+        RenderGraphBuilder.h
+        RenderGraphExecuteInfo.h
+        RenderGraphExecutionPlan.h
+        RenderGraphNodeContext.h
+        RenderGraphNodeResource.h
+        RenderGraphResourceDesc.h
+        RenderGraphResourceHandle.h
+        RenderGraphResources.h
+        RenderGraphShader.h
+        RenderGraphTrace.h
+        ShaderCache.h
+        TransientMemoryPlan.h
+        )
+    set(MUYO_RG_INTERNAL_HEADERS
+        DependencyGraph.h
+        RenderGraphBarrier.h
+        RenderGraphExecutor.h
+        RenderGraphTraceRecorder.h
+        ResourceUseResolver.h
+        ShaderAssetManager.h
+        TransientMemoryPlanner.h
+        TransientResources.h
+        )
+    set(MUYO_RG_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/muyo_rg")
+
+    foreach(header IN LISTS MUYO_RG_PUBLIC_HEADERS)
+        install(FILES "${MUYO_ROOT}/src/RenderGraph/${header}"
+                DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/RenderGraph")
+    endforeach()
+    foreach(header IN LISTS MUYO_RG_INTERNAL_HEADERS)
+        install(FILES "${MUYO_ROOT}/src/RenderGraph/${header}"
+                DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/RenderGraph")
+    endforeach()
+
+    # `MuyoVersion.h` includes `<muyo_rg/version.h>`, which is generated into the build tree, so the
+    # generated header is part of the installed surface too (#87).
+    install(FILES "${MUYO_RG_GENERATED_DIR}/muyo_rg/version.h"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/muyo_rg")
+
+    # The device layer ships with the graph (`docs/RenderGraph-Library-Design.md` section 2, "Both ship").
+    # It has no stated public/internal split yet, so its target's headers are its interface; the graph's
+    # public headers directly need Debug.h, DescriptorHeapService.h, PipelineStateBuilder.h,
+    # ShaderReflection.h, ShaderReflectionFetcher.h, VkExtFuncsLoader.h and VkRenderDevice.h, and the rest
+    # complete the device class surface (VkMemoryAllocator / VkGraphResourceAllocator).
+    file(GLOB MUYO_DEVICE_HEADERS "${MUYO_ROOT}/src/RenderDevice/*.h")
+    install(FILES ${MUYO_DEVICE_HEADERS} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/RenderDevice")
+
+    install(TARGETS muyo_rg muyo_device EXPORT muyo_rgTargets
+            ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+            LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+            RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+    # VMA and SPIRV-Reflect are part of `muyo_device`'s public interface (the graph's public headers name
+    # `VmaMemoryUsage` and `SpvReflectShaderModule`), so the package ships both as exported targets rather
+    # than making the consumer find a copy of either. Vulkan is the one dependency left to the consumer,
+    # and `muyo_rgConfig.cmake` reports it at configure time.
+    install(TARGETS SPIRV-Reflect EXPORT muyo_rgTargets
+            ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+    target_include_directories(SPIRV-Reflect PUBLIC
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/thirdparty>)
+    install(FILES "${MUYO_ROOT}/thirdparty/SPIRV-Reflect/spirv_reflect.h"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/thirdparty")
+    # `spirv_reflect.h` includes its pinned SPIR-V headers as `"./include/spirv/unified1/spirv.h"`, relative
+    # to itself. Installing the header without this tree made the out-of-tree probe fail at its first
+    # include; the relative layout is part of the header's interface, so the tree ships beside it.
+    install(DIRECTORY "${MUYO_ROOT}/thirdparty/SPIRV-Reflect/include/"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/thirdparty/include")
+
+    install(TARGETS VulkanMemoryAllocator EXPORT muyo_rgTargets)
+    target_include_directories(VulkanMemoryAllocator INTERFACE
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/thirdparty>)
+    install(FILES "${vma_SOURCE_DIR}/include/vk_mem_alloc.h"
+            DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/thirdparty")
+
+    # The package files: the export set (`Muyo::muyo_rg` and its `Muyo::muyo_device` dependency), the
+    # config that finds Vulkan and reports the version, and the version file. `SameMinorVersion` is the
+    # 0.x answer recorded in `docs/RenderGraph-Library-Design.md`: while the major is 0 a minor release may
+    # break, so `find_package(muyo_rg 0.1)` must not accept a 0.2 package; at 1.0 the policy's
+    # `SameMajorVersion` applies.
+    configure_package_config_file(
+        "${MUYO_ROOT}/cmake/muyo_rgConfig.cmake.in"
+        "${MUYO_BINARY_ROOT}/muyo_rgConfig.cmake"
+        INSTALL_DESTINATION "${MUYO_RG_INSTALL_CMAKEDIR}")
+    write_basic_package_version_file(
+        "${MUYO_BINARY_ROOT}/muyo_rgConfigVersion.cmake"
+        VERSION "${PROJECT_VERSION}"
+        COMPATIBILITY SameMinorVersion)
+    install(FILES
+            "${MUYO_BINARY_ROOT}/muyo_rgConfig.cmake"
+            "${MUYO_BINARY_ROOT}/muyo_rgConfigVersion.cmake"
+            DESTINATION "${MUYO_RG_INSTALL_CMAKEDIR}")
+    install(EXPORT muyo_rgTargets
+            NAMESPACE Muyo::
+            FILE muyo_rgTargets.cmake
+            DESTINATION "${MUYO_RG_INSTALL_CMAKEDIR}")
+endif()
 
 file(GLOB main_SRC
     "src/app/helloVulkan.cpp"

@@ -18,6 +18,12 @@ when a header is in neither list (a new header must be classified), when a liste
 header is missing, or when the "public-surface" block in docs/RenderGraph.md
 disagrees with the lists. See docs/RenderGraph.md, "Public surface".
 
+The lists are also the installed set (`MUYO_RG_PUBLIC_HEADERS` /
+`MUYO_RG_INTERNAL_HEADERS` in CMakeLists.txt, #73), so the check fails when the
+install lists name a different set. That comparison is what keeps the package
+from shipping a header the surface check does not know about, or omitting one it
+does.
+
 Doxygen is looked up in $DOXYGEN, then on PATH, then in <repo>/.tools.
 Run docs/README.md for how to obtain it without root.
 """
@@ -42,6 +48,7 @@ DOXYFILE_TEMPLATE = os.path.join(DOCS_DIR, "Doxyfile.render_graph")
 GENERATED_MD = os.path.join(DOCS_DIR, "RenderGraph-api.md")
 COVERAGE_CHECKER = os.path.join(DOCS_DIR, "check_api_coverage.py")
 MD_GENERATOR = os.path.join(DOCS_DIR, "gen_api_md.py")
+CMAKELISTS = os.path.join(REPO_ROOT, "CMakeLists.txt")
 
 # ── The stated public surface ─────────────────────────────────────────────────
 # Canonical, and the only place the list is defined. docs/RenderGraph.md has a checked block with the
@@ -148,6 +155,54 @@ def verify_header_classification() -> list[str]:
         if classified - documented:
             errors.append("docs/RenderGraph.md omits: " + ", ".join(sorted(classified - documented)))
 
+    return errors
+
+
+def _cmake_header_list(variable: str) -> list[str]:
+    """Return the `.h` names in `set(<variable> ... )` in CMakeLists.txt, or an empty list.
+
+    Deliberately a textual read rather than a CMake configure: the check has to run on a machine with
+    no build directory and no Vulkan SDK, and the parser only needs the list block the install rules
+    already keep one name per line. An absent block returns an empty list so the caller reports that as
+    a missing install set rather than silently passing.
+    """
+    with open(CMAKELISTS, encoding="utf-8") as handle:
+        text = handle.read()
+    match = re.search(r"set\(\s*" + re.escape(variable) + r"\s+(.*?)\)", text, re.DOTALL)
+    if match is None:
+        return []
+    return re.findall(r"([A-Za-z0-9_.-]+\.h)", match.group(1))
+
+
+def verify_install_lists() -> list[str]:
+    """Return the reasons the CMake install set differs from the stated surface (#73).
+
+    The package installs a stated set, not a directory: the public headers under `RenderGraph/` and
+    the internal headers under `Muyo/detail/RenderGraph/`. Keeping that set in CMakeLists.txt is
+    necessary - CMake cannot import a Python list without a dependency the package should not have -
+    so the comparison lives here, where the canonical list already is. A header classified here but
+    not installed fails, and so does an install entry the surface has never heard of.
+    """
+    errors: list[str] = []
+    for variable, canonical in (
+        ("MUYO_RG_PUBLIC_HEADERS", PUBLIC_HEADERS),
+        ("MUYO_RG_INTERNAL_HEADERS", INTERNAL_HEADERS),
+    ):
+        installed = _cmake_header_list(variable)
+        if not installed:
+            errors.append(
+                f"CMakeLists.txt has no `{variable}` list; the install set has to be stated "
+                "(#73, Package the library for external consumption)"
+            )
+            continue
+        missing = sorted(set(canonical) - set(installed))
+        extra = sorted(set(installed) - set(canonical))
+        if missing:
+            errors.append(f"{variable} omits: " + ", ".join(missing))
+        if extra:
+            errors.append(f"{variable} installs unclassified headers: " + ", ".join(extra))
+        if len(set(installed)) != len(installed):
+            errors.append(f"{variable} contains a duplicate")
     return errors
 
 
@@ -339,6 +394,14 @@ def main() -> int:
         for error in classification_errors:
             print(f"  - {error}")
         print("  Update scripts/render_graph_docs.py and the public-surface block in docs/RenderGraph.md.")
+        return 1
+
+    install_errors = verify_install_lists()
+    if install_errors:
+        print("render_graph_docs: the installed header set is out of date (#73):")
+        for error in install_errors:
+            print(f"  - {error}")
+        print("  Update the MUYO_RG_PUBLIC_HEADERS / MUYO_RG_INTERNAL_HEADERS lists in CMakeLists.txt.")
         return 1
 
     doxygen = find_doxygen()

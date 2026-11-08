@@ -112,8 +112,10 @@ The boundary is **checkable**, not prose:
   must be classified), when a listed header is gone, or when the checked block in `docs/RenderGraph.md` and the
   lists disagree.
 - Internal headers carry a one-line note saying so. They remain reachable through the public headers' private
-  members, which is why the packaging set (#73) has to install them too - the promise is about what a consumer
-  may name, not about what the preprocessor can see.
+  members, which is why the packaging set (#73) installs them too - the promise is about what a consumer may
+  name, not about what the preprocessor can see. The package places them under
+  `include/Muyo/detail/RenderGraph/`, not beside the public headers, so the public include directory is exactly
+  `PUBLIC_HEADERS`.
 
 **What is not promised.** The internal headers have no source compatibility guarantee, and the surface has no ABI
 stability yet (the C ABI is the later wrapper in §1). A consumer that needs an internal type reopens this decision
@@ -300,6 +302,37 @@ packaging case (#73), and revisit modules with a trigger** — when the public s
 *and* a consumer asks for one. Recorded the same way as the C-ABI decision, so it can be revisited rather
 than re-argued.
 
+### What the package ships (landed, #73)
+
+The install rules produce a relocatable CMake package under `<prefix>/lib/cmake/muyo_rg/`:
+
+```cmake
+find_package(muyo_rg 0.1 REQUIRED)          # version file from project(Muyo VERSION ...)
+target_link_libraries(app PRIVATE Muyo::muyo_rg)
+```
+
+`Muyo::muyo_rg` links `Muyo::muyo_device` and nothing from the engine, and both targets are exported with
+their `PUBLIC` include directories. The installed headers are a stated set rather than `src/RenderGraph`:
+
+| Installed path | Contents |
+| --- | --- |
+| `include/RenderGraph/` | exactly `PUBLIC_HEADERS` (16 headers) |
+| `include/Muyo/detail/RenderGraph/` | `INTERNAL_HEADERS` (8 headers), reachable only because the public headers' private members use them |
+| `include/RenderDevice/` | the device target's headers, which the graph's public interface needs |
+| `include/muyo_rg/version.h` | the generated version macros (the checked-in `MuyoVersion.h` is in the public set) |
+| `include/Muyo/detail/thirdparty/` | VMA and SPIRV-Reflect, which the public headers name |
+
+VMA and SPIRV-Reflect are exported targets too, not dependencies a consumer has to find. **Vulkan is the one
+external dependency**, and `muyo_rgConfig.cmake` looks it up with `find_dependency(Vulkan)`, so a
+missing SDK fails at the consumer's configure step with a message naming Vulkan instead of at a compile or
+link later. `render_graph_docs.py --check` compares the two CMake header lists against the stated surface, so
+the install set cannot drift from #53's lists silently.
+
+**What is not in it.** There is no shared library, no `SOVERSION`/SONAME and no ABI tooling yet — the targets
+are static, and the C ABI is the later wrapper in §1. The public headers are not self-contained: they include
+the internal graph headers, so the detail set above is installed. Making them self-contained is a builder
+pimpl split, not a packaging change, and is tracked as [#297](https://github.com/v3c70r/Muyo/issues/297).
+
 ### What the embed drags across, stated rather than discovered
 
 #68 made embedding work. These are the properties that came with it, because "embeddable" that hides
@@ -323,10 +356,12 @@ the standard cures and they belong with #73, not with #68.
 
 ## Versioning the library, and how a consumer learns about a change
 
-The package (#73) will carry a version. This says what the version means, how a breaking change reaches a
-consumer, and which consumers are not allowed to lag behind it. **The library version itself now exists
+The package carries a version. This says what the version means, how a breaking change reaches a
+consumer, and which consumers are not allowed to lag behind it. **The library version itself exists
 (#87):** `project(Muyo VERSION 0.1.0)` generates `<muyo_rg/version.h>` and the documented constants in
-`RenderGraph/MuyoVersion.h`; only the package version file remains with #73.
+`RenderGraph/MuyoVersion.h`, and the package's `muyo_rgConfigVersion.cmake` is generated from the same
+`project()` version (#73), so `find_package(muyo_rg 0.1)` is checked against the header a consumer compiles
+against rather than against a second, hand-maintained number.
 
 ### The library publishes; the consumer pulls
 
@@ -339,7 +374,7 @@ on their own terms:
 | `project(... VERSION)` plus a version header (`MUYO_RG_VERSION` and its components) | everyone who compiles or finds the package | none |
 | `CHANGELOG.md` with `Breaking` / `Deprecated` sections | anyone who reads before upgrading | one entry per change |
 | `[[deprecated]]` on the old spelling | **every consumer, in their own build, without the library knowing they exist** | one attribute |
-| `SameMajorVersion` in the package version file (#73) | `find_package(muyo_rg 1.2)` | none |
+| `SameMajorVersion` in the package version file (#73); `SameMinorVersion` while the major is 0 | `find_package(muyo_rg 1.2)`, `find_package(muyo_rg 0.1)` | none |
 
 ### The rule that makes a version sufficient: a breaking change has to be detectable
 
@@ -411,8 +446,14 @@ the surface is a gap would make the number claim something it does not.
 permits anything to break inside a 0.x series, so `find_package(muyo_rg 0.9 SameMajorVersion)` would
 silently accept a breaking 0.10 - the exact case the compatibility field exists to prevent, defeated by
 the pre-1.0 convention. So either the package is exact-match (or `SameMinorVersion`) while the major is 0,
-or the version file states that 0.x minors do break. #73 decides it; the policy names it here because the
-choice belongs with the rest of this section rather than being discovered in a `ConfigVersion.cmake`.
+or the version file states that 0.x minors do break.
+
+**Decided (#73): `SameMinorVersion`.** `write_basic_package_version_file(... COMPATIBILITY SameMinorVersion)`
+is the 0.x answer: `find_package(muyo_rg 0.1)` accepts 0.1.x and rejects 0.2, so a minor release that the
+pre-1.0 caveat allows to break cannot satisfy a request for the older minor. The same table's
+`SameMajorVersion` row is the 1.0 answer, and the CMake call changes to it when the version reaches 1.0
+(the policy above, and the 1.0 condition below, are what move the version). `SameMinorVersion` needs CMake
+3.11, which is why this file's `cmake_minimum_required` moved there.
 
 ## Consumers include coding agents
 
