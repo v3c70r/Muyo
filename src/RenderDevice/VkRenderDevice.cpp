@@ -65,23 +65,15 @@ const char* FindUnsupportedDeviceExtension(const std::vector<const char*>& vRequ
 void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
                                 const std::vector<const char*>& vLayerNames)
 {
-    // The singleton is re-initialized once per test fixture. A fixture constructor that throws after
-    // Initialize never runs its destructor, so the next fixture arrives here with a live instance and no
-    // logical device. Tear that instance down rather than overwriting the handle: overwriting would leak
-    // it and leave `m_debugMessenger` parented to an instance that no longer exists, while a later
-    // `Unintialize` would pass the old messenger to the new instance.
+    // An initialized device owns an instance, a physical device and possibly a messenger, and the caller
+    // may own children of the instance (a surface, for example) that this class cannot see. Destroying the
+    // instance here would be invalid usage in that case, so require an explicit teardown. The previous
+    // behaviour overwrote the handle and leaked the old instance; this is loud instead of silent.
     if (m_instance != VK_NULL_HANDLE)
     {
-        if (m_device != VK_NULL_HANDLE)
-        {
-            FatalError(
-                "VkRenderDevice::Initialize called while a logical device exists; call DestroyDevice and "
-                "Unintialize first");
-        }
-        DestroyDebugMessenger();
-        vkDestroyInstance(m_instance, nullptr);
-        m_instance = VK_NULL_HANDLE;
-        m_physicalDevice = VK_NULL_HANDLE;
+        FatalError(
+            "VkRenderDevice::Initialize called on an initialized device; call DestroyDevice (if needed) and "
+            "Unintialize first");
     }
     m_vInstanceLayers.clear();
     m_vInstanceExtensions.clear();

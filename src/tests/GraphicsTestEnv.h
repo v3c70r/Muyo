@@ -24,6 +24,9 @@ class GraphicsTestEnv
 public:
     GraphicsTestEnv()
     {
+        // TODO(#278): this constructor is not exception-safe. A throw after the instance/surface/device
+        // exists skips the destructor; the next fixture's Initialize then refuses the live instance (loud,
+        // not silent invalid usage), so one device-capability failure cascades into every later test.
         // The test host creates a headless surface when the loader offers one, so the device is given a
         // real present queue and the frame-sync/present path is exercisable in CI. Where the extension
         // is absent the surface stays null and the device is created exactly as before.

@@ -75,12 +75,14 @@ TEST_CASE("VkRenderDevice: validation is opt-in and a headless device works with
     CHECK(!pDevice->HasDebugMessenger());
 }
 
-TEST_CASE("VkRenderDevice: re-initialization tears down the previous instance and messenger", "[RenderDevice]")
+TEST_CASE("VkRenderDevice: Initialize and Unintialize refuse to destroy a live instance hierarchy", "[RenderDevice]")
 {
     // A fixture constructor that throws after `Initialize` never runs its destructor, so the next
-    // fixture calls `Initialize` again on a device that still owns an instance. Overwriting the handle
-    // would leak it and leave the messenger parented to an instance that no longer exists; the next
-    // `Unintialize` would then pass that stale messenger to the new instance.
+    // fixture calls `Initialize` again on a device that still owns an instance - and, in the test host,
+    // a surface. Replacing the instance silently would leak it, and destroying it would be invalid usage
+    // because the surface is a child this class cannot see. The contract is therefore explicit teardown,
+    // and both halves are checked here: Initialize refuses a live instance without touching it, and
+    // Unintialize refuses a live logical device.
     ScopedDeviceLifetime lifetime;
     Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
 
@@ -91,9 +93,17 @@ TEST_CASE("VkRenderDevice: re-initialization tears down the previous instance an
     const auto& extensions = pDevice->GetEnabledInstanceExtensions();
     CHECK(std::find(extensions.begin(), extensions.end(), VK_EXT_DEBUG_UTILS_EXTENSION_NAME) != extensions.end());
 
-    // Re-enter without validation and without tearing down explicitly.
-    pDevice->Initialize({}, {});
+    CHECK_THROWS_WITH(pDevice->Initialize({}, {}),
+                      Catch::Matchers::ContainsSubstring("called on an initialized device"));
+    // The failed call left the live instance and its messenger alone.
     CHECK(pDevice->GetInstance() != VK_NULL_HANDLE);
+    CHECK(pDevice->HasDebugMessenger());
+    CHECK(pDevice->IsValidationLayerEnabled());
+
+    // An explicit teardown allows a fresh, unvalidated instance; the old instance is gone and the new
+    // one has no messenger or validation layer.
+    pDevice->Unintialize();
+    pDevice->Initialize({}, {});
     CHECK(!pDevice->HasDebugMessenger());
     CHECK(!pDevice->IsValidationLayerEnabled());
     CHECK(pDevice->GetEnabledInstanceLayers().empty());
@@ -101,6 +111,7 @@ TEST_CASE("VkRenderDevice: re-initialization tears down the previous instance an
 
     pDevice->CreateDevice({}, {}, nullptr, {});
     CHECK(pDevice->GetDevice() != VK_NULL_HANDLE);
+    CHECK_THROWS_WITH(pDevice->Unintialize(), Catch::Matchers::ContainsSubstring("logical device exists"));
 }
 
 TEST_CASE("VkRenderDevice: an unavailable layer or instance extension fails at Initialize", "[RenderDevice]")

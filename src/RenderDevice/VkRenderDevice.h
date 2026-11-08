@@ -147,10 +147,10 @@ public:
     /// @throws std::runtime_error if a requested layer or extension is unavailable, the loader is older
     ///         than Vulkan 1.4, or no physical device is enumerated. Thrown by `FatalError`, so it is
     ///         reachable in every build configuration.
-    /// @note Must be called before `CreateDevice`. Calling it again without `Unintialize` is supported
-    ///       when no logical device exists (the previous instance and its messenger are torn down); it
-    ///       throws if `GetDevice()` is still non-null, because destroying the parent of a live device is
-    ///       invalid usage.
+    /// @note Must be called before `CreateDevice`. Calling it on an initialized device throws rather than
+    ///       replacing the instance: the caller may own instance children this class cannot see (a
+    ///       surface, for example), so destroying the parent would be invalid usage. Call `Unintialize`
+    ///       first.
     virtual void Initialize(const std::vector<const char*>& vExtensions, const std::vector<const char*>& vLayers);
 
     /// Destroys the debug messenger, if one was created, and then the instance. Idempotent.
