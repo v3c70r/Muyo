@@ -111,11 +111,11 @@ The boundary is **checkable**, not prose:
 - `render_graph_docs.py --check` fails when a header under `src/RenderGraph/` is in neither list (a new header
   must be classified), when a listed header is gone, or when the checked block in `docs/RenderGraph.md` and the
   lists disagree.
-- Internal headers carry a one-line note saying so. They remain reachable through the public headers' private
-  members, which is why the packaging set (#73) installs them too - the promise is about what a consumer may
-  name, not about what the preprocessor can see. The package places them under
-  `include/Muyo/detail/RenderGraph/`, not beside the public headers, so the public include directory is exactly
-  `PUBLIC_HEADERS`.
+- Internal headers carry a one-line note saying so, and are not installed. Since #297 the public headers are
+  self-contained: `RenderGraphBuilder`'s private state lives in an out-of-line `Impl` defined in its `.cpp`, so
+  the header includes only public and device headers. `render_graph_docs.py --check` fails when a public header
+  includes an internal one. The public include directory is exactly `PUBLIC_HEADERS`, and the package has no
+  `include/Muyo/detail/RenderGraph/` directory.
 
 **What is not promised.** The internal headers have no source compatibility guarantee, and the surface has no ABI
 stability yet (the C ABI is the later wrapper in §1). A consumer that needs an internal type reopens this decision
@@ -261,9 +261,9 @@ variance is header revision, raw-versus-unique counting and machine speed — no
 
 At that point the public header reached imgui, tinygltf, meshoptimizer, glm, SPIRV-Reflect and the
 engine's resource managers: "every header under `src/RenderGraph/` is public" in numbers. The stated
-surface in §1a is the answer. It still needs Vulkan, VMA and SPIRV-Reflect, and `RenderGraphBuilder.h`
-still includes the internal headers its private members need; what changed is that the API is a named
-list a consumer can design against, not everything the directory contains.
+surface in §1a is the answer. It still needs Vulkan, VMA and SPIRV-Reflect; since #297 the builder header no
+longer includes the internal headers its private state used to name, so what a consumer compiles is the named
+public list and the device headers it names, not the implementation.
 
 ### Modules: feasible, and the wrong first move
 
@@ -317,7 +317,6 @@ their `PUBLIC` include directories. The installed headers are a stated set rathe
 | Installed path | Contents |
 | --- | --- |
 | `include/RenderGraph/` | exactly `PUBLIC_HEADERS` (16 headers) |
-| `include/Muyo/detail/RenderGraph/` | `INTERNAL_HEADERS` (8 headers), reachable only because the public headers' private members use them |
 | `include/RenderDevice/` | the device target's headers, which the graph's public interface needs |
 | `include/muyo_rg/version.h` | the generated version macros (the checked-in `MuyoVersion.h` is in the public set) |
 | `include/Muyo/detail/thirdparty/` | VMA and SPIRV-Reflect, which the public headers name |
@@ -325,13 +324,14 @@ their `PUBLIC` include directories. The installed headers are a stated set rathe
 VMA and SPIRV-Reflect are exported targets too, not dependencies a consumer has to find. **Vulkan is the one
 external dependency**, and `muyo_rgConfig.cmake` looks it up with `find_dependency(Vulkan)`, so a
 missing SDK fails at the consumer's configure step with a message naming Vulkan instead of at a compile or
-link later. `render_graph_docs.py --check` compares the two CMake header lists against the stated surface, so
-the install set cannot drift from #53's lists silently.
+link later. `render_graph_docs.py --check` compares the CMake header list against the stated surface and
+rejects a public header that includes an internal one, so the install set cannot drift from #53's list or from
+the self-containment #297 established.
 
 **What is not in it.** There is no shared library, no `SOVERSION`/SONAME and no ABI tooling yet — the targets
-are static, and the C ABI is the later wrapper in §1. The public headers are not self-contained: they include
-the internal graph headers, so the detail set above is installed. Making them self-contained is a builder
-pimpl split, not a packaging change, and is tracked as [#297](https://github.com/v3c70r/Muyo/issues/297).
+are static, and the C ABI is the later wrapper in §1. There is no `include/Muyo/detail/RenderGraph/` either:
+the public headers are self-contained because `RenderGraphBuilder`'s private state is an out-of-line `Impl`
+(#297), so the internal graph headers are not installed.
 
 ### What the embed drags across, stated rather than discovered
 

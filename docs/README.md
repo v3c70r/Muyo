@@ -24,7 +24,10 @@ python3 scripts/render_graph_docs.py --check
 1. **The surface check** fails when a header under `src/RenderGraph/` is neither public nor internal, when a
    listed header is missing, or when the checked block in `RenderGraph.md` disagrees with
    `scripts/render_graph_docs.py` (`PUBLIC_HEADERS` / `INTERNAL_HEADERS`). The list is canonical in the
-   script; the block is a checked copy.
+   script; the block is a checked copy. It also fails when the CMake install list
+   (`MUYO_RG_PUBLIC_HEADERS`) disagrees with `PUBLIC_HEADERS`, and when a public header includes an
+   internal one: the package installs the public headers only, so the surface has to compile without
+   the internal headers (#297).
 2. **Doxygen** parses the public headers into XML + HTML. Internal headers are deliberately not in `INPUT`.
 3. **`docs/check_api_coverage.py`** fails if any public class/struct/enum, its public members or
    enum values, or any free function/alias lacks a brief or detailed description.

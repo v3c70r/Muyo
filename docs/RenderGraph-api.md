@@ -443,6 +443,10 @@ Build() is idempotent for a fixed declaration: it topologically sorts the nodes,
 | `const RenderGraphExecutionPlan & GetExecutionPlan() const` | Returns: The plan the last Build() produced: queue segments and cross-queue transfers. Derived, read-only state, empty before the first Build(). It is what tells a caller whether an async node actually got a cross-queue handover or was serialised on one family. |
 | `std::string ToMermaid() const` | Render what Build() compiled as a Mermaid flowchart, without executing anything. Returns: A Mermaid flowchart LR document. |
 | `std::string ToDot() const` | Render what Build() compiled as Graphviz DOT, for dot -Tsvg where no browser is involved. Returns: A DOT document. Empty before Build(). |
+| `RenderGraphBuilder(const RenderGraphBuilder &)=delete` | The builder owns GPU resources, so copying it is not allowed. |
+| `RenderGraphBuilder & operator=(const RenderGraphBuilder &)=delete` | The builder owns GPU resources, so copy-assigning it is not allowed. |
+| `RenderGraphBuilder(RenderGraphBuilder &&)=delete` | The builder owns GPU resources, so moving it is not allowed. |
+| `RenderGraphBuilder & operator=(RenderGraphBuilder &&)=delete` | The builder owns GPU resources, so move-assigning it is not allowed. |
 
 ### `struct Muyo::RenderGraph::RenderGraphNodeCreateInfo`
 

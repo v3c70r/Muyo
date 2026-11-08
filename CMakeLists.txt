@@ -472,9 +472,10 @@ target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_
 # by adding the build directory itself.
 #
 # The install interface mirrors that layout under the prefix (#73): `include/RenderGraph` is the stated
-# public surface, `include` makes `RenderGraph/...` and the generated `muyo_rg/version.h` resolvable,
-# and `include/Muyo/detail/RenderGraph` carries the internal headers the public headers' private
-# members use - #53 records that the packaging set has to install those too.
+# public surface, and `include` makes `RenderGraph/...` and the generated `muyo_rg/version.h` resolvable.
+# There is deliberately no `Muyo/detail/RenderGraph` include directory: the builder's private state moved
+# into an out-of-line pimpl (#297), so the public headers are self-contained and the internal graph
+# headers are not installed at all.
 target_include_directories(muyo_rg
     PUBLIC
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderGraph>
@@ -482,10 +483,9 @@ target_include_directories(muyo_rg
         $<BUILD_INTERFACE:${MUYO_RG_GENERATED_DIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/RenderGraph>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/RenderGraph>
     )
 
-# SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: RenderGraphBuilder.h includes
+# SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: `RenderGraphShader.h` includes
 # ShaderReflectionFetcher.h, which includes spirv_reflect.h, so a consumer compiles against its headers
 # - and `muyo` compiles ShaderReflectionFetcher.cpp, which calls spvReflect*. Only the in-tree `tests`
 # target named it, so an embedder linking muyo_rg got "undefined reference to spvReflectCreateShaderModule"
@@ -506,13 +506,12 @@ if(MUYO_RG_INSTALL)
     #     find_package(muyo_rg 0.1 REQUIRED)
     #     target_link_libraries(app PRIVATE Muyo::muyo_rg)
     #
-    # What ships is a stated set rather than "everything under a directory". The two graph lists below are
-    # the same names as `PUBLIC_HEADERS` / `INTERNAL_HEADERS` in `scripts/render_graph_docs.py` (#53); the
-    # docs check compares them, so a header classified there but not installed here fails `sanity.sh docs`
-    # instead of drifting silently. The internal graph headers are installed because the public headers'
-    # private members include them, which #53 records as a property of the packaging set ("the promise is
-    # about what a consumer may name, not about what the preprocessor can see"). They are installed under
-    # `Muyo/detail/`, not beside the public headers, so the public include directory is the stated surface.
+    # What ships is a stated set rather than "everything under a directory": exactly the public graph
+    # headers, which are the same names as `PUBLIC_HEADERS` in `scripts/render_graph_docs.py` (#53), the
+    # docs check compares the two lists, and `--check` also fails when a public header includes an
+    # internal one. The internal graph headers are not installed: the builder's private state is an
+    # out-of-line pimpl (#297), so the public headers no longer need them, and there is no
+    # `Muyo/detail/RenderGraph` directory in the package.
     set(MUYO_RG_PUBLIC_HEADERS
         CompiledRenderGraph.h
         MuyoVersion.h
@@ -531,25 +530,11 @@ if(MUYO_RG_INSTALL)
         ShaderCache.h
         TransientMemoryPlan.h
         )
-    set(MUYO_RG_INTERNAL_HEADERS
-        DependencyGraph.h
-        RenderGraphBarrier.h
-        RenderGraphExecutor.h
-        RenderGraphTraceRecorder.h
-        ResourceUseResolver.h
-        ShaderAssetManager.h
-        TransientMemoryPlanner.h
-        TransientResources.h
-        )
     set(MUYO_RG_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/muyo_rg")
 
     foreach(header IN LISTS MUYO_RG_PUBLIC_HEADERS)
         install(FILES "${MUYO_ROOT}/src/RenderGraph/${header}"
                 DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/RenderGraph")
-    endforeach()
-    foreach(header IN LISTS MUYO_RG_INTERNAL_HEADERS)
-        install(FILES "${MUYO_ROOT}/src/RenderGraph/${header}"
-                DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/Muyo/detail/RenderGraph")
     endforeach()
 
     # `MuyoVersion.h` includes `<muyo_rg/version.h>`, which is generated into the build tree, so the
@@ -559,9 +544,10 @@ if(MUYO_RG_INSTALL)
 
     # The device layer ships with the graph (`docs/RenderGraph-Library-Design.md` section 2, "Both ship").
     # It has no stated public/internal split yet, so its target's headers are its interface; the graph's
-    # public headers directly need Debug.h, DescriptorHeapService.h, PipelineStateBuilder.h,
-    # ShaderReflection.h, ShaderReflectionFetcher.h, VkExtFuncsLoader.h and VkRenderDevice.h, and the rest
-    # complete the device class surface (VkMemoryAllocator / VkGraphResourceAllocator).
+    # public headers directly need DescriptorHeapService.h, PipelineStateBuilder.h, ShaderReflection.h,
+    # ShaderReflectionFetcher.h and VkExtFuncsLoader.h, `RenderGraphBuilder`'s convenience constructor
+    # names VkRenderDevice.h, and the rest complete the device class surface (VkMemoryAllocator /
+    # VkGraphResourceAllocator).
     file(GLOB MUYO_DEVICE_HEADERS "${MUYO_ROOT}/src/RenderDevice/*.h")
     install(FILES ${MUYO_DEVICE_HEADERS} DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/RenderDevice")
 

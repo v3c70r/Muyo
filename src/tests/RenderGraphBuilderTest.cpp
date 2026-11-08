@@ -11,6 +11,7 @@
 #include <span>
 #include <stdexcept>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -23,6 +24,7 @@
 #include "MeshVertex.h"
 #include "PerObjResourceManager.h"
 #include "RenderGraph/CompiledRenderGraph.h"
+#include "RenderGraph/DependencyGraph.h"
 #include "RenderGraph/DrawCommands.h"
 #include "RenderGraph/RenderGraphBarrier.h"
 #include "RenderGraph/RenderGraphBuilder.h"
@@ -38,6 +40,16 @@
 #include "VkExtFuncsLoader.h"
 #include "catch2/catch_message.hpp"
 #include "vulkan/vulkan_core.h"
+
+// The builder owns GPU resources through its out-of-line Impl, so it is neither copyable nor movable.
+// These are compile-time teeth for the contract #297 preserved, not a new restriction: the old
+// unique_ptr members plus the user-declared destructor already deleted both.
+using BuilderUnderTest = Muyo::RenderGraph::RenderGraphBuilder;
+static_assert(!std::is_copy_constructible_v<BuilderUnderTest>);
+static_assert(!std::is_copy_assignable_v<BuilderUnderTest>);
+static_assert(!std::is_move_constructible_v<BuilderUnderTest>);
+static_assert(!std::is_move_assignable_v<BuilderUnderTest>);
+static_assert(std::is_nothrow_destructible_v<BuilderUnderTest>);
 
 static constexpr int WIDTH = 800;
 static constexpr int HEIGHT = 600;

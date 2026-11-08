@@ -18,11 +18,12 @@ when a header is in neither list (a new header must be classified), when a liste
 header is missing, or when the "public-surface" block in docs/RenderGraph.md
 disagrees with the lists. See docs/RenderGraph.md, "Public surface".
 
-The lists are also the installed set (`MUYO_RG_PUBLIC_HEADERS` /
-`MUYO_RG_INTERNAL_HEADERS` in CMakeLists.txt, #73), so the check fails when the
-install lists name a different set. That comparison is what keeps the package
-from shipping a header the surface check does not know about, or omitting one it
-does.
+The public list is also the installed set (`MUYO_RG_PUBLIC_HEADERS` in
+CMakeLists.txt, #73), so the check fails when the install list names a different
+set. That comparison is what keeps the package from shipping a header the surface
+check does not know about, or omitting one it does. The internal headers are
+classified but not installed: since #297 the public headers are self-contained,
+and the check fails when one includes an internal header.
 
 Doxygen is looked up in $DOXYGEN, then on PATH, then in <repo>/.tools.
 Run docs/README.md for how to obtain it without root.
@@ -73,7 +74,8 @@ PUBLIC_HEADERS = [
     "TransientMemoryPlan.h",
 ]
 
-# Implementation detail: compiled against by the public headers' private members, but not API. A consumer
+# Implementation detail: not API, and not installed. Since #297 the public headers are self-contained;
+# verify_public_header_self_containment() fails when a public header includes one of these. A consumer
 # must not include or name these, and the docs reference does not cover them.
 INTERNAL_HEADERS = [
     "DependencyGraph.h",
@@ -177,32 +179,52 @@ def _cmake_header_list(variable: str) -> list[str]:
 def verify_install_lists() -> list[str]:
     """Return the reasons the CMake install set differs from the stated surface (#73).
 
-    The package installs a stated set, not a directory: the public headers under `RenderGraph/` and
-    the internal headers under `Muyo/detail/RenderGraph/`. Keeping that set in CMakeLists.txt is
-    necessary - CMake cannot import a Python list without a dependency the package should not have -
-    so the comparison lives here, where the canonical list already is. A header classified here but
-    not installed fails, and so does an install entry the surface has never heard of.
+    The package installs a stated set, not a directory: the public headers under `RenderGraph/`. Keeping
+    that set in CMakeLists.txt is necessary - CMake cannot import a Python list without a dependency the
+    package should not have - so the comparison lives here, where the canonical list already is. A public
+    header classified here but not installed fails, and so does an install entry the surface has never
+    heard of. Internal headers are not installed (#297), so there is no internal list to compare.
     """
     errors: list[str] = []
-    for variable, canonical in (
-        ("MUYO_RG_PUBLIC_HEADERS", PUBLIC_HEADERS),
-        ("MUYO_RG_INTERNAL_HEADERS", INTERNAL_HEADERS),
-    ):
-        installed = _cmake_header_list(variable)
-        if not installed:
-            errors.append(
-                f"CMakeLists.txt has no `{variable}` list; the install set has to be stated "
-                "(#73, Package the library for external consumption)"
-            )
-            continue
-        missing = sorted(set(canonical) - set(installed))
-        extra = sorted(set(installed) - set(canonical))
-        if missing:
-            errors.append(f"{variable} omits: " + ", ".join(missing))
-        if extra:
-            errors.append(f"{variable} installs unclassified headers: " + ", ".join(extra))
-        if len(set(installed)) != len(installed):
-            errors.append(f"{variable} contains a duplicate")
+    installed = _cmake_header_list("MUYO_RG_PUBLIC_HEADERS")
+    if not installed:
+        errors.append(
+            "CMakeLists.txt has no `MUYO_RG_PUBLIC_HEADERS` list; the install set has to be stated "
+            "(#73, Package the library for external consumption)"
+        )
+        return errors
+    missing = sorted(set(PUBLIC_HEADERS) - set(installed))
+    extra = sorted(set(installed) - set(PUBLIC_HEADERS))
+    if missing:
+        errors.append("MUYO_RG_PUBLIC_HEADERS omits: " + ", ".join(missing))
+    if extra:
+        errors.append("MUYO_RG_PUBLIC_HEADERS installs unclassified headers: " + ", ".join(extra))
+    if len(set(installed)) != len(installed):
+        errors.append("MUYO_RG_PUBLIC_HEADERS contains a duplicate")
+    return errors
+
+
+def verify_public_header_self_containment() -> list[str]:
+    """Return the reasons a public header still needs a graph-internal header (#297).
+
+    The package installs `PUBLIC_HEADERS` and not `INTERNAL_HEADERS`, so a public header that includes
+    an internal one produces an installed surface that does not compile - the failure the out-of-tree
+    probe finds, caught here before a build. The include spelling is compared by basename because the
+    build and install layouts differ (`"DependencyGraph.h"` is beside the public header in the source
+    tree and absent from the prefix).
+    """
+    errors: list[str] = []
+    include_pattern = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
+    internal = set(INTERNAL_HEADERS)
+    for name in PUBLIC_HEADERS:
+        with open(header_path(name), encoding="utf-8") as handle:
+            text = handle.read()
+        for included in include_pattern.findall(text):
+            if os.path.basename(included) in internal:
+                errors.append(
+                    f"{name} includes internal header {included!r}; the installed public surface has to "
+                    "compile without it (#297)"
+                )
     return errors
 
 
@@ -401,7 +423,15 @@ def main() -> int:
         print("render_graph_docs: the installed header set is out of date (#73):")
         for error in install_errors:
             print(f"  - {error}")
-        print("  Update the MUYO_RG_PUBLIC_HEADERS / MUYO_RG_INTERNAL_HEADERS lists in CMakeLists.txt.")
+        print("  Update the MUYO_RG_PUBLIC_HEADERS list in CMakeLists.txt.")
+        return 1
+
+    containment_errors = verify_public_header_self_containment()
+    if containment_errors:
+        print("render_graph_docs: the public surface is not self-contained (#297):")
+        for error in containment_errors:
+            print(f"  - {error}")
+        print("  Move the private state behind the out-of-line Impl or make the type public.")
         return 1
 
     doxygen = find_doxygen()
