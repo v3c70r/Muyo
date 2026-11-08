@@ -129,7 +129,7 @@ AccelerationStructure* RayTracingSceneManager::BuildBLAS(
     GetRenderDevice()->ExecuteImmediateCommand(
         [&](VkCommandBuffer cmdBuf)
         {
-            SCOPED_MARKER(cmdBuf, "[RT] Build Acceleration Struct " + sName);
+            SCOPED_MARKER(GetRenderDevice()->GetDevice(), cmdBuf, "[RT] Build Acceleration Struct " + sName);
             VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &geometryBuildInfo, vpBuildOffsets.data());
 
             VkMemoryBarrier2 barrier = {};
@@ -247,7 +247,7 @@ AccelerationStructure* RayTracingSceneManager::BuildTLAS(
     GetRenderDevice()->ExecuteImmediateCommand(
         [&](VkCommandBuffer cmdBuf)
         {
-            SCOPED_MARKER(cmdBuf, "Buld TLAS");
+            SCOPED_MARKER(GetRenderDevice()->GetDevice(), cmdBuf, "Buld TLAS");
             VkExt::vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildInfo, &pBuildOffsetInfo);
         });
 

@@ -62,21 +62,22 @@ uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment) { return (nSize + nAlignme
 class CommandBufferLabel
 {
 public:
+    /// @param device        Device that owns @p commandBuffer; the label is resolved from it.
     /// @param commandBuffer Command buffer to label.
     /// @param name          Label text.
     /// @param pMarker       Host capture marker, or null for none. Its scope nests outside the Vulkan label,
     ///                      matching the order the engine's `ScopedMarker` used.
-    CommandBufferLabel(VkCommandBuffer commandBuffer, const std::string& name,
+    CommandBufferLabel(VkDevice device, VkCommandBuffer commandBuffer, const std::string& name,
                        Muyo::RenderGraph::IGraphCaptureMarker* pMarker)
-        : m_commandBuffer(commandBuffer), m_marker(pMarker)
+        : m_device(device), m_commandBuffer(commandBuffer), m_marker(pMarker)
     {
         if (m_marker != nullptr) m_marker->Begin(name);
-        Muyo::beginMarker(commandBuffer, std::string(name), 0);
+        Muyo::beginMarker(m_device, commandBuffer, std::string(name), 0);
     }
     /// End the label and then the capture marker.
     ~CommandBufferLabel()
     {
-        Muyo::endMarker(m_commandBuffer);
+        Muyo::endMarker(m_device, m_commandBuffer);
         if (m_marker != nullptr) m_marker->End();
     }
 
@@ -86,6 +87,7 @@ public:
     CommandBufferLabel& operator=(const CommandBufferLabel&) = delete;
 
 private:
+    VkDevice m_device = VK_NULL_HANDLE;                          ///< Device that owns the command buffer.
     VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;            ///< Labelled command buffer.
     Muyo::RenderGraph::IGraphCaptureMarker* m_marker = nullptr;  ///< Host capture marker, or null.
 };
@@ -2665,7 +2667,7 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             // Bracket the node so a validation tool attributes the commands and anything it reports to this node
             // rather than to the segment's command buffer, which several nodes share (#134). The graph emits the
             // Vulkan label only; a capture-tool marker is host policy and is not the graph's to emit (#272).
-            CommandBufferLabel nodeMarker(cmdBuf, rgn.name, m_services.captureMarker);
+            CommandBufferLabel nodeMarker(m_vkDevice, cmdBuf, rgn.name, m_services.captureMarker);
 
             // 1. Barrier batch: transition all resources used by this node. The observer is how the trace learns
             // which resource each barrier belongs to, since the batch itself carries only handles.

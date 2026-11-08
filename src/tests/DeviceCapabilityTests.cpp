@@ -6,8 +6,11 @@
 #include <string>
 #include <vector>
 
+#include "Debug.h"
+#include "Debug/ScopedMarker.h"
 #include "Debug/Validation.h"
 #include "GraphicsTestEnv.h"
+#include "PipelineStateBuilder.h"
 #include "ShaderReflectionFetcher.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
@@ -41,6 +44,127 @@ struct ScopedDeviceLifetime
     {
         if (pDevice->GetDevice() != VK_NULL_HANDLE) pDevice->DestroyDevice();
         pDevice->Unintialize();
+    }
+};
+
+/// A device the test owns, created the way a library client creates one, with the teardown a failed
+/// assertion must still perform.
+///
+/// Deliberately not `GetRenderDevice()`: the client-device cases below are about a device the
+/// process-wide singleton does not know about (#274, #276).
+struct ClientDevice
+{
+    Muyo::VkRenderDevice device;
+
+    ClientDevice() : ClientDevice({}, {}) {}
+    ClientDevice(std::vector<const char*> instanceExtensions, std::vector<const char*> layers)
+    {
+        try
+        {
+            device.Initialize(instanceExtensions, layers);
+            device.CreateDevice({}, {});
+        }
+        catch (...)
+        {
+            // A constructor that throws never runs the destructor, so clean up the partially built
+            // hierarchy here rather than leaving the next case to trip over it (#278).
+            if (device.GetDevice() != VK_NULL_HANDLE) device.DestroyDevice();
+            device.Unintialize();
+            throw;
+        }
+    }
+
+    ~ClientDevice()
+    {
+        if (device.GetDevice() != VK_NULL_HANDLE) device.DestroyDevice();
+        device.Unintialize();
+    }
+
+    ClientDevice(const ClientDevice&) = delete;
+    ClientDevice& operator=(const ClientDevice&) = delete;
+};
+
+/// Records the command-buffer labels the validation layer reports.
+///
+/// The engine's messenger aborts on an error, which is the right host policy and the wrong instrument for
+/// a test that has to provoke one to observe the label. The layer includes the open command-buffer labels
+/// in an error's callback data, so this is how "the label was recorded" is made observable.
+struct LabelCapture
+{
+    std::vector<std::string> cmdBufLabels;
+
+    static VKAPI_ATTR VkBool32 VKAPI_CALL Callback(VkDebugUtilsMessageSeverityFlagBitsEXT,
+                                                   VkDebugUtilsMessageTypeFlagsEXT,
+                                                   const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+                                                   void* pUserData)
+    {
+        auto* pCapture = static_cast<LabelCapture*>(pUserData);
+        for (uint32_t i = 0; i < pCallbackData->cmdBufLabelCount; ++i)
+        {
+            if (pCallbackData->pCmdBufLabels[i].pLabelName != nullptr)
+            {
+                pCapture->cmdBufLabels.emplace_back(pCallbackData->pCmdBufLabels[i].pLabelName);
+            }
+        }
+        return VK_FALSE;
+    }
+};
+
+/// A client-owned device for marker tests: validation and `VK_EXT_debug_utils` enabled, a messenger that
+/// records instead of aborting, and one command buffer to record into.
+struct ClientDeviceForMarkers : ClientDevice
+{
+    LabelCapture capture;
+    VkDebugUtilsMessengerEXT messenger = VK_NULL_HANDLE;
+    PFN_vkDestroyDebugUtilsMessengerEXT pfnDestroyMessenger = nullptr;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
+    VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+
+    ClientDeviceForMarkers() : ClientDevice({VK_EXT_DEBUG_UTILS_EXTENSION_NAME}, {Muyo::GetValidationLayerName()})
+    {
+        const auto pfnCreateMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(device.GetInstance(), "vkCreateDebugUtilsMessengerEXT"));
+        pfnDestroyMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(device.GetInstance(), "vkDestroyDebugUtilsMessengerEXT"));
+        REQUIRE(pfnCreateMessenger != nullptr);
+        REQUIRE(pfnDestroyMessenger != nullptr);
+
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = {};
+        messengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        messengerInfo.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+        messengerInfo.messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT;
+        messengerInfo.pfnUserCallback = &LabelCapture::Callback;
+        messengerInfo.pUserData = &capture;
+        Muyo::VK_ASSERT(pfnCreateMessenger(device.GetInstance(), &messengerInfo, nullptr, &messenger));
+
+        VkCommandPoolCreateInfo poolInfo = {};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.queueFamilyIndex = device.GetGraphicsQueueFamily();
+        Muyo::VK_ASSERT(vkCreateCommandPool(device.GetDevice(), &poolInfo, nullptr, &commandPool));
+
+        VkCommandBufferAllocateInfo allocateInfo = {};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocateInfo.commandPool = commandPool;
+        allocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocateInfo.commandBufferCount = 1;
+        Muyo::VK_ASSERT(vkAllocateCommandBuffers(device.GetDevice(), &allocateInfo, &commandBuffer));
+    }
+
+    ~ClientDeviceForMarkers()
+    {
+        // Before the base class destroys the instance and the device. The command buffer is not in the
+        // recording state on any path that reaches here with a live device; a failure inside the label
+        // scope aborts the case rather than unwinding through it.
+        if (pfnDestroyMessenger != nullptr && messenger != VK_NULL_HANDLE)
+        {
+            pfnDestroyMessenger(device.GetInstance(), messenger, nullptr);
+        }
+        if (device.GetDevice() != VK_NULL_HANDLE && commandPool != VK_NULL_HANDLE)
+        {
+            vkDestroyCommandPool(device.GetDevice(), commandPool, nullptr);
+        }
     }
 };
 }  // namespace
@@ -485,4 +609,57 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "VkMemoryAllocator: several resources al
     vkDestroyBuffer(device, bufferA, nullptr);
     pAllocator->FreeAliasingBlock(block);
     CHECK(block == nullptr);
+}
+
+TEST_CASE("VkRenderDevice: debug markers label the device passed in, not the singleton", "[RenderDevice]")
+{
+    // #274. `beginMarker`/`endMarker` used to resolve `GetRenderDevice()->GetDevice()`. With the singleton
+    // uninitialized that is VK_NULL_HANDLE, so `vkGetDeviceProcAddr` returns null and the label is silently
+    // never recorded; with a different live device it labels the wrong one. This test makes the label
+    // observable through the validation layer, which reports the open command-buffer labels with an error
+    // raised inside the scope. On the old code the capture records no label and the CHECK below fails.
+    //
+    // The singleton is required to be uninitialized because that is what makes the old path a no-op rather
+    // than a call into some other test's device. Every preceding case tears its device down, so this holds
+    // whether the binary is run whole or through ctest one case at a time.
+    REQUIRE(Muyo::GetRenderDevice()->GetDevice() == VK_NULL_HANDLE);
+
+    ClientDeviceForMarkers client;
+
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    Muyo::VK_ASSERT(vkBeginCommandBuffer(client.commandBuffer, &beginInfo));
+    {
+        using namespace Muyo;
+        SCOPED_MARKER(client.device.GetDevice(), client.commandBuffer, "client-device-marker");
+
+        // VUID-VkViewport-width-01770: the layer reports this while the label is open, and a zero-width
+        // viewport is safe to hand the driver - unlike a null pViewports, which the driver dereferences
+        // after the layer has already reported it.
+        VkViewport viewport = {};
+        vkCmdSetViewport(client.commandBuffer, 0, 1, &viewport);
+    }
+    Muyo::VK_ASSERT(vkEndCommandBuffer(client.commandBuffer));
+
+    CHECK(std::find(client.capture.cmdBufLabels.begin(), client.capture.cmdBufLabels.end(), "client-device-marker") !=
+          client.capture.cmdBufLabels.end());
+}
+
+TEST_CASE("VkRenderDevice: CreateShaderModule creates the module on the device passed in", "[RenderDevice]")
+{
+    // #276. The old helper called `vkCreateShaderModule(GetRenderDevice()->GetDevice(), ...)`. With the
+    // singleton uninitialized that device is VK_NULL_HANDLE, which the loader rejects before the driver is
+    // reached (and VK_ASSERT would abort on any error result), so a client-constructed device could not
+    // create a module at all. Passing this test requires the module to have been created on the device
+    // given to the helper; the destroy below uses that same device.
+    REQUIRE(Muyo::GetRenderDevice()->GetDevice() == VK_NULL_HANDLE);
+
+    ClientDevice client;
+    const std::vector<char> code = Muyo::ReadSpv("shaders/linearizeDepth.comp.spv");
+    REQUIRE(!code.empty());
+    REQUIRE(code.size() % sizeof(uint32_t) == 0);
+
+    const VkShaderModule module = Muyo::CreateShaderModule(client.device.GetDevice(), code);
+    CHECK(module != VK_NULL_HANDLE);
+    vkDestroyShaderModule(client.device.GetDevice(), module, nullptr);
 }
