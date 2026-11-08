@@ -57,7 +57,8 @@ VkPipeline CreatePipeline(VkPipelineLayout pipelineLayout, VkPipelineCache pipel
 {
     Muyo::ComputePipelineBuilder builder;
 
-    VkShaderModule compShader = Muyo::CreateShaderModule(Muyo::ReadSpv("shaders/linearizeDepth.comp.spv"));
+    VkShaderModule compShader = Muyo::CreateShaderModule(Muyo::GetRenderDevice()->GetDevice(),
+                                                         Muyo::ReadSpv("shaders/linearizeDepth.comp.spv"));
 
     VkComputePipelineCreateInfo createInfo =
         builder.AddShaderModule(compShader).SetPipelineLayout(pipelineLayout).Build();

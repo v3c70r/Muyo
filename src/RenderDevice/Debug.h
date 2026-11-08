@@ -42,8 +42,14 @@ const char* GetValidationExtensionName();
 /// opt-in default; a library client may pass an empty layer list instead.
 const char* GetValidationLayerName();
 
-/// Names a Vulkan object on the process-wide device, for validation messages and capture tools.
-/// @param objectHandle The object's handle reinterpreted as `uint64_t`.
+/// Names a Vulkan object on the process-wide device singleton.
+///
+/// **Singleton-only.** This overload resolves `GetRenderDevice()` for both the device and the instance,
+/// so it names the object on whatever device the process-wide singleton happens to be. It exists for
+/// the engine's own resource classes, which use the singleton throughout. A library client - or any
+/// caller that owns a `VkRenderDevice` - must use the explicit overload below instead; the debug-marker
+/// path deliberately does not use this one (#274).
+/// @param objectHandle The object's handle reinterpreted as `uint64_t`; must belong to the singleton.
 /// @param objectType The object's `VkObjectType`.
 /// @param sName The name to attach.
 /// @return The Vulkan result, or `VK_ERROR_EXTENSION_NOT_PRESENT` when the instance has no
@@ -65,30 +71,35 @@ VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType,
 VkResult setDebugUtilsObjectName(VkDevice device, VkInstance instance, uint64_t objectHandle, VkObjectType objectType,
                                  const std::string& sName);
 
-// TODO(#274): the marker functions resolve the process-wide device, so a client-constructed
-// VkRenderDevice labels the wrong device. Thread the owning device through rather than using
-// GetRenderDevice(); the explicit object-name overload below is the shape to follow.
 /// Begins a debug-utils label on a queue. Does nothing when the device has no
 /// `vkQueueBeginDebugUtilsLabelEXT` entry point.
+///
+/// The owning device is a parameter rather than a lookup: a client-constructed `VkRenderDevice` owns a
+/// device the process-wide singleton does not know about, and resolving the singleton here labelled the
+/// wrong device (or nothing, before the singleton was initialized) (#274).
+/// @param device Device that owns @p queue.
 /// @param queue Queue to label.
 /// @param name Label text; consumed by the call.
 /// @param color Unused; the label is colourless.
-void beginMarker(VkQueue queue, std::string&& name, uint64_t color);
+void beginMarker(VkDevice device, VkQueue queue, std::string&& name, uint64_t color);
 
 /// Ends the innermost debug-utils label on a queue.
+/// @param device Device that owns @p queue.
 /// @param queue Queue whose label is closed.
-void endMarker(VkQueue queue);
+void endMarker(VkDevice device, VkQueue queue);
 
 /// Begins a debug-utils label on a command buffer. Does nothing when the device has no
 /// `vkCmdBeginDebugUtilsLabelEXT` entry point.
+/// @param device Device that owns @p cmd.
 /// @param cmd Command buffer being recorded.
 /// @param name Label text; consumed by the call.
 /// @param color Unused; the label is colourless.
-void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t color);
+void beginMarker(VkDevice device, VkCommandBuffer cmd, std::string&& name, uint64_t color);
 
 /// Ends the innermost debug-utils label on a command buffer.
+/// @param device Device that owns @p cmd.
 /// @param cmd Command buffer whose label is closed.
-void endMarker(VkCommandBuffer cmd);
+void endMarker(VkDevice device, VkCommandBuffer cmd);
 
 /// Reports a failed Vulkan call and terminates the process.
 /// @param result The failed result.

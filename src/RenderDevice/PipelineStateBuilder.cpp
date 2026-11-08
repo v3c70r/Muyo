@@ -215,14 +215,14 @@ RayTracingPipelineBuilder& RayTracingPipelineBuilder::AddShaderModule(const VkSh
     return *this;
 }
 
-VkShaderModule CreateShaderModule(const std::vector<char>& code)
+VkShaderModule CreateShaderModule(VkDevice device, const std::vector<char>& code)
 {
     VkShaderModuleCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     createInfo.codeSize = code.size();
     createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
     VkShaderModule shdrModule;
-    VK_ASSERT(vkCreateShaderModule(GetRenderDevice()->GetDevice(), &createInfo, nullptr, &shdrModule));
+    VK_ASSERT(vkCreateShaderModule(device, &createInfo, nullptr, &shdrModule));
     return shdrModule;
 }
 

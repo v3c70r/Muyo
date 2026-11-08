@@ -477,7 +477,15 @@ public:
     }
 };
 
-VkShaderModule CreateShaderModule(const std::vector<char>& code);
+/// Creates a shader module from SPIR-V code on an explicitly supplied device.
+///
+/// The owning device is a parameter rather than a lookup: `muyo_device` can be used by a client that
+/// constructs its own `VkRenderDevice`, and resolving the process-wide singleton here created the module
+/// on the wrong device - or on none, before the singleton was initialized (#276).
+/// @param device Device that creates and owns the module.
+/// @param code SPIR-V bytecode. `codeSize` must be a multiple of 4.
+/// @return The created module; the caller destroys it with `vkDestroyShaderModule` on the same device.
+VkShaderModule CreateShaderModule(VkDevice device, const std::vector<char>& code);
 std::vector<char> ReadSpv(const std::string& fileName);
 
 }  // namespace Muyo

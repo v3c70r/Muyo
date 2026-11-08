@@ -184,6 +184,8 @@ void DebugUtilsMessenger::Uninitialize(const VkInstance& instance)
 // // Call add callback by query the extension
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType, const std::string& sName)
 {
+    // Singleton-only convenience: documented as such in Debug.h. Engine resource classes reach it; no
+    // marker function does, because a client owns a device the singleton may not know (#274).
     return setDebugUtilsObjectName(GetRenderDevice()->GetDevice(), GetRenderDevice()->GetInstance(), objectHandle,
                                    objectType, sName);
 }
@@ -207,7 +209,7 @@ VkResult setDebugUtilsObjectName(VkDevice device, VkInstance instance, uint64_t 
 }
 
 // specialization for VkQueue and VkCommandBuffer
-void beginMarker(VkQueue queue, std::string&& name, uint64_t)
+void beginMarker(VkDevice device, VkQueue queue, std::string&& name, uint64_t)
 {
     VkDebugUtilsLabelEXT labelInfo = {};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
@@ -215,35 +217,32 @@ void beginMarker(VkQueue queue, std::string&& name, uint64_t)
 
     // Note: the function pointer is re-resolved on every call. Caching it in a static binds it to
     // the device that happened to be current the first time and goes stale if the device is
-    // recreated (which tests do per case).
-    auto func = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
-                                                                        "vkQueueBeginDebugUtilsLabelEXT");
+    // recreated (which tests do per case). Resolving it from the caller's device keeps a
+    // client-constructed VkRenderDevice off the process-wide singleton (#274).
+    auto func = (PFN_vkQueueBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(device, "vkQueueBeginDebugUtilsLabelEXT");
     if (func != nullptr) func(queue, &labelInfo);
 }
 
-void endMarker(VkQueue queue)
+void endMarker(VkDevice device, VkQueue queue)
 {
-    auto func = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
-                                                                      "vkQueueEndDebugUtilsLabelEXT");
+    auto func = (PFN_vkQueueEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(device, "vkQueueEndDebugUtilsLabelEXT");
     if (func != nullptr) func(queue);
 }
 
 // specialization for VkQueue and VkCommandBuffer
-void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t)
+void beginMarker(VkDevice device, VkCommandBuffer cmd, std::string&& name, uint64_t)
 {
     VkDebugUtilsLabelEXT labelInfo = {};
     labelInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT;
     labelInfo.pLabelName = name.data();
 
-    auto func = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
-                                                                      "vkCmdBeginDebugUtilsLabelEXT");
+    auto func = (PFN_vkCmdBeginDebugUtilsLabelEXT)vkGetDeviceProcAddr(device, "vkCmdBeginDebugUtilsLabelEXT");
     if (func != nullptr) func(cmd, &labelInfo);
 }
 
-void endMarker(VkCommandBuffer cmd)
+void endMarker(VkDevice device, VkCommandBuffer cmd)
 {
-    auto func = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(GetRenderDevice()->GetDevice(),
-                                                                    "vkCmdEndDebugUtilsLabelEXT");
+    auto func = (PFN_vkCmdEndDebugUtilsLabelEXT)vkGetDeviceProcAddr(device, "vkCmdEndDebugUtilsLabelEXT");
     if (func != nullptr) func(cmd);
 }
 
