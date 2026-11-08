@@ -67,6 +67,13 @@ public:
     /// @return True when this run has a headless surface, so a present-path test can run at all.
     bool HasHeadlessSurface() const { return m_surface != VK_NULL_HANDLE; }
 
+    /// @return The physical device the first environment in this process selected, or empty before one.
+    ///
+    /// `VkRenderDevice` pins the physical device by name (#141) and falls back to enumeration order when the
+    /// pinned device is no longer enumerated (#157). A test whose claim is about "the device" has to know
+    /// when that fallback moved the run, so it can scope the claim to the device the run started on.
+    static const std::string &GetFirstDeviceName() { return s_firstDeviceName; }
+
 private:
     /// Runs the construction steps. Called from the constructor, so a throw can be caught and cleaned up.
     void Initialize(ConstructionFailure failure)
@@ -87,6 +94,8 @@ private:
         // contract that a validation ERROR fails the run (AGENTS.md section 4), and it is the same
         // helper the apps use.
         InitializeDeviceWithValidation(GetRenderDevice(), instanceExtensions);
+        // Record the device the run started on before any later fixture can see the #157 fallback move it.
+        if (s_firstDeviceName.empty()) s_firstDeviceName = GetRenderDevice()->GetPhysicalDeviceName();
 #ifdef FEATURE_RAY_TRACING
         // Device-level ray tracing entry points are resolved through the instance.
         VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
@@ -272,6 +281,9 @@ private:
 
     /// The step `FailNextConstructionForTest` armed; consumed by the next constructor. Test-only.
     static inline ConstructionFailure s_nextConstructionFailure = ConstructionFailure::None;
+
+    /// The physical device the first environment in this process selected; see `GetFirstDeviceName`.
+    static inline std::string s_firstDeviceName;
 
     /// @return True when the selected device exposes both heap extensions and reports both features.
     ///

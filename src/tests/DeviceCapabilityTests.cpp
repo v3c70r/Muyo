@@ -221,6 +221,20 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "VkRenderDevice: the cooperative-matrix 
     // wrong feature struct, or treating the extension as sufficient when the feature is what gates it. So
     // the answer is compared against the device's own extension list rather than trusted.
     Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
+
+    // #157: on some drivers the pinned device stops being enumerated after enough instance re-creations and
+    // PickPhysicalDevice falls back to enumeration order, so the run continues on a different device. This
+    // case's claim is per-device and applies only while the fixture is still on the device the run started
+    // on; `VkRenderDevice` also keeps the previous device's cooperative-matrix capability across that switch,
+    // so the agreement check below would report the fallback rather than a disagreement on one device.
+    const std::string& sRunDeviceName = Muyo::GraphicsTestEnv::GetFirstDeviceName();
+    if (pDevice->GetPhysicalDeviceName() != sRunDeviceName)
+    {
+        SKIP(
+            "the process fell back to a different physical device mid-run (#157); a per-device claim covers "
+            "only the run before the fallback");
+    }
+
     const VkPhysicalDevice physicalDevice = pDevice->GetPhysicalDevice();
 
     uint32_t nExtensionCount = 0;
@@ -233,7 +247,9 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "VkRenderDevice: the cooperative-matrix 
     // A device without the extension can never be reported as supporting it. The converse - extension
     // present but the feature false - is possible in principle, so it is checked rather than assumed, and
     // a device that does it is worth knowing about because the extension would then be enabled for nothing.
-    if (!bExposesExtension) CHECK_FALSE(pDevice->IsCooperativeMatrixSupported());
+    // CHECK(!x), not CHECK_FALSE(x): Catch2's CHECK_FALSE expands through a flag OR that the clang-analyzer
+    // EnumCastOutOfRange check reports on a changed line. The assertion is the same.
+    if (!bExposesExtension) CHECK(!pDevice->IsCooperativeMatrixSupported());
     INFO("extension exposed: " << bExposesExtension);
     INFO("unavailable - this device is RADV, which does not expose it; see AGENTS.md section 8");
     CHECK(pDevice->IsCooperativeMatrixSupported() == bExposesExtension);
