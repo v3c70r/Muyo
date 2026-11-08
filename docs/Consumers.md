@@ -39,7 +39,7 @@ tracking issue and, where it blocks a consumer, is marked.
 | Guarantee | Consumer | State | Tracking |
 | --- | --- | --- | --- |
 | Compute-only profile: no surface, present or colour attachment required on the execution path | muyo-llm | holds | — |
-| Linking `muyo_device` enables no validation layer or debug messenger; diagnostics are the host's opt-in | muyo-llm, muyo-renderer | holds | — |
+| Linking `muyo_device` enables no validation layer or debug messenger and needs no engine link; diagnostics are the host's opt-in | muyo-llm, muyo-renderer | holds | — |
 | Completion is expressible as a timeline value and chainable across executions | muyo-llm | holds | — |
 | Long-lived *imported* resources (weights, a KV cache) survive across executions | muyo-llm | holds | — |
 | An imported image's caller-stated layout is the first barrier's source, so its content is not discarded | helloVulkan | holds | — |
