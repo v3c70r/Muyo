@@ -2,8 +2,10 @@
 
 **Snapshot:** 2026-11-06, master `70d1bb8`. **Adoption is complete:** #20 and #51 are closed, the
 renderer is fully graph-driven, and `src/RenderPasses/` is gone. P0, P2 and P3 are closed milestones;
-P1, L and Backlog remain open with **28 open issues**. The B track is complete through B2, and the
-post-adoption reconciliation added #262/#265 to P1 and moved #186 to Backlog; #265 closed in its own PR.
+P1, L and Backlog remain open with **26 open issues** (P1 10, L 6, Backlog 10; the count is the sum over
+those three milestones, recomputed after #265 closed rather than decremented from an older figure). The
+B track is complete through B2, and the post-adoption reconciliation added #262/#265 to P1 and moved #186
+to Backlog; #265 closed in its own PR.
 
 **Authority:** phase membership is the six GitHub milestones; an issue's state is its `Status`,
 `Critical path`, `Depends on` and `Debt` fields on the [project board](https://github.com/users/v3c70r/projects/3);
@@ -26,7 +28,7 @@ flowchart LR
     B["B descriptor heap<br/>B0–B2 ✅ · B3/B4 future<br/>inside P1"]
     P2["P2 App adoption<br/>closed · 5 done<br/>helloVulkan fully on the graph"]
     P3["P3 Deprecation<br/>closed · 1 done<br/>RenderPassManager deleted"]
-    L["L Library extraction<br/>open · 8<br/>overlaps P1"]
+    L["L Library extraction<br/>open · 6<br/>overlaps P1"]
     BL["Backlog (after P3)<br/>open · 10<br/>tooling + deferred capabilities"]
     P0 --> P1 --> B --> P2 --> P3
     L -. constrains .-> P1
@@ -39,7 +41,7 @@ flowchart LR
 | **P1** | The graph renders the scene validation-clean with the capabilities (transfer/clear, transients, descriptors, pipeline caching). RT is a separate gate. The cost half is #59. | **Open, 10.** Adoption is complete and the graph is the only renderer after #51; the per-submesh material defect (#267) was fixed by #269, and #265's dead-feature question was resolved (the `shaderInt64` enable names its heap-RT consumer; the app stopped requesting the mesh-shader extension). Remaining: #59 cost (must choose a new reference because the legacy path is gone) with its timing source #197, the RT cluster #19/#223/#238/#253, and device/heap follow-ups #222/#233/#234/#262. |
 | **P2** | `helloVulkan` renders through the graph; `RenderPassManager` is referenced only by its own files. Capability, not completeness. | **Met, closed.** 5 done, 0 open; the manager was deleted with #51. |
 | **P3** | `grep -rn "RenderPassManager" src/` is empty and `src/RenderPasses/` is gone; the diff is almost entirely deletions. | **Met, closed.** 1 done, 0 open (#51). |
-| **L** | A non-renderer consumer runs against the public surface only, with no `gap` row blocking it. | **Open, 8.** #53 (public surface) is in progress; #54, #58 and #272 (resource/allocator boundary) are the other critical-path items. #72 is the driver-specific blocker. |
+| **L** | A non-renderer consumer runs against the public surface only, with no `gap` row blocking it. | **Open, 6.** #53 (public surface) is in progress; #54 is the other critical-path item. #58 and #272 closed with #277/#285. #72 is the driver-specific blocker. |
 | **Backlog** | Work the roadmap places after the first consumer adoption (complete) and P3. | **Open, 10.** None on the parity path. |
 
 ### B track inside P1
