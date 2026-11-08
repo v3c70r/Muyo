@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <cstring>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -112,6 +113,44 @@ TEST_CASE("VkRenderDevice: Initialize and Unintialize refuse to destroy a live i
     pDevice->CreateDevice({}, {}, nullptr, {});
     CHECK(pDevice->GetDevice() != VK_NULL_HANDLE);
     CHECK_THROWS_WITH(pDevice->Unintialize(), Catch::Matchers::ContainsSubstring("logical device exists"));
+}
+
+TEST_CASE("GraphicsTestEnv: a constructor throw tears down what it created", "[RenderDevice]")
+{
+    // #278. The whole fixture setup runs in the constructor, so a throw after the instance, surface or
+    // device exists used to skip the destructor. The next fixture's `Initialize` then refused the live
+    // instance, turning one device-capability failure into a failure of every later case. The two seams
+    // below force the partial states that matter: `CreateDevice` throws (instance and surface exist, no
+    // device), and the constructor throws once the device exists but before any pool or manager.
+    using ConstructionFailure = Muyo::GraphicsTestEnv::ConstructionFailure;
+    Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
+
+    SECTION("CreateDevice throws: the instance and its surface are torn down")
+    {
+        Muyo::GraphicsTestEnv::FailNextConstructionForTest(ConstructionFailure::DeviceCreation);
+        CHECK_THROWS_AS(Muyo::GraphicsTestEnv(), std::runtime_error);
+    }
+    SECTION("a throw after device creation: the device is torn down as well")
+    {
+        Muyo::GraphicsTestEnv::FailNextConstructionForTest(ConstructionFailure::AfterDeviceCreation);
+        CHECK_THROWS_AS(Muyo::GraphicsTestEnv(), std::runtime_error);
+    }
+
+    // Nothing is left live. The surface matters twice: leaking it would leave the instance as live as it
+    // was, and destroying the instance while the surface exists is invalid usage
+    // (VUID-vkDestroyInstance-instance-00629), which the validation callback aborts on.
+    CHECK(pDevice->GetDevice() == VK_NULL_HANDLE);
+    CHECK(pDevice->GetInstance() == VK_NULL_HANDLE);
+    CHECK(pDevice->GetPhysicalDevice() == VK_NULL_HANDLE);
+
+    // The next fixture's construction is the call that used to fail with "called on an initialized
+    // device". A full environment built and destroyed afterwards is the proof, not a flag reset.
+    {
+        Muyo::GraphicsTestEnv env;
+        CHECK(pDevice->GetDevice() != VK_NULL_HANDLE);
+        CHECK(pDevice->GetInstance() != VK_NULL_HANDLE);
+    }
+    CHECK(pDevice->GetInstance() == VK_NULL_HANDLE);
 }
 
 TEST_CASE("VkRenderDevice: an unavailable layer or instance extension fails at Initialize", "[RenderDevice]")
