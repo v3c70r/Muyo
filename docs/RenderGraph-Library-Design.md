@@ -65,14 +65,14 @@ several are currently on the wrong side of it.
 
 | Concern | Owner | Received by injection | Note |
 | --- | --- | --- | --- |
-| Instance, device, queues, memory, sync primitives, command pools | **device** | — | Already exists; needs a target of its own rather than a header inside the engine. |
+| Instance, device, queues, memory, sync primitives, command pools | **device** | — | Landed as the `muyo_device` target (#58). |
 | Queue *use* — which segment runs where | **graph** | queue-family facts | The graph plans; it must not *require* a graphics family (compute-only profile). |
 | Transient resources, aliasing, lifetimes | **graph** | allocator | The policy is the graph's; the memory is not. The interface is graph-owned and the concrete types live in `muyo_device` (#272). |
 | Barriers and layouts | **graph** | — | The reason the graph exists. |
 | Pipeline creation | **graph** | shader source provider, pipeline cache | It builds pipelines from node descriptions today. Keep that — but a client should be able to supply SPIR-V bytes and a cache, not only a file name on disk. |
 | Descriptor heap and bindless binding | **graph** | descriptor-heap service | B1a/B1b replaced descriptor sets: the graph receives a `DescriptorHeapService`, writes no set layouts, pools or pipeline layouts, and exposes a use's heap index. |
 | Swapchain, present, frame pacing | **host** | — | Not the graph's, not the pipeline's. |
-| Validation-layer enablement | **host** | — | See below; this is currently the device's and should not be. |
+| Validation-layer enablement | **host** | — | Landed in #58: the device exposes the messenger hook, the host chooses. See below. |
 
 ## Decisions
 
@@ -133,15 +133,30 @@ stay in this repository, while the host and the render pipeline move to a consum
 consumer of the public surface only; the resource boundary is the prerequisite that lets it stop linking
 the engine.
 
-## What the device layer must shed
+## The device layer and validation policy (landed, #58)
 
-`VkDebugRenderDevice::Initialize` appends the validation layer and extension **unconditionally**, and
-`DebugUtilsMessenger` is created with the instance. A library's client should choose whether it wants a
-validation layer, a debug messenger, and their cost — an inference service does not.
+`muyo_device` is now a target built from `src/RenderDevice/`: instance, device, queues, memory, sync
+primitives, command pools, the VMA allocator, the descriptor-heap service, the extension loader,
+barriers, the pipeline-state builder and the debug utilities. The engine and the graph link it
+(`muyo` publicly, and `muyo_rg` directly), so the bottom of the stack no longer arrives through the
+engine's target.
 
-So: instance/device/queues/memory stay in the device layer; **validation policy moves to the host**, with
-the device offering a debug-messenger hook it can be given. Until then, every consumer of the library
-gets validation whether it asked or not.
+The validation policy is the host's, which is the behaviour change that was the reason to file #58
+separately from a mechanical target split:
+
+- `VkRenderDevice::Initialize` appends neither `VK_LAYER_KHRONOS_validation` nor
+  `VK_EXT_debug_utils`, and creates no messenger. The minimal call is a headless, unvalidated device.
+- `VkRenderDevice::InitializeDebugMessenger` is the hook a host can give itself. The device never
+  installs the callback on its own, and `Unintialize` destroys it if it was installed.
+- This repository's hosts keep their previous behaviour by opting in through
+  `Muyo::InitializeDeviceWithValidation` (`src/Debug/Validation.h`). That is policy in the engine, not
+  in the library: an inference service linking `muyo_device` may pass an empty layer list and pay
+  nothing for diagnostics it did not ask for.
+
+The device still selects a physical device, but a null surface is a supported argument to
+`CreateDevice`: no present-capable queue family is selected and `GetPresentQueue()` stays null, so a
+headless client does not require a surface. Both configurations exercise the unvalidated path through
+`VkRenderDevice: validation is opt-in and a headless device works without it` (`[RenderDevice]`).
 
 ## Packaging an external consumer, and why not C++ modules yet
 

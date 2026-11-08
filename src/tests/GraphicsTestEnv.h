@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "Debug/Validation.h"
 #include "DescriptorManager.h"
 #include "Material.h"
 #include "MeshResourceManager.h"
@@ -34,7 +35,11 @@ public:
             instanceExtensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
             instanceExtensions.push_back(VK_EXT_HEADLESS_SURFACE_EXTENSION_NAME);
         }
-        GetRenderDevice()->Initialize(instanceExtensions, {});
+        // The test host opts in to validation here, explicitly: the device no longer appends the layer
+        // or creates a messenger on its own (#58). Keeping the opt-in is what preserves the suite's
+        // contract that a validation ERROR fails the run (AGENTS.md section 4), and it is the same
+        // helper the apps use.
+        InitializeDeviceWithValidation(GetRenderDevice(), instanceExtensions);
 #ifdef FEATURE_RAY_TRACING
         // Device-level ray tracing entry points are resolved through the instance.
         VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());

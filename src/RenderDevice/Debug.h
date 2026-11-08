@@ -10,39 +10,104 @@
 
 namespace Muyo
 {
+/// Owns a `VK_EXT_debug_utils` messenger. Creation is explicit; the device never installs one itself.
 class DebugUtilsMessenger
 {
 public:
+    /// Creates the messenger on `instance`.
+    /// @param instance Instance with `VK_EXT_debug_utils` enabled.
+    /// @note Must not already have created a messenger; call `Uninitialize` first. The device's
+    ///       `InitializeDebugMessenger` enforces that for its own hook.
+    /// @note Aborts via `VK_ASSERT` if `vkCreateDebugUtilsMessengerEXT` fails or the loader does not
+    ///       provide it; a missing messenger would silently discard every validation message.
     void Initialize(const VkInstance& instance);
+
+    /// Destroys the messenger if one exists. Safe to call more than once.
+    /// @param instance The instance the messenger was created on.
     void Uninitialize(const VkInstance& instance);
+
+    /// @return True when `Initialize` has created a messenger and it has not been destroyed.
+    bool IsCreated() const { return m_debugUtilsMessenger != VK_NULL_HANDLE; }
 
 private:
     VkDebugUtilsMessengerEXT m_debugUtilsMessenger = VK_NULL_HANDLE;
 };
 
+/// @return `VK_EXT_DEBUG_UTILS_EXTENSION_NAME`, the instance extension a debug messenger needs.
+///
+/// The device does not enable it by itself; this names it for a host that chooses to (#58).
 const char* GetValidationExtensionName();
+
+/// @return `"VK_LAYER_KHRONOS_validation"`, the validation layer's name.
+///
+/// Requesting it is the host's decision. `Muyo::InitializeDeviceWithValidation` is the engine hosts'
+/// opt-in default; a library client may pass an empty layer list instead.
 const char* GetValidationLayerName();
 
+/// Names a Vulkan object on the process-wide device, for validation messages and capture tools.
+/// @param objectHandle The object's handle reinterpreted as `uint64_t`.
+/// @param objectType The object's `VkObjectType`.
+/// @param sName The name to attach.
+/// @return The Vulkan result, or `VK_ERROR_EXTENSION_NOT_PRESENT` when the instance has no
+///         `vkSetDebugUtilsObjectNameEXT`.
 VkResult setDebugUtilsObjectName(uint64_t objectHandle, VkObjectType objectType, const std::string& sName);
 
-// Scoped markers
+/// Names a Vulkan object on an explicitly supplied device.
+///
+/// Used by `VkRenderDevice::CreateDevice` so a device created by a library client names its objects on
+/// its own instance rather than on the process-wide singleton. A caller that already has a device handle
+/// should prefer this form.
+/// @param device Device that owns the object.
+/// @param instance The device's instance.
+/// @param objectHandle The object's handle reinterpreted as `uint64_t`.
+/// @param objectType The object's `VkObjectType`.
+/// @param sName The name to attach.
+/// @return The Vulkan result, or `VK_ERROR_EXTENSION_NOT_PRESENT` when the instance has no
+///         `vkSetDebugUtilsObjectNameEXT`.
+VkResult setDebugUtilsObjectName(VkDevice device, VkInstance instance, uint64_t objectHandle, VkObjectType objectType,
+                                 const std::string& sName);
+
+// TODO(#274): the marker functions resolve the process-wide device, so a client-constructed
+// VkRenderDevice labels the wrong device. Thread the owning device through rather than using
+// GetRenderDevice(); the explicit object-name overload below is the shape to follow.
+/// Begins a debug-utils label on a queue. Does nothing when the device has no
+/// `vkQueueBeginDebugUtilsLabelEXT` entry point.
+/// @param queue Queue to label.
+/// @param name Label text; consumed by the call.
+/// @param color Unused; the label is colourless.
 void beginMarker(VkQueue queue, std::string&& name, uint64_t color);
+
+/// Ends the innermost debug-utils label on a queue.
+/// @param queue Queue whose label is closed.
 void endMarker(VkQueue queue);
 
+/// Begins a debug-utils label on a command buffer. Does nothing when the device has no
+/// `vkCmdBeginDebugUtilsLabelEXT` entry point.
+/// @param cmd Command buffer being recorded.
+/// @param name Label text; consumed by the call.
+/// @param color Unused; the label is colourless.
 void beginMarker(VkCommandBuffer cmd, std::string&& name, uint64_t color);
+
+/// Ends the innermost debug-utils label on a command buffer.
+/// @param cmd Command buffer whose label is closed.
 void endMarker(VkCommandBuffer cmd);
 
-// Using template to handle command buffer and queue markers
+/// Opens a Vulkan debug label and a capture-tool marker, and closes both on destruction.
+///
+/// The Vulkan label closes first, then the capture marker, so the two scopes nest the same way they
+/// were opened. @p T is `VkQueue` or `VkCommandBuffer`.
 template <class T>
 class ScopedMarker
 {
 public:
+    /// @param vkObj Queue or command buffer to label.
+    /// @param marker Label text.
     ScopedMarker(T vkObj, std::string&& marker) : m_captureMarker(marker)
     {
         m_markedVkObject = vkObj;
         beginMarker(vkObj, std::forward<std::string>(marker), uint64_t(0));
     }
-    // The Vulkan label closes first, then the capture marker: the two scopes nest the same way they were opened.
+    /// Closes the Vulkan label, then the capture marker.
     ~ScopedMarker() { endMarker(m_markedVkObject); }
 
 private:
