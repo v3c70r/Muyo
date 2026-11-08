@@ -51,7 +51,15 @@ bad() { printf '\033[31m%s\033[0m\n' "$*"; }
 fail=0
 
 cmd_docs() {
-    bold "docs: coverage + generated markdown"
+    bold "docs: install-list parser self-test, coverage + generated markdown"
+    # The install-set comparison is only as good as its parser: a commented-out header must not read
+    # as installed, or the check passes while the package omits it (#299 review P1).
+    if python3 scripts/render_graph_docs.py --self-test; then
+        ok "docs parser self-test OK"
+    else
+        bad "docs parser self-test FAILED"
+        fail=1
+    fi
     if python3 scripts/render_graph_docs.py --check; then
         ok "docs OK"
     else

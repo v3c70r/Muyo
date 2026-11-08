@@ -139,6 +139,17 @@ the public headers are self-contained since #297: the builder's private state is
 one. The device headers are under `include/RenderDevice/`. The installed set is stated and checked against
 `scripts/render_graph_docs.py` by the docs check (#73).
 
+`scripts/package-probe/` is the out-of-tree consumer that keeps the installed package honest. Its
+`CMakeLists.txt` only does `find_package(muyo_rg 0.1 REQUIRED)` and links `Muyo::muyo_rg`; `main.cpp`
+constructs a public graph value, prints the version and exits 0 without creating a device. The `package`
+job in `.github/workflows/ci.yml` builds Release, installs to `$RUNNER_TEMP/muyo-install`, builds and
+runs the probe with `CMAKE_PREFIX_PATH` and no source-tree include or link path, and checks the failure
+path: configuring with `CMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON` must fail with
+`muyo_rg could not be found because dependency Vulkan could not be found`. It also checks the *installed*
+set with `scripts/check_installed_package.py`: `include/RenderGraph/` is exactly the `PUBLIC_HEADERS`
+list, and `include/Muyo/detail/RenderGraph/` is absent. Because the probe constructs values only, the
+job needs no GPU and does not change the device axes the test matrix covers (#298).
+
 A consumer of the public headers needs Vulkan, VMA and SPIRV-Reflect: `BufferResourceDesc::memoryProperties`
 and the allocator interface speak `VmaMemoryUsage`, and `ShaderAsset` carries the reflection object. Those
 are part of the declared interface until #293 removes the VMA vocabulary; the package makes them reachable

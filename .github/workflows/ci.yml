@@ -2,8 +2,8 @@ name: CI
 
 # Runs on GitHub-hosted runners with mesa's lavapipe as the Vulkan device, so it gates everything that
 # does not need a driver: both configurations build, the checked-in API reference matches the headers,
-# the changed lines are formatted and clang-tidy clean, and the whole test suite passes with the
-# validation layer on.
+# the changed lines are formatted and clang-tidy clean, the whole test suite passes with the
+# validation layer on, and the installed package is configured by an out-of-tree consumer.
 #
 # What it cannot gate, recorded rather than implied - see AGENTS.md section 4 for the axis table:
 #
@@ -66,6 +66,11 @@ jobs:
 
       - name: Documentation coverage and the checked-in reference
         run: python3 scripts/render_graph_docs.py --check
+
+      - name: Install-list parser self-test
+        # Proves the install-set check still has teeth after the #299 review P1: a header commented
+        # out of `MUYO_RG_PUBLIC_HEADERS` must no longer parse as installed.
+        run: python3 scripts/render_graph_docs.py --self-test
 
       - name: No descriptor-set path on the graph path
         run: python3 scripts/check_descriptor_path.py
@@ -276,3 +281,116 @@ jobs:
               echo "::error::$unexpected unexpected validation message(s); the debug callback asserts on ERROR, so this run should have aborted"
             fi
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The installed package and an out-of-tree consumer (#298, #73). Separate from the test matrix
+  # because its subject is not the device: the probe constructs public values and creates no
+  # VkDevice, so this job needs no GPU and no display. What it gates is the packaging boundary - the
+  # exported include directories, the dependency lookup and the config file - which the in-tree build
+  # cannot see because it links the source tree's targets directly.
+  package:
+    name: package (install + out-of-tree consumer)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake python3 \
+            libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
+            libvulkan1 libvulkan-dev
+
+      - name: Install the Vulkan SDK (tarball, pinned)
+        uses: ./.github/actions/install-vulkan-sdk
+        with:
+          version: ${{ env.VULKAN_SDK_VERSION }}
+
+      - name: Record the tool versions this run used
+        run: |
+          # The SDK version is part of the result, the way it is for every test-matrix job: a package
+          # that configures against one Vulkan SDK is evidence about that code-and-SDK pair.
+          {
+            echo "### package (install + out-of-tree consumer)"
+            echo
+            echo "Vulkan SDK: ${VULKAN_SDK_VERSION} (${VULKAN_SDK})"
+            echo "cmake: $(cmake --version | head -1)"
+            echo "compiler: $(c++ --version | head -1)"
+            echo "slangc: $(slangc --version 2>/dev/null | head -1)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure and build Release
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFEATURE_RAY_TRACING=OFF \
+                -DGLFW_BUILD_WAYLAND=OFF
+          cmake --build build --target muyo_rg -j"$(nproc)"
+
+      - name: Install to a throwaway prefix
+        run: |
+          PREFIX="$RUNNER_TEMP/muyo-install"
+          rm -rf "$PREFIX"
+          cmake --install build --prefix "$PREFIX"
+          echo "installed $(find "$PREFIX" -type f | wc -l) files under $PREFIX"
+          find "$PREFIX/include" -type f | sort
+
+      - name: Assert the installed public surface
+        # Exactly `PUBLIC_HEADERS` under include/RenderGraph, no include/Muyo/detail/RenderGraph, and
+        # the package files and libraries a consumer links. The source-side docs check compares the
+        # CMake list with the canonical list; this compares the *installed* tree, which is the artifact.
+        run: python3 scripts/check_installed_package.py --prefix "$RUNNER_TEMP/muyo-install"
+
+      - name: Configure and build the out-of-tree probe
+        run: |
+          # Only the prefix is supplied: no source-tree include directory and no source-tree target,
+          # so a missing export fails here the way it would fail for a consumer.
+          cmake -S scripts/package-probe -B "$RUNNER_TEMP/muyo-package-probe" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/muyo-install"
+          # The cache is the mechanical proof that find_package took the installed package rather than
+          # something else on the runner: the resolved package directory is inside the prefix.
+          if ! grep -qF "muyo_rg_DIR:PATH=$RUNNER_TEMP/muyo-install/" \
+                "$RUNNER_TEMP/muyo-package-probe/CMakeCache.txt"; then
+            echo "::error::muyo_rg was not resolved from the installed prefix"
+            grep -E "muyo_rg_DIR|CMAKE_PREFIX_PATH" "$RUNNER_TEMP/muyo-package-probe/CMakeCache.txt" || true
+            exit 1
+          fi
+          cmake --build "$RUNNER_TEMP/muyo-package-probe" -j"$(nproc)"
+
+      - name: Run the probe
+        run: |
+          # `set -e` makes the probe's exit status the step's, and the printed line is asserted rather
+          # than only displayed so a version regression fails here and not at a consumer.
+          set -e
+          output="$("$RUNNER_TEMP/muyo-package-probe/package_probe")"
+          echo "$output"
+          case "$output" in
+            "muyo_rg 0.1."*) ;;
+            *)
+              echo "::error::the probe did not report a muyo_rg 0.1 version: $output"
+              exit 1
+              ;;
+          esac
+          echo "probe: $output" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure with Vulkan hidden (the dependency failure path)
+        run: |
+          log="$RUNNER_TEMP/muyo-package-probe-no-vulkan.log"
+          if cmake -S scripts/package-probe -B "$RUNNER_TEMP/muyo-package-probe-no-vulkan" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/muyo-install" \
+                -DCMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON >"$log" 2>&1; then
+            echo "::error::the probe configured with CMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON"
+            cat "$log"
+            exit 1
+          fi
+          cat "$log"
+          # The exact text find_dependency() gives when the required dependency is missing. This is the
+          # acceptance criterion: a missing SDK fails at the consumer's configure step naming Vulkan,
+          # rather than at a compile or link later.
+          if ! grep -qF "muyo_rg could not be found because dependency Vulkan could not be found" "$log"; then
+            echo "::error::the failure did not name Vulkan as the missing dependency"
+            exit 1
+          fi
+          echo "hidden Vulkan: configure failed naming Vulkan, as intended" >> "$GITHUB_STEP_SUMMARY"
