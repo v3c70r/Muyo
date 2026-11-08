@@ -13,13 +13,13 @@
 #include <vector>
 
 #include "Debug.h"
-#include "Debug/ScopedMarker.h"
 #include "PipelineCache.h"
 #include "PipelineStateBuilder.h"
 #include "RenderGraph/ResourceUseResolver.h"
 #include "ShaderCache.h"
 #include "ShaderReflectionFetcher.h"
 #include "VkExtFuncsLoader.h"
+#include "VkGraphResourceAllocator.h"
 #include "vulkan/vulkan_core.h"
 
 namespace
@@ -53,6 +53,42 @@ VkImageAspectFlags AspectForFormat(VkFormat format)
 }
 
 uint32_t AlignUp(uint32_t nSize, uint32_t nAlignment) { return (nSize + nAlignment - 1) / nAlignment * nAlignment; }
+
+/// RAII Vulkan command-buffer label for one node.
+///
+/// The graph emits the Vulkan label itself and no longer composes the engine's capture-tool marker: that
+/// marker's backend is host policy, and reaching it made `muyo_rg` depend on the engine for a label
+/// (#272). A host that wants capture-tool scopes wraps its own callback or records its own ranges.
+class CommandBufferLabel
+{
+public:
+    /// @param commandBuffer Command buffer to label.
+    /// @param name          Label text.
+    /// @param pMarker       Host capture marker, or null for none. Its scope nests outside the Vulkan label,
+    ///                      matching the order the engine's `ScopedMarker` used.
+    CommandBufferLabel(VkCommandBuffer commandBuffer, const std::string& name,
+                       Muyo::RenderGraph::IGraphCaptureMarker* pMarker)
+        : m_commandBuffer(commandBuffer), m_marker(pMarker)
+    {
+        if (m_marker != nullptr) m_marker->Begin(name);
+        Muyo::beginMarker(commandBuffer, std::string(name), 0);
+    }
+    /// End the label and then the capture marker.
+    ~CommandBufferLabel()
+    {
+        Muyo::endMarker(m_commandBuffer);
+        if (m_marker != nullptr) m_marker->End();
+    }
+
+    /// Owns a label scope, so it is not copyable.
+    CommandBufferLabel(const CommandBufferLabel&) = delete;
+    /// See the copy constructor.
+    CommandBufferLabel& operator=(const CommandBufferLabel&) = delete;
+
+private:
+    VkCommandBuffer m_commandBuffer = VK_NULL_HANDLE;            ///< Labelled command buffer.
+    Muyo::RenderGraph::IGraphCaptureMarker* m_marker = nullptr;  ///< Host capture marker, or null.
+};
 }  // namespace
 
 namespace Muyo::RenderGraph
@@ -128,10 +164,10 @@ const RenderGraphServices& RequireServices(const RenderGraphServices& services)
             "RenderGraphBuilder: services.device is null. The graph has no device to create pipelines, "
             "command buffers or synchronisation with.");
     }
-    if (services.resourceManager == nullptr)
+    if (services.resourceAllocator == nullptr)
     {
         throw std::runtime_error(
-            "RenderGraphBuilder: services.resourceManager is null. The graph allocates its declared "
+            "RenderGraphBuilder: services.resourceAllocator is null. The graph allocates its declared "
             "resources through it.");
     }
     return services;
@@ -143,6 +179,11 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint
     , m_shaderAssetManager(m_services.device->GetDevice())
     , m_vkDevice(m_services.device->GetDevice())
     , m_executor(m_services.device, inFlightCount)
+{
+    Initialise();
+}
+
+void RenderGraphBuilder::Initialise()
 {
     if (m_services.descriptorHeap == nullptr && m_services.device->IsDescriptorHeapEnabled())
     {
@@ -171,14 +212,19 @@ RenderGraphBuilder::RenderGraphBuilder(const RenderGraphServices& services, uint
 }
 
 RenderGraphBuilder::RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount)
-    : RenderGraphBuilder(RenderGraphServices{.device = renderDevice, .resourceManager = GetRenderResourceManager()},
-                         inFlightCount)
+    : m_ownedResourceAllocator(CreateVkGraphResourceAllocator(renderDevice))
+    , m_services(RequireServices(
+          RenderGraphServices{.device = renderDevice, .resourceAllocator = m_ownedResourceAllocator.get()}))
+    , m_shaderAssetManager(m_services.device->GetDevice())
+    , m_vkDevice(m_services.device->GetDevice())
+    , m_executor(m_services.device, inFlightCount)
 {
+    Initialise();
 }
 
 std::pair<VkDeviceSize, VkDeviceSize> RenderGraphBuilder::ResolveBufferRange(const ResourceHandle& nodeName,
                                                                              const ResolvedResourceUse& use,
-                                                                             const BufferResource& buffer,
+                                                                             const IGraphBuffer& buffer,
                                                                              VkDescriptorType descriptorType) const
 {
     if (!use.bufferRange.has_value())
@@ -209,10 +255,10 @@ RenderGraphBuilder::~RenderGraphBuilder()
     DestroyAliasedTransients();
     for (RootArena& arena : m_rootArenas)
     {
-        if (arena.mapped != nullptr) GetMemoryAllocator()->UnmapBuffer(arena.allocation);
-        if (arena.buffer != VK_NULL_HANDLE || arena.allocation != VK_NULL_HANDLE)
+        if (arena.mapped != nullptr) m_services.resourceAllocator->UnmapMemory(arena.allocation);
+        if (arena.buffer != VK_NULL_HANDLE || !arena.allocation.IsNull())
         {
-            GetMemoryAllocator()->FreeBuffer(arena.buffer, arena.allocation);
+            m_services.resourceAllocator->FreeBuffer(arena.buffer, arena.allocation);
         }
     }
     m_rootArenas.clear();
@@ -386,10 +432,10 @@ void RenderGraphBuilder::EnsureRootArena(uint32_t slot)
     if (m_rootArenas.size() <= slot) m_rootArenas.resize(slot + 1);
     RootArena& arena = m_rootArenas[slot];
     if (arena.buffer != VK_NULL_HANDLE) return;
-    GetMemoryAllocator()->AllocateBuffer(kRootCapacity,
-                                         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                         VMA_MEMORY_USAGE_CPU_TO_GPU, arena.buffer, arena.allocation);
-    GetMemoryAllocator()->MapBuffer(arena.allocation, reinterpret_cast<void**>(&arena.mapped));
+    m_services.resourceAllocator->AllocateBuffer(
+        kRootCapacity, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_MEMORY_USAGE_CPU_TO_GPU, arena.buffer, arena.allocation);
+    arena.mapped = static_cast<std::byte*>(m_services.resourceAllocator->MapMemory(arena.allocation));
     arena.address = m_services.device->GetBufferDeviceAddress(arena.buffer);
 }
 
@@ -427,10 +473,11 @@ RenderGraphBuilder& RenderGraphBuilder::AddResource(const ResourceHandle& handle
     return *this;
 }
 
-RenderGraphBuilder& RenderGraphBuilder::ImportResource(const ResourceHandle& handle, const IRenderResource* resource,
+RenderGraphBuilder& RenderGraphBuilder::ImportResource(const ResourceHandle& handle, const IGraphResource* resource,
                                                        VkImageLayout currentLayout)
 {
-    if (currentLayout != VK_IMAGE_LAYOUT_UNDEFINED && dynamic_cast<const ImageResource*>(resource) == nullptr)
+    if (currentLayout != VK_IMAGE_LAYOUT_UNDEFINED &&
+        (resource == nullptr || resource->GetResourceKind() != ResourceKind::IMAGE))
     {
         throw std::runtime_error("ImportResource('" + handle +
                                  "') states a current layout, but the imported "
@@ -456,7 +503,7 @@ std::optional<ResourceDesc> RenderGraphBuilder::GetResourceDesc(const ResourceHa
     return it != m_resourceDescRegistry.end() ? std::optional<ResourceDesc>{it->second} : std::nullopt;
 }
 
-const IRenderResource* RenderGraphBuilder::ResolveResource(const ResourceHandle& handle) const
+const IGraphResource* RenderGraphBuilder::ResolveResource(const ResourceHandle& handle) const
 {
     return ResolveResourceForSlot(m_currentTransientSlot, handle);
 }
@@ -469,7 +516,7 @@ namespace
 bool IsAliasedTransient(const ResourceDesc& desc);
 }  // namespace
 
-const IRenderResource* RenderGraphBuilder::ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const
+const IGraphResource* RenderGraphBuilder::ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const
 {
     if (auto it = m_importedResources.find(handle); it != m_importedResources.end())
     {
@@ -490,7 +537,11 @@ const IRenderResource* RenderGraphBuilder::ResolveResourceForSlot(uint32_t slot,
             return it->second.get();
         }
     }
-    return m_services.resourceManager->template GetResource<IRenderResource>(handle);
+    if (auto it = m_ownedResources.find(handle); it != m_ownedResources.end())
+    {
+        return it->second.get();
+    }
+    return nullptr;
 }
 
 bool RenderGraphBuilder::IsPerExecutionResource(const ResourceHandle& handle) const
@@ -642,12 +693,12 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             // hand it to every other execution. Persistent graph-owned resources keep the static cache
             // because they are genuinely shared.
             if (IsPerExecutionResource(use.handle)) continue;
-            const IRenderResource* pResource = ResolveResource(use.handle);
+            const IGraphResource* pResource = ResolveResource(use.handle);
             if (pResource == nullptr) continue;
             if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
             {
-                const auto* pImage = dynamic_cast<const ImageResource*>(pResource);
-                if (pImage == nullptr) continue;
+                if (pResource->GetResourceKind() != ResourceKind::IMAGE) continue;
+                const auto* pImage = static_cast<const IGraphImage*>(pResource);
                 const VkImageLayout layout = use.usage == ResourceUsage::SAMPLED
                                                  ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                                                  : VK_IMAGE_LAYOUT_GENERAL;
@@ -667,8 +718,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER ||
                      use.usage == ResourceUsage::DRAW_COMMAND_BUFFER)
             {
-                const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource);
-                if (pBuffer == nullptr) continue;
+                if (pResource->GetResourceKind() != ResourceKind::BUFFER) continue;
+                const auto* pBuffer = static_cast<const IGraphBuffer*>(pResource);
                 VkDeviceSize offset = 0;
                 VkDeviceSize size = pBuffer->GetSize();
                 if (use.bufferRange.has_value())
@@ -692,8 +743,8 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
             }
             else if (use.usage == ResourceUsage::ACCEL_STRUCTURE)
             {
-                const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
-                if (pAccelerationStructure == nullptr) continue;
+                if (pResource->GetResourceKind() != ResourceKind::ACCELERATION_STRUCTURE) continue;
+                const auto* pAccelerationStructure = static_cast<const IGraphAccelerationStructure*>(pResource);
                 DescriptorKey key{};
                 key.type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
                 key.address = pAccelerationStructure->GetDeviceAddress();
@@ -727,9 +778,10 @@ CompiledRenderGraphNode RenderGraphBuilder::CompileRenderGraphNode(const RenderG
                 VkFormat format = resourceUse.format;
                 if (format == VK_FORMAT_UNDEFINED)
                 {
-                    if (const auto* pImage = dynamic_cast<const ImageResource*>(ResolveResource(resourceUse.handle)))
+                    const IGraphResource* pResource = ResolveResource(resourceUse.handle);
+                    if (pResource != nullptr && pResource->GetResourceKind() == ResourceKind::IMAGE)
                     {
-                        format = pImage->GetImageFormat();
+                        format = static_cast<const IGraphImage*>(pResource)->GetImageFormat();
                     }
                 }
                 colorAttachmentFormats.push_back(format != VK_FORMAT_UNDEFINED ? format
@@ -951,8 +1003,14 @@ void RenderGraphBuilder::BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, c
     VK_ASSERT(VkExt::vkGetRayTracingShaderGroupHandlesKHR(m_vkDevice, rgn.pipeline, 0, nHandleCount, handles.size(),
                                                           handles.data()));
 
-    ShaderBindingTableBuffer* pSBT =
-        m_services.resourceManager->GetShaderBindingTableBuffer("SBT_" + logicalNode.name, sbtSize);
+    std::unique_ptr<IGraphBuffer>& sbt = m_shaderBindingTables["SBT_" + logicalNode.name];
+    if (!sbt)
+    {
+        sbt = m_services.resourceAllocator->CreateBuffer(
+            sbtSize, VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            VMA_MEMORY_USAGE_CPU_TO_GPU, "SBT_" + logicalNode.name, GraphBufferPool::ShaderBindingTable);
+    }
+    IGraphBuffer* pSBT = sbt.get();
     const VkDeviceAddress sbtAddress = m_services.device->GetBufferDeviceAddress(pSBT->buffer());
     rgenRegion.deviceAddress = sbtAddress;
     missRegion.deviceAddress = sbtAddress + rgenRegion.size;
@@ -1135,11 +1193,17 @@ const char* ArticleForKind(ResourceKind kind)
 
 /// @param resource An imported resource.
 /// @return The kind a use has to declare for it.
-ResourceKind KindOfResource(const IRenderResource* resource)
+ResourceKind KindOfResource(const IGraphResource* resource)
 {
-    if (dynamic_cast<const BufferResource*>(resource) != nullptr) return ResourceKind::BUFFER;
-    if (dynamic_cast<const ImageResource*>(resource) != nullptr) return ResourceKind::IMAGE;
-    if (dynamic_cast<const AccelerationStructure*>(resource) != nullptr) return ResourceKind::ACCELERATION_STRUCTURE;
+    switch (resource->GetResourceKind())
+    {
+        case ResourceKind::BUFFER:
+        case ResourceKind::IMAGE:
+        case ResourceKind::ACCELERATION_STRUCTURE:
+            return resource->GetResourceKind();
+        case ResourceKind::SAMPLER:
+            break;
+    }
     throw std::runtime_error("The imported resource is neither a buffer, an image nor an acceleration structure.");
 }
 
@@ -1150,7 +1214,7 @@ ResourceKind KindOfResource(const IRenderResource* resource)
 /// @param desc     The declared resource's description, or nothing when the resource is imported.
 /// @param imported The imported resource, or null when the resource is declared.
 void ValidateUseAgainstResource(const std::string& nodeName, const ResourceUse& use,
-                                const std::optional<ResourceDesc>& desc, const IRenderResource* imported,
+                                const std::optional<ResourceDesc>& desc, const IGraphResource* imported,
                                 QueueType queueType)
 {
     ResourceKind resourceKind = ResourceKind::BUFFER;
@@ -1394,7 +1458,7 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
                                      "' which is neither declared with AddResource nor imported.");
         }
         const std::optional<ResourceDesc> resourceDesc = GetResourceDesc(resourceUse.handle);
-        const IRenderResource* pImportedResource =
+        const IGraphResource* pImportedResource =
             resourceDesc.has_value() ? nullptr : m_importedResources.at(resourceUse.handle);
         ValidateUseAgainstResource(nodeName, resourceUse, resourceDesc, pImportedResource, nodeCreateInfo.queueType);
         ResolvedResourceUse resolved = ResolveResourceUse(resourceUse);
@@ -1413,8 +1477,10 @@ void RenderGraphBuilder::AddNode(const RenderGraphNodeCreateInfo& nodeCreateInfo
         {
             // An imported image has no ResourceDesc, so its format and extent come from the resource
             // itself. Without them the render pass and the render area would be built from zeros.
-            if (const auto* pImage = dynamic_cast<const ImageResource*>(ResolveResource(resourceUse.handle)))
+            const IGraphResource* pResource = ResolveResource(resourceUse.handle);
+            if (pResource != nullptr && pResource->GetResourceKind() == ResourceKind::IMAGE)
             {
+                const auto* pImage = static_cast<const IGraphImage*>(pResource);
                 resolved.format = pImage->GetImageFormat();
                 const VkExtent2D extent = pImage->GetImageExtent();
                 resolved.extent = {extent.width, extent.height, 1};
@@ -1548,7 +1614,7 @@ void RenderGraphBuilder::DestroyAliasedTransients()
     {
         storage.buffers.clear();
         storage.images.clear();
-        for (VmaAllocation& block : storage.blocks) GetMemoryAllocator()->FreeAliasingBlock(block);
+        for (GraphMemoryBlock& block : storage.blocks) m_services.resourceAllocator->FreeAliasingBlock(block);
         storage.blocks.clear();
     }
     m_transientSlots.clear();
@@ -1657,25 +1723,25 @@ RenderGraphBuilder::TransientSlotStorage RenderGraphBuilder::CreateTransientSlot
         {
             const VkDeviceSize nSize = pBufferDesc->count * pBufferDesc->stride;
             auto resource =
-                std::make_unique<TransientBufferResource>(nSize, pBufferDesc->usage, pBufferDesc->memoryProperties);
-            VkBuffer buffer = VK_NULL_HANDLE;
-            GetMemoryAllocator()->CreateUnboundBuffer(nSize, pBufferDesc->usage, buffer);
+                std::make_unique<TransientBufferResource>(nSize, pBufferDesc->usage, pBufferDesc->memoryProperties,
+                                                          *m_services.resourceAllocator, *m_services.device);
+            VkBuffer buffer = m_services.resourceAllocator->CreateUnboundBuffer(nSize, pBufferDesc->usage);
             resource->Adopt(buffer);
-            requirements = GetMemoryAllocator()->QueryBufferRequirements(buffer);
+            requirements = m_services.resourceAllocator->QueryBufferRequirements(buffer);
             classKey = ClassOf(*input.pDesc, requirements.memoryTypeBits);
             storage.buffers.emplace(input.handle, std::move(resource));
         }
         else
         {
             const auto& imageDesc = std::get<ImageResourceDesc>(*input.pDesc);
-            // The same usage computation the resource manager uses, from the same function: an image's
-            // aliasing class is its create info, so the two paths must not be able to disagree.
-            const VkImageUsageFlags usage = EffectiveImageUsageFlags(imageDesc.format, imageDesc.usage);
-            auto resource = std::make_unique<TransientImageResource>(imageDesc, usage);
-            VkImage image = VK_NULL_HANDLE;
-            GetMemoryAllocator()->CreateUnboundImage(resource->ImageInfoForCreate(), image);
+            // The same create-info computation the persistent path uses, from the same function: an
+            // image's aliasing class is its create info, so the two paths must not be able to disagree.
+            const VkImageCreateInfo imageInfo = MakeImageCreateInfo(m_services.device->GetPhysicalDevice(), imageDesc);
+            auto resource =
+                std::make_unique<TransientImageResource>(imageInfo, *m_services.resourceAllocator, *m_services.device);
+            VkImage image = m_services.resourceAllocator->CreateUnboundImage(resource->ImageInfoForCreate());
             resource->Adopt(image);
-            requirements = GetMemoryAllocator()->QueryImageRequirements(image);
+            requirements = m_services.resourceAllocator->QueryImageRequirements(image);
             classKey = ClassOf(*input.pDesc, requirements.memoryTypeBits);
             // Images have no memory usage in their declaration, and a render target's storage is
             // device-local by definition, so the block's usage is not something the caller chose here.
@@ -1708,8 +1774,8 @@ void RenderGraphBuilder::AllocateAndBindTransientBlocks(TransientSlotStorage& st
         blockRequirements.alignment = block.alignment;
         blockRequirements.memoryTypeBits = block.memoryTypeBits;
 
-        VmaAllocation allocation =
-            GetMemoryAllocator()->AllocateAliasingBlock(blockRequirements, block.classKey.memoryUsage);
+        const GraphMemoryBlock allocation =
+            m_services.resourceAllocator->AllocateAliasingBlock(blockRequirements, block.classKey.memoryUsage);
         storage.blocks.push_back(allocation);
 
         for (const TransientMemorySlot& slot : block.slots)
@@ -1719,14 +1785,14 @@ void RenderGraphBuilder::AllocateAndBindTransientBlocks(TransientSlotStorage& st
                 if (block.classKey.isImage)
                 {
                     TransientImageResource* pResource = storage.images.at(member).get();
-                    GetMemoryAllocator()->BindImageToBlock(pResource->getImage(), allocation, slot.offset);
+                    m_services.resourceAllocator->BindImageToBlock(pResource->getImage(), allocation, slot.offset);
                     // After the bind, never before: a view of an image with no memory bound is a validation
                     // error, and it is the one order this path has to get right.
                     pResource->CreateView();
                     continue;
                 }
                 TransientBufferResource* pResource = storage.buffers.at(member).get();
-                GetMemoryAllocator()->BindBufferToBlock(pResource->buffer(), allocation, slot.offset);
+                m_services.resourceAllocator->BindBufferToBlock(pResource->buffer(), allocation, slot.offset);
                 // Told now rather than at creation: the offset is what the plan just decided, and it is
                 // what `Map` needs to find this resource's bytes inside the block.
                 pResource->BindTo(allocation, slot.offset);
@@ -1850,10 +1916,10 @@ void RenderGraphBuilder::Build()
     {
         if (m_importedResources.find(handle) != m_importedResources.end()) continue;
         if (IsAliasedTransient(desc)) continue;
-        IRenderResource* pExisting = m_services.resourceManager->GetResource<IRenderResource>(handle);
-        if (pExisting != nullptr)
+        auto existing = m_ownedResources.find(handle);
+        if (existing != m_ownedResources.end())
         {
-            if (ResourceMatchesDesc(*pExisting, desc)) continue;
+            if (ResourceMatchesDesc(m_services.device->GetPhysicalDevice(), *existing->second, desc)) continue;
             // The old resource may still be read by the previous execution: Build() can follow a
             // non-blocking Execute(). Wait until the GPU is done before freeing it, then drop the
             // descriptor cache so the next compile cannot hand out a slot that still names the old
@@ -1861,9 +1927,10 @@ void RenderGraphBuilder::Build()
             m_executor.WaitIdle();
             DestroyCachedPipelines();
             ReleaseCachedDescriptors();
-            m_services.resourceManager->RemoveResource(handle);
+            m_ownedResources.erase(existing);
         }
-        AllocateResource(desc, *m_services.resourceManager, handle);
+        m_ownedResources.emplace(handle, AllocateResource(desc, *m_services.resourceAllocator,
+                                                          m_services.device->GetPhysicalDevice(), handle));
     }
     BuildAliasedTransients(transientInputs, transientPlanKey);
 
@@ -1938,8 +2005,9 @@ bool RenderGraphBuilder::BeginRendering(VkCommandBuffer cmdBuf, const CompiledRe
             continue;
         }
 
-        const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
-        if (!image) continue;
+        const IGraphResource* pResource = ResolveResource(use.handle);
+        if (pResource == nullptr || pResource->GetResourceKind() != ResourceKind::IMAGE) continue;
+        const auto* image = static_cast<const IGraphImage*>(pResource);
 
         VkRenderingAttachmentInfo attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         attachment.imageView = image->getView();
@@ -2021,8 +2089,9 @@ void RenderGraphBuilder::RecordPresentTransition(VkCommandBuffer cmdBuf,
     for (const auto& use : resourceUses)
     {
         if (use.usage != ResourceUsage::PRESENT || use.kind != ResourceKind::IMAGE) continue;
-        const auto* image = dynamic_cast<const ImageResource*>(ResolveResource(use.handle));
-        if (image == nullptr) continue;
+        const IGraphResource* pResource = ResolveResource(use.handle);
+        if (pResource == nullptr || pResource->GetResourceKind() != ResourceKind::IMAGE) continue;
+        const auto* image = static_cast<const IGraphImage*>(pResource);
 
         VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
         barrier.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -2057,7 +2126,7 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
         [this](const ResourceHandle& handle)
         {
             BarrierTarget target;
-            const IRenderResource* pResource = ResolveResource(handle);
+            const IGraphResource* pResource = ResolveResource(handle);
             if (pResource == nullptr)
             {
                 // Master dropped the barrier here, which leaves a race; recording one with a
@@ -2068,18 +2137,23 @@ void RenderGraphBuilder::RecordBarriers(VkCommandBuffer cmdBuf, const std::vecto
                     "Barrier for '" + handle +
                     "' is needed but the resource does not resolve, so no barrier can address it.");
             }
-            if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+            switch (pResource->GetResourceKind())
             {
-                target.image = pImage->getImage();
-                target.aspect = AspectForFormat(pImage->GetImageFormat());
-            }
-            else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
-            {
-                target.buffer = pAccel->GetBackingBuffer();
-            }
-            else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
-            {
-                target.buffer = pBuffer->buffer();
+                case ResourceKind::IMAGE:
+                {
+                    const auto* pImage = static_cast<const IGraphImage*>(pResource);
+                    target.image = pImage->getImage();
+                    target.aspect = AspectForFormat(pImage->GetImageFormat());
+                    break;
+                }
+                case ResourceKind::ACCELERATION_STRUCTURE:
+                    target.buffer = static_cast<const IGraphAccelerationStructure*>(pResource)->GetBackingBuffer();
+                    break;
+                case ResourceKind::BUFFER:
+                    target.buffer = static_cast<const IGraphBuffer*>(pResource)->buffer();
+                    break;
+                case ResourceKind::SAMPLER:
+                    break;
             }
             return target;
         },
@@ -2119,7 +2193,7 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
     QueueTransferBarriers transferBarriers;
     for (const auto& handle : handles)
     {
-        const IRenderResource* pResource = ResolveResource(handle);
+        const IGraphResource* pResource = ResolveResource(handle);
         if (pResource == nullptr)
         {
             // The handle had to resolve to be scheduled at `Build()`, so a null here is a bug rather than
@@ -2131,22 +2205,27 @@ void RenderGraphBuilder::RecordQueueTransferBarriers(VkCommandBuffer cmdBuf, uin
         VkImage image = VK_NULL_HANDLE;
         VkBuffer buffer = VK_NULL_HANDLE;
         VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT;
-        if (const auto* pImage = dynamic_cast<const ImageResource*>(pResource))
+        switch (pResource->GetResourceKind())
         {
-            kind = ResourceKind::IMAGE;
-            image = pImage->getImage();
-            aspect = AspectForFormat(pImage->GetImageFormat());
-        }
-        else if (const auto* pAccel = dynamic_cast<const AccelerationStructure*>(pResource))
-        {
-            // Its memory is its backing buffer's, so the handover is a buffer barrier on that buffer.
-            kind = ResourceKind::ACCELERATION_STRUCTURE;
-            buffer = pAccel->GetBackingBuffer();
-        }
-        else if (const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource))
-        {
-            kind = ResourceKind::BUFFER;
-            buffer = pBuffer->buffer();
+            case ResourceKind::IMAGE:
+            {
+                const auto* pImage = static_cast<const IGraphImage*>(pResource);
+                kind = ResourceKind::IMAGE;
+                image = pImage->getImage();
+                aspect = AspectForFormat(pImage->GetImageFormat());
+                break;
+            }
+            case ResourceKind::ACCELERATION_STRUCTURE:
+                // Its memory is its backing buffer's, so the handover is a buffer barrier on that buffer.
+                kind = ResourceKind::ACCELERATION_STRUCTURE;
+                buffer = static_cast<const IGraphAccelerationStructure*>(pResource)->GetBackingBuffer();
+                break;
+            case ResourceKind::BUFFER:
+                kind = ResourceKind::BUFFER;
+                buffer = static_cast<const IGraphBuffer*>(pResource)->buffer();
+                break;
+            case ResourceKind::SAMPLER:
+                break;
         }
         if (!kind.has_value())
         {
@@ -2394,12 +2473,9 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
         recorder.Begin(m_compiledGraph.GetExecutionPlan(), views.nodes, BuildTraceScope(), execution);
     }
 
-    RenderGraphNodeContext context{
-        .queueType = QueueType::GRAPHICS,
-        .resourceManager = *m_services.resourceManager,
-    };
-    // Nodes reach resources through the context, so it has to resolve the way the graph does - which now
-    // includes transients the graph owns and the manager therefore does not.
+    RenderGraphNodeContext context{.queueType = QueueType::GRAPHICS};
+    // Nodes reach resources through the context, so it has to resolve the way the graph does - which
+    // includes transients the graph owns and persistent resources it allocated itself.
     context.resolveResource = [this](const ResourceHandle& handle) { return ResolveResource(handle); };
     context.allocateRoot = [this](size_t size, size_t alignment) { return AllocateRoot(size, alignment); };
 
@@ -2458,13 +2534,13 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
             for (const ResolvedResourceUse& use : nodes[i].resourceUses)
             {
                 if (!IsPerExecutionResource(use.handle)) continue;
-                const IRenderResource* pResource = ResolveResource(use.handle);
+                const IGraphResource* pResource = ResolveResource(use.handle);
                 if (pResource == nullptr) continue;
                 std::optional<uint32_t> index;
                 if (use.usage == ResourceUsage::SAMPLED || use.usage == ResourceUsage::STORAGE_IMAGE)
                 {
-                    const auto* pImage = dynamic_cast<const ImageResource*>(pResource);
-                    if (pImage == nullptr) continue;
+                    if (pResource->GetResourceKind() != ResourceKind::IMAGE) continue;
+                    const auto* pImage = static_cast<const IGraphImage*>(pResource);
                     const VkImageLayout layout = use.usage == ResourceUsage::SAMPLED
                                                      ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
                                                      : VK_IMAGE_LAYOUT_GENERAL;
@@ -2478,8 +2554,8 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
                 else if (use.usage == ResourceUsage::STORAGE_BUFFER || use.usage == ResourceUsage::UNIFORM_BUFFER ||
                          use.usage == ResourceUsage::DRAW_COMMAND_BUFFER)
                 {
-                    const auto* pBuffer = dynamic_cast<const BufferResource*>(pResource);
-                    if (pBuffer == nullptr) continue;
+                    if (pResource->GetResourceKind() != ResourceKind::BUFFER) continue;
+                    const auto* pBuffer = static_cast<const IGraphBuffer*>(pResource);
                     VkDeviceSize offset = 0;
                     VkDeviceSize size = pBuffer->GetSize();
                     if (use.bufferRange.has_value())
@@ -2497,8 +2573,8 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
                 }
                 else if (use.usage == ResourceUsage::ACCEL_STRUCTURE)
                 {
-                    const auto* pAccelerationStructure = dynamic_cast<const AccelerationStructure*>(pResource);
-                    if (pAccelerationStructure == nullptr) continue;
+                    if (pResource->GetResourceKind() != ResourceKind::ACCELERATION_STRUCTURE) continue;
+                    const auto* pAccelerationStructure = static_cast<const IGraphAccelerationStructure*>(pResource);
                     index = m_services.descriptorHeap
                                 ->AcquireAccelerationStructure(pAccelerationStructure->GetDeviceAddress(), true)
                                 .index;
@@ -2586,12 +2662,10 @@ void RenderGraphBuilder::Execute(const RenderGraphExecuteInfo& info)
                 m_services.descriptorHeap != nullptr ? m_services.descriptorHeap->GetProperties().maxPushDataSize : 0;
             context.bindingPoint = rgn.bindingPoint;
 
-            // Bracket the node so a capture or validation tool attributes the commands and anything it reports to this
-            // node rather than to the segment's command buffer, which several nodes share (#134). Which tool is a
-            // host decision (see `src/Debug/CaptureTool.h`): the graph emits a label and a marker, and
-            // `src/RenderGraph/` names no vendor. Resources carry their names already: every RenderResourceManager
-            // allocation calls SetDebugName with the handle.
-            ScopedMarker<VkCommandBuffer> nodeMarker(cmdBuf, std::string(rgn.name));
+            // Bracket the node so a validation tool attributes the commands and anything it reports to this node
+            // rather than to the segment's command buffer, which several nodes share (#134). The graph emits the
+            // Vulkan label only; a capture-tool marker is host policy and is not the graph's to emit (#272).
+            CommandBufferLabel nodeMarker(cmdBuf, rgn.name, m_services.captureMarker);
 
             // 1. Barrier batch: transition all resources used by this node. The observer is how the trace learns
             // which resource each barrier belongs to, since the batch itself carries only handles.

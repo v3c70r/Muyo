@@ -1,7 +1,12 @@
 #pragma once
+#include <vulkan/vulkan.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
 namespace Muyo
 {
 // Interface structure

@@ -26,7 +26,7 @@
 
 #include "DescriptorHeapService.h"
 #include "GraphicsTestEnv.h"
-#include "ShaderAsset.h"
+#include "ShaderReflectionFetcher.h"
 #include "VkExtFuncsLoader.h"
 #include "VkRenderDevice.h"
 
@@ -184,7 +184,7 @@ ImageAllocation CreateImage(VkRenderDevice *device, VkExtent2D extent, VkFormat 
 VkShaderModule LoadHeapShader(VkDevice device, const char *name)
 {
     const std::string path = std::string("shaders/") + name;
-    Muyo::SpirvCode spirv = Muyo::ReadSpv(path);
+    Muyo::SpirvCode spirv = Muyo::ReadSpirvFile(path);
     if (spirv.empty())
     {
         throw std::runtime_error("descriptor-heap probe: missing shader " + path +
@@ -404,7 +404,7 @@ TEST_CASE("DescriptorHeap: positive .heap.spv modules carry no binding or descri
     for (const char *module : modules)
     {
         INFO("module: " << module);
-        const Muyo::SpirvCode words = Muyo::ReadSpv(module);
+        const Muyo::SpirvCode words = Muyo::ReadSpirvFile(module);
         REQUIRE(words.size() > 5);
         REQUIRE(words[0] == kMagic);
 

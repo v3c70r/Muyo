@@ -247,7 +247,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: an imported binding
     builder.Execute(RenderGraphExecuteInfo{});
     builder.WaitIdle();
 
-    const auto readOutput = [](BufferResource* pBuffer)
+    const auto readOutput = [](IGraphBuffer* pBuffer)
     {
         const auto* pMapped = static_cast<const uint32_t*>(pBuffer->Map());
         const uint32_t value = pMapped != nullptr ? *pMapped : 0;
@@ -283,8 +283,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: a compute node uses
     const uint32_t outputValue = 0;
     pOutput->SetData(&outputValue, sizeof(outputValue));
 
-    RenderGraphServices services{
-        .device = device, .resourceManager = GetRenderResourceManager(), .descriptorHeap = &heap};
+    RenderGraphServices services{.device = device, .resourceAllocator = GetGraphAllocator(), .descriptorHeap = &heap};
     RenderGraphBuilder builder(services);
     builder.ImportResource("GraphHeapInput", pInput);
     builder.ImportResource("GraphHeapOutput", pOutput);
@@ -517,7 +516,9 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "RenderGraphBuilder: repeated builds reu
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphNodeContext::PushData names its throws",
                  "[RenderGraphBuilder][DescriptorHeap]")
 {
-    RenderGraphNodeContext context{.queueType = QueueType::COMPUTE, .resourceManager = *GetRenderResourceManager()};
+    RenderGraphNodeContext context{
+        .queueType = QueueType::COMPUTE,
+    };
     const uint32_t words[2]{0, 0};
     CHECK_THROWS_WITH(context.PushData(0, std::as_bytes(std::span{words})),
                       "RenderGraphNodeContext::PushData: the node is not a descriptor-heap node");

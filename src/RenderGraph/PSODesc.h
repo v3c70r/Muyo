@@ -3,10 +3,10 @@
 
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 
-#include "MeshVertex.h"
 #include "PipelineStateBuilder.h"
 
 namespace Muyo::RenderGraph
@@ -303,9 +303,26 @@ struct VertexInputLayout
 /// @throws std::invalid_argument when `vertexType` is not one of the enumerators.
 inline VertexInputLayout ToVertexLayout(VertexType vertexType)
 {
+    // The layouts are stated here rather than read from the consumer's vertex structs, because a public
+    // graph header may not include the engine's `MeshVertex.h` (#272). The consumer keeps the matching
+    // structs and asserts their size and member offsets against these numbers - `MeshVertex.h` does -
+    // so a change to either side is a compile error rather than a silently wrong pipeline.
+    constexpr VkVertexInputBindingDescription kGenericBinding{
+        .binding = 0, .stride = 40, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
+    constexpr VkVertexInputAttributeDescription kGenericAttributes[] = {
+        {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0},
+        {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 12},
+        {.location = 2, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 24}};
+    constexpr VkVertexInputBindingDescription kUIBinding{
+        .binding = 0, .stride = 20, .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
+    constexpr VkVertexInputAttributeDescription kUIAttributes[] = {
+        {.location = 0, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = 0},
+        {.location = 1, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = 8},
+        {.location = 2, .binding = 0, .format = VK_FORMAT_R8G8B8A8_UNORM, .offset = 16}};
+
     static const std::array kMap{
-        VertexInputLayout{Vertex::getBindingDescription(), Vertex::getAttributeDescriptions()},
-        VertexInputLayout{UIVertex::getBindingDescription(), UIVertex::getAttributeDescriptions()}};
+        VertexInputLayout{kGenericBinding, {std::begin(kGenericAttributes), std::end(kGenericAttributes)}},
+        VertexInputLayout{kUIBinding, {std::begin(kUIAttributes), std::end(kUIAttributes)}}};
     return ToVkIndexed(vertexType, kMap, "VertexType");
 }
 

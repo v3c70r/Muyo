@@ -5,9 +5,6 @@
 #include <cstring>
 #include <stdexcept>
 
-#include "ShaderAsset.h"
-#include "VkRenderDevice.h"
-
 namespace Muyo
 {
 

@@ -16,7 +16,7 @@ index.
 | `muyo_device` is a shared library, not an inverted dependency | a client that cannot take the shared library | §2 below |
 | Error reporting is unresolved, deliberately | deciding it, or a consumer that cannot act on the errors we report | §3 below |
 | No C++ modules: fix the paths and add an export set instead | the surface is split (#53) **and** a consumer asks for a module | the packaging section |
-| Concrete resource types live in `muyo_device`; the graph owns only a narrow resource/allocator interface; scene-level resources stay in the consumer | a consumer whose allocator is not the device's | §4 below |
+| Concrete resource types live in `muyo_device`; the graph owns only a narrow resource/allocator interface; scene-level resources stay in the consumer | a consumer whose allocator is not the device's | §4 below (landed, #272) |
 | Versioning: the library publishes, first-party consumers are named and must not lag | a consumer that cannot move, or a second first-party consumer | the versioning section |
 
 ## The stack
@@ -126,6 +126,18 @@ typed `RenderResourceManager*`, the graph subclasses `BufferResource`/`ImageReso
 `GetRenderResourceManager()` and `GetMemoryAllocator()`. The trigger that would reopen this decision is a
 consumer whose allocator is not the device's — a host that allocates through its own memory manager — at
 which point the interface stays and only the implementation moves.
+
+**Landed in #272.** `src/RenderGraph/RenderGraphResources.h` declares the interface the graph owns:
+`IGraphResource` with `IGraphBuffer`/`IGraphImage`/`IGraphAccelerationStructure`, and
+`IGraphResourceAllocator` (owned resources, unbound resources plus aliasing blocks, root memory and
+views). `RenderGraphServices::resourceAllocator` is that pointer; the two global lookups are gone, as are
+the `dynamic_cast`s to engine resource classes and the engine headers in the graph's public surface.
+The concrete VMA-backed implementation is `src/RenderDevice/VkGraphResourceAllocator.{h,cpp}` in
+`muyo_device`: `VkGraphBuffer`/`VkGraphImage` own the Vulkan handles and memory, and the allocator
+implements the graph interface. The engine's `BufferResource`, `ImageResource` and
+`AccelerationStructure` implement the same interfaces, so an imported engine resource is still usable by
+a node callback without the graph naming its class. `muyo_rg` links `muyo_device` and nothing else; the
+graph-only test binary `rg_tests` builds and passes against those two targets.
 
 This is also what turns the stack's two bottom layers into a repo boundary: `muyo_device` + `muyo_rg`
 stay in this repository, while the host and the render pipeline move to a consumer repository

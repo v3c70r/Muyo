@@ -15,15 +15,14 @@
 #include "DependencyGraph.h"
 #include "DescriptorHeapService.h"
 #include "PSODesc.h"
-#include "PerObjResourceManager.h"
 #include "RenderGraphBarrier.h"
 #include "RenderGraphExecutionPlan.h"
 #include "RenderGraphExecutor.h"
 #include "RenderGraphNodeContext.h"
 #include "RenderGraphNodeResource.h"
 #include "RenderGraphResourceDesc.h"
+#include "RenderGraphShader.h"
 #include "RenderGraphTrace.h"
-#include "ShaderAsset.h"
 #include "TransientMemoryPlanner.h"
 #include "TransientResources.h"
 
@@ -85,6 +84,24 @@ struct RenderGraphNodeCreateInfo
     RenderGraphNodeCallback execute;  ///< Records the node's work.
 };
 
+/// The host's capture-tool marker for a node scope.
+///
+/// A capture backend is host policy, and the graph must not reach one: `src/Debug/ScopedMarker.h` composes
+/// this behaviour for the engine, and the graph used to depend on it just to emit a node marker (#272).
+/// A host that wants marker scopes implements this interface around its backend and passes it in
+/// `RenderGraphServices::captureMarker`; without one the graph emits only the Vulkan debug label.
+class IGraphCaptureMarker
+{
+public:
+    /// Destroy the marker. The host owns it and must outlive the builder that refers to it.
+    virtual ~IGraphCaptureMarker() = default;
+    /// Open a marker for a node.
+    /// @param name Marker name, which is the node's name.
+    virtual void Begin(const std::string& name) = 0;
+    /// Close the marker opened by the matching `Begin`.
+    virtual void End() = 0;
+};
+
 /// The services a graph is *given*, rather than looking up as globals (#53).
 ///
 /// The split follows the design document: the graph owns the **policy** - transient lifetimes, barriers,
@@ -101,8 +118,12 @@ struct RenderGraphServices
 {
     /// Device the graph creates pipelines, command buffers and synchronisation with. Required.
     VkRenderDevice* device = nullptr;
-    /// Allocates and owns the graph's declared resources. Required.
-    RenderResourceManager* resourceManager = nullptr;
+    /// Allocates the graph's declared resources. Required.
+    ///
+    /// The graph owns the policy (what to allocate, aliasing, reuse) and receives the mechanism as this
+    /// interface. In this repository `muyo_device`'s `VkGraphResourceAllocator` implements it; a consumer
+    /// with its own memory manager implements it instead. No engine resource type appears here (#272).
+    IGraphResourceAllocator* resourceAllocator = nullptr;
     /// The B-track heap service. Required for every GPU node since B1b; the graph rejects a missing
     /// service by name. The descriptor-set allocator is no longer a graph service.
     DescriptorHeapService* descriptorHeap = nullptr;
@@ -117,6 +138,11 @@ struct RenderGraphServices
     /// builder creates is recorded in it, so its serialized data survives a process restart when the
     /// caller loads it back.
     PipelineCache* pipelineCache = nullptr;
+    /// Optional host capture-tool marker, opened and closed around each node's recorded scope.
+    ///
+    /// Null means no capture markers; the Vulkan debug label is emitted either way. See
+    /// `IGraphCaptureMarker` for why this is injected rather than reached through the engine.
+    IGraphCaptureMarker* captureMarker = nullptr;
     /// Optional shader module/reflection cache shared by every builder that is given the same instance
     /// (#17). When null, each builder loads and owns its shader modules as before.
     ///
@@ -130,8 +156,8 @@ struct RenderGraphServices
 ///
 /// Typical use:
 /// @code
-/// RenderGraphBuilder builder(RenderGraphServices{.device = GetRenderDevice(),
-///                                               .resourceManager = GetRenderResourceManager(),
+/// RenderGraphBuilder builder(RenderGraphServices{.device = device,
+///                                               .resourceAllocator = &allocator,
 ///                                               .descriptorHeap = &heap});
 /// builder.AddResource("Color", ImageResourceDesc{ .format = ..., .extent = ..., .usage = ... });
 /// builder.ImportResource("Vertices", meshManager.m_pVertexBuffer);
@@ -161,9 +187,13 @@ public:
     ///                 above one slot; a caller that needs per-execution content imports it and
     ///                 re-points the handle between executions (#83).
     explicit RenderGraphBuilder(const RenderGraphServices& services, uint32_t inFlightCount = 1);
-    /// Transitional: fills the remaining services from the engine's globals, for the callers that still
-    /// use them. Prefer the constructor above - this one keeps the dependency that #53 removes, which is
-    /// why it is documented as the transition rather than as an equal alternative.
+    /// Convenience: creates the device's VMA-backed resource allocator for `renderDevice`.
+    ///
+    /// This is what the in-tree callers that used to fall back to the engine resource manager now get.
+    /// It reads no global: the allocator is constructed from the device and owned by the builder, so the
+    /// graph still receives its allocator by construction (#272). Prefer the services constructor when
+    /// you already own an allocator, because a second builder over the same device cannot share one
+    /// created here.
     /// @param renderDevice Device used to create pipelines, command buffers and synchronisation.
     /// @param inFlightCount See the services constructor; the default serialises executions.
     explicit RenderGraphBuilder(VkRenderDevice* renderDevice, uint32_t inFlightCount = 1);
@@ -213,7 +243,7 @@ public:
     ///        statement has to stay true for every execution; re-import when the layout changes. A
     ///        non-`UNDEFINED` layout on a non-image is rejected.
     /// @return `*this` for chaining.
-    RenderGraphBuilder& ImportResource(const ResourceHandle& handle, const IRenderResource* resource,
+    RenderGraphBuilder& ImportResource(const ResourceHandle& handle, const IGraphResource* resource,
                                        VkImageLayout currentLayout = VK_IMAGE_LAYOUT_UNDEFINED);
 
     /// @return The allocation description for a graph-owned resource, if any.
@@ -236,7 +266,7 @@ public:
     /// or keep at most one execution in flight.
     /// @param handle Resource handle.
     /// @return The resource, or nullptr when the handle names nothing the graph can see.
-    const IRenderResource* ResolveResource(const ResourceHandle& handle) const;
+    const IGraphResource* ResolveResource(const ResourceHandle& handle) const;
 
     /// @return The last build's transient memory plan: the blocks, their slots, and the two byte totals
     ///         for **one in-flight slot**. The builder allocates one copy of this plan per slot, so the
@@ -342,11 +372,14 @@ private:
     struct RootArena
     {
         VkBuffer buffer = VK_NULL_HANDLE;           ///< Host-visible root buffer.
-        VmaAllocation allocation = VK_NULL_HANDLE;  ///< Its VMA allocation.
+        GraphMemoryBlock allocation;                ///< The block owning its memory.
         std::byte* mapped = nullptr;                ///< Persistent mapping.
         VkDeviceAddress address = 0;                ///< Device address of offset 0.
         VkDeviceSize cursor = 0;                    ///< Next free byte in this execution.
     };
+    /// Finish construction: create the owned descriptor heap when the device supports one, validate the
+    /// injected caches and read the device limits. Shared by both constructors.
+    void Initialise();
     /// Create the root arena for `slot` on first use; it is host-visible and device-addressable.
     void EnsureRootArena(uint32_t slot);
     /// @return A slice of the current execution's root arena, or throw when it does not fit.
@@ -402,8 +435,7 @@ private:
     // The offset/range to write into VkDescriptorBufferInfo for a buffer binding, validated against
     // the buffer and this device's alignment limit. Whole buffer when the use declares no range.
     std::pair<VkDeviceSize, VkDeviceSize> ResolveBufferRange(const ResourceHandle& nodeName,
-                                                             const ResolvedResourceUse& use,
-                                                             const BufferResource& buffer,
+                                                             const ResolvedResourceUse& use, const IGraphBuffer& buffer,
                                                              VkDescriptorType descriptorType) const;
 
     // Queue routing. `GetQueueKey` (which node runs where) lives with the execution plan in
@@ -475,6 +507,9 @@ private:
     CompiledRenderGraph m_compiledGraph;
 
     DependencyGraph<std::string> m_dependencyGraph;
+    /// Allocator owned by the convenience constructor. Declared before `m_services` because that
+    /// constructor initialises it first and points the services at it.
+    std::unique_ptr<IGraphResourceAllocator> m_ownedResourceAllocator;
     /// The injected services, declared **before** the members whose construction dereferences them: a
     /// member initialiser list runs in declaration order, so putting this first is what lets
     /// `RequireServices` reject a missing one by name before anything dereferences it.
@@ -510,7 +545,7 @@ private:
     {
         std::unordered_map<ResourceHandle, std::unique_ptr<TransientBufferResource>> buffers;  ///< Transient buffers.
         std::unordered_map<ResourceHandle, std::unique_ptr<TransientImageResource>> images;    ///< Transient images.
-        std::vector<VmaAllocation> blocks;  ///< This slot's aliasing blocks, freed after its resources.
+        std::vector<GraphMemoryBlock> blocks;  ///< This slot's aliasing blocks, freed after its resources.
         TransientSlotStorage() = default;
         /// The maps own their resources, so the struct is move-only. Saying so explicitly is load-bearing on
         /// MSVC: `std::unordered_map` declares its copy constructor unconditionally and without `noexcept` on
@@ -604,7 +639,7 @@ private:
     /// @param slot In-flight slot whose instance is wanted.
     /// @param handle Resource handle.
     /// @return The slot's instance, another owner's resource, or nullptr.
-    const IRenderResource* ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const;
+    const IGraphResource* ResolveResourceForSlot(uint32_t slot, const ResourceHandle& handle) const;
     /// @param handle Resource handle.
     /// @return True when the handle is bound per execution (an import, or a graph-owned transient) and
     ///         therefore cannot use a build-time static descriptor.
@@ -626,7 +661,12 @@ private:
     void EnsureMappingsReleased(const std::string& nodeName) const;
 
     ResourceDescRegistry m_resourceDescRegistry;
-    std::unordered_map<ResourceHandle, const IRenderResource*> m_importedResources;
+    /// Graph-owned persistent resources, allocated at Build() through the injected allocator. The graph
+    /// owns the object; the allocator owns the memory and the concrete Vulkan class.
+    std::unordered_map<ResourceHandle, std::unique_ptr<IGraphResource>> m_ownedResources;
+    /// Per-node shader binding tables, allocated at Build() through the injected allocator.
+    std::unordered_map<std::string, std::unique_ptr<IGraphBuffer>> m_shaderBindingTables;
+    std::unordered_map<ResourceHandle, const IGraphResource*> m_importedResources;
     /// The layout each imported image is in before every execution, when the caller stated one. Seeded
     /// into the per-execution access state so the first-use barrier preserves the imported content
     /// instead of discarding it through `VK_IMAGE_LAYOUT_UNDEFINED`. Absent for `UNDEFINED`.

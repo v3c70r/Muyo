@@ -36,7 +36,7 @@ using namespace Muyo::RenderGraph;
 namespace
 {
 /// Copies `pTarget` (left in COLOR_ATTACHMENT_OPTIMAL) back and returns two pixels: one from each half.
-std::array<std::array<uint8_t, 4>, 2> ReadLeftAndRightPixels(const ImageResource* pTarget, VkExtent2D extent)
+std::array<std::array<uint8_t, 4>, 2> ReadLeftAndRightPixels(const IGraphImage* pTarget, VkExtent2D extent)
 {
     const size_t bufferSize = static_cast<size_t>(extent.width) * extent.height * 4;
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, bufferSize);
@@ -183,7 +183,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: FINAL samples an imported
 
     RenderGraphBuilder builder(
         RenderGraphServices{
-            .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &heap},
+            .device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator(), .descriptorHeap = &heap},
         1);
     // A layout describes an image; stating one for a buffer is a caller error, reported by name.
     CHECK_THROWS_AS(builder.ImportResource("QuadVertices", pQuadVertices, VK_IMAGE_LAYOUT_GENERAL), std::runtime_error);
@@ -233,8 +233,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: FINAL samples an imported
             const FinalPush push{*image, samplerSlot.index};
             ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 
-            const auto* pVertices = dynamic_cast<const BufferResource*>(ctx.resolveResource("QuadVertices"));
-            const auto* pIndices = dynamic_cast<const BufferResource*>(ctx.resolveResource("QuadIndices"));
+            const auto* pVertices = dynamic_cast<const IGraphBuffer*>(ctx.resolveResource("QuadVertices"));
+            const auto* pIndices = dynamic_cast<const IGraphBuffer*>(ctx.resolveResource("QuadIndices"));
             REQUIRE(pVertices != nullptr);
             REQUIRE(pIndices != nullptr);
             VkDeviceSize offset = 0;

@@ -3,7 +3,6 @@
 #include <fstream>
 
 #include "GraphicsTestEnv.h"
-#include "ShaderAsset.h"
 #include "ShaderReflectionFetcher.h"
 #include "catch2/catch_message.hpp"
 namespace Muyo
@@ -15,7 +14,7 @@ TEST_CASE("ShaderReflectionFetcher: SPIR-V Reflection from file", "[ShaderReflec
     // B1b: the graph path is descriptor-heap-only. Reflection still supplies the push range and
     // workgroup size, but a heap module declares no bindings; a module that does is rejected at Build.
     fs::path spirvPath = fs::path("shaders") / "testSpecConstant.comp.heap.spv";
-    auto spirvCode = ReadSpv(spirvPath);
+    auto spirvCode = ReadSpirvFile(spirvPath);
 
     ShaderReflection reflection = Muyo::FetchShaderReflection(spirvCode);
 
@@ -39,13 +38,13 @@ TEST_CASE("ShaderReflectionFetcher: SPIR-V Reflection from file", "[ShaderReflec
 TEST_CASE("ShaderReflectionFetcher: Partially build pipeline", "[ShaderReflectionFetcher]")
 {
     fs::path vertSpirvPath = fs::path("shaders") / "GBuffer.vert.spv";
-    auto vertByteCode = ReadSpv(vertSpirvPath);
+    auto vertByteCode = ReadSpirvFile(vertSpirvPath);
     // GBuffer.frag was deleted with RenderPassGBuffer (#20), and transparent.frag's runtime pass is
     // gone too. The pair is retained as the merged-reflection fixture: it is the remaining module that
     // uses the same GBuffer.vert outputs and the set 0/1/2 material/per-object bindings, so it still
     // exercises the contract this case pins until #51 removes the legacy shaders.
     fs::path fragSpirvPath = fs::path("shaders") / "transparent.frag.spv";
-    auto fragByteCode = ReadSpv(fragSpirvPath);
+    auto fragByteCode = ReadSpirvFile(fragSpirvPath);
 
     std::vector<ShaderReflection> reflections;
     reflections.push_back(Muyo::FetchShaderReflection(vertByteCode));

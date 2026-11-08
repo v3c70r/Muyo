@@ -6,6 +6,7 @@
 #include <cassert>
 
 #include "Debug.h"
+#include "RenderGraph/RenderGraphResources.h"
 #include "VkExtFuncsLoader.h"
 #include "VkMemoryAllocator.h"
 #include "VkRenderDevice.h"
@@ -20,14 +21,16 @@ public:
     virtual void SetDebugName(const std::string& sName) const = 0;
 };
 
-class ImageResource : public IRenderResource
+class ImageResource : public IRenderResource, public RenderGraph::IGraphImage
 {
 public:
-    VkImageView getView() const { return m_view; }
-    VkImage getImage() const { return m_image; }
+    /// @return `ResourceKind::IMAGE`; the graph identifies this resource by kind, not by class (#272).
+    RenderGraph::ResourceKind GetResourceKind() const override { return RenderGraph::ResourceKind::IMAGE; }
+    VkImageView getView() const override { return m_view; }
+    VkImage getImage() const override { return m_image; }
     /// @return The create-info used for the view, for descriptor-heap writes that need the view
     ///         description rather than a VkImageView handle.
-    const VkImageViewCreateInfo& GetImageViewCreateInfo() const { return m_imageViewInfo; }
+    const VkImageViewCreateInfo& GetImageViewCreateInfo() const override { return m_imageViewInfo; }
     virtual ~ImageResource()
     {
         vkDestroyImageView(GetRenderDevice()->GetDevice(), m_view, nullptr);
@@ -38,17 +41,17 @@ public:
     {
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_image), GetVkObjectType(), sName.c_str());
     }
-    VkFormat GetImageFormat() const { return m_imageInfo.format; }
+    VkFormat GetImageFormat() const override { return m_imageInfo.format; }
     /// @return The image's extent, for a consumer that must know the render area (an imported render
     ///         target has no ResourceDesc to read it from).
-    VkExtent2D GetImageExtent() const { return {m_imageInfo.extent.width, m_imageInfo.extent.height}; }
+    VkExtent2D GetImageExtent() const override { return {m_imageInfo.extent.width, m_imageInfo.extent.height}; }
     /// @return The image's usage flags as created, including the attachment bits the allocator adds for
     ///         the format. Build() compares this against a declaration before reusing a resource (#209).
-    VkImageUsageFlags GetImageUsage() const { return m_imageInfo.usage; }
+    VkImageUsageFlags GetImageUsage() const override { return m_imageInfo.usage; }
     /// @return The created mip level count.
-    uint32_t GetImageMipCount() const { return m_imageInfo.mipLevels; }
+    uint32_t GetImageMipCount() const override { return m_imageInfo.mipLevels; }
     /// @return The created array layer count.
-    uint32_t GetImageLayerCount() const { return m_imageInfo.arrayLayers; }
+    uint32_t GetImageLayerCount() const override { return m_imageInfo.arrayLayers; }
 
 protected:
     void CreateImageInternal(const VmaMemoryUsage& memoryUsage)
@@ -101,9 +104,11 @@ protected:
     };
 };
 
-class BufferResource : public IRenderResource
+class BufferResource : public IRenderResource, public RenderGraph::IGraphBuffer
 {
 public:
+    /// @return `ResourceKind::BUFFER`; the graph identifies this resource by kind, not by class (#272).
+    RenderGraph::ResourceKind GetResourceKind() const override { return RenderGraph::ResourceKind::BUFFER; }
     BufferResource(VkBufferUsageFlags bufferUsage, VmaMemoryUsage memoryUsage)
         : BUFFER_USAGE(bufferUsage), MEMORY_USAGE(memoryUsage)
     {
@@ -115,7 +120,7 @@ public:
     {
         AllocateOwnedBuffer(sizeInByte);
     }
-    virtual VkBuffer buffer() const { return m_buffer; }
+    virtual VkBuffer buffer() const override { return m_buffer; }
     virtual ~BufferResource() { GetMemoryAllocator()->FreeBuffer(m_buffer, m_allocation); }
     virtual VkObjectType GetVkObjectType() const override { return VK_OBJECT_TYPE_BUFFER; }
 
@@ -131,7 +136,7 @@ public:
     /// @param pData Source bytes, or `nullptr` to size the buffer without uploading anything. The UI pass
     ///        uses that to reserve a CPU-visible buffer before mapping it.
     /// @param size  Byte count, which must not exceed the storage the resource has.
-    virtual void SetData(const void* pData, size_t size)
+    virtual void SetData(const void* pData, size_t size) override
     {
         // A `VkBuffer` is fixed-size, so growing used to free and re-create it - leaving every descriptor
         // set and device address that named it pointing at the old handle (#13). Allocate with headroom
@@ -211,7 +216,7 @@ public:
     /// a shared block, so what has to be mapped is the block, at an offset. The base implementation maps
     /// the resource's own allocation, which is what everything that allocates its own memory wants.
     /// @return A host pointer to the start of this resource's storage.
-    virtual void* Map()
+    virtual void* Map() override
     {
         void* pMappedPointer;
         GetMemoryAllocator()->MapBuffer(m_allocation, &pMappedPointer);
@@ -219,16 +224,16 @@ public:
     }
     /// Release a mapping taken by `Map`. Must be called before the resource is destroyed - and, for an
     /// aliased resource, before the block it shares is freed.
-    virtual void Unmap() { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
+    virtual void Unmap() override { GetMemoryAllocator()->UnmapBuffer(m_allocation); }
 
-    size_t GetSize() const { return m_nSize; }
+    size_t GetSize() const override { return m_nSize; }
     /// @return The bytes actually allocated, which is at least `GetSize()`: a buffer grown by `SetData`
     ///         keeps its allocation, so a repeat upload of the same order never re-creates the handle.
-    size_t GetCapacity() const { return m_nCapacity; }
+    size_t GetCapacity() const override { return m_nCapacity; }
     /// @return The Vulkan usage flags the buffer was created with.
-    VkBufferUsageFlags GetBufferUsage() const { return BUFFER_USAGE; }
+    VkBufferUsageFlags GetBufferUsage() const override { return BUFFER_USAGE; }
     /// @return The VMA memory usage the buffer was created with.
-    VmaMemoryUsage GetMemoryUsage() const { return MEMORY_USAGE; }
+    VmaMemoryUsage GetMemoryUsage() const override { return MEMORY_USAGE; }
 
 protected:
     /// Allocate this resource's own storage and record its capacity, so a later `SetData` reuses the
@@ -290,9 +295,14 @@ public:
     }
 };
 
-class AccelerationStructure : public IRenderResource
+class AccelerationStructure : public IRenderResource, public RenderGraph::IGraphAccelerationStructure
 {
 public:
+    /// @return `ResourceKind::ACCELERATION_STRUCTURE`; the graph identifies this resource by kind (#272).
+    RenderGraph::ResourceKind GetResourceKind() const override
+    {
+        return RenderGraph::ResourceKind::ACCELERATION_STRUCTURE;
+    }
     /// A heap acceleration-structure descriptor requires the structure's device address to be a multiple
     /// of 256 (`VUID-VkResourceDescriptorInfoEXT-type-11454`), and the AS create-info offset must itself be
     /// a multiple of 256 (`VUID-VkAccelerationStructureCreateInfoKHR-offset-03734`). The device's
@@ -317,7 +327,7 @@ public:
     virtual VkObjectType GetVkObjectType() const override { return VK_OBJECT_TYPE_ACCELERATION_STRUCTURE_KHR; }
 
     /// @return The device address used to write this acceleration structure into a descriptor heap.
-    VkDeviceAddress GetDeviceAddress() const
+    VkDeviceAddress GetDeviceAddress() const override
     {
         VkAccelerationStructureDeviceAddressInfoKHR info{
             VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR};
@@ -331,14 +341,14 @@ public:
         setDebugUtilsObjectName(reinterpret_cast<uint64_t>(m_accelerationStructure), GetVkObjectType(), sName.c_str());
     }
 
-    const VkAccelerationStructureKHR& GetAccelerationStructure() const { return m_accelerationStructure; }
+    const VkAccelerationStructureKHR& GetAccelerationStructure() const override { return m_accelerationStructure; }
 
     /// @return The buffer the structure's memory lives in.
     ///
     /// A `vkCmdPipelineBarrier2` has no barrier type for an acceleration structure, and its memory *is* this
     /// buffer's - so a queue-family ownership handover is expressed as a buffer barrier on it, which is the
     /// mechanism the specification recommends for a cross-queue transfer of a structure (#153).
-    VkBuffer GetBackingBuffer() const { return m_accelerationStructureBuffer.buffer(); }
+    VkBuffer GetBackingBuffer() const override { return m_accelerationStructureBuffer.buffer(); }
 
     VkDeviceAddress GetAccelerationStructureAddress() const
     {

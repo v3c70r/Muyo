@@ -231,7 +231,7 @@ std::vector<char> ReadSpv(const std::string& fileName)
     std::ifstream file(fileName, std::ios::ate | std::ios::binary);
     // Not an assert: under NDEBUG a missing file fell through to tellg() == -1, so fileSize became
     // SIZE_MAX and the failure surfaced as std::bad_alloc from the vector below - loud, but naming
-    // nothing. The asset manager has its own ReadSpv (ShaderAsset.h) that throws "Failed to open
+    // nothing. The graph has its own ReadSpirvFile (ShaderReflectionFetcher.h) that throws "Failed to open
     // file"; this is the legacy copy the non-graph passes still use.
     if (!file.is_open())
     {

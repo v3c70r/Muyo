@@ -168,9 +168,9 @@ void ConvertCameraNode(RenderGraphNodeCreateInfo& node, const char* cameraHandle
                     originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
     {
         REQUIRE(context.descriptorHeap != nullptr);
-        const auto* pCamera = context.GetResource<BufferResource>(cameraHandle);
+        const auto* pCamera = context.GetResource<IGraphBuffer>(cameraHandle);
         REQUIRE(pCamera != nullptr);
-        auto* pWritableCamera = const_cast<BufferResource*>(pCamera);
+        auto* pWritableCamera = const_cast<IGraphBuffer*>(pCamera);
         const auto* pPerView = static_cast<const PerViewData*>(pWritableCamera->Map());
         REQUIRE(pPerView != nullptr);
         CameraPush push{};
@@ -246,9 +246,9 @@ void ConvertRayTracingNode(RenderGraphNodeCreateInfo& node, const char* cameraHa
                     originalExecute = std::move(originalExecute)](RenderGraphNodeContext& context)
     {
         REQUIRE(context.descriptorHeap != nullptr);
-        const auto* pCamera = context.GetResource<BufferResource>(cameraHandle);
+        const auto* pCamera = context.GetResource<IGraphBuffer>(cameraHandle);
         REQUIRE(pCamera != nullptr);
-        auto* pWritableCamera = const_cast<BufferResource*>(pCamera);
+        auto* pWritableCamera = const_cast<IGraphBuffer*>(pCamera);
         const auto* pPerView = static_cast<const PerViewData*>(pWritableCamera->Map());
         REQUIRE(pPerView != nullptr);
         RayPush push{};
@@ -271,7 +271,7 @@ void ConvertRayTracingNode(RenderGraphNodeCreateInfo& node, const char* cameraHa
 
 // Copies the (already rendered) color target back to the host and returns how many
 // pixels are not fully black. A value of 0 means nothing was actually drawn.
-static uint32_t CountNonBlackPixels(const ImageResource* pTarget)
+static uint32_t CountNonBlackPixels(const IGraphImage* pTarget)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
     const size_t pixelSize = 8;  // R16G16B16A16_SFLOAT
@@ -344,7 +344,7 @@ static float HalfToFloat(uint16_t h)
 }
 
 // Copies the color target back and counts pixels whose channels are all at least the given minimum.
-static uint32_t CountPixelsMatching(const ImageResource* pTarget, const glm::vec3& vMin)
+static uint32_t CountPixelsMatching(const IGraphImage* pTarget, const glm::vec3& vMin)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
     const size_t pixelSize = 8;  // R16G16B16A16_SFLOAT
@@ -413,7 +413,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     DescriptorHeapService heap;
     heap.Initialize(GetRenderDevice());
     RenderGraphServices services{
-        .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &heap};
+        .device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator(), .descriptorHeap = &heap};
     RenderGraphBuilder builder(services);
 
     // Graph-owned resources (allocated at Build()).
@@ -475,7 +475,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Single quad node no descr
     }
 
     // The quad must actually cover the viewport.
-    auto* pQuadTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("TriangleOutput"));
+    auto* pQuadTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("TriangleOutput"));
     REQUIRE(pQuadTarget != nullptr);
     REQUIRE(CountNonBlackPixels(pQuadTarget) > 0);
 }
@@ -582,7 +582,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: executing the same builde
     builder.AddDependency(fillPass.nodeName, quadPass.nodeName);
     builder.Build();
 
-    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("TwiceOutput"));
+    auto* pTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("TwiceOutput"));
     REQUIRE(pTarget != nullptr);
 
     builder.Execute();
@@ -681,7 +681,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: Execute(info) chains exec
     builder.AddDependency(fillPass.nodeName, quadPass.nodeName);
     builder.Build();
 
-    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("ChainOutput"));
+    auto* pTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("ChainOutput"));
     REQUIRE(pTarget != nullptr);
 
     VkDevice device = GetRenderDevice()->GetDevice();
@@ -816,7 +816,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     // the same three services from the engine's globals - both paths are therefore exercised, and #53's
     // claim that no internal site reaches for a global is closed by grepping the directory.
     RenderGraphBuilder builder(
-        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
+        RenderGraphServices{.device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator()});
     builder.AddResource(
         "SpecOut", BufferResourceDesc{.count = 2,
                                       .stride = sizeof(uint32_t),
@@ -855,7 +855,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     // manager under the handle name; ResolveResource is private to the builder.
     // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
     // aliasing block the graph owns, so the manager deliberately does not hold it.
-    const auto* pOut = dynamic_cast<const BufferResource*>(builder.ResolveResource("SpecOut"));
+    const auto* pOut = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("SpecOut"));
     REQUIRE(pOut != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 2 * sizeof(uint32_t));
@@ -913,7 +913,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps it
     // the fixture performs after this case returns - were the node's objects still alive, destroying the
     // device would raise the leaked-object VUID and abort the run instead of failing a case.
     RenderGraphBuilder builder(
-        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
+        RenderGraphServices{.device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator()});
     builder.AddResource(
         "SpecOut", BufferResourceDesc{.count = 2,
                                       .stride = sizeof(uint32_t),
@@ -940,7 +940,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a failed Build() keeps it
     // A second builder against the same device, because "the failure cost the graph, not the device" is
     // the part a long-running service depends on.
     RenderGraphBuilder recovered(
-        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
+        RenderGraphServices{.device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator()});
     recovered.AddResource("RecoveredOut", BufferResourceDesc{.count = 1,
                                                              .stride = sizeof(uint32_t),
                                                              .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
@@ -966,7 +966,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: transients that are never
     // strictly one after the other, so their live ranges do not overlap and the planner has nothing to be
     // careful about - which is what makes the saving real rather than incidental.
     RenderGraphBuilder builder(
-        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
+        RenderGraphServices{.device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator()});
     for (const char* name : {"AliasFirst", "AliasSecond"})
     {
         builder.AddResource(name, BufferResourceDesc{.count = 4,
@@ -985,9 +985,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: transients that are never
                                                                                .kind = ResourceKind::BUFFER}},
                                                   .execute = [handle, value](RenderGraphNodeContext& ctx)
                                                   {
-                                                      const auto* pBuffer = ctx.GetResource<BufferResource>(handle);
+                                                      const auto* pBuffer = ctx.GetResource<IGraphBuffer>(handle);
                                                       REQUIRE(pBuffer != nullptr);
-                                                      auto* pWritable = const_cast<BufferResource*>(pBuffer);
+                                                      auto* pWritable = const_cast<IGraphBuffer*>(pBuffer);
                                                       // Through the mapping (a) gives an aliased buffer: the storage is
                                                       // the block's, so there is no allocation of the resource's own to
                                                       // write into.
@@ -1036,8 +1036,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transient mapping must 
                                                                                 .kind = ResourceKind::BUFFER}},
                                                    .execute = [](RenderGraphNodeContext& ctx)
                                                    {
-                                                       auto* pBuffer = const_cast<BufferResource*>(
-                                                           ctx.GetResource<BufferResource>("Leaky"));
+                                                       auto* pBuffer = const_cast<IGraphBuffer*>(
+                                                           ctx.GetResource<IGraphBuffer>("Leaky"));
                                                        REQUIRE(pBuffer != nullptr);
                                                        void* pMapped = pBuffer->Map();
                                                        REQUIRE(pMapped != nullptr);
@@ -1079,7 +1079,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: images that are never liv
     // plan, bind, then create the view. Validation is on, so a wrong order (the view before the bind) or a
     // leaked image shows up as a validation error rather than silently.
     RenderGraphBuilder builder(
-        RenderGraphServices{.device = GetRenderDevice(), .resourceManager = GetRenderResourceManager()});
+        RenderGraphServices{.device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator()});
     for (const char* name : {"ImageAliasFirst", "ImageAliasSecond"})
     {
         builder.AddResource(name, ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -1236,7 +1236,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a buffer range binds only
 
     // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
     // aliasing block the graph owns, so the manager deliberately does not hold it.
-    const auto* pOut = dynamic_cast<const BufferResource*>(builder.ResolveResource("RangedOut"));
+    const auto* pOut = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("RangedOut"));
     REQUIRE(pOut != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU,
@@ -1343,7 +1343,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: growing an imported buffe
 
     builder.Execute();
 
-    const auto* pCopied = dynamic_cast<const BufferResource*>(builder.ResolveResource("Copied"));
+    const auto* pCopied = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("Copied"));
     REQUIRE(pCopied != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, 4 * sizeof(uint32_t));
@@ -1388,7 +1388,7 @@ TEST_CASE("RenderGraphBuilder: a missing service is named and never dereferenced
     CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{}),
                       Catch::Matchers::ContainsSubstring("services.device is null"));
     CHECK_THROWS_WITH(RenderGraphBuilder(RenderGraphServices{.device = GetRenderDevice()}),
-                      Catch::Matchers::ContainsSubstring("services.resourceManager is null"));
+                      Catch::Matchers::ContainsSubstring("services.resourceAllocator is null"));
 }
 
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: reading a transient nothing writes fails at Build",
@@ -2200,7 +2200,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a rebuild recreates a res
 
     declareTarget({16, 16}, VK_FORMAT_R8G8B8A8_UNORM);
     builder.Build();
-    const auto* pFirst = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    const auto* pFirst = dynamic_cast<const IGraphImage*>(builder.ResolveResource("ResizeTarget"));
     REQUIRE(pFirst != nullptr);
     CHECK(pFirst->GetImageExtent().width == 16);
     CHECK(pFirst->GetImageExtent().height == 16);
@@ -2208,14 +2208,14 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a rebuild recreates a res
 
     // Unchanged declaration: the same object, not a new allocation.
     builder.Build();
-    const auto* pReused = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    const auto* pReused = dynamic_cast<const IGraphImage*>(builder.ResolveResource("ResizeTarget"));
     REQUIRE(pReused != nullptr);
     CHECK(pReused == pFirst);
 
     // Changed extent: a new image with the new extent, not the stale one.
     declareTarget({32, 24}, VK_FORMAT_R8G8B8A8_UNORM);
     builder.Build();
-    const auto* pResized = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    const auto* pResized = dynamic_cast<const IGraphImage*>(builder.ResolveResource("ResizeTarget"));
     REQUIRE(pResized != nullptr);
     CHECK(pResized->GetImageExtent().width == 32);
     CHECK(pResized->GetImageExtent().height == 24);
@@ -2223,7 +2223,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a rebuild recreates a res
     // Changed format at the same extent: likewise a new image.
     declareTarget({32, 24}, VK_FORMAT_R16G16B16A16_SFLOAT);
     builder.Build();
-    const auto* pReformatted = dynamic_cast<const ImageResource*>(builder.ResolveResource("ResizeTarget"));
+    const auto* pReformatted = dynamic_cast<const IGraphImage*>(builder.ResolveResource("ResizeTarget"));
     REQUIRE(pReformatted != nullptr);
     CHECK(pReformatted->GetImageFormat() == VK_FORMAT_R16G16B16A16_SFLOAT);
 
@@ -2238,16 +2238,16 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a rebuild recreates a res
     };
     declareBuffer(4);
     builder.Build();
-    const auto* pBuffer = dynamic_cast<const BufferResource*>(builder.ResolveResource("ResizeBuffer"));
+    const auto* pBuffer = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("ResizeBuffer"));
     REQUIRE(pBuffer != nullptr);
     CHECK(pBuffer->GetSize() == 4 * sizeof(uint32_t));
 
     builder.Build();
-    CHECK(dynamic_cast<const BufferResource*>(builder.ResolveResource("ResizeBuffer")) == pBuffer);
+    CHECK(dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("ResizeBuffer")) == pBuffer);
 
     declareBuffer(16);
     builder.Build();
-    const auto* pGrownBuffer = dynamic_cast<const BufferResource*>(builder.ResolveResource("ResizeBuffer"));
+    const auto* pGrownBuffer = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("ResizeBuffer"));
     REQUIRE(pGrownBuffer != nullptr);
     CHECK(pGrownBuffer->GetSize() == 16 * sizeof(uint32_t));
 }
@@ -2330,8 +2330,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
                                                   .kind = ResourceKind::BUFFER}},
                      .execute = [](RenderGraphNodeContext& ctx)
                      {
-                         const auto* pSrc = ctx.GetResource<ImageResource>("TransferImageIn");
-                         const auto* pDst = ctx.GetResource<BufferResource>("TransferMid");
+                         const auto* pSrc = ctx.GetResource<IGraphImage>("TransferImageIn");
+                         const auto* pDst = ctx.GetResource<IGraphBuffer>("TransferMid");
                          VkBufferImageCopy region{};
                          region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
                          region.imageExtent = {kExtent, kExtent, 1};
@@ -2354,8 +2354,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
                                                   .kind = ResourceKind::IMAGE}},
                      .execute = [](RenderGraphNodeContext& ctx)
                      {
-                         const auto* pSrc = ctx.GetResource<BufferResource>("TransferMid");
-                         const auto* pDst = ctx.GetResource<ImageResource>("TransferImageOut");
+                         const auto* pSrc = ctx.GetResource<IGraphBuffer>("TransferMid");
+                         const auto* pDst = ctx.GetResource<IGraphImage>("TransferImageOut");
                          VkBufferImageCopy region{};
                          region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
                          region.imageExtent = {kExtent, kExtent, 1};
@@ -2376,8 +2376,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
                                                   .kind = ResourceKind::BUFFER}},
                      .execute = [](RenderGraphNodeContext& ctx)
                      {
-                         const auto* pSrc = ctx.GetResource<ImageResource>("TransferImageOut");
-                         const auto* pDst = ctx.GetResource<BufferResource>("TransferReadback");
+                         const auto* pSrc = ctx.GetResource<IGraphImage>("TransferImageOut");
+                         const auto* pDst = ctx.GetResource<IGraphBuffer>("TransferReadback");
                          VkBufferImageCopy region{};
                          region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
                          region.imageExtent = {kExtent, kExtent, 1};
@@ -2397,7 +2397,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a transfer round trip thr
 
     // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
     // aliasing block the graph owns, so the manager deliberately does not hold it.
-    const auto* pReadback = dynamic_cast<const BufferResource*>(builder.ResolveResource("TransferReadback"));
+    const auto* pReadback = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("TransferReadback"));
     REQUIRE(pReadback != nullptr);
 
     // The graph's transient cannot be mapped through the resource, and that is a consequence of aliasing
@@ -2556,7 +2556,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: specialization constants 
     builder.Build();
     builder.Execute();
 
-    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("SpecOutput"));
+    auto* pTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("SpecOutput"));
     REQUIRE(pTarget != nullptr);
     // The shader's baked default is 0.0, so red at all means the supplied value reached the pipeline.
     const uint32_t nRedPixels = CountPixelsMatching(pTarget, {0.2F, 0.0F, 0.0F});
@@ -2857,7 +2857,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get 
     // per execution from that slot's ring (#83), so execution 1 keeps A while execution 2 uses B.
     builder.ImportResource("Out", &outA);
 
-    std::vector<const BufferResource*> transientInstances;
+    std::vector<const IGraphBuffer*> transientInstances;
     builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "HostWritesScratch",
                                               .queueType = QueueType::CPU,
                                               .resourceUses = {ResourceUse{.handle = ResourceHandle("Scratch"),
@@ -2866,7 +2866,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get 
                                                                            .kind = ResourceKind::BUFFER}},
                                               .execute = [&transientInstances](RenderGraphNodeContext& ctx)
                                               {
-                                                  auto* pScratch = ctx.GetResource<BufferResource>("Scratch");
+                                                  auto* pScratch = ctx.GetResource<IGraphBuffer>("Scratch");
                                                   REQUIRE(pScratch != nullptr);
                                                   transientInstances.push_back(pScratch);
                                                   // The record order is execution order: 1 for the first execution, 2
@@ -2994,7 +2994,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get 
     // The image half of the arena change. A view cannot be created for an unbound image, so every slot's
     // image must be created, planned, bound and viewed independently. No shader: the point is the storage
     // and view lifetime, and this keeps the case runnable wherever a compute queue is.
-    std::vector<const ImageResource*> instances;
+    std::vector<const IGraphImage*> instances;
     RenderGraphBuilder builder(GetRenderDevice(), 2);
     builder.AddResource("Target", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                                     .extent = {WIDTH, HEIGHT},
@@ -3007,7 +3007,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: in-flight executions get 
                                                                            .kind = ResourceKind::IMAGE}},
                                               .execute = [&instances](RenderGraphNodeContext& ctx)
                                               {
-                                                  const auto* pImage = ctx.GetResource<ImageResource>("Target");
+                                                  const auto* pImage = ctx.GetResource<IGraphImage>("Target");
                                                   REQUIRE(pImage != nullptr);
                                                   CHECK(pImage->getView() != VK_NULL_HANDLE);
                                                   instances.push_back(pImage);
@@ -3053,7 +3053,7 @@ TEST_CASE_METHOD(GraphicsTestEnv,
                                                                            .kind = ResourceKind::BUFFER}},
                                               .execute = [&nWritten](RenderGraphNodeContext& ctx)
                                               {
-                                                  auto* pScratch = ctx.GetResource<BufferResource>("Scratch");
+                                                  auto* pScratch = ctx.GetResource<IGraphBuffer>("Scratch");
                                                   REQUIRE(pScratch != nullptr);
                                                   const uint32_t value = ++nWritten;
                                                   std::memcpy(pScratch->Map(), &value, sizeof(value));
@@ -3069,7 +3069,7 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     builder.AddDependency("HostWritesScratch", "ReadsScratch");
     builder.Build();
 
-    const auto* pOriginal = dynamic_cast<const BufferResource*>(builder.ResolveResource("Scratch"));
+    const auto* pOriginal = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("Scratch"));
     REQUIRE(pOriginal != nullptr);
     CHECK(pOriginal->GetSize() == 4 * sizeof(uint32_t));
 
@@ -3163,7 +3163,7 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     CHECK(bReturnedAfterSignal);
     builder.WaitIdle();
 
-    const auto* pResized = dynamic_cast<const BufferResource*>(builder.ResolveResource("Scratch"));
+    const auto* pResized = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("Scratch"));
     REQUIRE(pResized != nullptr);
     CHECK(pResized->GetSize() == 8 * sizeof(uint32_t));
 
@@ -3299,7 +3299,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
             // World-space frustum planes consumed by the GPU culling pass.
             ExtractFrustumPlanes(perView.mProj * perView.mView, perView.vFrustumPlanes);
 
-            auto* pPreView = ctx.GetResource<BufferResource>("PreViewData");
+            auto* pPreView = ctx.GetResource<IGraphBuffer>("PreViewData");
             REQUIRE(pPreView != nullptr);
             pPreView->SetData(&perView, sizeof(perView));
 
@@ -3327,7 +3327,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
             nSourceCount = static_cast<uint32_t>(drawSources.size());
             REQUIRE(nSourceCount > 0);
 
-            auto* pDrawSources = ctx.GetResource<BufferResource>("DrawSources");
+            auto* pDrawSources = ctx.GetResource<IGraphBuffer>("DrawSources");
             REQUIRE(pDrawSources != nullptr);
             pDrawSources->SetData(drawSources.data(), drawSources.size() * sizeof(DrawSource));
         }};
@@ -3366,8 +3366,8 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
         .shaderNames = {"prepareDrawCmdBuffer.comp.heap"},
         .execute = [&nSourceCount](RenderGraphNodeContext& ctx)
         {
-            const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
-            const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
+            const auto* pDrawCount = ctx.GetResource<IGraphBuffer>("DrawCount");
+            const auto* pDrawCmdBuffer = ctx.GetResource<IGraphBuffer>("GBuffer draw commands");
             REQUIRE(pDrawCount != nullptr);
             REQUIRE(pDrawCmdBuffer != nullptr);
 
@@ -3459,8 +3459,8 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
         .attachmentClearValues = {{{.color = {0.0F, 0.0F, 0.0F, 1.0F}}}},
         .execute = [&nSourceCount](RenderGraphNodeContext& ctx)
         {
-            const auto* pDrawCmdBuffer = ctx.GetResource<BufferResource>("GBuffer draw commands");
-            const auto* pDrawCount = ctx.GetResource<BufferResource>("DrawCount");
+            const auto* pDrawCmdBuffer = ctx.GetResource<IGraphBuffer>("GBuffer draw commands");
+            const auto* pDrawCount = ctx.GetResource<IGraphBuffer>("DrawCount");
             REQUIRE(pDrawCmdBuffer != nullptr);
             REQUIRE(pDrawCount != nullptr);
 
@@ -3511,7 +3511,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
     // Read back the GPU-generated draw count.
     // Through the graph rather than the resource manager: a buffer transient's memory belongs to an
     // aliasing block the graph owns, so the manager deliberately does not hold it.
-    const auto* pDrawCount = dynamic_cast<const BufferResource*>(builder.ResolveResource("DrawCount"));
+    const auto* pDrawCount = dynamic_cast<const IGraphBuffer*>(builder.ResolveResource("DrawCount"));
     REQUIRE(pDrawCount != nullptr);
 
     BufferResource readback(VK_BUFFER_USAGE_TRANSFER_DST_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU, sizeof(uint32_t));
@@ -3529,7 +3529,7 @@ static GPUCullingResult RunGPUCullingScenario(const DrawLists& drawList, const g
     result.nSourceCount = nSourceCount;
     result.nVisibleCount = nVisibleCount;
 
-    auto* pSceneTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("TriangleOutput"));
+    auto* pSceneTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("TriangleOutput"));
     REQUIRE(pSceneTarget != nullptr);
     result.nNonBlackPixels = CountNonBlackPixels(pSceneTarget);
     return result;
@@ -3877,7 +3877,7 @@ TEST_CASE("RenderGraphBuilder: a queue handover is recorded for every kind that 
 
 #ifdef FEATURE_RAY_TRACING
 // Copy an image back to the host and decode the R32G32B32A32_SFLOAT pixels.
-static std::vector<glm::vec4> ReadTargetFloats(const ImageResource* pTarget, VkImageLayout oldLayout,
+static std::vector<glm::vec4> ReadTargetFloats(const IGraphImage* pTarget, VkImageLayout oldLayout,
                                                VkAccessFlags2 srcAccess, VkPipelineStageFlags2 srcStage)
 {
     const VkExtent2D extent = {WIDTH, HEIGHT};
@@ -3996,7 +3996,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                                                 perView.mViewInv = glm::inverse(perView.mView);
                                                 perView.vScreenExtent = {WIDTH, HEIGHT};
 
-                                                auto* pCamera = ctx.GetResource<BufferResource>("RTParityCamera");
+                                                auto* pCamera = ctx.GetResource<IGraphBuffer>("RTParityCamera");
                                                 REQUIRE(pCamera != nullptr);
                                                 pCamera->SetData(&perView, sizeof(perView));
 
@@ -4004,7 +4004,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
                                                 objData.mWorldMatrix = model;
                                                 objData.nSubmeshCount = 1;
                                                 objData.vSubmeshDatas[0].nMaterialIndex = 0;
-                                                auto* pPerObj = ctx.GetResource<BufferResource>("RTParityPerObjData");
+                                                auto* pPerObj = ctx.GetResource<IGraphBuffer>("RTParityPerObjData");
                                                 REQUIRE(pPerObj != nullptr);
                                                 pPerObj->SetData(&objData, sizeof(objData));
                                             }};
@@ -4093,8 +4093,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
         builder.Execute();
     }
 
-    auto* pRasterOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTParityRasterOutput"));
-    auto* pRayOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTParityRayOutput"));
+    auto* pRasterOutput = dynamic_cast<const IGraphImage*>(builder.ResolveResource("RTParityRasterOutput"));
+    auto* pRayOutput = dynamic_cast<const IGraphImage*>(builder.ResolveResource("RTParityRayOutput"));
     REQUIRE(pRasterOutput != nullptr);
     REQUIRE(pRayOutput != nullptr);
 
@@ -4225,7 +4225,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and 
                          perView.mProjInv = glm::inverse(perView.mProj);
                          perView.mViewInv = glm::inverse(perView.mView);
                          perView.vScreenExtent = {WIDTH, HEIGHT};
-                         auto* pCamera = ctx.GetResource<BufferResource>("ASBuildCamera");
+                         auto* pCamera = ctx.GetResource<IGraphBuffer>("ASBuildCamera");
                          REQUIRE(pCamera != nullptr);
                          pCamera->SetData(&perView, sizeof(perView));
                      }});
@@ -4271,7 +4271,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and 
 
     // The trace ran against the structure this execution built: the quad covers the centre of the frame,
     // so at least one pixel is the hit colour rather than the clear value.
-    auto* pOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("ASBuildOutput"));
+    auto* pOutput = dynamic_cast<const IGraphImage*>(builder.ResolveResource("ASBuildOutput"));
     REQUIRE(pOutput != nullptr);
     const std::vector<glm::vec4> pixels = ReadTargetFloats(
         pOutput, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
@@ -4392,7 +4392,7 @@ TEST_CASE_METHOD(GraphicsTestEnv,
                          perView.mProjInv = glm::inverse(perView.mProj);
                          perView.mViewInv = glm::inverse(perView.mView);
                          perView.vScreenExtent = {WIDTH, HEIGHT};
-                         auto* pCamera = ctx.GetResource<BufferResource>("XQCamera");
+                         auto* pCamera = ctx.GetResource<IGraphBuffer>("XQCamera");
                          REQUIRE(pCamera != nullptr);
                          pCamera->SetData(&perView, sizeof(perView));
                      }});
@@ -4447,7 +4447,7 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     // (the plan schedules it) and the guards' own throws are the teeth; see the device-free case.
     builder.Execute();
 
-    auto* pOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("XQOutput"));
+    auto* pOutput = dynamic_cast<const IGraphImage*>(builder.ResolveResource("XQOutput"));
     REQUIRE(pOutput != nullptr);
     const std::vector<glm::vec4> pixels = ReadTargetFloats(
         pOutput, VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_2_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR);
@@ -4528,7 +4528,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
             perView.mViewInv = glm::inverse(perView.mView);
             perView.vScreenExtent = {WIDTH, HEIGHT};
 
-            auto* pCamera = ctx.GetResource<BufferResource>("RTMazdaCamera");
+            auto* pCamera = ctx.GetResource<IGraphBuffer>("RTMazdaCamera");
             REQUIRE(pCamera != nullptr);
             pCamera->SetData(&perView, sizeof(perView));
 
@@ -4552,7 +4552,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
             nDrawCommandCount = static_cast<uint32_t>(drawCommands.size());
             REQUIRE(nDrawCommandCount > 0);
 
-            auto* pCommands = ctx.GetResource<BufferResource>("RTMazdaDrawCommands");
+            auto* pCommands = ctx.GetResource<IGraphBuffer>("RTMazdaDrawCommands");
             REQUIRE(pCommands != nullptr);
             pCommands->SetData(drawCommands.data(), drawCommands.size() * sizeof(VkDrawIndexedIndirectCommand));
         }};
@@ -4599,7 +4599,7 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
         .execute = [&nDrawCommandCount](RenderGraphNodeContext& ctx)
         {
             const auto& meshManager = GetMeshResourceManager()->GetMeshVertexResources();
-            const auto* pCommands = ctx.GetResource<BufferResource>("RTMazdaDrawCommands");
+            const auto* pCommands = ctx.GetResource<IGraphBuffer>("RTMazdaDrawCommands");
             REQUIRE(pCommands != nullptr);
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = meshManager.m_pVertexBuffer->buffer();
@@ -4646,8 +4646,8 @@ TEST_CASE_METHOD(GraphicsTestEnvMazdaScene, "RenderGraphBuilder: ray tracing mat
         builder.Execute();
     }
 
-    auto* pRasterOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTMazdaRasterOutput"));
-    auto* pRayOutput = dynamic_cast<const ImageResource*>(builder.ResolveResource("RTMazdaRayOutput"));
+    auto* pRasterOutput = dynamic_cast<const IGraphImage*>(builder.ResolveResource("RTMazdaRasterOutput"));
+    auto* pRayOutput = dynamic_cast<const IGraphImage*>(builder.ResolveResource("RTMazdaRayOutput"));
     REQUIRE(pRasterOutput != nullptr);
     REQUIRE(pRayOutput != nullptr);
 
@@ -4798,7 +4798,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
     auto* pIndices = GetRenderResourceManager()->GetIndexBuffer("UIIndexBuffer", indices, false);
 
     RenderGraphBuilder builder(RenderGraphServices{
-        .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
+        .device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator(), .descriptorHeap = &uiHeap});
     builder.AddResource(
         "UITarget", ImageResourceDesc{.format = VK_FORMAT_R16G16B16A16_SFLOAT,
                                       .extent = {WIDTH, HEIGHT},
@@ -4849,8 +4849,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
                                                fontSamplerSlot.index};
             ctx.PushData(0, std::as_bytes(std::span{&pushConstants, 1}));
 
-            const auto* pVB = ctx.GetResource<BufferResource>("UIVertices");
-            const auto* pIB = ctx.GetResource<BufferResource>("UIIndices");
+            const auto* pVB = ctx.GetResource<IGraphBuffer>("UIVertices");
+            const auto* pIB = ctx.GetResource<IGraphBuffer>("UIIndices");
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = pVB->buffer();
             vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
@@ -4861,7 +4861,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: the UI pass renders throu
     builder.Build();
     builder.Execute();
 
-    const auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("UITarget"));
+    const auto* pTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("UITarget"));
     REQUIRE(pTarget != nullptr);
     // The white texture times the white vertex colours fills the triangle; a null sampler or a missing
     // descriptor would instead be a validation error or a black readback.
@@ -4912,7 +4912,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an imported attachment ma
     REQUIRE(pSmall != nullptr);
 
     RenderGraphBuilder builder(RenderGraphServices{
-        .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .descriptorHeap = &uiHeap});
+        .device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator(), .descriptorHeap = &uiHeap});
     builder.ImportResource("Font", pFont);
     builder.ImportResource("UIVertices", pVertices);
     builder.ImportResource("UIIndices", pIndices);
@@ -4958,8 +4958,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: an imported attachment ma
             const PushConstBlock pushConstants{glm::vec2(1.0F, 1.0F), glm::vec2(0.0F, 0.0F), *fontImage,
                                                fontSamplerSlot.index};
             ctx.PushData(0, std::as_bytes(std::span{&pushConstants, 1}));
-            const auto* pVB = ctx.GetResource<BufferResource>("UIVertices");
-            const auto* pIB = ctx.GetResource<BufferResource>("UIIndices");
+            const auto* pVB = ctx.GetResource<IGraphBuffer>("UIVertices");
+            const auto* pIB = ctx.GetResource<IGraphBuffer>("UIIndices");
             VkDeviceSize offset = 0;
             VkBuffer vertexBuffer = pVB->buffer();
             vkCmdBindVertexBuffers(ctx.commandBuffer, 0, 1, &vertexBuffer, &offset);
@@ -5024,7 +5024,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
             perView.mProjInv = glm::inverse(proj);
             perView.mViewInv = glm::inverse(view);
             perView.vScreenExtent = {WIDTH, HEIGHT};
-            ctx.GetResource<BufferResource>("OverlayCamera")->SetData(&perView, sizeof(perView));
+            ctx.GetResource<IGraphBuffer>("OverlayCamera")->SetData(&perView, sizeof(perView));
         }};
 
     RenderGraphNodeCreateInfo fillPass = {.nodeName = "FillGreen",
@@ -5088,7 +5088,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: read-write attachment kee
     builder.Build();
     builder.Execute();
 
-    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("Overlay"));
+    auto* pTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("Overlay"));
     REQUIRE(pTarget != nullptr);
 
     // Green survives only if the attachment was loaded rather than cleared; the red overlay is
@@ -5205,7 +5205,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
             perView.mProjInv = glm::inverse(proj);
             perView.mViewInv = glm::inverse(view);
             perView.vScreenExtent = {WIDTH, HEIGHT};
-            ctx.GetResource<BufferResource>("WawCamera")->SetData(&perView, sizeof(perView));
+            ctx.GetResource<IGraphBuffer>("WawCamera")->SetData(&perView, sizeof(perView));
         }};
 
     const auto makeWriteNode = [&quadMesh](const std::string& nodeName, const glm::vec4& color, bool bBlend)
@@ -5261,7 +5261,7 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: two writes to the same at
     builder.Build();
     builder.Execute();
 
-    auto* pTarget = dynamic_cast<const ImageResource*>(builder.ResolveResource("WawTarget"));
+    auto* pTarget = dynamic_cast<const IGraphImage*>(builder.ResolveResource("WawTarget"));
     REQUIRE(pTarget != nullptr);
     // The blend keeps both: red * 0.5 + green * 0.5.
     REQUIRE(CountPixelsMatching(pTarget, {0.25F, 0.25F, 0.0F}) > 0);
@@ -5349,9 +5349,21 @@ TEST_CASE_METHOD(GraphicsTestEnv,
     // needs a device; the routing is what a backend depends on, and only a real execution shows the two are composed -
     // the logic alone is covered by the `[CaptureTool]` cases.
     Muyo::TestSupport::RecordingCaptureTool tool;
-    Muyo::TestSupport::InstalledCaptureTool installed(&tool);
+    // The graph receives the host's marker as a service; it no longer reaches the engine's capture-tool
+    // global itself (#272), so the test supplies the adapter the engine's `ScopedMarker` used to be.
+    class RecordingGraphMarker final : public IGraphCaptureMarker
+    {
+    public:
+        explicit RecordingGraphMarker(Muyo::TestSupport::RecordingCaptureTool& tool) : m_tool(tool) {}
+        void Begin(const std::string& name) override { m_tool.BeginMarker(name); }
+        void End() override { m_tool.EndMarker(); }
 
-    RenderGraphBuilder builder(GetRenderDevice());
+    private:
+        Muyo::TestSupport::RecordingCaptureTool& m_tool;
+    } marker(tool);
+
+    RenderGraphBuilder builder(RenderGraphServices{
+        .device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator(), .captureMarker = &marker});
     builder.AddResource("Target", ImageResourceDesc{.format = VK_FORMAT_R8G8B8A8_UNORM,
                                                     .extent = {8, 8},
                                                     .usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT});
