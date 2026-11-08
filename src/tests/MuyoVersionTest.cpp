@@ -31,14 +31,21 @@ TEST_CASE("Version: the public macros agree with the CMake project version", "[V
     STATIC_REQUIRE(std::string_view(MUYO_RG_VERSION_STRING) == std::string_view(MUYO_RG_EXPECTED_STRING));
 
     STATIC_REQUIRE(MUYO_RG_VERSION == PackVersion(MUYO_RG_VERSION_MAJOR, MUYO_RG_VERSION_MINOR, MUYO_RG_VERSION_PATCH));
-    STATIC_REQUIRE(MUYO_RG_VERSION == MUYO_RG_MAKE_VERSION(MUYO_RG_VERSION_VARIANT, MUYO_RG_VERSION_MAJOR,
-                                                           MUYO_RG_VERSION_MINOR, MUYO_RG_VERSION_PATCH));
+    STATIC_REQUIRE(MUYO_RG_VERSION ==
+                   MUYO_RG_MAKE_VERSION(MUYO_RG_VERSION_MAJOR, MUYO_RG_VERSION_MINOR, MUYO_RG_VERSION_PATCH));
 
-    // The point of the combined integer is that a consumer can compare it in `#if`. Compile such a
-    // comparison here so the macro is checked by the preprocessor, not only by the C++ compiler: a
-    // cast in the expansion would make this the only form that fails.
-#if !(MUYO_RG_VERSION >= MUYO_RG_MAKE_VERSION(0, 0, 0, 0))
-#error "MUYO_RG_VERSION must remain usable in a preprocessor comparison"
+    // The bit layout is what makes an integer comparison mean "older than". Check the components land
+    // where the header documents them, not only that the assembled value happens to match itself.
+    STATIC_REQUIRE(MUYO_RG_MAKE_VERSION(0, 1, 0) == (1u << 12));
+    STATIC_REQUIRE(MUYO_RG_MAKE_VERSION(1, 0, 0) == (1u << 22));
+    STATIC_REQUIRE(MUYO_RG_MAKE_VERSION(1, 0, 0) > MUYO_RG_MAKE_VERSION(0, 99, 99));
+
+    // The point of the combined integer is that a consumer can compare it in `#if`. Compile the form
+    // the header documents so the macro is checked by the preprocessor, not only by the C++ compiler:
+    // a cast in the expansion would make this the only form that fails. The project is at 0.1.0, so
+    // this is also the header's own worked example.
+#if MUYO_RG_VERSION < MUYO_RG_MAKE_VERSION(0, 1, 0)
+#error "the documented MUYO_RG_VERSION comparison must hold"
 #endif
 
     // The documented C++ constants are the same values as the macros.
