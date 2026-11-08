@@ -160,20 +160,104 @@ def verify_header_classification() -> list[str]:
     return errors
 
 
+def _strip_cmake_comments(text: str) -> str:
+    """Return `text` with each `#` comment removed, line by line.
+
+    CMake list entries are routinely commented one per line (`# Name.h`), and the previous parser
+    matched the `.h` name *inside* that comment. A commented-out header therefore still satisfied the
+    install-set comparison while `cmake --install` omitted it - the drift check passing on a package
+    that was missing a public header (#299 review P1). The block this reads holds bare file names, so
+    a `#` is always a comment there; a quoted `#` would need a real CMake parser, which this check
+    deliberately does not run (it has to work with no build directory and no SDK).
+    """
+    return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+
+
+def _cmake_header_names(text: str, variable: str) -> list[str]:
+    """Return the `.h` names in `set(<variable> ... )` in `text`, or an empty list.
+
+    An absent block returns an empty list so the caller reports that as a missing install set rather
+    than silently passing.
+    """
+    match = re.search(r"set\(\s*" + re.escape(variable) + r"\s+(.*?)\)", _strip_cmake_comments(text), re.DOTALL)
+    if match is None:
+        return []
+    return re.findall(r"([A-Za-z0-9_.-]+\.h)", match.group(1))
+
+
 def _cmake_header_list(variable: str) -> list[str]:
     """Return the `.h` names in `set(<variable> ... )` in CMakeLists.txt, or an empty list.
 
     Deliberately a textual read rather than a CMake configure: the check has to run on a machine with
     no build directory and no Vulkan SDK, and the parser only needs the list block the install rules
-    already keep one name per line. An absent block returns an empty list so the caller reports that as
-    a missing install set rather than silently passing.
+    already keep one name per line.
     """
     with open(CMAKELISTS, encoding="utf-8") as handle:
-        text = handle.read()
+        return _cmake_header_names(handle.read(), variable)
+
+
+def _comment_out_first_header(text: str, variable: str) -> str | None:
+    """Return `text` with the first header line in `set(<variable> ... )` commented out.
+
+    Used by the self-test below to prove the parser loses a header when it is commented out, on the
+    real list block rather than only on a synthetic one. Returns None when the block has no header
+    line to comment out.
+    """
     match = re.search(r"set\(\s*" + re.escape(variable) + r"\s+(.*?)\)", text, re.DOTALL)
     if match is None:
-        return []
-    return re.findall(r"([A-Za-z0-9_.-]+\.h)", match.group(1))
+        return None
+    line = re.search(r"^(\s*)([A-Za-z0-9_.-]+\.h)\s*$", match.group(1), re.MULTILINE)
+    if line is None:
+        return None
+    start = match.start(1) + line.start(2)
+    end = match.start(1) + line.end(2)
+    return text[:start] + "# " + text[start:end] + text[end:]
+
+
+def self_test() -> int:
+    """Check the install-list parser itself, including the commented-out-header case (#299 P1).
+
+    A commented-out header used to be parsed as installed, so the drift check passed while the real
+    install set omitted it. The synthetic list pins the two comment forms, and the mutation of the
+    real `MUYO_RG_PUBLIC_HEADERS` block proves the parser loses exactly the header that was commented
+    out on the block the check actually reads.
+    """
+    failures: list[str] = []
+
+    sample = (
+        "set(MUYO_RG_PUBLIC_HEADERS\n"
+        "    Kept.h\n"
+        "    # Commented.h\n"
+        "    Inline.h # a comment after a real entry\n"
+        "    )\n"
+    )
+    sample_names = _cmake_header_names(sample, "MUYO_RG_PUBLIC_HEADERS")
+    if sample_names != ["Kept.h", "Inline.h"]:
+        failures.append(f"synthetic list parsed as {sample_names}, expected ['Kept.h', 'Inline.h']")
+
+    with open(CMAKELISTS, encoding="utf-8") as handle:
+        real = handle.read()
+    real_names = _cmake_header_names(real, "MUYO_RG_PUBLIC_HEADERS")
+    if not real_names:
+        failures.append("CMakeLists.txt has no parsable MUYO_RG_PUBLIC_HEADERS list")
+    mutation = _comment_out_first_header(real, "MUYO_RG_PUBLIC_HEADERS")
+    if mutation is None:
+        failures.append("could not comment out a header in MUYO_RG_PUBLIC_HEADERS")
+    else:
+        mutated_names = _cmake_header_names(mutation, "MUYO_RG_PUBLIC_HEADERS")
+        lost = [name for name in real_names if name not in mutated_names]
+        if lost != [real_names[0]]:
+            failures.append(
+                f"commenting out {real_names[0]} changed the parsed set by {lost}; "
+                "the parser is still reading names inside comments"
+            )
+
+    if failures:
+        for failure in failures:
+            print(f"render_graph_docs: self-test: {failure}")
+        return 1
+    print("render_graph_docs: install-list parser self-test OK (comments are not install entries)")
+    return 0
 
 
 def verify_install_lists() -> list[str]:
@@ -405,8 +489,16 @@ def check_rendered_sections(xml_dir: str, md_path: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="verify coverage and that the Markdown is current")
+    parser.add_argument(
+        "--self-test",
+        action="store_true",
+        help="check the install-list parser itself, including a commented-out header (#299 review P1)",
+    )
     parser.add_argument("--output-dir", default=os.environ.get("RENDER_GRAPH_DOCS_DIR", os.path.join(REPO_ROOT, "build", "docs", "render_graph")))
     args = parser.parse_args()
+
+    if args.self_test:
+        return self_test()
 
     # The surface is the contract, so a stale or incomplete classification fails before Doxygen is
     # needed: that keeps the check useful on a machine without the docs toolchain.
