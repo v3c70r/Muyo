@@ -19,37 +19,71 @@ class VertexBuffer;
 class PipelineStateBuilder
 {
 public:
+    /// Add one shader stage. Repeated calls build the stage list in call order.
+    /// @param shaderModule Module for the stage; the caller owns it.
+    /// @param shaderStageBit Stage this module implements.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& SetShaderModule(VkShaderModule shaderModule, VkShaderStageFlagBits shaderStageBit);
 
     /// @param shaderModules Vertex shader module followed by the fragment shader module.
     /// @param pSpecializationInfo Applied to both stages; entries naming constants a stage does not
     ///        declare are ignored by Vulkan, so one map can serve both.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setShaderModules(const std::vector<VkShaderModule>& shaderModules,
                                            const VkSpecializationInfo* pSpecializationInfo = nullptr);
 
+    /// Set the vertex input bindings and attributes.
+    /// @param bindingDescriptions Vertex buffer bindings.
+    /// @param attribDescriptions Vertex attributes that reference them.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setVertextInfo(const std::vector<VkVertexInputBindingDescription>& bindingDescriptions,
                                          const std::vector<VkVertexInputAttributeDescription>& attribDescriptions);
+
+    /// Set the input assembly state.
+    /// @param assemblyInfo Primitive topology and restart state.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setAssembly(const VkPipelineInputAssemblyStateCreateInfo& assemblyInfo)
     {
         m_inputAssemblyInfo = assemblyInfo;
         return *this;
     }
+
+    /// Set the viewport and scissor.
+    /// @param viewport Viewport rectangle.
+    /// @param scissor Scissor rectangle.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setViewport(const VkViewport& viewport, const VkRect2D& scissor);
+
+    /// Set the rasterization state.
+    /// @param rasterizerInfo Fill/cull/depth-bias state.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setRasterizer(const VkPipelineRasterizationStateCreateInfo& rasterizerInfo)
     {
         m_rasterizerInfo = rasterizerInfo;
         return *this;
     }
+
+    /// Set the multisample state.
+    /// @param multisamplingInfo Sample count and coverage state.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setMSAA(const VkPipelineMultisampleStateCreateInfo& multisamplingInfo)
     {
         m_multisamplingInfo = multisamplingInfo;
         return *this;
     }
+
+    /// Set the color-blend state.
+    /// @param colorBlendState Attachment blend state and blend constants.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setColorBlending(const VkPipelineColorBlendStateCreateInfo& colorBlendState)
     {
         m_colorBlendStateInfo = colorBlendState;
         return *this;
     }
+
+    /// Set the dynamic states the pipeline expects at bind time.
+    /// @param dynamicStates Dynamic states to enable.
+    /// @return `*this`, for chaining. The vector must outlive `Build`.
     PipelineStateBuilder& setDynamicStates(const std::vector<VkDynamicState>& dynamicStates)
     {
         m_dynamicStatesInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
@@ -58,28 +92,45 @@ public:
         return *this;
     }
 
+    /// Set the pipeline layout.
+    /// @param pipelineLayout Layout the pipeline is created with; the caller owns it.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setPipelineLayout(VkPipelineLayout& pipelineLayout)
     {
         m_pipelineLayout = pipelineLayout;
         return *this;
     }
 
+    /// Set the depth/stencil state.
+    /// @param depthStencil Depth test, write and stencil state.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setDepthStencil(const VkPipelineDepthStencilStateCreateInfo& depthStencil)
     {
         m_depthStencilInfo = depthStencil;
         return *this;
     }
+
+    /// Set the render pass for the graphics pipeline.
+    /// @param renderPass Render pass the pipeline is compatible with.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setRenderPass(VkRenderPass renderPass)
     {
         mRenderPass = renderPass;
         return *this;
     }
+
+    /// Set the subpass index within the render pass.
+    /// @param subpassIndex Subpass the pipeline is used in.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setSubpassIndex(uint32_t subpassIndex)
     {
         mSubpassIndex = subpassIndex;
         return *this;
     }
 
+    /// Set the dynamic-rendering attachment formats.
+    /// @param renderingInfo Color/depth formats for a dynamic-rendering pipeline.
+    /// @return `*this`, for chaining.
     PipelineStateBuilder& setRenderingCreateInfo(VkPipelineRenderingCreateInfo renderingInfo)
     {
         mRenderingInfo = renderingInfo;

@@ -9,9 +9,9 @@ class VkRenderDevice;
 
 enum class PoolType
 {
-    Default,
-    SBT,
-    BVH
+    Default,  ///< VMA's default allocation path.
+    SBT,      ///< The shader-binding-table pool, aligned for ray-tracing groups.
+    BVH,      ///< The acceleration-structure pool, aligned for scratch offsets.
 };
 
 // Wrap allocator
@@ -22,8 +22,16 @@ enum class PoolType
 class VkMemoryAllocator
 {
 public:
+    /// Create the VMA allocator for `pDevice` and, with ray tracing, its SBT and BVH pools.
+    /// @param pDevice Device to allocate from; must outlive this allocator.
+    /// @throws std::invalid_argument if `pDevice` is null.
+    /// @note Aborts via `VK_ASSERT` if VMA allocation or pool creation fails.
     void Initalize(VkRenderDevice *pDevice);
+
+    /// Destroy the pools and the VMA allocator. Safe to call when uninitialised.
     void Unintialize();
+
+    /// Construct an uninitialised allocator; call `Initalize` before allocating.
     VkMemoryAllocator();
     /// @note Aborts via `VK_ASSERT` if the allocation fails (for example out of device memory).
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags, VmaMemoryUsage nMemoryUsageFlags,
@@ -32,14 +40,27 @@ public:
     void AllocateBuffer(size_t size, VkBufferUsageFlags nBufferUsageFlags, VmaMemoryUsage nMemoryUsageFlags,
                         VkBuffer &buffer, VmaAllocation &allocation, std::string bufferName,
                         PoolType ePoolType = PoolType::Default);
+    /// Free a buffer and its allocation. Handles a null allocation (an unbound buffer).
+    /// @param[in,out] buffer Buffer to destroy; left as a destroyed handle on return.
+    /// @param[in,out] allocation Allocation to free; left null on return.
     void FreeBuffer(VkBuffer &buffer, VmaAllocation &allocation);
     /// @note Aborts via `VK_ASSERT` if the mapping fails.
     void MapBuffer(VmaAllocation &allocation, void **ppData);
+    /// Unmap an allocation previously mapped by `MapBuffer`.
+    /// @param allocation Allocation to unmap; must currently be mapped.
     void UnmapBuffer(VmaAllocation &allocation);
 
+    /// Allocate an image and its memory.
+    /// @param pImageInfo Image create info; must not be null.
+    /// @param nMemoryUsage Intended memory usage, as VMA interprets it.
+    /// @param[out] image Receives the image handle.
+    /// @param[out] allocation Receives the allocation.
     /// @note Aborts via `VK_ASSERT` if the allocation fails (for example out of device memory).
     void AllocateImage(const VkImageCreateInfo *pImageInfo, VmaMemoryUsage nMemoryUsageFlags, VkImage &image,
                        VmaAllocation &allocation);
+    /// Free an image and its allocation. Handles a null allocation (an unbound image).
+    /// @param[in,out] image Image to destroy; left as a destroyed handle on return.
+    /// @param[in,out] allocation Allocation to free; left null on return.
     void FreeImage(VkImage &image, VmaAllocation &allocation);
 
     // ── Aliasing ─────────────────────────────────────────────────────────────
@@ -108,6 +129,8 @@ private:
         VK_NULL_HANDLE;  // VkPhysicalDeviceAccelerationStructurePropertiesKHR::minAccelerationStructureScratchOffsetAlignment
 };
 
+/// @return The process-wide allocator used by the engine's resources. A library client that owns a
+///         `VkRenderDevice` should construct and inject its own `VkMemoryAllocator` instead.
 VkMemoryAllocator *GetMemoryAllocator();
 
 }  // namespace Muyo

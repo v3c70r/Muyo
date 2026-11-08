@@ -16,7 +16,7 @@ class VkRenderDevice;
 ///
 /// The messenger is destroyed by `VkRenderDevice::Unintialize`, so no matching teardown call is needed.
 ///
-/// @param pDevice Device to initialize. Must be non-null.
+/// @param pDevice Device to initialize. Must be non-null and not already initialized.
 /// @param vInstanceExtensions Extensions the host needs; `VK_EXT_DEBUG_UTILS_EXTENSION_NAME` is appended
 ///        unless it is already present.
 /// @throws std::invalid_argument if `pDevice` is null; std::runtime_error if the validation layer or an

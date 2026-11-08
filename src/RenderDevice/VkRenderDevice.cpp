@@ -146,8 +146,7 @@ void VkRenderDevice::InitializeDebugMessenger()
         FatalError("InitializeDebugMessenger called before Initialize");
     }
     if (m_debugMessenger.IsCreated()) return;  // idempotent: a host may call this from two setup paths
-    if (std::find(m_vInstanceExtensions.begin(), m_vInstanceExtensions.end(), VK_EXT_DEBUG_UTILS_EXTENSION_NAME) ==
-        m_vInstanceExtensions.end())
+    if (!IsInstanceExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
     {
         FatalError(std::string("InitializeDebugMessenger requires the instance extension ") +
                    VK_EXT_DEBUG_UTILS_EXTENSION_NAME + " to have been enabled at Initialize");
@@ -246,6 +245,12 @@ void VkRenderDevice::TransitImageLayout(VkCommandBuffer commandBuffer, VkImage i
     {
         vkCmdPipelineBarrier2(commandBuffer, &dependencyInfo);
     }
+}
+
+bool VkRenderDevice::IsInstanceExtensionEnabled(const char* sName) const
+{
+    return std::any_of(m_vInstanceExtensions.begin(), m_vInstanceExtensions.end(),
+                       [sName](const std::string& sEnabled) { return sEnabled == sName; });
 }
 
 void VkRenderDevice::PickPhysicalDevice()
@@ -849,22 +854,30 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
         {
             FatalError("graphics queue family index is unset at queue retrieval");
         }
+        // Naming uses an extension command, so only call it when the extension was enabled. The
+        // headless/no-validation path enables no debug utils, and calling the entry point anyway is
+        // loader-dependent rather than a name that gets dropped.
+        const bool bCanNameObjects = IsInstanceExtensionEnabled(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        const auto nameQueue = [this, bCanNameObjects](VkQueue queue, const char* sName)
+        {
+            if (!bCanNameObjects) return;
+            setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(queue), VK_OBJECT_TYPE_QUEUE,
+                                    sName);
+        };
+
         vkGetDeviceQueue(m_device, m_queueFamilyIndices.nGraphicsQueueFamily, 0, &m_graphicsQueue);
-        setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(m_graphicsQueue), VK_OBJECT_TYPE_QUEUE,
-                                "Graphics Queue");
+        nameQueue(m_graphicsQueue, "Graphics Queue");
 
         if (m_queueFamilyIndices.nPresentQueneFamily != -1)
         {
             vkGetDeviceQueue(m_device, m_queueFamilyIndices.nPresentQueneFamily, 0, &m_presentQueue);
             if (m_presentQueue == m_graphicsQueue)
             {
-                setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(m_presentQueue),
-                                        VK_OBJECT_TYPE_QUEUE, "Graphics/Present Queue");
+                nameQueue(m_presentQueue, "Graphics/Present Queue");
             }
             else
             {
-                setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(m_presentQueue),
-                                        VK_OBJECT_TYPE_QUEUE, "Present Queue");
+                nameQueue(m_presentQueue, "Present Queue");
             }
         }
 
@@ -875,24 +888,20 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
             {
                 if (m_computeQueue == m_presentQueue)
                 {
-                    setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(m_computeQueue),
-                                            VK_OBJECT_TYPE_QUEUE, "Graphics/Present/Compute Queue");
+                    nameQueue(m_computeQueue, "Graphics/Present/Compute Queue");
                 }
                 else
                 {
-                    setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(m_computeQueue),
-                                            VK_OBJECT_TYPE_QUEUE, "Graphics/Compute Queue");
+                    nameQueue(m_computeQueue, "Graphics/Compute Queue");
                 }
             }
             else if (m_computeQueue == m_presentQueue)
             {
-                setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(m_computeQueue),
-                                        VK_OBJECT_TYPE_QUEUE, "Prsent/Compute Queue");
+                nameQueue(m_computeQueue, "Prsent/Compute Queue");
             }
             else
             {
-                setDebugUtilsObjectName(m_device, m_instance, reinterpret_cast<uint64_t>(m_computeQueue),
-                                        VK_OBJECT_TYPE_QUEUE, "Compute Queue");
+                nameQueue(m_computeQueue, "Compute Queue");
             }
         }
     }

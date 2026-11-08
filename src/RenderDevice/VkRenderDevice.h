@@ -446,6 +446,9 @@ private:  // helper functions to create render device
     ///
     /// @param pFeatureChain The `VkPhysicalDeviceFeatures2` chain `CreateDevice` assembled, or null.
     void RecordEnabledStages(const void* pFeatureChain);
+    /// @param sName Instance extension name.
+    /// @return True when `Initialize` was asked to enable it.
+    bool IsInstanceExtensionEnabled(const char* sName) const;
     void PickPhysicalDevice();
     VkCommandBuffer AllocatePrimaryCommandbuffer(CommandPools pool);
     void FreePrimaryCommandbuffer(VkCommandBuffer& commandBuffer, CommandPools pool);

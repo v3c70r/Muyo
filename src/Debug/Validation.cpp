@@ -1,6 +1,7 @@
 #include "Debug/Validation.h"
 
 #include <algorithm>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -20,8 +21,12 @@ void InitializeDeviceWithValidation(VkRenderDevice* pDevice, const std::vector<c
 
     std::vector<const char*> vValidationExtensions = vInstanceExtensions;
     const char* sExtension = GetValidationExtensionName();
-    if (std::find(vValidationExtensions.begin(), vValidationExtensions.end(), sExtension) ==
-        vValidationExtensions.end())
+    // Compare contents, not pointers: a caller may pass a different `const char*` holding the same
+    // extension name, and enabling it twice is not what the deduplication is for.
+    const bool bAlreadyRequested =
+        std::any_of(vValidationExtensions.begin(), vValidationExtensions.end(), [sExtension](const char* sRequested)
+                    { return sRequested != nullptr && std::strcmp(sRequested, sExtension) == 0; });
+    if (!bAlreadyRequested)
     {
         vValidationExtensions.push_back(sExtension);
     }
