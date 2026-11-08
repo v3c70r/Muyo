@@ -152,6 +152,9 @@ public:
 
     /// Destroys the debug messenger, if one was created, and then the instance. Idempotent.
     ///
+    /// @pre `DestroyDevice` has run: a live logical device is a child of the instance and destroying the
+    ///      parent first is invalid usage.
+    /// @throws std::runtime_error if called while `GetDevice()` is non-null.
     /// @note A host that called `InitializeDebugMessenger` does not have to call
     ///       `DestroyDebugMessenger` separately: this does it before destroying the instance.
     virtual void Unintialize();
@@ -224,7 +227,8 @@ public:
 
     /// @return The logical device, or `VK_NULL_HANDLE` before `CreateDevice`.
     VkDevice& GetDevice() { return m_device; }
-    /// @return The selected physical device, or `VK_NULL_HANDLE` before `Initialize`.
+    /// @return The selected physical device, or `VK_NULL_HANDLE` before `Initialize` or after
+    ///         `Unintialize` (the instance's child handles are invalid once it is destroyed).
     VkPhysicalDevice& GetPhysicalDevice() { return m_physicalDevice; }
     /// @return The graphics queue, or `VK_NULL_HANDLE` before `CreateDevice`.
     VkQueue& GetGraphicsQueue() { return m_graphicsQueue; }
@@ -241,10 +245,11 @@ public:
     /// @return The compute family index, or `UINT32_MAX` when none was found: the member is `-1` and is
     ///         cast here. Call `IsComputeQueueDedicated` before treating it as an independent family.
     uint32_t GetComputeQueueFamily() const { return static_cast<uint32_t>(m_queueFamilyIndices.nComputeQueueFamily); }
-    /// @return True when the compute family exists and differs from the graphics family.
+    /// @return True when a compute-capable family exists and differs from the graphics family.
     ///
-    /// A false result means compute shares the graphics family and the async-compute path is not
-    /// exercised; a run must state that rather than treat it as a failure (AGENTS.md section 8).
+    /// False covers both "no compute-capable family" (`GetComputeQueueFamily()` is `UINT32_MAX`) and
+    /// "compute shares the graphics family". In either case the async-compute path is not exercised; a
+    /// run must state that rather than treat it as a failure (AGENTS.md section 8).
     bool IsComputeQueueDedicated() const
     {
         return m_queueFamilyIndices.nComputeQueueFamily >= 0 &&

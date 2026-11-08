@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "Debug.h"
+#include "Debug/ScopedMarker.h"
 #include "PipelineCache.h"
 #include "PipelineStateBuilder.h"
 #include "RenderGraph/ResourceUseResolver.h"

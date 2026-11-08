@@ -65,8 +65,24 @@ const char* FindUnsupportedDeviceExtension(const std::vector<const char*>& vRequ
 void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
                                 const std::vector<const char*>& vLayerNames)
 {
-    // Start from the empty state: the singleton is re-initialized once per test fixture, and a stale
-    // "validation enabled" flag from the previous instance would misreport this one.
+    // The singleton is re-initialized once per test fixture. A fixture constructor that throws after
+    // Initialize never runs its destructor, so the next fixture arrives here with a live instance and no
+    // logical device. Tear that instance down rather than overwriting the handle: overwriting would leak
+    // it and leave `m_debugMessenger` parented to an instance that no longer exists, while a later
+    // `Unintialize` would pass the old messenger to the new instance.
+    if (m_instance != VK_NULL_HANDLE)
+    {
+        if (m_device != VK_NULL_HANDLE)
+        {
+            FatalError(
+                "VkRenderDevice::Initialize called while a logical device exists; call DestroyDevice and "
+                "Unintialize first");
+        }
+        DestroyDebugMessenger();
+        vkDestroyInstance(m_instance, nullptr);
+        m_instance = VK_NULL_HANDLE;
+        m_physicalDevice = VK_NULL_HANDLE;
+    }
     m_vInstanceLayers.clear();
     m_vInstanceExtensions.clear();
     m_bIsValidationLayerEnabled = false;
@@ -90,14 +106,6 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
         }
     }
 
-    // Record what the host asked for. The device appends nothing: validation is enabled only if the
-    // caller named the layer, and no messenger is created here (#58). Owned strings, because a caller's
-    // list may be temporary.
-    m_vInstanceLayers.assign(vLayerNames.begin(), vLayerNames.end());
-    m_vInstanceExtensions.assign(vExtensionNames.begin(), vExtensionNames.end());
-    m_bIsValidationLayerEnabled = std::find(m_vInstanceLayers.begin(), m_vInstanceLayers.end(),
-                                            GetValidationLayerName()) != m_vInstanceLayers.end();
-
     // Create instance
     // set physical device
     // Populate application info structure
@@ -114,6 +122,14 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
                    std::to_string(VK_VERSION_PATCH(m_uInstanceVersion)));
     }
 
+    // Record what the host asked for, only once everything that can throw before instance creation has
+    // passed. The device appends nothing: validation is enabled only if the caller named the layer, and
+    // no messenger is created here (#58). Owned strings, because a caller's list may be temporary.
+    m_vInstanceLayers.assign(vLayerNames.begin(), vLayerNames.end());
+    m_vInstanceExtensions.assign(vExtensionNames.begin(), vExtensionNames.end());
+    m_bIsValidationLayerEnabled = std::find(m_vInstanceLayers.begin(), m_vInstanceLayers.end(),
+                                            GetValidationLayerName()) != m_vInstanceLayers.end();
+
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "Muyo";
@@ -122,14 +138,24 @@ void VkRenderDevice::Initialize(const std::vector<const char*>& vExtensionNames,
     appInfo.engineVersion = VK_MAKE_VERSION(1, 4, 0);
     appInfo.apiVersion = VK_API_VERSION_1_4;
 
+    // Derive the create-info lists from the recorded state rather than the caller's vectors: what the
+    // device reports as enabled is then exactly what `vkCreateInstance` was given, and a later edit
+    // cannot make the two disagree.
+    std::vector<const char*> vEnabledExtensions;
+    vEnabledExtensions.reserve(m_vInstanceExtensions.size());
+    for (const std::string& sExtension : m_vInstanceExtensions) vEnabledExtensions.push_back(sExtension.c_str());
+    std::vector<const char*> vEnabledLayers;
+    vEnabledLayers.reserve(m_vInstanceLayers.size());
+    for (const std::string& sLayer : m_vInstanceLayers) vEnabledLayers.push_back(sLayer.c_str());
+
     VkInstanceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(vExtensionNames.size());
-    createInfo.ppEnabledExtensionNames = vExtensionNames.data();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(vEnabledExtensions.size());
+    createInfo.ppEnabledExtensionNames = vEnabledExtensions.data();
 
-    createInfo.enabledLayerCount = static_cast<uint32_t>(vLayerNames.size());
-    createInfo.ppEnabledLayerNames = vLayerNames.data();
+    createInfo.enabledLayerCount = static_cast<uint32_t>(vEnabledLayers.size());
+    createInfo.ppEnabledLayerNames = vEnabledLayers.data();
 
     VK_ASSERT(vkCreateInstance(&createInfo, nullptr, &m_instance));
 
@@ -378,7 +404,8 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     // Ignore any that a caller still supplies rather than forwarding them. Deliberately not an
     // assert: asserts compile out under NDEBUG, so the invariant would only hold in Debug builds,
     // and aborting a shipping build over a legacy argument is worse than dropping it. Validation
-    // belongs to the *instance* layer list, which VkDebugRenderDevice::Initialize applies.
+    // belongs to the *instance* layer list, which the host passes to VkRenderDevice::Initialize (or via
+    // InitializeDeviceWithValidation, which is this repository's opt-in default).
     if (!layers.empty())
     {
         std::cerr << "[WARNING]: VkRenderDevice::CreateDevice ignoring " << layers.size()
@@ -969,12 +996,23 @@ void VkRenderDevice::DestroyCommandPools()
 
 void VkRenderDevice::Unintialize()
 {
-    if (m_instance == VK_NULL_HANDLE) return;
+    // A live logical device is a Vulkan child of the instance: destroying the parent first is invalid
+    // usage and leaves m_device set for a later DestroyDevice to use after the instance is gone. This is
+    // caller input, so it is a runtime check, not an assert.
+    if (m_device != VK_NULL_HANDLE)
+    {
+        FatalError("VkRenderDevice::Unintialize called while a logical device exists; call DestroyDevice first");
+    }
     // The messenger belongs to the instance and must die before it. Destroying it here means a host that
     // called InitializeDebugMessenger cannot leave a dangling callback behind by forgetting the pair.
     DestroyDebugMessenger();
-    vkDestroyInstance(m_instance, nullptr);
-    m_instance = VK_NULL_HANDLE;
+    if (m_instance != VK_NULL_HANDLE)
+    {
+        vkDestroyInstance(m_instance, nullptr);
+        m_instance = VK_NULL_HANDLE;
+    }
+    m_physicalDevice = VK_NULL_HANDLE;
+    m_uInstanceVersion = 0;
     m_vInstanceLayers.clear();
     m_vInstanceExtensions.clear();
     m_bIsValidationLayerEnabled = false;

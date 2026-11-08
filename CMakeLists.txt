@@ -328,14 +328,21 @@ target_compile_features(muyo_rg PUBLIC cxx_std_20)
 
 target_link_libraries(muyo_device PUBLIC ${Vulkan_LIBRARIES} VulkanMemoryAllocator)
 
-# The device's public headers include each other by bare name ("VkRenderDevice.h"), and `Debug.h`
-# reaches `Debug/CaptureTool.h` for the capture-marker composition. `src` is what makes the second
-# reachable; it is the remaining outside header in the device surface and is tracked by #275. Declared
-# here rather than inherited from the directory-level include_directories(), because only the target
-# interface crosses into a consumer.
+# `IsRayTracingSupported` is inline in the device's public header, so a consumer has to compile it with
+# the same definition as the library's translation units. `add_compile_definitions` is directory-scoped
+# and does not cross the target interface, so without this an RT build's consumer sees false while
+# VkMemoryAllocator.cpp compiled the RT path.
+if (FEATURE_RAY_TRACING)
+    target_compile_definitions(muyo_device PUBLIC FEATURE_RAY_TRACING)
+endif()
+
+# The device's public headers include each other by bare name ("VkRenderDevice.h"), so `src/RenderDevice`
+# is the whole include interface. `ScopedMarker` moved to `src/Debug/ScopedMarker.h`: it composes the
+# engine's capture-tool interface, which is host policy, and keeping it here made `muyo_device` depend on
+# an engine header and an engine link edge (#275). A consumer of `muyo_device` therefore needs no `src`
+# include and no `muyo` link.
 target_include_directories(muyo_device
     PUBLIC
-        $<BUILD_INTERFACE:${MUYO_ROOT}/src>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderDevice>
     )
 # VMA is in VkMemoryAllocator.h's public interface, so a consumer compiles against its headers.

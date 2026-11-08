@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "Debug/Validation.h"
 #include "GraphicsTestEnv.h"
 #include "ShaderAsset.h"
 #include "VkMemoryAllocator.h"
@@ -64,6 +65,7 @@ TEST_CASE("VkRenderDevice: validation is opt-in and a headless device works with
     CHECK(!pDevice->IsValidationLayerEnabled());
     CHECK(!pDevice->HasDebugMessenger());
     CHECK(pDevice->GetEnabledInstanceLayers().empty());
+    CHECK(pDevice->GetEnabledInstanceExtensions().empty());
 
     // No surface: a headless client must not need one for device creation. The present queue is
     // therefore absent, which is a legitimate configuration rather than a failure (AGENTS.md section 8).
@@ -71,6 +73,34 @@ TEST_CASE("VkRenderDevice: validation is opt-in and a headless device works with
     CHECK(pDevice->GetDevice() != VK_NULL_HANDLE);
     CHECK(pDevice->GetPresentQueue() == VK_NULL_HANDLE);
     CHECK(!pDevice->HasDebugMessenger());
+}
+
+TEST_CASE("VkRenderDevice: re-initialization tears down the previous instance and messenger", "[RenderDevice]")
+{
+    // A fixture constructor that throws after `Initialize` never runs its destructor, so the next
+    // fixture calls `Initialize` again on a device that still owns an instance. Overwriting the handle
+    // would leak it and leave the messenger parented to an instance that no longer exists; the next
+    // `Unintialize` would then pass that stale messenger to the new instance.
+    ScopedDeviceLifetime lifetime;
+    Muyo::VkRenderDevice* pDevice = Muyo::GetRenderDevice();
+
+    Muyo::InitializeDeviceWithValidation(pDevice, {});
+    REQUIRE(pDevice->GetInstance() != VK_NULL_HANDLE);
+    REQUIRE(pDevice->HasDebugMessenger());
+    REQUIRE(pDevice->IsValidationLayerEnabled());
+    const auto& extensions = pDevice->GetEnabledInstanceExtensions();
+    CHECK(std::find(extensions.begin(), extensions.end(), VK_EXT_DEBUG_UTILS_EXTENSION_NAME) != extensions.end());
+
+    // Re-enter without validation and without tearing down explicitly.
+    pDevice->Initialize({}, {});
+    CHECK(pDevice->GetInstance() != VK_NULL_HANDLE);
+    CHECK(!pDevice->HasDebugMessenger());
+    CHECK(!pDevice->IsValidationLayerEnabled());
+    CHECK(pDevice->GetEnabledInstanceLayers().empty());
+    CHECK(pDevice->GetEnabledInstanceExtensions().empty());
+
+    pDevice->CreateDevice({}, {}, nullptr, {});
+    CHECK(pDevice->GetDevice() != VK_NULL_HANDLE);
 }
 
 TEST_CASE("VkRenderDevice: an unavailable layer or instance extension fails at Initialize", "[RenderDevice]")

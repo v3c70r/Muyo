@@ -139,7 +139,9 @@ the engine.
 primitives, command pools, the VMA allocator, the descriptor-heap service, the extension loader,
 barriers, the pipeline-state builder and the debug utilities. The engine and the graph link it
 (`muyo` publicly, and `muyo_rg` directly), so the bottom of the stack no longer arrives through the
-engine's target.
+engine's target. `ScopedMarker` - the composition of a Vulkan label with a capture-tool marker - moved
+to `src/Debug/ScopedMarker.h`: the capture backend is host policy, and keeping the composition out of
+the device header is what lets a client link `muyo_device` without the engine (#275).
 
 The validation policy is the host's, which is the behaviour change that was the reason to file #58
 separately from a mechanical target split:
