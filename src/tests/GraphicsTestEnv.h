@@ -1,6 +1,7 @@
 #pragma once
 #include <cstring>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -22,11 +23,61 @@ namespace Muyo
 class GraphicsTestEnv
 {
 public:
+    /// A construction step a test can force to fail, to exercise cleanup of a partially built environment.
+    ///
+    /// Test-only seam (#278). A fixture whose constructor throws never runs its destructor, so these are
+    /// the failure points the teardown has to survive. `DeviceCreation` uses the real unsupported-extension
+    /// check in `CreateDevice`; nothing in the device or graph code is made throwable for a test.
+    enum class ConstructionFailure
+    {
+        None,
+        DeviceCreation,       ///< `CreateDevice` throws before a logical device exists.
+        AfterDeviceCreation,  ///< The constructor throws once the device exists, before any pool or manager.
+    };
+
+    /// Arms the seam for the next construction, which consumes it. Test-only.
+    static void FailNextConstructionForTest(ConstructionFailure failure) { s_nextConstructionFailure = failure; }
+
     GraphicsTestEnv()
     {
-        // TODO(#278): this constructor is not exception-safe. A throw after the instance/surface/device
-        // exists skips the destructor; the next fixture's Initialize then refuses the live instance (loud,
-        // not silent invalid usage), so one device-capability failure cascades into every later test.
+        // The destructor does not run when a constructor throws, so a failure after the instance, surface or
+        // device exists has to tear down here instead of leaving it to the next fixture. That is #278: the
+        // next fixture's `Initialize` refuses a live instance (loud, by design from #277), so one
+        // device-capability failure used to cascade into every later test.
+        const ConstructionFailure failure = s_nextConstructionFailure;
+        s_nextConstructionFailure = ConstructionFailure::None;
+        try
+        {
+            Initialize(failure);
+        }
+        catch (...)
+        {
+            Destroy();
+            throw;
+        }
+    }
+
+    ~GraphicsTestEnv() { Destroy(); }
+
+    /// @return The headless surface the device was created with, or `VK_NULL_HANDLE` where the loader
+    ///         offers no `VK_EXT_headless_surface`. The frame-sync tests create a swapchain against it;
+    ///         a test that needs it must state its scope rather than pass quietly on a machine without.
+    VkSurfaceKHR GetHeadlessSurface() const { return m_surface; }
+
+    /// @return True when this run has a headless surface, so a present-path test can run at all.
+    bool HasHeadlessSurface() const { return m_surface != VK_NULL_HANDLE; }
+
+    /// @return The physical device the first environment in this process selected, or empty before one.
+    ///
+    /// `VkRenderDevice` pins the physical device by name (#141) and falls back to enumeration order when the
+    /// pinned device is no longer enumerated (#157). A test whose claim is about "the device" has to know
+    /// when that fallback moved the run, so it can scope the claim to the device the run started on.
+    static const std::string &GetFirstDeviceName() { return s_firstDeviceName; }
+
+private:
+    /// Runs the construction steps. Called from the constructor, so a throw can be caught and cleaned up.
+    void Initialize(ConstructionFailure failure)
+    {
         // The test host creates a headless surface when the loader offers one, so the device is given a
         // real present queue and the frame-sync/present path is exercisable in CI. Where the extension
         // is absent the surface stays null and the device is created exactly as before.
@@ -43,6 +94,8 @@ public:
         // contract that a validation ERROR fails the run (AGENTS.md section 4), and it is the same
         // helper the apps use.
         InitializeDeviceWithValidation(GetRenderDevice(), instanceExtensions);
+        // Record the device the run started on before any later fixture can see the #157 fallback move it.
+        if (s_firstDeviceName.empty()) s_firstDeviceName = GetRenderDevice()->GetPhysicalDeviceName();
 #ifdef FEATURE_RAY_TRACING
         // Device-level ray tracing entry points are resolved through the instance.
         VkExt::LoadInstanceFunctions(GetRenderDevice()->GetInstance());
@@ -70,8 +123,20 @@ public:
             deviceExtensions.push_back(VK_KHR_SHADER_UNTYPED_POINTERS_EXTENSION_NAME);
         }
         if (m_surface != VK_NULL_HANDLE) deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        if (failure == ConstructionFailure::DeviceCreation)
+        {
+            // A name no loader registers, so the throw comes from `CreateDevice`'s real unsupported-
+            // extension check rather than from a fake throw in the fixture (#278).
+            deviceExtensions.push_back("VK_EXT_muyo_test_forced_device_creation_failure");
+        }
         const VkSurfaceKHR *pSurface = m_surface != VK_NULL_HANDLE ? &m_surface : nullptr;
         GetRenderDevice()->CreateDevice(deviceExtensions, std::vector<const char *>(), pSurface, deviceFeatures);
+        if (failure == ConstructionFailure::AfterDeviceCreation)
+        {
+            // The partial state this seam forces: a logical device exists, but no command pools, allocator
+            // or managers were created from it. Cleanup has to destroy the device, not leave it live.
+            throw std::runtime_error("GraphicsTestEnv: forced failure after device creation (test seam)");
+        }
         // The loader can offer the extension while the chosen device does not support the surface (AMDVLK
         // does not, Lavapipe does). `CreateDevice` then selects no present family; drop the surface so
         // present-path tests report their scope instead of using an unsupported one.
@@ -127,21 +192,54 @@ public:
                 << std::endl;
         }
         GetRenderDevice()->CreateCommandPools();
+        m_bCommandPoolsCreated = true;
         GetMemoryAllocator()->Initalize(GetRenderDevice());
+        m_bMemoryAllocatorInitialized = true;
         GetRenderResourceManager()->Initialize();
         GetDescriptorManager()->CreateDescriptorPool();
+        m_bDescriptorPoolCreated = true;
         GetDescriptorManager()->CreateDescriptorSetLayouts();
+        m_bDescriptorSetLayoutsCreated = true;
         GetSamplerManager()->createSamplers();
+        m_bSamplersCreated = true;
     }
-    ~GraphicsTestEnv()
+
+    /// Tears down everything this fixture created, child before parent.
+    ///
+    /// Called by the destructor and by the constructor's `catch`, so it runs against partial construction:
+    /// no instance yet, an instance without a device, a device without pools or managers. The flags record
+    /// the steps whose teardown must not run before the step itself completed; the remaining teardown calls
+    /// are documented no-ops when their subject is absent. Every step resets its flag, so a second call is
+    /// not a double destroy.
+    void Destroy()
     {
-        GetSamplerManager()->destroySamplers();
+        if (m_bSamplersCreated)
+        {
+            GetSamplerManager()->destroySamplers();
+            m_bSamplersCreated = false;
+        }
         GetTextureResourceManager()->Destroy();
-        GetDescriptorManager()->DestroyDescriptorSetLayouts();
-        GetDescriptorManager()->DestroyDescriptorPool();
+        if (m_bDescriptorSetLayoutsCreated)
+        {
+            GetDescriptorManager()->DestroyDescriptorSetLayouts();
+            m_bDescriptorSetLayoutsCreated = false;
+        }
+        if (m_bDescriptorPoolCreated)
+        {
+            GetDescriptorManager()->DestroyDescriptorPool();
+            m_bDescriptorPoolCreated = false;
+        }
         GetRenderResourceManager()->Unintialize();
-        GetRenderDevice()->DestroyCommandPools();
-        GetMemoryAllocator()->Unintialize();
+        if (m_bCommandPoolsCreated)
+        {
+            GetRenderDevice()->DestroyCommandPools();
+            m_bCommandPoolsCreated = false;
+        }
+        if (m_bMemoryAllocatorInitialized)
+        {
+            GetMemoryAllocator()->Unintialize();
+            m_bMemoryAllocatorInitialized = false;
+        }
         GetRenderDevice()->DestroyDevice();
         if (m_surface != VK_NULL_HANDLE)
         {
@@ -150,14 +248,6 @@ public:
         }
         GetRenderDevice()->Unintialize();
     }
-
-    /// @return The headless surface the device was created with, or `VK_NULL_HANDLE` where the loader
-    ///         offers no `VK_EXT_headless_surface`. The frame-sync tests create a swapchain against it;
-    ///         a test that needs it must state its scope rather than pass quietly on a machine without.
-    VkSurfaceKHR GetHeadlessSurface() const { return m_surface; }
-
-    /// @return True when this run has a headless surface, so a present-path test can run at all.
-    bool HasHeadlessSurface() const { return m_surface != VK_NULL_HANDLE; }
 
 protected:
     DrawLists m_mDrawList;
@@ -179,6 +269,21 @@ private:
     }
 
     VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+
+    // Construction steps whose teardown must not run before the step completed. Each flag is set only after
+    // its step returns; a step that fails part-way fails through `VK_ASSERT`, which aborts the process, so
+    // there is no half-created state for teardown to leave behind.
+    bool m_bCommandPoolsCreated = false;
+    bool m_bMemoryAllocatorInitialized = false;
+    bool m_bDescriptorPoolCreated = false;
+    bool m_bDescriptorSetLayoutsCreated = false;
+    bool m_bSamplersCreated = false;
+
+    /// The step `FailNextConstructionForTest` armed; consumed by the next constructor. Test-only.
+    static inline ConstructionFailure s_nextConstructionFailure = ConstructionFailure::None;
+
+    /// The physical device the first environment in this process selected; see `GetFirstDeviceName`.
+    static inline std::string s_firstDeviceName;
 
     /// @return True when the selected device exposes both heap extensions and reports both features.
     ///
