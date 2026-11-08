@@ -14,6 +14,7 @@
 #include "CompiledRenderGraph.h"
 #include "DependencyGraph.h"
 #include "DescriptorHeapService.h"
+#include "MuyoVersion.h"
 #include "PSODesc.h"
 #include "RenderGraphBarrier.h"
 #include "RenderGraphExecutionPlan.h"

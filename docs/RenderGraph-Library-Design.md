@@ -258,7 +258,9 @@ the standard cures and they belong with #73, not with #68.
 ## Versioning the library, and how a consumer learns about a change
 
 The package (#73) will carry a version. This says what the version means, how a breaking change reaches a
-consumer, and which consumers are not allowed to lag behind it.
+consumer, and which consumers are not allowed to lag behind it. **The library version itself now exists
+(#87):** `project(Muyo VERSION 0.1.0)` generates `<muyo_rg/version.h>` and the documented constants in
+`RenderGraph/MuyoVersion.h`; only the package version file remains with #73.
 
 ### The library publishes; the consumer pulls
 

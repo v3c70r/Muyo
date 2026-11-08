@@ -5,13 +5,29 @@ cmake_minimum_required(VERSION 3.10.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-project(Muyo)
+project(Muyo VERSION 0.1.0)
 
 # Root of this project, correct whether it is the top-level build or a subdirectory.
 # CMAKE_SOURCE_DIR / CMAKE_BINARY_DIR resolve to the *consumer's* root when this project is
 # embedded, which silently points every path built from them at the wrong tree (#68).
 set(MUYO_ROOT "${CMAKE_CURRENT_LIST_DIR}")
 set(MUYO_BINARY_ROOT "${CMAKE_CURRENT_BINARY_DIR}")
+
+# ── Library version ──────────────────────────────────────────────────────────
+# The version is declared once, here, and the public header is generated from it rather than written
+# by hand, so the two cannot disagree. The policy behind the number - what a major/minor/patch mean,
+# the deprecation window, and why 1.0 waits for the public surface (#53) - is in
+# docs/RenderGraph-Library-Design.md, "Versioning the library" (#87).
+#
+# `muyo_rg/version.h` is the generated, macro-level form (`#if MUYO_RG_VERSION >= ...`); the
+# checked-in `src/RenderGraph/MuyoVersion.h` re-exports the values as documented C++ constants and is
+# the header the Doxygen coverage check sees. Both are public.
+set(MUYO_RG_GENERATED_DIR "${MUYO_BINARY_ROOT}/generated")
+configure_file(
+    "${MUYO_ROOT}/cmake/MuyoVersion.h.in"
+    "${MUYO_RG_GENERATED_DIR}/muyo_rg/version.h"
+    @ONLY
+)
 
 # True when this project is the root of the build. Everything guarded by it - the demo app, the PSO
 # compiler, the test suite, the docs check - is for developing this project rather than consuming it,
@@ -233,6 +249,22 @@ if(CMAKE_BUILD_TYPE STREQUAL "Thread" AND NOT UNIX)
         "ThreadSanitizer is wired for UNIX only (MSVC does not provide it).")
 endif()
 
+# ── Deprecation enforcement ──────────────────────────────────────────────────
+# The versioning policy leans on `[[deprecated("use X")]]` reaching the consumer's own build
+# (docs/RenderGraph-Library-Design.md, "Versioning the library"). That only works if the library
+# itself is forced to stop using the old spelling, so this project's targets turn the warning into an
+# error. It is applied per target instead of with add_compile_options because FetchContent adds VMA
+# and Catch2 after this point: a vendored target's deprecation warning is not ours to fail (#87).
+function(muyo_enable_deprecation_errors target)
+    if (UNIX)
+        target_compile_options(${target} PRIVATE -Werror=deprecated-declarations)
+    elseif (MSVC)
+        # MSVC calls the same diagnostic C4996; the Windows path is not covered by CI, but the
+        # equivalent has to be wired for the policy to be true on a supported compiler.
+        target_compile_options(${target} PRIVATE /we4996)
+    endif()
+endfunction()
+
 # Headers that shared between shader and cpp 
 set (SHARED_HEADER_DIR "${MUYO_ROOT}/shaders/shared")
 
@@ -325,6 +357,9 @@ add_library(muyo_device STATIC ${muyo_device_SRC})
 target_compile_features(muyo PUBLIC cxx_std_20)
 target_compile_features(muyo_device PUBLIC cxx_std_20)
 target_compile_features(muyo_rg PUBLIC cxx_std_20)
+muyo_enable_deprecation_errors(muyo)
+muyo_enable_deprecation_errors(muyo_device)
+muyo_enable_deprecation_errors(muyo_rg)
 
 # SPIRV-Reflect is PUBLIC because `ShaderReflectionFetcher.h` moved here with the reflection code: a
 # consumer of `muyo_device` that includes it compiles against `spirv_reflect.h`. The reflection and the
@@ -399,11 +434,15 @@ target_include_directories(muyo SYSTEM
 target_include_directories(muyo_rg SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
 
 # The graph's own headers include each other by bare name, so `src/RenderGraph` is part of its interface,
-# and `src` is what makes `RenderGraph/...` resolvable to a consumer that links the target.
+# and `src` is what makes `RenderGraph/...` resolvable to a consumer that links the target. The generated
+# directory is part of the interface for the same reason as the source ones: `MuyoVersion.h` includes
+# `<muyo_rg/version.h>`, which only exists in the build tree. A consumer gets it by linking `muyo_rg`, not
+# by adding the build directory itself. The INSTALL_INTERFACE half belongs with the install rules (#73).
 target_include_directories(muyo_rg
     PUBLIC
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderGraph>
         $<BUILD_INTERFACE:${MUYO_ROOT}/src>
+        $<BUILD_INTERFACE:${MUYO_RG_GENERATED_DIR}>
     )
 
 # SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: RenderGraphBuilder.h includes
@@ -435,16 +474,19 @@ if (MUYO_TOP_LEVEL)
 add_executable(helloVulkan ${main_SRC})
 # The frame's FINAL pass is a graph node, so the app links the graph library as well as the engine.
 target_link_libraries(helloVulkan PUBLIC muyo muyo_rg)
+muyo_enable_deprecation_errors(helloVulkan)
 
 # The render graph's first consumer: the same frame through the graph. It links both `muyo` (the
 # engine's resources, device and managers) and `muyo_rg`.
 add_executable(helloVulkanRG ${rgMain_SRC})
 target_link_libraries(helloVulkanRG PUBLIC muyo muyo_rg)
 target_compile_definitions(helloVulkanRG PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
+muyo_enable_deprecation_errors(helloVulkanRG)
 
 
 add_executable(PSOCompiler ${PSOCompiler_SRC})
 target_link_libraries(PSOCompiler PUBLIC muyo)
+muyo_enable_deprecation_errors(PSOCompiler)
 endif()
 
 
@@ -604,14 +646,26 @@ target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/Ren
 # were compiling a second copy of the fetcher and the graph, and the redundant link line was
 # covering for it rather than the libraries (#76).
 target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo muyo_rg)
+muyo_enable_deprecation_errors(tests)
 include(Catch)
 
 # The graph's own test binary: it links `muyo_rg` and `muyo_device` and nothing from the engine. This is
 # issue #272's "`muyo_rg` builds and its tests run without linking `muyo`" as an executable rather than a
 # claim: a reintroduced engine dependency fails this link.
-add_executable(rg_tests src/tests/RenderGraphStandaloneTests.cpp)
+add_executable(rg_tests
+    src/tests/RenderGraphStandaloneTests.cpp
+    src/tests/MuyoVersionTest.cpp)
 target_include_directories(rg_tests PRIVATE ${catch2_SOURCE_DIR}/src)
 target_link_libraries(rg_tests PRIVATE Catch2::Catch2WithMain muyo_rg muyo_device)
+# The expected version comes from `project(Muyo VERSION ...)` independently of the configured header,
+# so a generated header that disagrees with the project version fails the test instead of drifting
+# silently (#87). The quotes are escaped so the definition reaches the compiler as a string literal.
+target_compile_definitions(rg_tests PRIVATE
+    MUYO_RG_EXPECTED_MAJOR=${PROJECT_VERSION_MAJOR}
+    MUYO_RG_EXPECTED_MINOR=${PROJECT_VERSION_MINOR}
+    MUYO_RG_EXPECTED_PATCH=${PROJECT_VERSION_PATCH}
+    MUYO_RG_EXPECTED_STRING=\"${PROJECT_VERSION}\")
+muyo_enable_deprecation_errors(rg_tests)
 catch_discover_tests(rg_tests)
 
 # ThreadSanitizer cannot start on a kernel that randomises mappings beyond its shadow layout: every

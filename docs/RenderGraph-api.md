@@ -72,6 +72,29 @@ Edges are from -> to ("`to` depends on `from`"). AddNode registers isolated node
 | `size_t Muyo::DependencyGraph< T >::NodeCount() const` | Returns: Number of registered nodes. |
 
 
+## `MuyoVersion.h`
+
+### `constexpr std::uint32_t VERSION`
+
+The whole version as one comparable integer (MUYO_RG_VERSION), in Vulkan's layout.
+
+### `constexpr std::uint32_t VERSION_MAJOR`
+
+Major version component (MUYO_RG_VERSION_MAJOR).
+
+### `constexpr std::uint32_t VERSION_MINOR`
+
+Minor version component (MUYO_RG_VERSION_MINOR).
+
+### `constexpr std::uint32_t VERSION_PATCH`
+
+Patch version component (MUYO_RG_VERSION_PATCH).
+
+### `constexpr const char * VERSION_STRING`
+
+The whole version as a "major.minor.patch" string (MUYO_RG_VERSION_STRING).
+
+
 ## `PSODesc.h`
 
 ### `enum BlendFactor`

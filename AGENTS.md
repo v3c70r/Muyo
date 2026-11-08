@@ -76,8 +76,10 @@ Issues are the durable backlog; the project board is a view over them.
 - `Status`: `Todo` / `In Progress` / `Done`. Move an item to `In Progress` when you start it.
 - `Area` (single-select): `Synchronization`, `Descriptors`, `Lifetime`, `Ray tracing`,
   `Performance`, `Graph API`, `Adoption`, `Tooling`, `Device`.
-- Labels: `rendergraph`, `synchronization`, `descriptors`, `ray-tracing`, `tech-debt`, plus the
-  default `bug` / `enhancement`.
+- Labels: `rendergraph`, `synchronization`, `descriptors`, `ray-tracing`, `tech-debt`, `api-change`,
+  plus the default `bug` / `enhancement`. **`api-change` marks a PR that changes a public guarantee or
+  the library's public API** (a `docs/Consumers.md` row, a signature, a removed or deprecated spelling);
+  a consumer filters the changelog and the PR list on it.
 
 Rules:
 
@@ -627,6 +629,9 @@ been reproduced on the merged content.
 - [ ] `scripts/sanity.sh sanitize` is run for changes touching memory, lifetimes, threading or
       resource ownership.
 - [ ] New behaviour has a test with teeth, or the PR explains why a test is impractical.
+- [ ] `CHANGELOG.md` has an entry under `Added` / `Changed` / `Deprecated` / `Removed` / `Fixed`.
+      A change that breaks a `docs/Consumers.md` guarantee names the guarantee and the first-party
+      consumer that has to move, and the PR carries the `api-change` label.
 - [ ] Deferred work is filed as issues and referenced from the code and the PR.
 - [ ] `AGENTS.md` is updated if the process itself changed.
 
