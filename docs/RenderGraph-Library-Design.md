@@ -14,7 +14,8 @@ index.
 | --- | --- | --- |
 | The public surface is C++ headers; a C ABI is a later wrapper | a consumer that cannot use C++ headers | §1 below |
 | `muyo_device` is a shared library, not an inverted dependency | a client that cannot take the shared library | §2 below |
-| Error reporting is unresolved, deliberately | deciding it, or a consumer that cannot act on the errors we report | §3 below |
+| The public surface is a named list of public headers; every other header under `src/RenderGraph/` is internal | a consumer needs a type the list calls internal, or #73's install set divides differently | §1a below |
+| Error reporting: declaration/configuration errors throw a standard exception; a failed Vulkan call aborts | a consumer that must survive a device failure, or public entry points returning a result | §3 below |
 | No C++ modules: fix the paths and add an export set instead | the surface is split (#53) **and** a consumer asks for a module | the packaging section |
 | Concrete resource types live in `muyo_device`; the graph owns only a narrow resource/allocator interface; scene-level resources stay in the consumer | a consumer whose allocator is not the device's | §4 below (landed, #272) |
 | Versioning: the library publishes, first-party consumers are named and must not lag | a consumer that cannot move, or a second first-party consumer | the versioning section |
@@ -85,6 +86,44 @@ whereas designing for it now would constrain the API for a client that does not 
 Recorded with its trigger so the decision can be revisited rather than drifted into: wrap a C ABI when
 there is a consumer that cannot use C++ headers.
 
+### 1a. The public surface is a named list of headers (landed, #53)
+
+The public surface is **sixteen headers** under `src/RenderGraph/`, and everything else in that directory is
+implementation detail. The canonical list lives in `scripts/render_graph_docs.py` (`PUBLIC_HEADERS` /
+`INTERNAL_HEADERS`) and is reproduced, and checked, in `docs/RenderGraph.md` under "Public surface":
+
+> `CompiledRenderGraph.h`, `MuyoVersion.h`, `PipelineCache.h`, `PSODesc.h`, `RenderGraphBuilder.h`,
+> `RenderGraphExecuteInfo.h`, `RenderGraphExecutionPlan.h`, `RenderGraphNodeContext.h`,
+> `RenderGraphNodeResource.h`, `RenderGraphResourceDesc.h`, `RenderGraphResourceHandle.h`,
+> `RenderGraphResources.h`, `RenderGraphShader.h`, `RenderGraphTrace.h`, `ShaderCache.h`,
+> `TransientMemoryPlan.h`.
+
+Four of those exist because the old split was a file label rather than a type boundary. `RenderGraphExecuteInfo`
+moved out of the executor, `TransientMemoryPlan` out of the planner, `ShaderAssetManager` out of the public shader
+header, and the trace recorder out of the public trace header. A consumer names the data it passes and receives; the
+mechanism that produces it stays internal. The allocator interface is public on purpose - a consumer with its own
+memory manager implements `IGraphResourceAllocator` - and the concrete resources live in `muyo_device` (§4).
+
+The boundary is **checkable**, not prose:
+
+- The Doxygen `INPUT` set is generated from `PUBLIC_HEADERS`, so `docs/RenderGraph-api.md` and the coverage check
+  cover exactly the stated list and no internal header.
+- `render_graph_docs.py --check` fails when a header under `src/RenderGraph/` is in neither list (a new header
+  must be classified), when a listed header is gone, or when the checked block in `docs/RenderGraph.md` and the
+  lists disagree.
+- Internal headers carry a one-line note saying so. They remain reachable through the public headers' private
+  members, which is why the packaging set (#73) has to install them too - the promise is about what a consumer
+  may name, not about what the preprocessor can see.
+
+**What is not promised.** The internal headers have no source compatibility guarantee, and the surface has no ABI
+stability yet (the C ABI is the later wrapper in §1). A consumer that needs an internal type reopens this decision
+rather than including it.
+
+**Third-party vocabulary in the surface.** The public headers need Vulkan, VMA and SPIRV-Reflect:
+`BufferResourceDesc::memoryProperties` and `IGraphResourceAllocator` speak `VmaMemoryUsage`, and `ShaderAsset`
+carries the reflection object. That is part of the stated interface until the VMA vocabulary is replaced by a
+graph-owned enum (#293); packaging those dependencies is #73.
+
 ### 2. The device is a shared library, not an inverted dependency
 
 Two ways to get a clean boundary:
@@ -95,22 +134,45 @@ Two ways to get a clean boundary:
   More flexible, and pays indirection for a second backend that does not exist.
 
 Choose the shared library, and revisit on the same trigger as the C ABI: a client that cannot use
-`muyo_device`. The current problem is not the *direction* of the dependency — it is that `muyo_rg` does
-not stand alone: 9 files under `src/RenderGraph/` include at least one header from outside the directory,
-1 code call site reaches for an engine singleton (`GetRenderResourceManager()` in the transitional
-constructor's delegation), and the target links `muyo` publicly. The scans behind those numbers are in
-`Roadmap-Visual.md` section 7; #53 owns the remaining work. Fix the boundary, keep the direction.
+`muyo_device`. The direction was right and the boundary has landed: `muyo_rg` links `muyo_device` and
+nothing else, the concrete resources live in `muyo_device` (§4, #272), and the remaining engine-shaped
+lookups and includes are gone. The pre-#272 scan that motivated the split (9 files including a header from
+outside the directory, one engine-singleton call site, `muyo_rg` linking `muyo`) is kept in
+`Roadmap-Visual.md` section 7 as the before picture, not restated as current.
 
-### 3. Error reporting is unresolved, deliberately
+### 3. Error reporting: declaration errors throw, failed Vulkan calls abort (decided, #53)
 
-`FatalError` and `FatalAbort` abort the process. That is defensible for a renderer, where every failure
-is unrecoverable, and hostile to a long-running inference service that links the library and would rather
-lose one request than the process. Options are to return a result from the public entry points, to throw
-on the graph-level failures (the graph already throws for declaration mistakes) and keep aborting only
-for Vulkan call failures, or to let the host install a handler.
+The contract has three tiers, and a consumer can rely on which tier it is in:
 
-Not decided. Recorded as a design question rather than left implicit, because it is the kind of thing
-that gets decided by whoever writes the next call site.
+| Failure | Mechanism | Can a caller act on it? |
+| --- | --- | --- |
+| A malformed declaration, a missing injected service, an out-of-range value | throws a standard exception (`std::runtime_error` for the graph's preconditions, `std::invalid_argument` from a range-checked conversion), in every build configuration, naming the node/resource/binding | **Yes** - catch it, fix the declaration, build a graph again |
+| A failed Vulkan call (`vkCreate*`, `vkQueueSubmit2`, `vkWaitSemaphores`, memory allocation) | `VK_ASSERT` prints `[FATAL]: Vulkan call failed with <VkResult>` and the call site, then aborts | No - the process ends |
+| A validation-layer `ERROR` when the host installed the callback | `FatalAbort`, because the callback runs on the driver's C stack | No - the process ends |
+
+The first tier is the library contract. `FatalError` *throws* a `std::runtime_error` - the earlier version of
+this section said it aborted, which was wrong - and the graph's own declaration paths throw directly
+(`AddResource`, `ImportResource`, `AddNode`, `AddDependency`, `Build`, `Execute`). A failed `Build()` leaves no
+GPU objects behind and the device usable: the `a failed Build() keeps its message and leaves the device clean`
+case builds a fresh graph on the same device afterwards, which is the property a long-running service needs.
+
+The second tier is deliberate rather than unfinished. `VK_ASSERT` is unconditional (`NDEBUG` cannot remove it),
+reports the failing result and the call site, and aborts; the alternative - throwing from ~70 call sites whose
+failure is a device or driver fault - would impose exception-safety requirements on every caller and still leave
+the caller unable to do anything about a lost device. `FatalError` exists for the cases that are *configuration*
+rather than device failure (a missing layer, an unsupported Vulkan version, no enumerated device); it throws.
+
+**Rejected for now: a host-installed handler and a result type on the public entry points.** A handler is a
+second error channel to keep consistent with the throw path, and a result type changes every signature before
+there is a consumer that needs it. Not doing either is the decision, recorded with its trigger: reopen it when a
+first-party consumer must keep the process alive across a device failure, or when the public entry points return
+a result for another reason. At that point the second tier is what changes; the first tier stays.
+
+**Checkable.** `src/tests/ErrorReportingTests.cpp` (`[ErrorReporting]`) pins the throw type/message/location and
+that `VK_ASSERT` aborts with its diagnostic; the declaration paths are the `CHECK_THROWS_*` cases beside the
+failure index in `docs/RenderGraph.md`, and the validation-callback abort is the `[RenderDevice]` fork case.
+The mechanisms are greppable too: the first tier is the `throw` statements in `src/RenderGraph/`, and
+`grep -rn "VK_ASSERT" src/RenderGraph/` lists the second-tier sites.
 
 ### 4. The graph owns the resource interface; `muyo_device` owns the concrete resources
 
@@ -182,6 +244,8 @@ it is the question #68 opened and #73 finishes. Measured before deciding.
 One translation unit that includes only `RenderGraph/RenderGraphBuilder.h`, compiled with the flags the
 project itself uses. The provenance is part of the figure: these were reproduced on a second machine and
 the magnitude held while the counts did not, so an absolute number quoted without its machine is wrong.
+The numbers below were measured **before #272 removed the engine resource types** from the graph's path;
+they are the before picture for the header split, not a claim about the stated surface in §1a.
 
 | | here — GCC 13.3, system Vulkan headers `VK_HEADER_VERSION 313` | reviewer's RTX 3090 box — SDK 1.4.363 |
 | --- | --- | --- |
@@ -193,9 +257,11 @@ What both agree on is the claim the numbers exist to support: hundreds of header
 preprocessed lines, paid per including translation unit, with `thirdparty/` a large fraction of it. The
 variance is header revision, raw-versus-unique counting and machine speed — none of which is the point.
 
-The public header reaches imgui, tinygltf, meshoptimizer, glm, SPIRV-Reflect and the engine's resource
-managers. That is the "every header under `src/RenderGraph/` is public today" constraint in numbers: the
-surface is not a surface, it is the engine. #53 is the fix, and nothing below replaces it.
+At that point the public header reached imgui, tinygltf, meshoptimizer, glm, SPIRV-Reflect and the
+engine's resource managers: "every header under `src/RenderGraph/` is public" in numbers. The stated
+surface in §1a is the answer. It still needs Vulkan, VMA and SPIRV-Reflect, and `RenderGraphBuilder.h`
+still includes the internal headers its private members need; what changed is that the API is a named
+list a consumer can design against, not everything the directory contains.
 
 ### Modules: feasible, and the wrong first move
 

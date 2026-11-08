@@ -1,20 +1,24 @@
 # Doxygen configuration for the RenderGraph public API.
 #
 # Rendered with `cmake --build <build> --target render_graph_docs` (see
-# docs/README.md). Coverage is enforced: any undocumented public entity in
-# src/RenderGraph fails the build via WARN_AS_ERROR below.
+# docs/README.md). Coverage is enforced: any undocumented public entity in the
+# stated public headers fails the build via WARN_AS_ERROR below.
+#
+# INPUT is the stated public surface, not every header under src/RenderGraph/:
+# `scripts/render_graph_docs.py` owns the list (PUBLIC_HEADERS) and substitutes
+# it below. Internal headers are deliberately absent. See docs/RenderGraph.md,
+# "Public surface".
 
 PROJECT_NAME           = "Muyo RenderGraph"
 PROJECT_BRIEF          = "Data-driven render graph for the Vulkan renderer"
 OUTPUT_DIRECTORY       = @DOXYGEN_OUTPUT_DIR@
 
-INPUT                  = @RENDERGRAPH_HEADER_DIR@ \
-                         @RENDERGRAPH_OVERVIEW@
+INPUT                  = @RENDERGRAPH_PUBLIC_INPUTS@
 FILE_PATTERNS          = *.h *.md
 RECURSIVE              = NO
 USE_MDFILE_AS_MAINPAGE = @RENDERGRAPH_OVERVIEW@
 
-# Extract the whole public surface so undocumented entities are reported.
+# Extract the documented public surface; internal headers are not in INPUT.
 EXTRACT_ALL            = YES
 EXTRACT_PRIVATE        = NO
 EXTRACT_STATIC         = NO

@@ -5,7 +5,7 @@ Two documents cover the RenderGraph:
 | File | Kind | Purpose |
 | --- | --- | --- |
 | [`RenderGraph.md`](RenderGraph.md) | hand-written | Conceptual overview, quick start, async/RT/GPU-driven notes. |
-| [`RenderGraph-api.md`](RenderGraph-api.md) | generated | Full API reference extracted from the Doxygen comments in `src/RenderGraph/*.h`. |
+| [`RenderGraph-api.md`](RenderGraph-api.md) | generated | Full API reference extracted from the Doxygen comments in the stated public headers (`docs/RenderGraph.md`, "Public surface"). |
 
 Both are plain Markdown so they render on GitHub and can be read directly by tools/agents.
 
@@ -19,13 +19,17 @@ cmake --build build --target render_graph_docs
 python3 scripts/render_graph_docs.py --check
 ```
 
-`render_graph_docs` runs four steps:
+`render_graph_docs` runs five steps:
 
-1. **Doxygen** parses `src/RenderGraph/*.h` into XML + HTML.
-2. **`docs/check_api_coverage.py`** fails if any public class/struct/enum, its public members or
+1. **The surface check** fails when a header under `src/RenderGraph/` is neither public nor internal, when a
+   listed header is missing, or when the checked block in `RenderGraph.md` disagrees with
+   `scripts/render_graph_docs.py` (`PUBLIC_HEADERS` / `INTERNAL_HEADERS`). The list is canonical in the
+   script; the block is a checked copy.
+2. **Doxygen** parses the public headers into XML + HTML. Internal headers are deliberately not in `INPUT`.
+3. **`docs/check_api_coverage.py`** fails if any public class/struct/enum, its public members or
    enum values, or any free function/alias lacks a brief or detailed description.
-3. **`docs/gen_api_md.py`** regenerates `docs/RenderGraph-api.md`, grouped by header.
-4. **A section check** fails if the generated Markdown renders fewer `@param`/`@returns`/`@throws`
+4. **`docs/gen_api_md.py`** regenerates `docs/RenderGraph-api.md`, grouped by header.
+5. **A section check** fails if the generated Markdown renders fewer `@param`/`@returns`/`@throws`
    sections than the headers document. The staleness comparison in `--check` cannot catch this on its
    own: a generator that drops a section deterministically regenerates a file that matches itself, so
    the reference would be stale-free and still wrong (#161).
@@ -34,8 +38,8 @@ The task is also registered as the CTest test `RenderGraphApiDocs` when Doxygen 
 
 ## Writing the comments
 
-Coverage is enforced, so every public entity needs a Doxygen description. A one-line `///` brief is
-enough for most:
+Coverage is enforced, so every public entity in the stated public headers needs a Doxygen description.
+A one-line `///` brief is enough for most:
 
 ```cpp
 /// Declare a graph-owned resource. It is allocated at Build() from `desc`.

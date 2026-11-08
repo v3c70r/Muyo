@@ -144,8 +144,8 @@ gh project item-edit --project-id <project-id> --id <item-id> \
   "rendered nothing", were one `VkDescriptorBufferInfo` declared inside the branch whose address was
   used after the branch closed. Both configurations are cheap; the rule in section 4 already requires
   both, so this is the *reason*, not a new obligation.
-- **Documentation is coverage-enforced.** Every public entity under `src/RenderGraph/` needs a
-  Doxygen description or the docs build fails.
+- **Documentation is coverage-enforced.** Every public entity in the stated public headers needs a
+  Doxygen description or the docs build fails; internal headers are outside the reference.
 
 ```bash
 # regenerate HTML/XML + docs/RenderGraph-api.md (fails on undocumented public API)
@@ -154,11 +154,13 @@ cmake --build build --target render_graph_docs
 python3 scripts/render_graph_docs.py --check
 ```
 
-- Doxygen only parses the files listed in `docs/Doxyfile.render_graph` (currently
-  `src/RenderGraph/*.h`, `docs/RenderGraph.md`, `docs/DescriptorSet-Lifecycle-Design.md`). Markdown
-  inside that set may **only** link to other files in the set — add the file to the `INPUT` list in
-  the Doxyfile *and* to `scripts/render_graph_docs.py` if you need a new page in it, otherwise the
-  docs build fails on an unresolvable reference.
+- Doxygen parses only the **stated public surface**: the public headers in `scripts/render_graph_docs.py`
+  (`PUBLIC_HEADERS`) plus `docs/RenderGraph.md` (the `INPUT` list is generated from the script, not edited
+  in `docs/Doxyfile.render_graph`). Every header under `src/RenderGraph/` must be in `PUBLIC_HEADERS` or
+  `INTERNAL_HEADERS`; the docs check fails on an unclassified or missing header, and when the checked block
+  in `docs/RenderGraph.md` disagrees with the lists. Internal headers are not in the reference. Markdown
+  inside the set may **only** link to other files in the set — add a page to `PUBLIC_DOCS` in the script if
+  it belongs in the reference, otherwise the docs build fails on an unresolvable reference.
 - Designs that are not implemented yet live in `docs/*-Design.md` and are explicitly kept out of
   the API reference.
 
