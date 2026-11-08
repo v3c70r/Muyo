@@ -104,10 +104,11 @@ std::vector<Scene> GLTFImporter::ImportScene(const std::string &sSceneFile)
                         int nLightIdx = gltfNode.extensions.at(LIGHT_EXT_NAME).Get("light").Get<int>();
                         tinygltf::Light light = model.lights[nLightIdx];
 
+                        // TODO(#279): map the glTF `range` cutoff (`0` = unbounded) onto the point and
+                        // spot lights' attenuation range; both keep LightSceneNode's 1000-unit default.
                         glm::vec3 lightColor(light.color[0], light.color[1], light.color[2]);
                         if (light.type == "point")
                         {
-                            // TODO(#268): derive the point-light radius from the glTF light's `range`.
                             pSceneNode = std::make_unique<PointLightNode>(lightColor, (float)light.intensity);
                         }
                         else if (light.type == "spot")
