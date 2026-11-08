@@ -384,6 +384,7 @@ consumer does. A host that has no `.spv` files supplies a source instead, throug
 
 ```cpp
 // The same files, from another directory: the configured search path is all that changes.
+const auto allocator = CreateVkGraphResourceAllocator(GetRenderDevice());
 FileShaderSourceProvider shaderSource("build/shaders");
 RenderGraphBuilder builder(RenderGraphServices{
     .device = GetRenderDevice(), .resourceAllocator = allocator.get(), .shaderSource = &shaderSource});
@@ -404,8 +405,8 @@ public:
 `shaderSource` is optional; null selects the default `FileShaderSourceProvider("shaders")`, so every
 in-tree consumer is unchanged. The provider is **borrowed**: the graph neither copies nor destroys it, so
 it has to outlive every builder that refers to it. `IShaderSourceProvider::LoadShader()` returns the
-words by value, so the graph owns them from the moment the call returns, and a provider may free or
-reuse its own buffer afterwards.
+words by value, so the graph owns them from the moment the call returns and a provider may reuse or
+free its internal buffer afterwards.
 
 Failure modes:
 
