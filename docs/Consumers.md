@@ -55,7 +55,7 @@ tracking issue and, where it blocks a consumer, is marked.
 | Specialization constants are applied at pipeline creation | muyo-llm | holds | — |
 | Cooperative matrix can be enabled at device creation | muyo-llm | holds | — |
 | Cooperative matrix property sets can be read, to pick a kernel shape | muyo-llm | **gap** | #72 |
-| A client can supply SPIR-V bytes / a shader search path, not only a file name | muyo-llm | **gap** | #292 |
+| A client can supply SPIR-V bytes / a shader search path, not only a file name | muyo-llm | holds | — (landed in #292) |
 | Declaration errors fail at `Build()`, naming the graph entity | muyo-llm | holds | — |
 | Declaration and configuration errors throw a standard exception a caller can catch, and never abort; a failed Vulkan call aborts with its result and call site | muyo-llm, muyo-renderer | holds | — |
 

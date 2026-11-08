@@ -348,6 +348,7 @@ add_library(muyo_rg
     "src/RenderGraph/CompiledRenderGraph.cpp"
     "src/RenderGraph/PipelineCache.cpp"
     "src/RenderGraph/ShaderCache.cpp"
+    "src/RenderGraph/ShaderSourceProvider.cpp"
     "src/RenderGraph/RenderGraphExecutor.cpp"
     "src/RenderGraph/RenderGraphTrace.cpp"
 )
@@ -528,6 +529,7 @@ if(MUYO_RG_INSTALL)
         RenderGraphShader.h
         RenderGraphTrace.h
         ShaderCache.h
+        ShaderSourceProvider.h
         TransientMemoryPlan.h
         )
     set(MUYO_RG_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/muyo_rg")

@@ -96,6 +96,7 @@ exactly the public headers, so `RenderGraph-api.md` is the surface rather than t
 - `RenderGraphShader.h`
 - `RenderGraphTrace.h`
 - `ShaderCache.h`
+- `ShaderSourceProvider.h`
 - `TransientMemoryPlan.h`
 
 **Internal headers (not API, not installed):**
@@ -374,26 +375,74 @@ header carries the vendor, device and pipeline-cache UUID — and a reloaded cac
 of `VkPipeline` handles: the driver's data is reused, the process-local handles are not. The device must
 be idle while data is read, like any other host access to a `VkPipelineCache`.
 
+## Shader sources
+
+A node names its shaders, and the graph loads each one during `AddNode()`. With no source configured it
+reads `shaders/<shaderName>.spv` from the process's working directory, which is what every in-tree
+consumer does. A host that has no `.spv` files supplies a source instead, through
+`RenderGraphServices::shaderSource`:
+
+```cpp
+// The same files, from another directory: the configured search path is all that changes.
+FileShaderSourceProvider shaderSource("build/shaders");
+RenderGraphBuilder builder(RenderGraphServices{
+    .device = GetRenderDevice(), .resourceAllocator = allocator.get(), .shaderSource = &shaderSource});
+
+// Words from anywhere - a compiler, an archive, a test - by implementing the interface.
+class MemoryShaderSource final : public IShaderSourceProvider
+{
+public:
+    std::optional<std::vector<uint32_t>> LoadShader(const std::string& shaderName) const override
+    {
+        const auto it = m_shaders.find(shaderName);
+        return it == m_shaders.end() ? std::nullopt : std::optional(it->second);
+    }
+    std::map<std::string, std::vector<uint32_t>> m_shaders;
+};
+```
+
+`shaderSource` is optional; null selects the default `FileShaderSourceProvider("shaders")`, so every
+in-tree consumer is unchanged. The provider is **borrowed**: the graph neither copies nor destroys it, so
+it has to outlive every builder that refers to it. `IShaderSourceProvider::LoadShader()` returns the
+words by value, so the graph owns them from the moment the call returns, and a provider may free or
+reuse its own buffer afterwards.
+
+Failure modes:
+
+- A provider returns `std::nullopt` (or an empty vector) for a name it does not have; `AddNode()` then
+  throws `Node 'N' declares shader 'S', which could not be loaded.`
+- The **default** file provider throws `std::runtime_error("Failed to open file")` for a missing file,
+  exactly as the graph did before the provider existed. A host that prefers a missing shader to be
+  reported through the graph's named error returns `std::nullopt` instead.
+- The words a provider returns go to SPIR-V reflection unchanged. Non-SPIR-V content fails there:
+  reflection throws with its `SpvReflectResult`, or module creation makes the load return `std::nullopt`.
+  The graph does not inspect the SPIR-V magic itself, so a provider is not a validator.
+- The provider is consulted on every load, including a `ShaderCache` hit, because the content hash that
+  keys the cache comes from its answer. A provider whose answer is expensive to produce should memoize
+  inside itself.
+
 ## Shader caching
 
-Loading a shader means reading its `.spv`, creating a `VkShaderModule` and running SPIR-V reflection;
-`Build()` needs the reflection to derive heap indices and push-constant ranges. Without a shared cache
-each builder repeats that work and owns its modules. Inject a caller-owned `ShaderCache` to share both:
+Loading a shader means asking the shader source for its words, creating a `VkShaderModule` and running
+SPIR-V reflection; `Build()` needs the reflection to derive heap indices and push-constant ranges.
+Without a shared cache each builder repeats that work and owns its modules. Inject a caller-owned
+`ShaderCache` to share both:
 
 ```cpp
 ShaderCache shaders(GetRenderDevice()->GetDevice());
-RenderGraphBuilder a(RenderGraphServices{
-    .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .shaderCache = &shaders});
-RenderGraphBuilder b(RenderGraphServices{
-    .device = GetRenderDevice(), .resourceManager = GetRenderResourceManager(), .shaderCache = &shaders});
+const auto allocator = CreateVkGraphResourceAllocator(GetRenderDevice());
+const RenderGraphServices services{
+    .device = GetRenderDevice(), .resourceAllocator = allocator.get(), .shaderCache = &shaders};
+RenderGraphBuilder a(services);
+RenderGraphBuilder b(services);
 ```
 
 An entry is keyed by the shader **name and a hash of its SPIR-V words**, not by the name alone. A `.spv`
 rebuilt while the process is running is therefore a new entry instead of a stale reflection with a new
 module, and a builder that still refers to the old entry keeps it alive. A hit creates no module and runs
 no reflection; `ShaderCache::GetModuleCreateCount()` is the observable reuse. The cache owns the modules
-and must outlive every builder that uses it. `ShaderCache::LoadShader()` still reads the file to identify
-its content, since that is the only way to know whether it changed.
+and must outlive every builder that uses it. `ShaderCache::LoadShader()` asks the shader source for the
+words to identify its content, since that is the only way to know whether it changed.
 
 Both caches are independent: a builder may inject either, both, or neither. A `PipelineCache` caches the
 compiled result (keyed on shader content); a `ShaderCache` caches the loaded input.
@@ -518,6 +567,7 @@ for a later check therefore has to satisfy the earlier ones (usually by declarin
 | `... declares HOST_WRITE of buffer 'R', which was declared with device-only memory` | host write | Declare the buffer `VMA_MEMORY_USAGE_CPU_TO_GPU` or `CPU_ONLY`. |
 | `Node 'N' needs the descriptor heap, but RenderGraphServices::descriptorHeap is null` | heap | Inject a `DescriptorHeapService`; the graph path is heap-only since B1b. |
 | `Node 'N' declares descriptor bindings; the graph path is heap-only since B1b` | heap | Convert the shaders to a `.heap.slang` variant. |
+| `Node 'N' declares shader 'S', which could not be loaded` | shader source | The provider returned no words for `S`. Check the `searchPath` of the `FileShaderSourceProvider`, or the name mapping of the host's provider. |
 | `Node 'N' reads transient resource 'R' with nothing writing it first` | lifetime | Add the writer, or declare the resource `Persistent`. |
 | `Node 'N' … is a GPU node with no execute callback` | shape | Give the node an `execute` callback. |
 | `Graphics node 'N' declares K shader(s)` / `Compute node 'N' declares K shader(s)` | shape | A graphics node takes vertex + fragment, a compute node exactly one. A node with no shader is allowed. |

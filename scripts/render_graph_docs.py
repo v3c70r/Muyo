@@ -71,6 +71,7 @@ PUBLIC_HEADERS = [
     "RenderGraphShader.h",
     "RenderGraphTrace.h",
     "ShaderCache.h",
+    "ShaderSourceProvider.h",
     "TransientMemoryPlan.h",
 ]
 

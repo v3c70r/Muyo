@@ -70,7 +70,7 @@ several are currently on the wrong side of it.
 | Queue *use* — which segment runs where | **graph** | queue-family facts | The graph plans; it must not *require* a graphics family (compute-only profile). |
 | Transient resources, aliasing, lifetimes | **graph** | allocator | The policy is the graph's; the memory is not. The interface is graph-owned and the concrete types live in `muyo_device` (#272). |
 | Barriers and layouts | **graph** | — | The reason the graph exists. |
-| Pipeline creation | **graph** | shader source provider, pipeline cache | It builds pipelines from node descriptions today. Keep that — but a client should be able to supply SPIR-V bytes and a cache, not only a file name on disk. |
+| Pipeline creation | **graph** | shader source provider, pipeline cache | It builds pipelines from node descriptions. Keep that — and a client supplies the SPIR-V bytes (or a search path) and a cache, not only a file name on disk; the provider landed in #292. |
 | Descriptor heap and bindless binding | **graph** | descriptor-heap service | B1a/B1b replaced descriptor sets: the graph receives a `DescriptorHeapService`, writes no set layouts, pools or pipeline layouts, and exposes a use's heap index. |
 | Swapchain, present, frame pacing | **host** | — | Not the graph's, not the pipeline's. |
 | Validation-layer enablement | **host** | — | Landed in #58: the device exposes the messenger hook, the host chooses. See below. |
@@ -88,7 +88,7 @@ there is a consumer that cannot use C++ headers.
 
 ### 1a. The public surface is a named list of headers (landed, #53)
 
-The public surface is **sixteen headers** under `src/RenderGraph/`, and everything else in that directory is
+The public surface is **seventeen headers** under `src/RenderGraph/`, and everything else in that directory is
 implementation detail. The canonical list lives in `scripts/render_graph_docs.py` (`PUBLIC_HEADERS` /
 `INTERNAL_HEADERS`) and is reproduced, and checked, in `docs/RenderGraph.md` under "Public surface":
 
@@ -96,13 +96,14 @@ implementation detail. The canonical list lives in `scripts/render_graph_docs.py
 > `RenderGraphExecuteInfo.h`, `RenderGraphExecutionPlan.h`, `RenderGraphNodeContext.h`,
 > `RenderGraphNodeResource.h`, `RenderGraphResourceDesc.h`, `RenderGraphResourceHandle.h`,
 > `RenderGraphResources.h`, `RenderGraphShader.h`, `RenderGraphTrace.h`, `ShaderCache.h`,
-> `TransientMemoryPlan.h`.
+> `ShaderSourceProvider.h`, `TransientMemoryPlan.h`.
 
 Four of those exist because the old split was a file label rather than a type boundary. `RenderGraphExecuteInfo`
 moved out of the executor, `TransientMemoryPlan` out of the planner, `ShaderAssetManager` out of the public shader
 header, and the trace recorder out of the public trace header. A consumer names the data it passes and receives; the
 mechanism that produces it stays internal. The allocator interface is public on purpose - a consumer with its own
-memory manager implements `IGraphResourceAllocator` - and the concrete resources live in `muyo_device` (§4).
+memory manager implements `IGraphResourceAllocator` - and so is the shader source provider, which a host implements
+to supply SPIR-V bytes instead of files (#292). The concrete resources live in `muyo_device` (§4).
 
 The boundary is **checkable**, not prose:
 
@@ -316,7 +317,7 @@ their `PUBLIC` include directories. The installed headers are a stated set rathe
 
 | Installed path | Contents |
 | --- | --- |
-| `include/RenderGraph/` | exactly `PUBLIC_HEADERS` (16 headers) |
+| `include/RenderGraph/` | exactly `PUBLIC_HEADERS` (17 headers) |
 | `include/RenderDevice/` | the device target's headers, which the graph's public interface needs |
 | `include/muyo_rg/version.h` | the generated version macros (the checked-in `MuyoVersion.h` is in the public set) |
 | `include/Muyo/detail/thirdparty/` | VMA and SPIRV-Reflect, which the public headers name |

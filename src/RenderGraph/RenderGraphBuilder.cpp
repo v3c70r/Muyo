@@ -515,6 +515,10 @@ struct RenderGraphBuilder::Impl
     /// @param shaderName Shader name without the `.spv` suffix.
     /// @return The loaded shader's identity, or `std::nullopt` when it could not be loaded.
     std::optional<ShaderAssetKey> LoadShaderAsset(const std::string& shaderName);
+    /// The shader source both load paths are given: the host's provider, or the graph's default file
+    /// source (`shaders/<name>.spv`) when the host supplied none.
+    /// @return The provider; valid for the lifetime of the builder.
+    const IShaderSourceProvider& ShaderSource() const;
     /// @param key Key returned by the matching `LoadShaderAsset` call.
     /// @return The module, words and reflection, or nullptr when the key is unknown.
     const ShaderAsset* ResolveShaderAsset(const ShaderAssetKey& key) const;
@@ -550,6 +554,9 @@ struct RenderGraphBuilder::Impl
     /// opt into heap nodes without threading a service, and the descriptor lifetime follows the graph.
     std::unique_ptr<DescriptorHeapService> m_ownedDescriptorHeap;
     ShaderAssetManager m_shaderAssetManager;
+    /// The graph's default shader source, used when `m_services.shaderSource` is null. Declared here so
+    /// it outlives every load the builder performs; the services struct holds only a borrowed pointer.
+    FileShaderSourceProvider m_defaultShaderSource{"shaders"};
     VkDevice m_vkDevice = VK_NULL_HANDLE;
     VkDeviceSize m_minUniformBufferOffsetAlignment = 1;
     VkDeviceSize m_minStorageBufferOffsetAlignment = 1;
@@ -1082,8 +1089,14 @@ private:
 
 std::optional<ShaderAssetKey> RenderGraphBuilder::Impl::LoadShaderAsset(const std::string& shaderName)
 {
-    if (m_services.shaderCache != nullptr) return m_services.shaderCache->LoadShader(shaderName);
-    return m_shaderAssetManager.LoadShader(shaderName);
+    const IShaderSourceProvider& source = ShaderSource();
+    if (m_services.shaderCache != nullptr) return m_services.shaderCache->LoadShader(shaderName, source);
+    return m_shaderAssetManager.LoadShader(shaderName, source);
+}
+
+const IShaderSourceProvider& RenderGraphBuilder::Impl::ShaderSource() const
+{
+    return m_services.shaderSource != nullptr ? *m_services.shaderSource : m_defaultShaderSource;
 }
 
 const ShaderAsset* RenderGraphBuilder::Impl::ResolveShaderAsset(const ShaderAssetKey& key) const

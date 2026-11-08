@@ -1,6 +1,5 @@
 #include "RenderGraph/ShaderCache.h"
 
-#include <filesystem>
 #include <stdexcept>
 #include <utility>
 
@@ -28,10 +27,15 @@ ShaderCache::~ShaderCache()
 
 std::optional<ShaderAssetKey> ShaderCache::LoadShader(const std::string& shaderName)
 {
-    const std::filesystem::path shaderPath = std::filesystem::path("shaders") / (shaderName + ".spv");
+    return LoadShader(shaderName, m_defaultSource);
+}
 
-    std::vector<uint32_t> spirv = Muyo::ReadSpirvFile(shaderPath);
-    if (spirv.empty()) return std::nullopt;
+std::optional<ShaderAssetKey> ShaderCache::LoadShader(const std::string& shaderName,
+                                                      const IShaderSourceProvider& source)
+{
+    std::optional<std::vector<uint32_t>> loaded = source.LoadShader(shaderName);
+    if (!loaded.has_value() || loaded->empty()) return std::nullopt;
+    std::vector<uint32_t> spirv = std::move(*loaded);
 
     const ShaderAssetKey key{ShaderKey(shaderName), HashSpirv(spirv)};
     if (m_assets.find(key) != m_assets.end()) return key;
