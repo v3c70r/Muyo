@@ -122,7 +122,7 @@ flowchart LR
 | Backlog | #219 GLFW init error reporting | Tooling | No |
 | Backlog | #220 RenderDoc on Wayland | Tooling | No |
 | Backlog | #260 X11 close crash | Tooling | No |
-| Backlog | #268 stale TODO markers | Tooling | No |
+| Backlog | #279 glTF light range | Adoption | No |
 
 ## 5. Dependencies
 
