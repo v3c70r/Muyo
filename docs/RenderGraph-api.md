@@ -472,7 +472,7 @@ The services a graph is given, rather than looking up as globals (#53).
 
 The split follows the design document: the graph owns the policy - transient lifetimes, barriers, scheduling, descriptor content - while the mechanism belongs to the host. The device, the memory and the descriptors are the host's, so they arrive by construction. A caller that supplies all three runs a graph without the engine's globals, which is what lets a compute-only consumer use it without the renderer. RenderGraphBuilder(VkRenderDevice*) still fills the other two from those globals for in-tree callers that have not moved, and is marked as the transition rather than the shape.
 
-Deliberately not here yet: a shader source provider (the graph still loads .spv by file name). That is a capability rather than de-globalisation, and it belongs with the guarantee it closes - "a client can supply SPIR-V bytes".
+A host may also supply the shader bytes instead of relying on the graph's file lookup: see shaderSource. The graph owns pipeline creation, so it still compiles the pipelines, but no longer owns the decision of where a shader lives.
 
 | Member | Description |
 | --- | --- |
@@ -482,6 +482,7 @@ Deliberately not here yet: a shader source provider (the graph still loads .spv 
 | `PipelineCache * pipelineCache` | Optional pipeline cache shared by every builder that is given the same instance (#17). |
 | `IGraphCaptureMarker * captureMarker` | Optional host capture-tool marker, opened and closed around each node's recorded scope. |
 | `ShaderCache * shaderCache` | Optional shader module/reflection cache shared by every builder that is given the same instance (#17). When null, each builder loads and owns its shader modules as before. |
+| `const IShaderSourceProvider * shaderSource` | Optional source of every shader a node declares (#292). |
 
 ### `std::unordered_map< ResourceHandle, ResourceDesc > ResourceDescRegistry`
 
@@ -1488,13 +1489,13 @@ Why a segment waits.
 
 A caller-owned cache of loaded shader modules and their reflection results, shared across builders.
 
-RenderGraphBuilder loads shaders/<name>.spv, creates a VkShaderModule and runs SPIR-V reflection while the graph is declared. Without this cache each builder repeats that work for the same shader, and the modules live only as long as that builder. Inject one through RenderGraphServices::shaderCache to share both:
+RenderGraphBuilder loads a shader from RenderGraphServices::shaderSource (by default shaders/<name>.spv), creates a VkShaderModule and runs SPIR-V reflection while the graph is declared. Without this cache each builder repeats that work for the same shader, and the modules live only as long as that builder. Inject one through RenderGraphServices::shaderCache to share both:
 
 A hit creates no module and runs no reflection. It returns the identity of the entry already in the cache, so two builders resolve the same VkShaderModule and the same reflection object. The key is the shader name plus a hash of its SPIR-V words (ShaderAssetKey), not the name alone: a .spv rebuilt while the process runs is a different shader, and serving the old reflection for it would compile a pipeline for content that is no longer there. Both entries stay alive, because a builder may still refer to the old one. The cache owns the modules. A builder never destroys a module it did not create, and a module may be destroyed after the pipelines created from it (Vulkan allows this), but a later Build() needs it again, so the cache's lifetime is what keeps it valid.
 
 Lifetime. Device-scoped, and it must outlive every builder that uses it. Destroy it only after those builders are gone (or at least after their last Build()); no entry is refcounted.
 
-LoadShader() still reads the .spv file to identify its content, even on a hit. The save is the module creation and reflection, which are the expensive parts; a caller that wants to avoid the read as well would need a content identity supplied from outside, which is not this contract.
+LoadShader() still asks the shader source for the words to identify their content, even on a hit. The save is the module creation and reflection, which are the expensive parts; a caller that wants to avoid the source lookup as well would need a content identity supplied from outside, which is not this contract.
 
 Threading. One thread at a time, like the builder and the caches it uses. The map is not synchronized.
 
@@ -1506,11 +1507,49 @@ Threading. One thread at a time, like the builder and the caches it uses. The ma
 | `ShaderCache & operator=(const ShaderCache &)=delete` | Deleted for the same reason as the copy constructor. |
 | `ShaderCache(ShaderCache &&)=delete` | Deleted because a moved-from cache would leave the old object with no modules to destroy. |
 | `ShaderCache & operator=(ShaderCache &&)=delete` | Deleted for the same reason as the move constructor. |
-| `std::optional< ShaderAssetKey > LoadShader(const std::string &shaderName)` | Load shaders/<shaderName>.spv, or return the identity of the entry already cached for it. Parameters: `shaderName` - Shader name without the .spv suffix, as RenderGraphNodeCreateInfo names it Returns: The entry's key, or std::nullopt when the file is empty or the module cannot be created. Throws: `std::runtime_error` - when the file cannot be read; that is the same failure a builder without a shared cache reports |
+| `std::optional< ShaderAssetKey > LoadShader(const std::string &shaderName)` | Load shaders/<shaderName>.spv, or return the identity of the entry already cached for it. Parameters: `shaderName` - Shader name without the .spv suffix, as RenderGraphNodeCreateInfo names it Returns: The entry's key, or std::nullopt when the source has no words or the module cannot be created. Throws: `std::runtime_error` - when the file cannot be read; that is the same failure a builder without a shared cache reports |
+| `std::optional< ShaderAssetKey > LoadShader(const std::string &shaderName, const IShaderSourceProvider &source)` | Load shaderName from source, or return the identity of the entry already cached for it. Parameters: `shaderName` - Shader name without the .spv suffix; `source` - Provider of the shader's SPIR-V words. Must outlive the call; the words are copied into the cache on a miss Returns: The entry's key, or std::nullopt when the source has no words or the module cannot be created. Throws: `std::runtime_error` - when the source throws; the default file provider does so for a file that cannot be read |
 | `const ShaderAsset * GetShaderAsset(const ShaderAssetKey &key) const` | Parameters: `key` - Key returned by LoadShader Returns: The module, SPIR-V words and reflection for key, or nullptr when it is not cached. |
 | `std::size_t GetModuleCount() const` | Returns: How many shader modules the cache currently owns. |
 | `std::uint64_t GetModuleCreateCount() const` | Returns: How many modules the cache has created over its lifetime (its misses). A second builder loading the same shaders leaves this unchanged; tests use it as the reuse evidence. |
 | `VkDevice GetDevice() const` | Returns: The device the modules were created on, so a builder can reject a cache from another one. |
+
+
+## `ShaderSourceProvider.h`
+
+### `class Muyo::RenderGraph::FileShaderSourceProvider`
+
+The default shader source: reads <searchPath>/<shaderName>.spv from the filesystem.
+
+This reproduces the graph's historical behaviour when searchPath is left at its default of "shaders". Supplying one with a different path is how a host points the graph at its own shader directory without implementing IShaderSourceProvider:
+
+constFileShaderSourceProvidershaderSource("build/shaders"); RenderGraphBuilderbuilder(RenderGraphServices{ .device=device,.resourceAllocator=&allocator,.shaderSource=&shaderSource});
+
+Missing and empty files. A file that cannot be opened throws std::runtime_error("Failed to open file"); a file of zero bytes yields std::nullopt. Both are the behaviour ReadSpirvFile and the graph had before this provider existed.
+
+| Member | Description |
+| --- | --- |
+| `FileShaderSourceProvider(std::filesystem::path searchPath="shaders")` | Parameters: `searchPath` - Directory the .spv files are read from. A relative path is resolved against the process's working directory, not the source tree, at every load |
+| `~FileShaderSourceProvider() override=default` | Destroy the provider; it owns only the path. |
+| `std::optional< std::vector< uint32_t > > LoadShader(const std::string &shaderName) const override` | Read <searchPath>/<shaderName>.spv. Parameters: `shaderName` - Shader name without the .spv suffix Returns: Its words, or std::nullopt when the file is empty. Throws: `std::runtime_error` - when the file cannot be opened or read, or is not a whole number of 32-bit words |
+| `const std::filesystem::path & GetSearchPath() const` | Returns: The directory this provider reads from. |
+
+### `class Muyo::RenderGraph::IShaderSourceProvider`
+
+Where the graph gets a shader's SPIR-V from (#292).
+
+Every shader a node declares is loaded during AddNode(). With no provider in RenderGraphServices::shaderSource the graph reads shaders/<shaderName>.spv from the process's working directory, which is what every in-tree consumer does. A host with no .spv files - an embedded runtime, a compiler that produces the words in memory, a test - implements this interface and passes it in RenderGraphServices::shaderSource; the graph then asks it for the words instead of opening a file.
+
+The provider is host-owned. The graph neither copies nor destroys it: it must outlive every builder that refers to it, and every ShaderCache call that is given it. LoadShader() returns the words by value, so their lifetime is the caller's from the moment the call returns.
+
+Threading. The builder is single-threaded, so a provider is called from one thread at a time for a given builder. A provider shared by builders on different threads has to synchronise itself. LoadShader() is const because it is a lookup; a provider that memoizes its answer keeps that cache in mutable state or builds it before the first call.
+
+Failure modes. An implementation returns std::nullopt for a name it does not have, and may also return an empty vector for that case. The graph turns either into its named Node 'N declares shader 'S', which could not be loadederror. An exception thrown from LoadShader()propagates out ofAddNode()(the default file provider throws std::runtime_error("Failed to open file")for a missing file, as the graph did before the provider existed). Non-empty words that are not valid SPIR-V are not rejected by this interface: reflection or module creation fails, either by throwing or by making the load returnstd::nullopt`.
+
+| Member | Description |
+| --- | --- |
+| `virtual ~IShaderSourceProvider()=default` | Destroy the provider. The host owns it and must keep it alive while a builder refers to it. |
+| `virtual std::optional< std::vector< uint32_t > > LoadShader(const std::string &shaderName) const =0` | Return the SPIR-V words for a shader name. Parameters: `shaderName` - The name a node declared, without the .spv suffix, exactly as it appears in RenderGraphNodeCreateInfo::shaderNames or rtShaderNames Returns: The shader's SPIR-V words (one uint32_t per word), or std::nullopt when no shader of that name exists. An empty vector is accepted as the same answer. Throws: `std::runtime_error` - (or any other exception) to report a failure that is not a missing entry; it propagates out of the AddNode() or ShaderCache::LoadShader() call |
 
 
 ## `TransientMemoryPlan.h`

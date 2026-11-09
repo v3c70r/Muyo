@@ -38,6 +38,14 @@ commit that deprecated it (#87).
   headers are not installed. `muyo_rgConfig.cmake` looks up Vulkan with `find_dependency(Vulkan)`, so a
   missing SDK fails at the consumer's configure step naming Vulkan, and the version file uses
   `SameMinorVersion` while the major is 0, so `find_package(muyo_rg 0.1)` rejects a 0.2 package (#73).
+- **A host-supplied shader source.** `RenderGraphServices::shaderSource` takes an
+  `IShaderSourceProvider`, so a consumer can return a shader's SPIR-V words from memory (a compiler, an
+  archive, a test) instead of the graph reading `shaders/<name>.spv`. `FileShaderSourceProvider` is the
+  public default with a configurable search path; leaving the service null keeps the current
+  `shaders/<name>.spv` behaviour, so every in-tree consumer is unchanged. The provider is borrowed and
+  must outlive the builder; `ShaderCache::LoadShader()` gained an overload that takes one, and the
+  one-argument overload keeps using the default file source. This closes the `docs/Consumers.md`
+  guarantee "A client can supply SPIR-V bytes / a shader search path, not only a file name" (#292).
 
 ### Changed
 
@@ -62,7 +70,7 @@ commit that deprecated it (#87).
   remains, documented as singleton-only (#274, #276, #291).
 - **The legacy renderer path is gone.** `helloVulkan`'s frame is graph nodes, and `RenderPassManager`, the
   recorded-only legacy passes and `src/RenderPasses/` are deleted (#20, #51, #257–#264).
-- **The public surface and the error-reporting contract are stated.** Sixteen headers under
+- **The public surface and the error-reporting contract are stated.** Seventeen headers under
   `src/RenderGraph/` are API; `RenderGraphExecuteInfo.h` and `TransientMemoryPlan.h` are public so the
   value passed to `Execute()` and the plan returned by `GetTransientMemoryPlan()` stay documented, while
   the executor, planner, trace recorder, barrier derivation and shader manager are internal detail and

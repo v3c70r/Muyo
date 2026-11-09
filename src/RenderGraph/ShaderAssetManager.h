@@ -1,13 +1,14 @@
 #pragma once
 // Internal to muyo_rg: implementation detail, not part of the public surface. See docs/RenderGraph.md.
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "RenderGraphShader.h"
+#include "ShaderSourceProvider.h"
 
 namespace Muyo::RenderGraph
 {
@@ -16,6 +17,8 @@ namespace Muyo::RenderGraph
 /// Internal to `muyo_rg`: a caller shares shader modules through the public `ShaderCache`, and a builder that is
 /// given no cache owns one of these privately. It is the graph-owned counterpart of the engine's former
 /// `ShaderAssetManager`, moved so the graph's public headers no longer include the engine's shader header (#272).
+/// The source of the words is not its state: every load is handed the provider the builder was given, so
+/// the same manager serves the default file path and a host-supplied provider (#292).
 class ShaderAssetManager
 {
 public:
@@ -35,21 +38,19 @@ public:
     /// See the copy constructor.
     ShaderAssetManager& operator=(const ShaderAssetManager&) = delete;
 
-    /// Load `shaders/<shaderName>.spv`, or return the identity of the entry already loaded.
+    /// Load `shaderName` from `source`, or return the identity of the entry already loaded.
     /// @param shaderName Shader name without the `.spv` suffix.
-    /// @return The entry's key, or `std::nullopt` when the file is empty or the module cannot be created.
-    /// @throws std::runtime_error when the file cannot be read.
-    std::optional<ShaderAssetKey> LoadShader(const std::string& shaderName)
+    /// @param source Provider of the shader's SPIR-V words; must outlive the call.
+    /// @return The entry's key, or `std::nullopt` when the source has no words or the module cannot be created.
+    /// @throws std::runtime_error when the source throws; the default file provider does so for a missing file.
+    std::optional<ShaderAssetKey> LoadShader(const std::string& shaderName, const IShaderSourceProvider& source)
     {
-        const std::filesystem::path shaderPath = std::filesystem::path("shaders") / (shaderName + ".spv");
+        std::optional<std::vector<uint32_t>> loaded = source.LoadShader(shaderName);
+        if (!loaded.has_value() || loaded->empty()) return std::nullopt;
+        std::vector<uint32_t> spirv = std::move(*loaded);
 
-        std::vector<uint32_t> spirv = Muyo::ReadSpirvFile(shaderPath);
-        if (spirv.empty())
-        {
-            return std::nullopt;
-        }
-
-        // Name plus content: a rebuilt `.spv` is a different shader, not a hit on the old module.
+        // Name plus content: a rebuilt `.spv` - or a provider that changes its answer - is a different
+        // shader, not a hit on the old module.
         const ShaderAssetKey key{ShaderKey(shaderName), HashSpirv(spirv)};
         if (m_shaderAssets.find(key) != m_shaderAssets.end())
         {
@@ -70,7 +71,8 @@ public:
             return std::nullopt;  // Failed to create shader module
         }
 
-        ShaderAsset asset{.key = key, .spirv = spirv, .shaderModule = shaderModule, .shaderReflection = reflection};
+        ShaderAsset asset{
+            .key = key, .spirv = std::move(spirv), .shaderModule = shaderModule, .shaderReflection = reflection};
         m_shaderAssets[key] = std::move(asset);
         return key;
     }

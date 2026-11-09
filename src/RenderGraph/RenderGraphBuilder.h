@@ -23,6 +23,7 @@
 #include "RenderGraphResourceHandle.h"
 #include "RenderGraphResources.h"
 #include "RenderGraphTrace.h"
+#include "ShaderSourceProvider.h"
 #include "TransientMemoryPlan.h"
 
 namespace Muyo
@@ -115,9 +116,9 @@ public:
 /// the renderer. `RenderGraphBuilder(VkRenderDevice*)` still fills the other two from those globals for
 /// in-tree callers that have not moved, and is marked as the transition rather than the shape.
 ///
-/// Deliberately not here yet: a shader source provider (the graph still loads `.spv` by file name).
-/// That is a capability rather than de-globalisation, and it belongs with the guarantee it closes -
-/// "a client can supply SPIR-V bytes".
+/// A host may also supply the shader **bytes** instead of relying on the graph's file lookup: see
+/// `shaderSource`. The graph owns pipeline creation, so it still compiles the pipelines, but no longer
+/// owns the decision of where a shader lives.
 struct RenderGraphServices
 {
     /// Device the graph creates pipelines, command buffers and synchronisation with. Required.
@@ -154,6 +155,16 @@ struct RenderGraphServices
     /// builder only resolves it. The cache must outlive every builder that refers to it and is validated
     /// against the builder's `VkDevice` at construction. See `ShaderCache`.
     ShaderCache* shaderCache = nullptr;
+    /// Optional source of every shader a node declares (#292).
+    ///
+    /// Null selects the graph's default, which reads `shaders/<shaderName>.spv` from the process's
+    /// working directory - the behaviour every in-tree consumer relies on. Set this to a
+    /// `FileShaderSourceProvider` with another search path, or to a host implementation that returns
+    /// SPIR-V words from memory, and the graph asks it instead of opening a file. The builder does not
+    /// own the provider: it must outlive the builder, and every shader is loaded during `AddNode()`.
+    /// A missing shader makes `AddNode()` throw its named "could not be loaded" error; see
+    /// `IShaderSourceProvider` for the failure modes a provider may report.
+    const IShaderSourceProvider* shaderSource = nullptr;
 };
 
 /// Declares and runs a render graph.
