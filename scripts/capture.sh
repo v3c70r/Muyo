@@ -73,10 +73,12 @@ program=$1
 shift
 
 # renderdoccmd execs the program argument directly, so resolve it here: a relative path or a name on
-# PATH still works, and the launcher always receives an absolute path.
+# PATH still works, and the launcher always receives an absolute path. -m resolves a path whose target
+# does not exist yet, so the explicit checks below produce this script's diagnostic rather than
+# realpath's.
 if [[ "$program" != /* ]]; then
     if [[ "$program" == */* ]]; then
-        program="$(realpath -- "$program")"
+        program="$(realpath -m -- "$program")"
     elif command -v "$program" >/dev/null 2>&1; then
         program="$(command -v "$program")"
     else
@@ -85,7 +87,11 @@ if [[ "$program" != /* ]]; then
         exit 2
     fi
 fi
-if [[ ! -x "$program" ]]; then
+if [[ ! -e "$program" ]]; then
+    echo "capture.sh: '$program' does not exist" >&2
+    exit 2
+fi
+if [[ ! -f "$program" || ! -x "$program" ]]; then
     echo "capture.sh: '$program' is not an executable file" >&2
     exit 2
 fi
@@ -95,7 +101,7 @@ if [[ -z "$renderdoc_cmd" ]]; then
     renderdoc_cmd="$(command -v renderdoccmd || true)"
 elif [[ "$renderdoc_cmd" != /* ]]; then
     if [[ "$renderdoc_cmd" == */* ]]; then
-        renderdoc_cmd="$(realpath -- "$renderdoc_cmd")"
+        renderdoc_cmd="$(realpath -m -- "$renderdoc_cmd")"
     else
         renderdoc_cmd="$(command -v "$renderdoc_cmd" || true)"
     fi
@@ -104,7 +110,11 @@ if [[ -z "$renderdoc_cmd" ]]; then
     echo "capture.sh: renderdoccmd not found; set RENDERDOC_CMD or add it to PATH" >&2
     exit 2
 fi
-if [[ ! -x "$renderdoc_cmd" ]]; then
+if [[ ! -e "$renderdoc_cmd" ]]; then
+    echo "capture.sh: '$renderdoc_cmd' does not exist" >&2
+    exit 2
+fi
+if [[ ! -f "$renderdoc_cmd" || ! -x "$renderdoc_cmd" ]]; then
     echo "capture.sh: '$renderdoc_cmd' is not executable" >&2
     exit 2
 fi
