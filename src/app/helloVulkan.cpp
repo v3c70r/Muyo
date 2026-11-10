@@ -17,6 +17,7 @@
 #include <iostream>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "../thirdparty/tinyobjloader/tiny_obj_loader.h"
@@ -151,11 +152,10 @@ static void InitEventHandlers()
 std::vector<const char *> GetRequiredInstanceExtensions()
 {
     std::vector<const char *> vExtensions;
-    uint32_t countExtensions = 0;
+    std::string error;
 
-    countExtensions = Window::GetVulkanInstanceExtensions(vExtensions);
-    if (countExtensions == 0 || vExtensions.size() == 0)
-        throw std::runtime_error("Failed to query instance extensions");
+    if (Window::GetVulkanInstanceExtensions(vExtensions, error) != Window::VulkanInstanceExtensionStatus::Success)
+        throw std::runtime_error("helloVulkan: " + error);
     // const char *waylandExt = "VK_KHR_wayland_surface";
     // query if we have wayland surface, nvidia GPU will not work with it
     // bool waylandSurface = std::find_if(std::begin(vExtensions),

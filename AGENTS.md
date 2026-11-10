@@ -197,6 +197,40 @@ Operational notes, each of which has cost someone a red herring:
   and no validation layer. On a machine without Wayland dev packages configure with
   `-DGLFW_BUILD_WAYLAND=OFF`; the X11 path needs `libxrandr-dev`, `libxinerama-dev`,
   `libxcursor-dev`, `libxi-dev`.
+- **RenderDoc capture on a Wayland session has to go through GLFW's X11 backend.** RenderDoc 1.46
+  (`e4bd23b6`) under its capture launcher stops advertising loader-provided instance extensions:
+  `VK_KHR_wayland_surface`, `VK_EXT_layer_settings`, `VK_KHR_portability_enumeration` and
+  `VK_LUNARG_direct_driver_loading` disappear, while the ICD-provided `VK_KHR_xcb_surface` /
+  `VK_KHR_xlib_surface` remain. GLFW then selects Wayland, `glfwGetRequiredInstanceExtensions`
+  returns NULL, and both `helloVulkan` and `helloVulkanRG` abort before Vulkan starts. The invocation
+  that gets past that, measured with loader 1.4.313 on RADV REMBRANDT:
+
+  ```bash
+  scripts/capture.sh -o /tmp/x.rdc build/helloVulkanRG
+  # equivalent by hand:
+  env -u WAYLAND_DISPLAY renderdoccmd capture -c /tmp/x.rdc "$PWD/build/helloVulkanRG"
+  ```
+
+  The script resolves the program to an absolute path (renderdoccmd `exec`s the argument and searches
+  neither the cwd nor `PATH`) and unsets `WAYLAND_DISPLAY` for renderdoccmd and its child, which makes
+  GLFW select Xwayland. It needs GLFW's X11 backend: a fresh configure builds both backends, and an
+  existing build tree created before #220 keeps its cached `GLFW_BUILD_X11=OFF` until reconfigured
+  with `-DGLFW_BUILD_X11=ON`. **Wayland capture with RenderDoc 1.46 does not work on this machine**;
+  that is the capture layer's behaviour, not the application's, because without the loader extension
+  there is no Wayland surface to create. Do not re-investigate it without a newer RenderDoc.
+- **RenderDoc 1.46 and 1.47 still cannot capture the graph applications, for a second reason: they
+  filter device extensions they do not support.** A probe linked against the same loader reports, under
+  the capture launcher, `AMD Radeon Graphics (RADV REMBRANDT)` at API 1.4.0 with 203 device extensions
+  and **no** `VK_EXT_descriptor_heap` / `VK_KHR_shader_untyped_pointers`; the same probe without
+  RenderDoc reports API 1.4.354 with 231 extensions and both present. RenderDoc's
+  `extension_support.md` lists both as unsupported in 1.47 as well
+  ([upstream #3781](https://github.com/baldurk/renderdoc/issues/3781)), and its layer filters
+  `vkEnumerateDeviceExtensionProperties` to that list. So the X11 recipe removes the WSI blocker but
+  `helloVulkanRG`/`helloVulkan` still stop at `CreateDevice` with
+  `does not support the requested extension: VK_EXT_descriptor_heap`. Capture of the heap path waits
+  on RenderDoc support ([#303](https://github.com/v3c70r/Muyo/issues/303)); Nsight Graphics 2026.2 is
+  the alternative that advertises it. Record the RenderDoc version with any future capture, because
+  this finding is version-bound.
 - **An unknown `CMAKE_BUILD_TYPE` configures successfully with no per-config flags.** `Release`
   misspelled (`rel`, `RELEASE` is fine but `Rel` is not, and so on) yields a build with **no `-O3`
   and no `-DNDEBUG`** that looks ordinary in every other way - asserts stay live and the optimiser
