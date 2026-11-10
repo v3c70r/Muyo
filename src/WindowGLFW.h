@@ -1,15 +1,33 @@
 #pragma once
 
+#ifndef GLFW_INCLUDE_VULKAN
+#define GLFW_INCLUDE_VULKAN
+#endif
 #include <GLFW/glfw3.h>
 #include <stdint.h>
 #include <vulkan/vulkan.h>
 
+#include <cstdio>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "EventSystem.h"
 
 namespace Window
 {
+
+/// Why `GetVulkanInstanceExtensions` did not return the window's WSI extensions.
+enum class VulkanInstanceExtensionStatus
+{
+    Success,
+    /// GLFW has not been initialised (or its initialisation failed); there is no platform to ask.
+    NotInitialized,
+    /// GLFW could not load or query the Vulkan loader; its error is included in the message.
+    LoaderUnavailable,
+    /// GLFW selected a platform, but the loader did not advertise that platform's WSI extension.
+    MissingWsiExtension,
+};
 
 namespace GLFWDetail
 {
@@ -18,6 +36,122 @@ static GLFWcursor *s_pCursors[Input::Cursor::CURSOR_COUNT];
 
 // get time in milliseconds
 static inline uint32_t Time() { return (glfwGetTimerValue() * 1000) / glfwGetTimerFrequency(); }
+
+/// The GLFW platform selected by `glfwInit`; 0 when it has not run, -1 on GLFW versions that cannot say.
+static int CurrentPlatform()
+{
+#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 4)
+    return glfwGetPlatform();
+#else
+    return -1;
+#endif
+}
+
+static const char *PlatformName(int platform)
+{
+#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 4)
+    switch (platform)
+    {
+        case GLFW_PLATFORM_WIN32:
+            return "Win32";
+        case GLFW_PLATFORM_COCOA:
+            return "Cocoa";
+        case GLFW_PLATFORM_WAYLAND:
+            return "Wayland";
+        case GLFW_PLATFORM_X11:
+            return "X11";
+        case GLFW_PLATFORM_NULL:
+            return "Null";
+        default:
+            break;
+    }
+#endif
+    return "unknown";
+}
+
+/// The loader-provided WSI extension GLFW needs for the platform it selected.
+static const char *PlatformWsiExtension(int platform)
+{
+#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 4)
+    switch (platform)
+    {
+        case GLFW_PLATFORM_WAYLAND:
+            return "VK_KHR_wayland_surface";
+        case GLFW_PLATFORM_X11:
+            // GLFW prefers XCB when libX11-xcb is present and falls back to XLIB otherwise.
+            return "VK_KHR_xcb_surface or VK_KHR_xlib_surface";
+        case GLFW_PLATFORM_WIN32:
+            return "VK_KHR_win32_surface";
+        case GLFW_PLATFORM_COCOA:
+            return "VK_EXT_metal_surface or VK_MVK_macos_surface";
+        case GLFW_PLATFORM_NULL:
+            return "VK_EXT_headless_surface";
+        default:
+            break;
+    }
+#endif
+    return "the platform's Vulkan surface extension";
+}
+
+static const char *GlfwErrorName(int code)
+{
+    switch (code)
+    {
+        case GLFW_NOT_INITIALIZED:
+            return "GLFW_NOT_INITIALIZED";
+        case GLFW_NO_CURRENT_CONTEXT:
+            return "GLFW_NO_CURRENT_CONTEXT";
+        case GLFW_INVALID_ENUM:
+            return "GLFW_INVALID_ENUM";
+        case GLFW_INVALID_VALUE:
+            return "GLFW_INVALID_VALUE";
+        case GLFW_OUT_OF_MEMORY:
+            return "GLFW_OUT_OF_MEMORY";
+        case GLFW_API_UNAVAILABLE:
+            return "GLFW_API_UNAVAILABLE";
+        case GLFW_VERSION_UNAVAILABLE:
+            return "GLFW_VERSION_UNAVAILABLE";
+        case GLFW_PLATFORM_ERROR:
+            return "GLFW_PLATFORM_ERROR";
+        case GLFW_FORMAT_UNAVAILABLE:
+            return "GLFW_FORMAT_UNAVAILABLE";
+        case GLFW_NO_WINDOW_CONTEXT:
+            return "GLFW_NO_WINDOW_CONTEXT";
+#ifdef GLFW_CURSOR_UNAVAILABLE
+        case GLFW_CURSOR_UNAVAILABLE:
+            return "GLFW_CURSOR_UNAVAILABLE";
+#endif
+#ifdef GLFW_FEATURE_UNAVAILABLE
+        case GLFW_FEATURE_UNAVAILABLE:
+            return "GLFW_FEATURE_UNAVAILABLE";
+#endif
+#ifdef GLFW_FEATURE_UNIMPLEMENTED
+        case GLFW_FEATURE_UNIMPLEMENTED:
+            return "GLFW_FEATURE_UNIMPLEMENTED";
+#endif
+#ifdef GLFW_PLATFORM_UNAVAILABLE
+        case GLFW_PLATFORM_UNAVAILABLE:
+            return "GLFW_PLATFORM_UNAVAILABLE";
+#endif
+        default:
+            return "unknown GLFW error";
+    }
+}
+
+/// Report the error GLFW recorded for a failed call. GLFW's own message is the only cause information
+/// it exposes, so this is the difference between a named failure and a process that exits silently.
+static void ReportGlfwError(const char *what)
+{
+    const char *description = nullptr;
+    const int code = glfwGetError(&description);
+    if (code == GLFW_NO_ERROR)
+    {
+        std::fprintf(stderr, "WindowGLFW: %s failed; GLFW recorded no error\n", what);
+        return;
+    }
+    std::fprintf(stderr, "WindowGLFW: %s failed: %s (0x%08X): %s\n", what, GlfwErrorName(code),
+                 static_cast<unsigned>(code), description ? description : "no description");
+}
 
 /// event handlers
 static Input::Key GetEditKey(int key)
@@ -189,13 +323,21 @@ static void FiniCursors()
 
 static bool Initialize(const char *name, unsigned w, unsigned h, bool bResizable = false)
 {
-    glfwInit();
+    // A stale error would otherwise be reported as the cause of the call that actually failed.
+    glfwGetError(nullptr);
+    if (!glfwInit())
+    {
+        GLFWDetail::ReportGlfwError("glfwInit");
+        return false;
+    }
+
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, bResizable ? GLFW_TRUE : GLFW_FALSE);
 
     GLFWDetail::s_pWindow = glfwCreateWindow(w, h, name, nullptr, nullptr);
     if (!GLFWDetail::s_pWindow)
     {
+        GLFWDetail::ReportGlfwError("glfwCreateWindow");
         glfwTerminate();
         return false;
     }
@@ -237,17 +379,59 @@ static void ProcessEvents()
 
 static void GetFramebufferSize(int &w, int &h) { glfwGetFramebufferSize(GLFWDetail::s_pWindow, &w, &h); }
 
-static size_t GetVulkanInstanceExtensions(std::vector<const char *> &vExtensions)
+/// Append the window's required instance extensions.
+///
+/// GLFW returns NULL with no error when the loader does not advertise the WSI extension its selected
+/// platform needs, so the status alone is not enough to diagnose a start-up failure: on failure `error`
+/// names the platform and the extension that was missing.
+static VulkanInstanceExtensionStatus GetVulkanInstanceExtensions(std::vector<const char *> &vExtensions,
+                                                                 std::string &error)
 {
-    uint32_t count = 0;
-    const char **extensions;
+    // Clear anything recorded before this query, so the error read below belongs to it.
+    glfwGetError(nullptr);
 
-    extensions = glfwGetRequiredInstanceExtensions(&count);
-    for (unsigned i = 0; i < count; i++)
+    uint32_t count = 0;
+    const char **extensions = glfwGetRequiredInstanceExtensions(&count);
+    if (extensions != nullptr && count > 0)
     {
-        vExtensions.push_back(extensions[i]);
+        for (uint32_t i = 0; i < count; i++)
+        {
+            vExtensions.push_back(extensions[i]);
+        }
+        return VulkanInstanceExtensionStatus::Success;
     }
-    return count;
+
+    const char *description = nullptr;
+    const int code = glfwGetError(&description);
+    if (code != GLFW_NO_ERROR)
+    {
+        error = "GLFW could not initialise Vulkan: ";
+        error += GLFWDetail::GlfwErrorName(code);
+        error += ": ";
+        error += description ? description : "no description";
+        return VulkanInstanceExtensionStatus::LoaderUnavailable;
+    }
+
+    const int platform = GLFWDetail::CurrentPlatform();
+    if (platform == 0)
+    {
+        error = "GLFW is not initialized; call Window::Initialize() before querying instance extensions.";
+        return VulkanInstanceExtensionStatus::NotInitialized;
+    }
+    if (platform < 0)
+    {
+        error =
+            "the window reported no Vulkan instance extensions, and this GLFW version cannot report the "
+            "platform that needed a WSI extension.";
+        return VulkanInstanceExtensionStatus::MissingWsiExtension;
+    }
+
+    error = "GLFW selected the ";
+    error += GLFWDetail::PlatformName(platform);
+    error += " platform, but the Vulkan loader did not advertise ";
+    error += GLFWDetail::PlatformWsiExtension(platform);
+    error += ", so the window reported no Vulkan instance extensions.";
+    return VulkanInstanceExtensionStatus::MissingWsiExtension;
 }
 
 static VkSurfaceKHR GetVulkanSurface(VkInstance &instance)

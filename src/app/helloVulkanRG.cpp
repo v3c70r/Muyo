@@ -17,6 +17,7 @@
 #include <glm/glm.hpp>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #if defined(USE_SDL)
@@ -56,9 +57,10 @@ constexpr uint32_t kImagesInFlight = 2;
 std::vector<const char*> InstanceExtensions()
 {
     std::vector<const char*> extensions;
-    if (Window::GetVulkanInstanceExtensions(extensions) == 0 || extensions.empty())
+    std::string error;
+    if (Window::GetVulkanInstanceExtensions(extensions, error) != Window::VulkanInstanceExtensionStatus::Success)
     {
-        throw std::runtime_error("helloVulkanRG: the window reported no Vulkan instance extensions.");
+        throw std::runtime_error("helloVulkanRG: " + error);
     }
     extensions.push_back("VK_KHR_get_physical_device_properties2");
     return extensions;

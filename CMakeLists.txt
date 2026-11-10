@@ -86,16 +86,22 @@ set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 # installed into: with GLFW_INSTALL left on, `cmake --install` tried to install `libglfw3.a` and failed
 # unless the demo had been built. Muyo's package installs only its own targets and headers (#73).
 set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-execute_process(COMMAND bash -c "echo $WAYLAND_DISPLAY"
-                OUTPUT_VARIABLE WAYLAND_SESSION
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-if(WAYLAND_SESSION)
-    message(STATUS "Wayland session detected")
-    set(GLFW_BUILD_WAYLAND ON CACHE BOOL "" FORCE)
-    set(GLFW_BUILD_X11 OFF CACHE BOOL "" FORCE)
+# Build both Unix backends. GLFW prefers Wayland at runtime, but RenderDoc's capture launcher stops
+# advertising loader-provided instance extensions (VK_KHR_wayland_surface among them), so a capture has
+# to run under Xwayland: `env -u WAYLAND_DISPLAY` then selects X11. Both backends compiled in is what
+# makes that possible, and `scripts/capture.sh` is the supported invocation (#220). Without FORCE, a
+# caller's -DGLFW_BUILD_X11=OFF / -DGLFW_BUILD_WAYLAND=OFF still wins on a machine that lacks one
+# backend's development packages.
+if (UNIX AND NOT APPLE)
+    set(GLFW_BUILD_X11 ON CACHE BOOL "Build GLFW's X11 backend (RenderDoc capture selects it via Xwayland)")
+    set(GLFW_BUILD_WAYLAND ON CACHE BOOL "Build GLFW's Wayland backend")
 endif()
 add_subdirectory(${MUYO_ROOT}/thirdparty/glfw)
+if (UNIX AND NOT APPLE AND NOT GLFW_BUILD_X11)
+    message(STATUS
+        "GLFW's X11 backend is disabled; RenderDoc capture on a Wayland session needs it. "
+        "Reconfigure with -DGLFW_BUILD_X11=ON (see AGENTS.md section 4).")
+endif()
 endif()
 add_compile_definitions(USE_GLFW)
 set(WINDOW_LIB glfw)
