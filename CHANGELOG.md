@@ -94,6 +94,10 @@ commit that deprecated it (#87).
 
 ### Fixed
 
+- **A per-frame `Build()` could destroy a ray-tracing pipeline an in-flight execution still bound.**
+  Ray-tracing pipelines are now cached like graphics and compute ones: a build borrows the pipeline and
+  only rebuilds the node's shader binding table, instead of freeing it while a pending command buffer
+  refers to it (`VUID-vkDestroyPipeline-pipeline-00765`) (#253).
 - **Debug markers resolved the process-wide device.** A client-constructed `VkRenderDevice` had its
   `SCOPED_MARKER` labels recorded against the singleton (or silently dropped when the singleton was
   uninitialised). The marker helpers now use the `VkDevice` passed in (#274, #291).

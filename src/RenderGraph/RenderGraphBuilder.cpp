@@ -365,7 +365,8 @@ struct RenderGraphBuilder::Impl
     RenderGraphRootSlice AllocateRoot(size_t size, size_t alignment);
 
     // Build a ray tracing pipeline + shader binding table for a RAY_TRACING node.
-    /// @param rgn           Compiled node to fill in.
+    /// @param rgn           Compiled node to fill in. When `rgn.pipeline` is already set (a cache hit),
+    ///                      only the per-node shader binding table is rebuilt.
     /// @param logicalNode   Node declaration it was compiled from.
     /// @param shaderModules Shader modules for the RT stages.
     void BuildRayTracingPipeline(CompiledRenderGraphNode& rgn, const RenderGraphNode& logicalNode,
@@ -1153,6 +1154,7 @@ CompiledRenderGraphNode RenderGraphBuilder::Impl::CompileRenderGraphNode(const R
                 shaderReflections.push_back(shaderAsset->shaderReflection);
                 shaderModules.push_back(shaderAsset->shaderModule);
                 rtShaderModules.push_back(shaderAsset->shaderModule);
+                shaderHashes.push_back(HashSpirv(shaderAsset->spirv));
             }
         }
     }
@@ -1343,10 +1345,14 @@ CompiledRenderGraphNode RenderGraphBuilder::Impl::CompileRenderGraphNode(const R
             .depthAttachmentFormat = depthAttachmentFormat,
         };
 
-        // Graphics and compute pipelines are cached on every input that changes their creation and on
-        // nothing that is descriptor or layout state (#17). A hit is borrowed either from the injected
-        // shared cache or from the per-builder fallback map, so the compiled node must not destroy it.
-        const bool bCacheable = rgn.queueType == QueueType::GRAPHICS || rgn.queueType == QueueType::COMPUTE;
+        // Every GPU pipeline kind is cached on every input that changes its creation and on nothing
+        // that is descriptor or layout state (#17). Graphics and compute were always cacheable; a
+        // ray-tracing pipeline is too, because Build() destroys the compiled graph on every frame and a
+        // node-owned pipeline would be freed while a non-blocking execution still binds it (#253). A
+        // hit is borrowed either from the injected shared cache or from the per-builder fallback map,
+        // so the compiled node must not destroy it.
+        const bool bCacheable = rgn.queueType == QueueType::GRAPHICS || rgn.queueType == QueueType::COMPUTE ||
+                                rgn.queueType == QueueType::RAY_TRACING;
         PipelineCache* pSharedPipelineCache = m_services.pipelineCache;
         const VkPipelineCache vkPipelineCache =
             pSharedPipelineCache != nullptr ? pSharedPipelineCache->GetVkPipelineCache() : VK_NULL_HANDLE;
@@ -1396,8 +1402,35 @@ CompiledRenderGraphNode RenderGraphBuilder::Impl::CompileRenderGraphNode(const R
             VK_ASSERT(
                 vkCreateComputePipelines(m_vkDevice, vkPipelineCache, 1, &pipelineInfo, nullptr, &result.pipeline));
         }
+        if (rgn.queueType == QueueType::RAY_TRACING)
+        {
+            // Refused rather than ignored: the ray tracing pipeline path does not apply specialization
+            // constants yet, and silently keeping the baked defaults is the failure this whole change
+            // exists to remove. Tracked by #62.
+            if (!rgn.specializationConstants.empty())
+            {
+                throw std::runtime_error("Ray tracing node '" + rgn.name +
+                                         "' supplies specialization constants, which the ray tracing pipeline path "
+                                         "does not apply yet (#62).");
+            }
+            result.bindingPoint = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
+            // A cache hit has a borrowed pipeline; the function then skips creation and only rebuilds the
+            // node's shader binding table, which is per node rather than per pipeline.
+            BuildRayTracingPipeline(result, rgn, rtShaderModules);
+
+            // Trace extent: use the first storage image the node writes to.
+            for (const auto& resourceUse : rgn.resourceUses)
+            {
+                if (resourceUse.usage == ResourceUsage::STORAGE_IMAGE && resourceUse.extent.width > 0)
+                {
+                    result.traceExtent = {resourceUse.extent.width, resourceUse.extent.height};
+                    break;
+                }
+            }
+        }
         if (bCacheable && result.pipeline != VK_NULL_HANDLE && result.bOwnsPipeline)
         {
+            bool bAdoptedDuplicate = false;
             if (pSharedPipelineCache != nullptr)
             {
                 // The cache owns the entry from here. A duplicate can only come from a concurrent Build
@@ -1412,6 +1445,7 @@ CompiledRenderGraphNode RenderGraphBuilder::Impl::CompileRenderGraphNode(const R
                         throw std::runtime_error("Node '" + rgn.name +
                                                  "' lost a pipeline-cache race for a key that then had no entry.");
                     }
+                    bAdoptedDuplicate = true;
                 }
             }
             else
@@ -1419,29 +1453,14 @@ CompiledRenderGraphNode RenderGraphBuilder::Impl::CompileRenderGraphNode(const R
                 m_pipelineCache.emplace(std::move(pipelineKey), result.pipeline);
             }
             result.bOwnsPipeline = false;
-        }
-        if (result.pipeline == VK_NULL_HANDLE && rgn.queueType == QueueType::RAY_TRACING)
-        {
-            // Refused rather than ignored: the ray tracing pipeline path does not apply specialization
-            // constants yet, and silently keeping the baked defaults is the failure this whole change
-            // exists to remove. Tracked by #62.
-            if (!rgn.specializationConstants.empty())
-            {
-                throw std::runtime_error("Ray tracing node '" + rgn.name +
-                                         "' supplies specialization constants, which the ray tracing pipeline path "
-                                         "does not apply yet (#62).");
-            }
-            result.bindingPoint = VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
-            BuildRayTracingPipeline(result, rgn, rtShaderModules);
 
-            // Trace extent: use the first storage image the node writes to.
-            for (const auto& resourceUse : rgn.resourceUses)
+            // The ray-tracing binding table was written with the handle this node created. If the shared
+            // cache raced and we adopted its entry instead, rewrite it from the pipeline the node will
+            // actually bind. Unreached under the single-threaded contract, but the table must not name a
+            // destroyed pipeline if that contract is ever relaxed.
+            if (bAdoptedDuplicate && rgn.queueType == QueueType::RAY_TRACING)
             {
-                if (resourceUse.usage == ResourceUsage::STORAGE_IMAGE && resourceUse.extent.width > 0)
-                {
-                    result.traceExtent = {resourceUse.extent.width, resourceUse.extent.height};
-                    break;
-                }
+                BuildRayTracingPipeline(result, rgn, rtShaderModules);
             }
         }
     }
@@ -1459,22 +1478,28 @@ void RenderGraphBuilder::Impl::BuildRayTracingPipeline(CompiledRenderGraphNode& 
                                  "' needs raygen, miss and closest-hit shaders");
     }
 
-    RayTracingPipelineBuilder builder;
-    builder.AddShaderModule(shaderModules[0], VK_SHADER_STAGE_RAYGEN_BIT_KHR)
-        .AddShaderModule(shaderModules[1], VK_SHADER_STAGE_MISS_BIT_KHR)
-        .AddShaderModule(shaderModules[2], VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    // A cache hit arrives with the pipeline already borrowed, so only the per-node shader binding table
+    // below has to be rebuilt. Creating a second pipeline here would give Build() a handle to destroy
+    // while the cache owns the one the execution bound (#253).
+    if (rgn.pipeline == VK_NULL_HANDLE)
+    {
+        RayTracingPipelineBuilder builder;
+        builder.AddShaderModule(shaderModules[0], VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+            .AddShaderModule(shaderModules[1], VK_SHADER_STAGE_MISS_BIT_KHR)
+            .AddShaderModule(shaderModules[2], VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
-    builder.SetPipelineLayout(VK_NULL_HANDLE).SetMaxRecursionDepth(1);
-    VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
-    // D11: an RT heap pipeline takes the heap flag and a null layout, like the graphics/compute ones.
-    VkPipelineCreateFlags2CreateInfo heapFlags{VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO};
-    heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
-    createInfo.pNext = &heapFlags;
-    createInfo.layout = VK_NULL_HANDLE;
-    const VkPipelineCache vkPipelineCache =
-        m_services.pipelineCache != nullptr ? m_services.pipelineCache->GetVkPipelineCache() : VK_NULL_HANDLE;
-    VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(m_vkDevice, VK_NULL_HANDLE, vkPipelineCache, 1, &createInfo,
-                                                    nullptr, &rgn.pipeline));
+        builder.SetPipelineLayout(VK_NULL_HANDLE).SetMaxRecursionDepth(1);
+        VkRayTracingPipelineCreateInfoKHR createInfo = builder.Build();
+        // D11: an RT heap pipeline takes the heap flag and a null layout, like the graphics/compute ones.
+        VkPipelineCreateFlags2CreateInfo heapFlags{VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO};
+        heapFlags.flags = VK_PIPELINE_CREATE_2_DESCRIPTOR_HEAP_BIT_EXT;
+        createInfo.pNext = &heapFlags;
+        createInfo.layout = VK_NULL_HANDLE;
+        const VkPipelineCache vkPipelineCache =
+            m_services.pipelineCache != nullptr ? m_services.pipelineCache->GetVkPipelineCache() : VK_NULL_HANDLE;
+        VK_ASSERT(VkExt::vkCreateRayTracingPipelinesKHR(m_vkDevice, VK_NULL_HANDLE, vkPipelineCache, 1, &createInfo,
+                                                        nullptr, &rgn.pipeline));
+    }
 
     // ── Shader binding table ──────────────────────────────────────────────
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProps{
@@ -2368,9 +2393,9 @@ void RenderGraphBuilder::Impl::Build()
         m_executor.WaitIdle();
     }
 
-    // TODO(#253): a compiled node's own pipeline (ray tracing today) is destroyed here even when an
-    // execution that bound it is still in flight; graphics and compute pipelines are cache-borrowed and
-    // survive. The drain above is about the transient storage, not about an owned pipeline.
+    // Every compiled pipeline is cache-borrowed now - graphics, compute and ray tracing alike (#253) - so
+    // this destroy releases node metadata and leaves the pipeline handles to the cache. The drain above is
+    // about transient storage, not about a pipeline.
     m_compiledGraph.Destroy(m_vkDevice);
     m_compiledGraph.ReserveNodes(m_renderGraphNodes.size());
 
