@@ -213,11 +213,12 @@ Operational notes, each of which has cost someone a red herring:
 
   The script resolves the program to an absolute path (renderdoccmd `exec`s the argument and searches
   neither the cwd nor `PATH`) and unsets `WAYLAND_DISPLAY` for renderdoccmd and its child, which makes
-  GLFW select Xwayland. It needs GLFW's X11 backend: a fresh configure builds both backends, and an
-  existing build tree created before #220 keeps its cached `GLFW_BUILD_X11=OFF` until reconfigured
-  with `-DGLFW_BUILD_X11=ON`. **Wayland capture with RenderDoc 1.46 does not work on this machine**;
-  that is the capture layer's behaviour, not the application's, because without the loader extension
-  there is no Wayland surface to create. Do not re-investigate it without a newer RenderDoc.
+  GLFW select Xwayland. It needs GLFW's X11 backend: a fresh configure of the vendored GLFW builds
+  both backends, and an existing build tree created before #220 keeps its cached `GLFW_BUILD_X11=OFF`
+  until reconfigured with `-DGLFW_BUILD_X11=ON`. **Wayland capture with RenderDoc 1.46 does not work
+  on this machine**; that is the capture layer's behaviour, not the application's, because without the
+  loader extension there is no Wayland surface to create. Do not re-investigate it without a newer
+  RenderDoc.
 - **RenderDoc 1.46 and 1.47 still cannot capture the graph applications, for a second reason: they
   filter device extensions they do not support.** A probe linked against the same loader reports, under
   the capture launcher, `AMD Radeon Graphics (RADV REMBRANDT)` at API 1.4.0 with 203 device extensions
