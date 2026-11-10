@@ -117,14 +117,22 @@ static const char *GlfwErrorName(int code)
             return "GLFW_FORMAT_UNAVAILABLE";
         case GLFW_NO_WINDOW_CONTEXT:
             return "GLFW_NO_WINDOW_CONTEXT";
+#ifdef GLFW_CURSOR_UNAVAILABLE
         case GLFW_CURSOR_UNAVAILABLE:
             return "GLFW_CURSOR_UNAVAILABLE";
+#endif
+#ifdef GLFW_FEATURE_UNAVAILABLE
         case GLFW_FEATURE_UNAVAILABLE:
             return "GLFW_FEATURE_UNAVAILABLE";
+#endif
+#ifdef GLFW_FEATURE_UNIMPLEMENTED
         case GLFW_FEATURE_UNIMPLEMENTED:
             return "GLFW_FEATURE_UNIMPLEMENTED";
+#endif
+#ifdef GLFW_PLATFORM_UNAVAILABLE
         case GLFW_PLATFORM_UNAVAILABLE:
             return "GLFW_PLATFORM_UNAVAILABLE";
+#endif
         default:
             return "unknown GLFW error";
     }
