@@ -1,9 +1,10 @@
 name: CI
 
-# Runs on GitHub-hosted runners with mesa's lavapipe as the Vulkan device, so it gates everything that
-# does not need a driver: both configurations build, the checked-in API reference matches the headers,
-# the changed lines are formatted and clang-tidy clean, the whole test suite passes with the
-# validation layer on, and the installed package is configured by an out-of-tree consumer.
+# Runs on GitHub-hosted runners with Mesa lavapipe as the Vulkan device on Linux and Windows, so it
+# gates everything that does not need a hardware driver: both Linux configurations build, the Windows
+# MSVC target builds and runs tests, the checked-in API reference matches the headers, the changed lines
+# are formatted and clang-tidy clean, the Linux test suite passes with the validation layer on, and the
+# installed package is configured by an out-of-tree consumer.
 #
 # What it cannot gate, recorded rather than implied - see AGENTS.md section 4 for the axis table:
 #
@@ -128,6 +129,118 @@ jobs:
           BASE=origin/master scripts/sanity.sh tidy 2>&1 \
             | sed $'s/\x1b\\[[0-9;]*m//g' \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+  windows-build:
+    name: Windows (MSVC 2026 + lavapipe)
+    runs-on: windows-2025-vs2026
+    env:
+      # Serializes concurrent MSVC writes to shared PDBs without replacing CMake's default compiler flags.
+      CL: /FS
+      # Mesa 26.2.6's MSVC package has a known Vulkan software-rendering regression; keep the
+      # lavapipe package pinned to the preceding working release until that is resolved upstream.
+      MESA_DIST_VERSION: "26.2.5"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install the pinned Vulkan SDK
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "vulkansdk-windows-X64-$env:VULKAN_SDK_VERSION.exe"
+          $url = "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_SDK_VERSION.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          $process = Start-Process -FilePath $installer `
+            -ArgumentList @("--accept-licenses", "--default-answer", "--confirm-command", "install") `
+            -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Vulkan SDK installer failed with exit code $($process.ExitCode)"
+          }
+          $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          if (-not (Test-Path (Join-Path $sdk "Bin\slangc.exe"))) {
+            throw "Vulkan SDK install is missing slangc.exe at $sdk"
+          }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          "VK_LAYER_PATH=$(Join-Path $sdk 'Bin')" >> $env:GITHUB_ENV
+          (Join-Path $sdk "Bin") >> $env:GITHUB_PATH
+
+      - name: Install the pinned Mesa lavapipe ICD
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "mesa3d-$env:MESA_DIST_VERSION-release-msvc.7z"
+          $url = "https://github.com/pal1000/mesa-dist-win/releases/download/$env:MESA_DIST_VERSION/mesa3d-$env:MESA_DIST_VERSION-release-msvc.7z"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $expectedHash = "997123ef4ce8896204ab912d5b54f19372c487ff9835bcefafa2fca23b8953c2"
+          $actualHash = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "Mesa archive SHA256 mismatch: $actualHash"
+          }
+          $mesaRoot = Join-Path $env:RUNNER_TEMP "mesa-lavapipe"
+          New-Item -ItemType Directory -Path $mesaRoot -Force | Out-Null
+          & 7z x $archive "-o$mesaRoot" -y
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not extract Mesa lavapipe archive (exit code $LASTEXITCODE)"
+          }
+          $icd = Get-ChildItem -Path $mesaRoot -Filter "lvp_icd.x86_64.json" -Recurse | Select-Object -First 1
+          if ($null -eq $icd) {
+            throw "Mesa archive does not contain lvp_icd.x86_64.json"
+          }
+          "VK_DRIVER_FILES=$($icd.FullName)" >> $env:GITHUB_ENV
+          $icd.DirectoryName >> $env:GITHUB_PATH
+
+      - name: Configure with Visual Studio 2026
+        run: >-
+          cmake -S . -B build
+          -G "Visual Studio 18 2026" -A x64
+          -DFEATURE_RAY_TRACING=OFF
+
+      - name: Build tests and shaders
+        run: cmake --build build --config Debug --target tests Shaders --parallel 2
+
+      - name: Verify lavapipe is selected
+        shell: pwsh
+        run: |
+          $vulkanInfo = Join-Path $env:VULKAN_SDK "Bin\vulkaninfo.exe"
+          $summary = & $vulkanInfo --summary 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            $summary | Write-Output
+            throw "vulkaninfo failed with exit code $LASTEXITCODE"
+          }
+          $summary | Write-Output
+          if (($summary -join "`n") -notmatch "llvmpipe|lavapipe") {
+            throw "The selected Vulkan device is not lavapipe"
+          }
+
+      - name: Run the suite on lavapipe
+        shell: pwsh
+        run: |
+          cmake -E copy_directory assets build/assets
+          Push-Location build
+          try {
+            & .\tests.exe *> tests.log
+            $testExitCode = $LASTEXITCODE
+            Get-Content tests.log | Write-Output
+            if ($testExitCode -ne 0) {
+              throw "Tests failed with exit code $testExitCode"
+            }
+            $testDevice = Select-String -Path tests.log -Pattern '\[test device\]' | Select-Object -First 1
+            $testCount = Select-String -Path tests.log -Pattern 'test cases:' | Select-Object -Last 1
+            if ($null -eq $testDevice -or $testDevice.Line -notmatch 'llvmpipe|lavapipe') {
+              throw 'The test run did not report lavapipe as its Vulkan device'
+            }
+            if ($null -eq $testCount) {
+              throw 'The test run did not report a Catch2 test count'
+            }
+            @(
+              '### Windows tests (MSVC + lavapipe)'
+              ''
+              $testDevice.Line
+              $testCount.Line
+            ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+          finally {
+            Pop-Location
+          }
 
   tests:
     name: tests (${{ matrix.name }})

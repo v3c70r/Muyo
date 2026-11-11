@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -30,6 +31,30 @@
 
 namespace
 {
+#if defined(_WIN32)
+std::optional<std::string> EnvironmentValue(const char* name)
+{
+    char* value = nullptr;
+    if (_dupenv_s(&value, nullptr, name) != 0 || value == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    std::string result(value);
+    free(value);
+    return result;
+}
+#else
+std::optional<std::string> EnvironmentValue(const char* name)
+{
+    if (const char* value = std::getenv(name))
+    {
+        return std::string(value);
+    }
+    return std::nullopt;
+}
+#endif
+
 #if defined(__unix__)
 /// Env vars that turn this test case into the child half of itself.
 constexpr const char* sChildEnvVar = "MUYO_VK_ASSERT_ABORT_CHILD";
@@ -74,13 +99,13 @@ TEST_CASE("Error reporting: a declaration error throws std::runtime_error, never
 TEST_CASE("Error reporting: a failed Vulkan call aborts with its result and call site", "[ErrorReporting]")
 {
 #if defined(__unix__)
-    if (std::getenv(sChildEnvVar) != nullptr)
+    if (EnvironmentValue(sChildEnvVar).has_value())
     {
         // Child half: never returns on success of the test. Reset Catch2's SIGABRT handler so the abort is
         // observable as a signal, then send the diagnostic somewhere the parent can read it.
         std::signal(SIGABRT, SIG_DFL);
-        const char* logPath = std::getenv(sChildLogEnvVar);
-        if (logPath == nullptr || std::freopen(logPath, "w", stderr) == nullptr)
+        const auto logPath = EnvironmentValue(sChildLogEnvVar);
+        if (!logPath.has_value() || std::freopen(logPath->c_str(), "w", stderr) == nullptr)
         {
             std::_Exit(120);
         }

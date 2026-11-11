@@ -18,6 +18,8 @@ commit that deprecated it (#87).
 
 ### Added
 
+- **Windows CI with Visual Studio 2026 and lavapipe.** The Windows workflow builds the test and shader
+  targets with C4996 treated as an error, verifies lavapipe selection, and runs the test suite.
 - **Compile-time version.** `project(Muyo VERSION 0.1.0)` generates `<muyo_rg/version.h>`, which exposes
   `MUYO_RG_VERSION_MAJOR` / `_MINOR` / `_PATCH`, a Vulkan-style combined `MUYO_RG_VERSION` that can be
   compared in `#if`, `MUYO_RG_MAKE_VERSION`, and `MUYO_RG_VERSION_STRING`. `RenderGraph/MuyoVersion.h`
@@ -94,6 +96,9 @@ commit that deprecated it (#87).
 
 ### Fixed
 
+- **MSVC's deprecated `getenv` warning blocked Windows builds.** The trace setting and Unix child-test
+  environment checks now use a Windows-safe environment lookup, allowing the Windows build to enforce
+  C4996 as an error without suppressing the diagnostic.
 - **Debug markers resolved the process-wide device.** A client-constructed `VkRenderDevice` had its
   `SCOPED_MARKER` labels recorded against the singleton (or silently dropped when the singleton was
   uninitialised). The marker helpers now use the `VkDevice` passed in (#274, #291).
