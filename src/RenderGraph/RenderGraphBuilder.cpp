@@ -36,6 +36,30 @@
 
 namespace
 {
+#if defined(_WIN32)
+std::optional<std::string> EnvironmentValue(const char* name)
+{
+    char* value = nullptr;
+    if (_dupenv_s(&value, nullptr, name) != 0 || value == nullptr)
+    {
+        return std::nullopt;
+    }
+
+    std::string result(value);
+    free(value);
+    return result;
+}
+#else
+std::optional<std::string> EnvironmentValue(const char* name)
+{
+    if (const char* value = std::getenv(name))
+    {
+        return std::string(value);
+    }
+    return std::nullopt;
+}
+#endif
+
 /// One spelling for the node-local heap-index key: `handle#usage`. Kept in one place because a
 /// divergent edit in either writer/reader makes GetHeapIndex silently return nullopt.
 std::string HeapIndexKey(const Muyo::RenderGraph::ResourceHandle& handle, Muyo::RenderGraph::ResourceUsage usage)
@@ -2862,8 +2886,8 @@ bool TraceRequestedByEnvironment()
 {
     static const bool s_requested = []()
     {
-        const char* pValue = std::getenv("MUYO_RG_TRACE");
-        return pValue != nullptr && pValue[0] != '\0' && !(pValue[0] == '0' && pValue[1] == '\0');
+        const auto value = EnvironmentValue("MUYO_RG_TRACE");
+        return value.has_value() && !value->empty() && !(value->size() == 1 && value->front() == '0');
     }();
     return s_requested;
 }
@@ -2876,21 +2900,21 @@ bool TraceRequestedByEnvironment()
 /// @param trace Trace to emit.
 void EmitTraceToEnvironment(const RenderGraphTrace& trace)
 {
-    const char* pValue = std::getenv("MUYO_RG_TRACE");
-    if (pValue == nullptr || pValue[0] == '\0')
+    const auto value = EnvironmentValue("MUYO_RG_TRACE");
+    if (!value.has_value() || value->empty())
     {
         return;
     }
-    if (pValue[0] == '1' && pValue[1] == '\0')
+    if (value->size() == 1 && value->front() == '1')
     {
         std::fputs(ToText(trace).c_str(), stdout);
         return;
     }
 
-    std::ofstream out(pValue, std::ios::app);
+    std::ofstream out(*value, std::ios::app);
     if (!out)
     {
-        std::cerr << "[WARNING]: MUYO_RG_TRACE=" << pValue << " could not be opened; trace dropped" << std::endl;
+        std::cerr << "[WARNING]: MUYO_RG_TRACE=" << *value << " could not be opened; trace dropped" << std::endl;
         return;
     }
     out << ToJson(trace) << '\n';
