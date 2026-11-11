@@ -249,8 +249,7 @@ if (UNIX)
       "$<${SANITIZE_CONDITION}:-g>"
     )
 elseif(MSVC)
-    # Left as-is: the Windows path is not covered by this repository's CI, so this PR does not change
-    # an untested toolchain. It appends rather than assigning, so it was never the fragile form.
+    # Windows CI builds and runs the tests with this toolchain; keep the existing MSVC flags intact.
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++latest /W3")
     set(SANITIZE_FLAGS "$<${SANITIZE_CONDITION}:/fsanitize=address,undefined,thread,memory>")
     add_compile_options("$<${SANITIZE_CONDITION}:/Zi>")
@@ -283,8 +282,7 @@ function(muyo_enable_deprecation_errors target)
     if (UNIX)
         target_compile_options(${target} PRIVATE -Werror=deprecated-declarations)
     elseif (MSVC)
-        # MSVC calls the same diagnostic C4996; the Windows path is not covered by CI, but the
-        # equivalent has to be wired for the policy to be true on a supported compiler.
+        # MSVC calls the same diagnostic C4996; enforce it in the Windows CI build as well.
         target_compile_options(${target} PRIVATE /we4996)
     endif()
 endfunction()
