@@ -307,6 +307,10 @@ public:
     // ── Build / Execute ──────────────────────────────────────────────────────
     /// Compile the graph: topological sort, resource allocation, pipeline/descriptor compilation
     /// and barrier planning. Call after all resources and nodes are declared.
+    ///
+    /// Pipelines are cached across builds - including ray-tracing pipelines - on the builder or the
+    /// injected `PipelineCache`, so a per-frame `Build()` borrows a pipeline an in-flight execution may
+    /// still use instead of destroying it (#253).
     /// @throws std::runtime_error for a declaration error, naming the node and resource: a dependency
     ///         cycle; a transient read with no writer; and anything `CompileRenderGraphNode` rejects
     ///         (shader load, specialization ids, buffer range, a missing heap service).

@@ -26,6 +26,7 @@
 #include "RenderGraph/CompiledRenderGraph.h"
 #include "RenderGraph/DependencyGraph.h"
 #include "RenderGraph/DrawCommands.h"
+#include "RenderGraph/PipelineCache.h"
 #include "RenderGraph/RenderGraphBarrier.h"
 #include "RenderGraph/RenderGraphBuilder.h"
 #include "RenderGraph/RenderGraphExecutor.h"
@@ -4152,6 +4153,186 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     REQUIRE(fCoverage > 0.999F);
     REQUIRE(fMatch > 0.999F);
 }
+TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a cached ray-tracing pipeline survives a per-frame Build",
+                 "[RenderGraphBuilder][RayTracing][PipelineCache]")
+{
+    // #253: Build() destroys the compiled graph on every call, and a ray-tracing pipeline used to be
+    // node-owned, so a non-blocking Execute() followed by Build() freed the pipeline the pending command
+    // buffer still bound (VUID-vkDestroyPipeline-pipeline-00765). The fix caches RT pipelines like the
+    // graphics/compute ones; this case pins that a rebuild borrows the same handle while an execution is
+    // gated, then proves the handle is still usable.
+    const VkDeviceSize asDescriptorSize =
+        GetRenderDevice()->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
+    if (!GetRenderDevice()->IsDescriptorHeapEnabled() || asDescriptorSize != 8)
+    {
+        SKIP("requires the descriptor heap and an 8-byte AS descriptor; this device reports " +
+             std::to_string(asDescriptorSize) + " bytes");
+    }
+
+    GetMeshResourceManager()->PrepareSimpleMeshes();
+    GetMeshResourceManager()->UploadMeshData();
+    const Mesh& quadMesh = GetMeshResourceManager()->GetQuad();
+
+    const glm::mat4 model = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 5.0F));
+    RayTracingSceneManager rtSceneManager;
+    AccelerationStructure* pTLAS = rtSceneManager.BuildSceneFromMeshes({{&quadMesh, model}});
+    REQUIRE(pTLAS != nullptr);
+
+    constexpr uint32_t kExtent = 64;
+    const glm::mat4 proj = glm::perspective(glm::radians(60.0F), 1.0F, 0.1F, 100.0F);
+    const glm::mat4 view =
+        glm::lookAt(glm::vec3(0.0F, 0.0F, 10.0F), glm::vec3(0.0F, 0.0F, 5.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+    Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(kExtent), static_cast<float>(kExtent));
+
+    PipelineCache cache(GetRenderDevice());
+    const RenderGraphServices services{
+        .device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator(), .pipelineCache = &cache};
+    RenderGraphBuilder builder(services);
+
+    builder.AddResource("RTCacheCamera", BufferResourceDesc{.count = 1,
+                                                            .stride = sizeof(PerViewData),
+                                                            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                                            .memoryProperties = VMA_MEMORY_USAGE_CPU_TO_GPU});
+    builder.AddResource("RTCacheOutput",
+                        ImageResourceDesc{.format = VK_FORMAT_R32G32B32A32_SFLOAT,
+                                          .extent = {kExtent, kExtent},
+                                          .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT});
+    builder.ImportResource("RTCacheTLAS", pTLAS);
+
+    builder.AddNode(RenderGraphNodeCreateInfo{.nodeName = "RTCacheCameraPrep",
+                                              .queueType = QueueType::CPU,
+                                              .resourceUses = {{.handle = ResourceHandle("RTCacheCamera"),
+                                                                .io = ResourceIOType::HOST_WRITE,
+                                                                .usage = ResourceUsage::UNIFORM_BUFFER,
+                                                                .kind = ResourceKind::BUFFER}},
+                                              .execute = [&camera](RenderGraphNodeContext& ctx)
+                                              {
+                                                  PerViewData perView;
+                                                  perView.mProj = camera.GetProjMat();
+                                                  perView.mView = camera.GetViewMat();
+                                                  perView.mProjInv = glm::inverse(perView.mProj);
+                                                  perView.mViewInv = glm::inverse(perView.mView);
+                                                  perView.vScreenExtent = {kExtent, kExtent};
+                                                  auto* pCamera = ctx.GetResource<IGraphBuffer>("RTCacheCamera");
+                                                  REQUIRE(pCamera != nullptr);
+                                                  pCamera->SetData(&perView, sizeof(perView));
+                                              }});
+
+    RenderGraphNodeCreateInfo rtPass = {
+        .nodeName = "RTCacheTrace",
+        .queueType = QueueType::RAY_TRACING,
+        .resourceUses =
+            {
+                ResourceUse{.handle = ResourceHandle("RTCacheCamera"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::UNIFORM_BUFFER,
+                            .kind = ResourceKind::BUFFER},
+                ResourceUse{.handle = ResourceHandle("RTCacheTLAS"),
+                            .io = ResourceIOType::READ,
+                            .usage = ResourceUsage::ACCEL_STRUCTURE,
+                            .kind = ResourceKind::ACCELERATION_STRUCTURE},
+                ResourceUse{.handle = ResourceHandle("RTCacheOutput"),
+                            .io = ResourceIOType::READ_WRITE,
+                            .usage = ResourceUsage::STORAGE_IMAGE,
+                            .kind = ResourceKind::IMAGE},
+            },
+        .rtShaderNames = {"testPrimary.rgen.slang", "testPrimary.rmiss.slang", "testPrimary.rchit.slang"},
+        .execute = [](RenderGraphNodeContext&) {}};
+    ConvertRayTracingNode(rtPass, "RTCacheCamera", "RTCacheTLAS", "RTCacheOutput");
+    builder.AddNode(rtPass);
+    builder.AddDependency("RTCacheCameraPrep", "RTCacheTrace");
+
+    const auto findRTPipeline = [&builder]() -> VkPipeline
+    {
+        for (const CompiledRenderGraphNode& node : builder.GetCompiledGraph().GetNodes())
+        {
+            if (node.name == "RTCacheTrace") return node.pipeline;
+        }
+        return VK_NULL_HANDLE;
+    };
+    const auto findRTNode = [&builder]() -> const CompiledRenderGraphNode*
+    {
+        for (const CompiledRenderGraphNode& node : builder.GetCompiledGraph().GetNodes())
+        {
+            if (node.name == "RTCacheTrace") return &node;
+        }
+        return nullptr;
+    };
+
+    builder.Build();
+    const VkPipeline firstPipeline = findRTPipeline();
+    REQUIRE(firstPipeline != VK_NULL_HANDLE);
+    const CompiledRenderGraphNode* pFirstNode = findRTNode();
+    REQUIRE(pFirstNode != nullptr);
+    CHECK(pFirstNode->bOwnsPipeline == false);
+    CHECK(cache.GetPipelineCount() == 1);
+
+    VkDevice device = GetRenderDevice()->GetDevice();
+    VkSemaphoreTypeCreateInfo typeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
+    typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    typeInfo.initialValue = 0;
+    VkSemaphoreCreateInfo semaphoreInfo{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
+    semaphoreInfo.pNext = &typeInfo;
+    VkSemaphore gate = VK_NULL_HANDLE;
+    VK_ASSERT(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &gate));
+    const auto signalGate = [&](uint64_t value)
+    {
+        VkSemaphoreSignalInfo signalInfo{VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO};
+        signalInfo.semaphore = gate;
+        signalInfo.value = value;
+        VK_ASSERT(vkSignalSemaphore(device, &signalInfo));
+    };
+
+    // Hold one execution on an unsignalled timeline value, then rebuild. Build() must return without
+    // draining the transient plan (unchanged declaration), and must not free the bound RT pipeline.
+    builder.Execute(RenderGraphExecuteInfo{.waitSemaphore = gate, .waitValue = 1});
+
+    std::atomic<bool> bBuildStarted{false};
+    std::atomic<bool> bBuildReturned{false};
+    std::exception_ptr buildFailure;
+    std::thread buildThread(
+        [&]
+        {
+            bBuildStarted.store(true);
+            try
+            {
+                builder.Build();
+            }
+            catch (...)
+            {
+                buildFailure = std::current_exception();
+            }
+            bBuildReturned.store(true);
+        });
+    while (!bBuildStarted.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!bBuildReturned.load() && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    const bool bReturnedWhileInFlight = bBuildReturned.load();
+    // Always open the gate: a drain-style fix blocks here, and this case must report a failed assertion
+    // rather than hang the suite.
+    signalGate(1);
+    buildThread.join();
+    if (buildFailure != nullptr) std::rethrow_exception(buildFailure);
+    CHECK(bReturnedWhileInFlight);
+    builder.WaitIdle();
+
+    CHECK(findRTPipeline() == firstPipeline);
+    CHECK(cache.GetPipelineCount() == 1);
+    const CompiledRenderGraphNode* pRebuiltNode = findRTNode();
+    REQUIRE(pRebuiltNode != nullptr);
+    CHECK(pRebuiltNode->bOwnsPipeline == false);
+
+    // The borrowed handle is still usable after the in-flight Build, not merely equal by accident.
+    builder.Execute();
+    CHECK(findRTPipeline() == firstPipeline);
+
+    vkDestroySemaphore(device, gate, nullptr);
+}
+
 TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a node builds a TLAS and a later node traces it",
                  "[RenderGraphBuilder][RayTracing]")
 {
