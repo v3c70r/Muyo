@@ -310,7 +310,9 @@ public:
     ///
     /// Pipelines are cached across builds - including ray-tracing pipelines - on the builder or the
     /// injected `PipelineCache`, so a per-frame `Build()` borrows a pipeline an in-flight execution may
-    /// still use instead of destroying it (#253).
+    /// still use instead of destroying it (#253). The ray-tracing shader binding table is retained per
+    /// node: an unchanged handle set is not rewritten, and a changed one is written only after the
+    /// in-flight executions have drained (#307).
     /// @throws std::runtime_error for a declaration error, naming the node and resource: a dependency
     ///         cycle; a transient read with no writer; and anything `CompileRenderGraphNode` rejects
     ///         (shader load, specialization ids, buffer range, a missing heap service).
