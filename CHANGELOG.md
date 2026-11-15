@@ -94,6 +94,9 @@ commit that deprecated it (#87).
 
 ### Fixed
 
+- **A per-frame `Build()` could rewrite the ray-tracing shader binding table an in-flight trace was
+  reading.** The builder now tracks the group handles it wrote per node, skips the write when they are
+  unchanged, and drains before rewriting a changed handle set (#307).
 - **A per-frame `Build()` could destroy a ray-tracing pipeline an in-flight execution still bound.**
   Ray-tracing pipelines are now cached like graphics and compute ones: a build borrows the pipeline and
   only rebuilds the node's shader binding table, instead of freeing it while a pending command buffer

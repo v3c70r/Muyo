@@ -280,6 +280,87 @@ void ConvertRayTracingNode(RenderGraphNodeCreateInfo& node, const char* cameraHa
     };
 }
 #endif  // FEATURE_RAY_TRACING
+/// A graph allocator that records the named buffers it creates.
+///
+/// The RT shader binding table is builder-private, so a test that has to observe or perturb its bytes
+/// needs the buffer handle. This forwards every allocation to the fixture's allocator and remembers the
+/// ones whose debug name starts with `SBT_`; the test then maps the buffer through `IGraphBuffer`.
+class RecordingGraphAllocator final : public IGraphResourceAllocator
+{
+public:
+    explicit RecordingGraphAllocator(IGraphResourceAllocator& inner) : m_inner(inner) {}
+
+    /// @param debugName Name the graph passed to `CreateBuffer`.
+    /// @return The buffer created under that name, or nullptr.
+    IGraphBuffer* FindBuffer(const std::string& debugName) const
+    {
+        const auto it = m_buffers.find(debugName);
+        return it == m_buffers.end() ? nullptr : it->second;
+    }
+
+    std::unique_ptr<IGraphBuffer> CreateBuffer(size_t size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage,
+                                               const std::string& debugName, GraphBufferPool pool) override
+    {
+        std::unique_ptr<IGraphBuffer> buffer = m_inner.CreateBuffer(size, usage, memoryUsage, debugName, pool);
+        if (debugName.rfind("SBT_", 0) == 0) m_buffers[debugName] = buffer.get();
+        return buffer;
+    }
+    std::unique_ptr<IGraphImage> CreateImage(const VkImageCreateInfo& imageInfo, VmaMemoryUsage memoryUsage,
+                                             const std::string& debugName) override
+    {
+        return m_inner.CreateImage(imageInfo, memoryUsage, debugName);
+    }
+    VkBuffer CreateUnboundBuffer(VkDeviceSize size, VkBufferUsageFlags usage) override
+    {
+        return m_inner.CreateUnboundBuffer(size, usage);
+    }
+    void DestroyUnboundBuffer(VkBuffer buffer) override { m_inner.DestroyUnboundBuffer(buffer); }
+    VkMemoryRequirements QueryBufferRequirements(VkBuffer buffer) const override
+    {
+        return m_inner.QueryBufferRequirements(buffer);
+    }
+    VkImage CreateUnboundImage(const VkImageCreateInfo& imageInfo) override
+    {
+        return m_inner.CreateUnboundImage(imageInfo);
+    }
+    void DestroyUnboundImage(VkImage image) override { m_inner.DestroyUnboundImage(image); }
+    VkMemoryRequirements QueryImageRequirements(VkImage image) const override
+    {
+        return m_inner.QueryImageRequirements(image);
+    }
+    GraphMemoryBlock AllocateAliasingBlock(const VkMemoryRequirements& requirements,
+                                           VmaMemoryUsage memoryUsage) override
+    {
+        return m_inner.AllocateAliasingBlock(requirements, memoryUsage);
+    }
+    void BindBufferToBlock(VkBuffer buffer, GraphMemoryBlock block, VkDeviceSize offset) override
+    {
+        m_inner.BindBufferToBlock(buffer, block, offset);
+    }
+    void BindImageToBlock(VkImage image, GraphMemoryBlock block, VkDeviceSize offset) override
+    {
+        m_inner.BindImageToBlock(image, block, offset);
+    }
+    void FreeAliasingBlock(GraphMemoryBlock block) override { m_inner.FreeAliasingBlock(block); }
+    void AllocateBuffer(size_t size, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VkBuffer& buffer,
+                        GraphMemoryBlock& memory) override
+    {
+        m_inner.AllocateBuffer(size, usage, memoryUsage, buffer, memory);
+    }
+    void FreeBuffer(VkBuffer& buffer, GraphMemoryBlock& memory) override { m_inner.FreeBuffer(buffer, memory); }
+    void* MapMemory(GraphMemoryBlock block, VkDeviceSize offset) override { return m_inner.MapMemory(block, offset); }
+    void UnmapMemory(GraphMemoryBlock block) override { m_inner.UnmapMemory(block); }
+    VkImageView CreateImageView(const VkImageViewCreateInfo& createInfo) override
+    {
+        return m_inner.CreateImageView(createInfo);
+    }
+    void DestroyImageView(VkImageView view) override { m_inner.DestroyImageView(view); }
+
+private:
+    IGraphResourceAllocator& m_inner;
+    std::unordered_map<std::string, IGraphBuffer*> m_buffers;
+};
+
 }  // namespace
 
 // Copies the (already rendered) color target back to the host and returns how many
@@ -4153,7 +4234,8 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: ray tracing matches raste
     REQUIRE(fCoverage > 0.999F);
     REQUIRE(fMatch > 0.999F);
 }
-TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a cached ray-tracing pipeline survives a per-frame Build",
+TEST_CASE_METHOD(GraphicsTestEnv,
+                 "RenderGraphBuilder: a cached ray-tracing pipeline and its SBT survive a per-frame Build",
                  "[RenderGraphBuilder][RayTracing][PipelineCache]")
 {
     // #253: Build() destroys the compiled graph on every call, and a ray-tracing pipeline used to be
@@ -4161,6 +4243,11 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a cached ray-tracing pipe
     // buffer still bound (VUID-vkDestroyPipeline-pipeline-00765). The fix caches RT pipelines like the
     // graphics/compute ones; this case pins that a rebuild borrows the same handle while an execution is
     // gated, then proves the handle is still usable.
+    //
+    // #307: the SBT buffer is reused per node. A per-frame Build with unchanged shader content must not
+    // rewrite it, because the gated execution may still be tracing from those bytes. The test corrupts
+    // the buffer after the first Build; a second Build with the same handles must leave the corruption in
+    // place. A write would replace it with the group handles.
     const VkDeviceSize asDescriptorSize =
         GetRenderDevice()->GetDescriptorSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR);
     if (!GetRenderDevice()->IsDescriptorHeapEnabled() || asDescriptorSize != 8)
@@ -4185,8 +4272,9 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a cached ray-tracing pipe
     Arcball camera(proj, view, 0.1F, 100.0F, static_cast<float>(kExtent), static_cast<float>(kExtent));
 
     PipelineCache cache(GetRenderDevice());
+    RecordingGraphAllocator allocator(*GetGraphAllocator());
     const RenderGraphServices services{
-        .device = GetRenderDevice(), .resourceAllocator = GetGraphAllocator(), .pipelineCache = &cache};
+        .device = GetRenderDevice(), .resourceAllocator = &allocator, .pipelineCache = &cache};
     RenderGraphBuilder builder(services);
 
     builder.AddResource("RTCacheCamera", BufferResourceDesc{.count = 1,
@@ -4268,6 +4356,19 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a cached ray-tracing pipe
     CHECK(pFirstNode->bOwnsPipeline == false);
     CHECK(cache.GetPipelineCount() == 1);
 
+    // #307: corrupt the SBT after the first Build. The second Build below has unchanged shader content and
+    // must skip the write; the corruption surviving is what proves the steady state is read-only.
+    IGraphBuffer* pSBT = allocator.FindBuffer("SBT_RTCacheTrace");
+    REQUIRE(pSBT != nullptr);
+    const size_t nSBTBytes = pSBT->GetSize();
+    REQUIRE(nSBTBytes > 0);
+    uint8_t* pSBTBytes = static_cast<uint8_t*>(pSBT->Map());
+    REQUIRE(pSBTBytes != nullptr);
+    // Keep the real handles: the gated execution must not run against the sentinel below.
+    const std::vector<uint8_t> originalSBT(pSBTBytes, pSBTBytes + nSBTBytes);
+    memset(pSBTBytes, 0xAB, nSBTBytes);
+    pSBT->Unmap();
+
     VkDevice device = GetRenderDevice()->GetDevice();
     VkSemaphoreTypeCreateInfo typeInfo{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
     typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
@@ -4312,12 +4413,24 @@ TEST_CASE_METHOD(GraphicsTestEnv, "RenderGraphBuilder: a cached ray-tracing pipe
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     const bool bReturnedWhileInFlight = bBuildReturned.load();
+    // #307: with an unchanged handle set the second Build must not have touched the SBT, so the sentinel
+    // is still there. Read (and then restore) the real handles before opening the gate: a build that
+    // drained has already returned, and one that wrote would have replaced the sentinel, but the pending
+    // trace must never run against the sentinel in either case.
+    bool bSBTUnchanged = false;
+    pSBTBytes = static_cast<uint8_t*>(pSBT->Map());
+    REQUIRE(pSBTBytes != nullptr);
+    bSBTUnchanged = std::all_of(pSBTBytes, pSBTBytes + nSBTBytes, [](uint8_t value) { return value == 0xAB; });
+    memcpy(pSBTBytes, originalSBT.data(), nSBTBytes);
+    pSBT->Unmap();
+
     // Always open the gate: a drain-style fix blocks here, and this case must report a failed assertion
     // rather than hang the suite.
     signalGate(1);
     buildThread.join();
     if (buildFailure != nullptr) std::rethrow_exception(buildFailure);
     CHECK(bReturnedWhileInFlight);
+    CHECK(bSBTUnchanged);
     builder.WaitIdle();
 
     CHECK(findRTPipeline() == firstPipeline);

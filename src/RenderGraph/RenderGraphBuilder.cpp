@@ -594,6 +594,11 @@ struct RenderGraphBuilder::Impl
     std::unordered_map<ResourceHandle, std::unique_ptr<IGraphResource>> m_ownedResources;
     /// Per-node shader binding tables, allocated at Build() through the injected allocator.
     std::unordered_map<std::string, std::unique_ptr<IGraphBuffer>> m_shaderBindingTables;
+    /// The group handles last written into each node's SBT, keyed like `m_shaderBindingTables`.
+    ///
+    /// A per-frame `Build()` with unchanged shader content must not rewrite the buffer an in-flight
+    /// trace may still read (#307). When the handles do change, the write is preceded by a drain.
+    std::unordered_map<std::string, std::vector<uint8_t>> m_shaderBindingTableHandles;
     std::unordered_map<ResourceHandle, const IGraphResource*> m_importedResources;
     /// The layout each imported image is in before every execution, when the caller stated one. Seeded
     /// into the per-execution access state so the first-use barrier preserves the imported content
@@ -1543,12 +1548,25 @@ void RenderGraphBuilder::Impl::BuildRayTracingPipeline(CompiledRenderGraphNode& 
     missRegion.deviceAddress = sbtAddress + rgenRegion.size;
     hitRegion.deviceAddress = sbtAddress + rgenRegion.size + missRegion.size;
 
-    uint8_t* pMapped = static_cast<uint8_t*>(pSBT->Map());
-    memcpy(pMapped, handles.data(), nHandleSize);
-    memcpy(pMapped + rgenRegion.size, handles.data() + static_cast<size_t>(nHandleSize), nHandleSize);
-    memcpy(pMapped + rgenRegion.size + missRegion.size, handles.data() + static_cast<size_t>(2) * nHandleSize,
-           nHandleSize);
-    pSBT->Unmap();
+    // A per-frame Build() with unchanged shader content must leave the table untouched: an execution
+    // submitted by the previous Build may still be tracing from these bytes (#307). Only a changed
+    // handle set needs a write, and that write must wait for the previous execution first. The first
+    // build has no previous handles and therefore no execution to drain.
+    const auto previousHandles = m_shaderBindingTableHandles.find(logicalNode.name);
+    const bool bHandlesUnchanged =
+        previousHandles != m_shaderBindingTableHandles.end() && previousHandles->second == handles;
+    if (!bHandlesUnchanged)
+    {
+        if (previousHandles != m_shaderBindingTableHandles.end()) m_executor.WaitIdle();
+
+        uint8_t* pMapped = static_cast<uint8_t*>(pSBT->Map());
+        memcpy(pMapped, handles.data(), nHandleSize);
+        memcpy(pMapped + rgenRegion.size, handles.data() + static_cast<size_t>(nHandleSize), nHandleSize);
+        memcpy(pMapped + rgenRegion.size + missRegion.size, handles.data() + static_cast<size_t>(2) * nHandleSize,
+               nHandleSize);
+        pSBT->Unmap();
+        m_shaderBindingTableHandles[logicalNode.name] = handles;
+    }
 }
 
 namespace
