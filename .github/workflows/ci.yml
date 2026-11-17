@@ -189,7 +189,24 @@ jobs:
           if ($null -eq $icd) {
             throw "Mesa archive does not contain lvp_icd.x86_64.json"
           }
+          # The archive names its library relatively (`\\.\\vulkan_lvp.dll`). Make it absolute so
+          # discovery does not depend on the loader's idea of the working directory.
+          $library = Join-Path $icd.DirectoryName "vulkan_lvp.dll"
+          if (-not (Test-Path $library)) {
+            throw "Mesa archive has no vulkan_lvp.dll beside $($icd.FullName)"
+          }
+          $manifest = Get-Content $icd.FullName -Raw | ConvertFrom-Json
+          $manifest.ICD.library_path = $library
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content $icd.FullName -Encoding utf8
+
+          # Three discovery routes, because which one the loader honours is a property of the loader
+          # on the image rather than of the loader this repository pins: the current variable name,
+          # the legacy name, and the Windows registry key the loader reads on this image.
           "VK_DRIVER_FILES=$($icd.FullName)" >> $env:GITHUB_ENV
+          "VK_ICD_FILENAMES=$($icd.FullName)" >> $env:GITHUB_ENV
+          $drivers = "HKLM:\SOFTWARE\Khronos\Vulkan\Drivers"
+          New-Item -Path $drivers -Force | Out-Null
+          New-ItemProperty -Path $drivers -Name $icd.FullName -Value 0 -PropertyType DWord -Force | Out-Null
           $icd.DirectoryName >> $env:GITHUB_PATH
 
       - name: Configure with Visual Studio 2026
@@ -210,6 +227,20 @@ jobs:
           if (-not (Test-Path $vulkanInfo)) {
             throw "The pinned Vulkan SDK has no Bin\vulkaninfoSDK.exe"
           }
+          # Record what the loader actually is, so a future failure here is diagnosable from the log
+          # rather than from another run. vulkaninfoSDK.exe statically links its own loader; the test
+          # binary does not, so the System32 loader is the one the suite will use.
+          Write-Output "vulkaninfoSDK: $((Get-Item $vulkanInfo).VersionInfo.ProductVersion)"
+          $systemLoader = Join-Path $env:SystemRoot "System32\vulkan-1.dll"
+          if (Test-Path $systemLoader) {
+            $loaderVersion = (Get-Item $systemLoader).VersionInfo.FileVersion
+            Write-Output "System32 vulkan-1.dll: $loaderVersion"
+          } else {
+            Write-Output "System32 vulkan-1.dll: absent"
+          }
+          Write-Output "VK_DRIVER_FILES: [$env:VK_DRIVER_FILES]"
+          Write-Output "ICD manifest exists: $(Test-Path $env:VK_DRIVER_FILES)"
+          $env:VK_LOADER_DEBUG = "error,warn"
           $summary = & $vulkanInfo --summary 2>&1
           if ($LASTEXITCODE -ne 0) {
             $summary | Write-Output
