@@ -107,7 +107,7 @@ public:
         if (m_mResources.find(sName) == m_mResources.end())
         {
             m_mResources[sName] = std::make_unique<TextureResource>();
-            static_cast<TextureResource*>(m_mResources[sName].get())->LoadImage(path);
+            static_cast<TextureResource*>(m_mResources[sName].get())->LoadImageFile(path);
             m_mResources[sName]->SetDebugName(sName);
         }
         return static_cast<TextureResource*>(m_mResources[sName].get());

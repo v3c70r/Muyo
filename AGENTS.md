@@ -258,20 +258,24 @@ Operational notes, each of which has cost someone a red herring:
   selected cases by name.
 
 - **CI exists, and it gates what a software device can prove.** `.github/workflows/ci.yml` runs on
-github-hosted runners with mesa's lavapipe as the Vulkan device: both configurations build, the
-checked-in reference matches the headers (`render_graph_docs.py --check`), the changed lines are
-`clang-format` clean, and the whole suite passes in Debug, Release, both ray-tracing shapes and under
-the sanitizers - with the validation layer on. The workflow's header states the three axes it does **not**
-cover, and the job writes them into the run summary on every build:
+github-hosted runners with mesa's lavapipe as the Vulkan device - Linux and Windows. On Linux both
+configurations build, the checked-in reference matches the headers (`render_graph_docs.py --check`), the
+changed lines are `clang-format` clean, and the whole suite passes in Debug, Release, both ray-tracing
+shapes and under the sanitizers - with the validation layer on. The Windows job builds the same test and
+shader targets with MSVC and runs the suite on its own lavapipe. The workflow's header states the three
+axes it does **not** cover, and the job writes them into the run summary on every build:
 
   - **Queue topology.** lavapipe reports one queue family with one queue, so no cross-family ownership
 transfer and no dedicated compute queue is exercised; the suite takes the single-queue path. The
 `[test device]` line says so on every run.
   - **Driver-specific behaviour.** A software device passing is not evidence about a driver.
-  - **Descriptor heap.** The runner's Mesa may not expose `VK_EXT_descriptor_heap` or
-`shaderUntypedPointers`. The `[DescriptorHeap]` cases then skip with the reason and the `[test device]`
-line records the absent bits. That is a recorded gap, not a green heap result: the B0 hardware matrix
-(RADV, RTX 3090, and a qualifying llvmpipe) is the evidence for the heap path.
+  - **Descriptor heap.** Whether the heap extensions exist is a property of the runner's Mesa build,
+not of the job, and the two runners differ. The Linux runner's Mesa may not expose
+`VK_EXT_descriptor_heap` or `shaderUntypedPointers`, in which case the `[DescriptorHeap]` cases skip with
+the reason. The Windows job pins Mesa 26.2.5, whose lavapipe is expected to expose both, so that job may
+be the first CI runner to actually execute those cases; the `[test device]` line records the heap bits,
+so a green run says which of the two it was. Neither runner is the evidence for the heap path: the B0
+hardware matrix (RADV, RTX 3090, and a qualifying llvmpipe) remains that evidence.
 
 Those three stay with the development machine and the review machine. **A green check is not a substitute
 for the hardware run in section 6**, and it never was: a clean run is evidence about a *code and

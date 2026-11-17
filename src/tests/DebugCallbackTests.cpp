@@ -2,8 +2,6 @@
 
 #include <csignal>
 #include <cstdlib>
-#include <optional>
-#include <string>
 
 #include "GraphicsTestEnv.h"
 
@@ -14,30 +12,6 @@
 
 namespace
 {
-#if defined(_WIN32)
-std::optional<std::string> EnvironmentValue(const char* name)
-{
-    char* value = nullptr;
-    if (_dupenv_s(&value, nullptr, name) != 0 || value == nullptr)
-    {
-        return std::nullopt;
-    }
-
-    std::string result(value);
-    free(value);
-    return result;
-}
-#else
-std::optional<std::string> EnvironmentValue(const char* name)
-{
-    if (const char* value = std::getenv(name))
-    {
-        return std::string(value);
-    }
-    return std::nullopt;
-}
-#endif
-
 /// Env var that turns this test case into the *child* half of itself.
 ///
 /// The child is spawned with fork+exec rather than fork alone. Forking a process that already holds a
@@ -78,7 +52,7 @@ TEST_CASE_METHOD(Muyo::GraphicsTestEnv, "Debug callback: a validation error abor
     // NDEBUG - and it fails if the layer is not loaded, since then nothing reports the error and the
     // child exits 0.
 #if defined(__unix__)
-    if (EnvironmentValue(sChildEnvVar).has_value())
+    if (std::getenv(sChildEnvVar) != nullptr)
     {
         // Child half: never returns on success of the test.
         //
