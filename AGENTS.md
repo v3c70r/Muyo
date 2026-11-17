@@ -270,12 +270,11 @@ transfer and no dedicated compute queue is exercised; the suite takes the single
 `[test device]` line says so on every run.
   - **Driver-specific behaviour.** A software device passing is not evidence about a driver.
   - **Descriptor heap.** Whether the heap extensions exist is a property of the runner's Mesa build,
-not of the job, and the two runners differ. The Linux runner's Mesa may not expose
-`VK_EXT_descriptor_heap` or `shaderUntypedPointers`, in which case the `[DescriptorHeap]` cases skip with
-the reason. The Windows job pins Mesa 26.2.5, whose lavapipe is expected to expose both, so that job may
-be the first CI runner to actually execute those cases; the `[test device]` line records the heap bits,
-so a green run says which of the two it was. Neither runner is the evidence for the heap path: the B0
-hardware matrix (RADV, RTX 3090, and a qualifying llvmpipe) remains that evidence.
+not of the job, and the two runners differ. The Windows job pins Mesa 26.2.5, whose lavapipe exposes
+`VK_EXT_descriptor_heap` and `shaderUntypedPointers`, so that job executes the `[DescriptorHeap]` cases;
+the `[test device]` line records the bits. The Linux runner's Mesa may not, in which case they skip with
+the reason. Neither runner is the evidence for the heap path: the B0 hardware matrix (RADV, RTX 3090,
+and a qualifying llvmpipe) remains that evidence.
 
 Those three stay with the development machine and the review machine. **A green check is not a substitute
 for the hardware run in section 6**, and it never was: a clean run is evidence about a *code and
