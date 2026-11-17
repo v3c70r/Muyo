@@ -22,7 +22,7 @@ public:
 
     void LoadPixels(void* pixels, int width, int height);
 
-    void LoadImage(const std::string& path);
+    void LoadImageFile(const std::string& path);
 
     VkSampler getSamper() const { return m_textureSampler; }
 
@@ -207,7 +207,7 @@ public:
         {
             m_mTextureIndices[name] = (uint32_t)m_vpTextures.size();
             m_vpTextures.emplace_back(std::make_unique<TextureResource>());
-            m_vpTextures.back()->LoadImage(path);
+            m_vpTextures.back()->LoadImageFile(path);
             m_vpTextures.back()->SetDebugName(name);
             return m_vpTextures.back().get();
         }

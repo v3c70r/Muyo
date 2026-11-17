@@ -17,18 +17,31 @@
 
 namespace
 {
+/// Copy a name into a fixed Vulkan name array, truncating at `N - 1` and always terminating.
+///
+/// `strncpy` is deprecated by MSVC's secure-CRT rules, and this project turns C4996 into an error
+/// (`muyo_enable_deprecation_errors`), so the bounded copy is explicit here instead. The destination
+/// array is value-initialised by every caller, so the bytes past the terminator stay zero.
+template <size_t N>
+void CopyName(char (&destination)[N], const char* sName)
+{
+    const size_t nLength = std::min(std::strlen(sName), N - 1);
+    std::memcpy(destination, sName, nLength);
+    destination[nLength] = '\0';
+}
+
 VkExtensionProperties MakeExtension(const char* sName)
 {
     VkExtensionProperties properties{};
-    std::strncpy(properties.extensionName, sName, VK_MAX_EXTENSION_NAME_SIZE - 1);
+    CopyName(properties.extensionName, sName);
     return properties;
 }
 
 VkLayerProperties MakeLayer(const char* sName)
 {
     VkLayerProperties properties{};
-    std::strncpy(properties.layerName, sName,
-                 VK_MAX_EXTENSION_NAME_SIZE - 1);  // layerName is sized by the extension-name constant
+    // layerName is sized by the extension-name constant.
+    CopyName(properties.layerName, sName);
     return properties;
 }
 

@@ -51,7 +51,7 @@ void TextureResource::LoadPixels(void *pixels, int width, int height)
     mInitSampler();
 }
 
-void TextureResource::LoadImage(const std::string &path)
+void TextureResource::LoadImageFile(const std::string &path)
 {
     int width = 0;
     int height = 0;
@@ -62,7 +62,7 @@ void TextureResource::LoadImage(const std::string &path)
     // the path and the reason in every configuration.
     if (pixels == nullptr)
     {
-        throw std::runtime_error("TextureResource::LoadImage: failed to load '" + path + "'");
+        throw std::runtime_error("TextureResource::LoadImageFile: failed to load '" + path + "'");
     }
     LoadPixels(static_cast<void *>(pixels), width, height);
     stbi_image_free(pixels);

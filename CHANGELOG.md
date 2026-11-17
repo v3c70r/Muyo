@@ -18,6 +18,8 @@ commit that deprecated it (#87).
 
 ### Added
 
+- **Windows CI with Visual Studio 2026 and lavapipe.** The Windows workflow builds the test and shader
+  targets with C4996 treated as an error, verifies lavapipe selection, and runs the test suite.
 - **Compile-time version.** `project(Muyo VERSION 0.1.0)` generates `<muyo_rg/version.h>`, which exposes
   `MUYO_RG_VERSION_MAJOR` / `_MINOR` / `_PATCH`, a Vulkan-style combined `MUYO_RG_VERSION` that can be
   compared in `#if`, `MUYO_RG_MAKE_VERSION`, and `MUYO_RG_VERSION_STRING`. `RenderGraph/MuyoVersion.h`
@@ -101,6 +103,13 @@ commit that deprecated it (#87).
   Ray-tracing pipelines are now cached like graphics and compute ones: a build borrows the pipeline and
   only rebuilds the node's shader binding table, instead of freeing it while a pending command buffer
   refers to it (`VUID-vkDestroyPipeline-pipeline-00765`) (#253).
+- **MSVC's deprecated `getenv` warning blocked Windows builds.** The `MUYO_RG_TRACE` lookup reads the
+  environment through `_dupenv_s` on Windows, so the Windows build enforces C4996 as an error without
+  suppressing the diagnostic.
+- **MSVC macro-expanded `TextureResource::LoadImage` and broke the test link.** `<windows.h>` defines
+  `LoadImage` as `LoadImageA`, so the declaration seen by a translation unit that includes it did not
+  match the definition compiled without it (`LNK2019`). The method is now `LoadImageFile`, which no
+  platform macro claims.
 - **Debug markers resolved the process-wide device.** A client-constructed `VkRenderDevice` had its
   `SCOPED_MARKER` labels recorded against the singleton (or silently dropped when the singleton was
   uninitialised). The marker helpers now use the `VkDevice` passed in (#274, #291).
