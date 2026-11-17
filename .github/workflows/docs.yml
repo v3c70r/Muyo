@@ -1,0 +1,92 @@
+name: docs
+
+# Publishes the generated RenderGraph API reference to GitHub Pages on every push to master.
+#
+# Separate from ci.yml on purpose: the test matrix does not need to rerun to publish a site, and a docs
+# failure must not look like a code failure. The reference is still *checked* on pull requests - the
+# `docs + format` job in ci.yml runs `render_graph_docs.py --check` - so this workflow publishes what
+# that gate already verified rather than being the first place a stale reference is noticed.
+#
+# The Pages site must exist with `build_type = workflow` (Settings -> Pages, or
+# `gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow`). There is deliberately no
+# `gh-pages` branch: an artifact deployment keeps generated files out of history.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Deploys are serialised rather than cancelled: interrupting one can leave the site pointing at a
+# half-uploaded artifact, and the next deploy supersedes it anyway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build and deploy the API reference
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1.9.8 is the Ubuntu 24.04 package, which is the Doxygen version the checked-in reference is
+      # generated with (docs/README.md, "Doxygen version"). Do not take `latest`: 1.18.0 truncates long
+      # descriptions in the generated Markdown (measured), so an unpinned generator can publish a
+      # different reference from the one in the tree. The staleness check below is what catches that.
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends python3 doxygen graphviz
+          echo "doxygen $(doxygen --version)"
+
+      - name: Generate the reference
+        run: |
+          # Enforces the documented surface: every public entity described, the header lists agree with
+          # the checked block and the CMake install list, and no public header includes an internal one.
+          # Writes HTML to site/html (Doxygen's default HTML_OUTPUT) and rewrites docs/RenderGraph-api.md.
+          python3 scripts/render_graph_docs.py --output-dir "$PWD/site"
+          # The XML is only an intermediate for the Markdown; nothing on the site reads it.
+          rm -rf site/xml site/doxygen-warnings.log
+
+      - name: The checked-in reference must already be current
+        run: |
+          # The generator just rewrote docs/RenderGraph-api.md at the pinned version. A difference means
+          # master carries a stale reference (or a Doxygen version that renders differently), and
+          # publishing it would make the site disagree with the tree a reader can cite.
+          git diff --exit-code -- docs/RenderGraph-api.md
+
+      - name: Landing page
+        run: |
+          # The API reference is the generated artefact; the handbooks are hand-written Markdown and
+          # stay on GitHub, where they are the canonical copy. Converting them here would add a second
+          # rendering of the same text to keep in step.
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>Muyo RenderGraph</title>
+          <h1>Muyo RenderGraph</h1>
+          <ul>
+            <li><a href="html/index.html">API reference</a> (generated)</li>
+            <li><a href="https://github.com/v3c70r/Muyo/blob/master/docs/RenderGraph.md">Concepts and quick start</a></li>
+            <li><a href="https://github.com/v3c70r/Muyo/blob/master/docs/DescriptorHeap-Bindless-Design.md">Descriptor-heap design</a></li>
+            <li><a href="https://github.com/v3c70r/Muyo/tree/master/docs">All documents</a></li>
+          </ul>
+          HTML
+          # Doxygen's output contains `_`-prefixed files and a `search/` directory; Jekyll would drop or
+          # rewrite them, so serve the tree as-is.
+          touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

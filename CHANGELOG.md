@@ -20,6 +20,10 @@ commit that deprecated it (#87).
 
 - **Windows CI with Visual Studio 2026 and lavapipe.** The Windows workflow builds the test and shader
   targets with C4996 treated as an error, verifies lavapipe selection, and runs the test suite.
+- **A published API reference.** Every push to `master` regenerates the reference's HTML with the pinned
+  Doxygen and deploys it to GitHub Pages, with a landing page linking the handbooks. A checked-in
+  `docs/RenderGraph-api.md` that does not match the generator fails the deploy rather than publishing a
+  site that disagrees with the tree (`.github/workflows/docs.yml`).
 - **Compile-time version.** `project(Muyo VERSION 0.1.0)` generates `<muyo_rg/version.h>`, which exposes
   `MUYO_RG_VERSION_MAJOR` / `_MINOR` / `_PATCH`, a Vulkan-style combined `MUYO_RG_VERSION` that can be
   compared in `#if`, `MUYO_RG_MAKE_VERSION`, and `MUYO_RG_VERSION_STRING`. `RenderGraph/MuyoVersion.h`
