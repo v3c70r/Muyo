@@ -262,8 +262,11 @@ github-hosted runners with mesa's lavapipe as the Vulkan device - Linux and Wind
 configurations build, the checked-in reference matches the headers (`render_graph_docs.py --check`), the
 changed lines are `clang-format` clean, and the whole suite passes in Debug, Release, both ray-tracing
 shapes and under the sanitizers - with the validation layer on. The Windows job builds the same test and
-shader targets with MSVC and runs the suite on its own lavapipe. The workflow's header states the three
-axes it does **not** cover, and the job writes them into the run summary on every build:
+shader targets with MSVC and runs the suite on its own lavapipe. The generated reference is published to
+GitHub Pages on every push to `master` (`.github/workflows/docs.yml`), from the same pinned Doxygen the
+check uses; the deploy fails rather than publish when the checked-in `docs/RenderGraph-api.md` is stale.
+The workflow's header states the three axes it does **not** cover, and the job writes them into the run
+summary on every build:
 
   - **Queue topology.** lavapipe reports one queue family with one queue, so no cross-family ownership
 transfer and no dedicated compute queue is exercised; the suite takes the single-queue path. The
@@ -744,7 +747,7 @@ been reproduced on the merged content.
 | [`.clang-format`](.clang-format) / [`.clang-tidy`](.clang-tidy) | Formatting and static-analysis configuration (see section 5). |
 | [`docs/CodingConventions.md`](docs/CodingConventions.md) | Repository-wide code rules. |
 | [`docs/RenderGraph.md`](docs/RenderGraph.md) | RenderGraph concept, quick start, status/limitations. |
-| [`docs/RenderGraph-api.md`](docs/RenderGraph-api.md) | Generated API reference (do not hand-edit). |
+| [`docs/RenderGraph-api.md`](docs/RenderGraph-api.md) | Generated API reference (do not hand-edit). Published as HTML at <https://qgu.io/Muyo/> on every push to `master`. |
 | [`docs/DescriptorSet-Lifecycle-Design.md`](docs/DescriptorSet-Lifecycle-Design.md) | Historical descriptor-set design: the content-addressed cache half landed (#108/#109); the direction is superseded by the descriptor-heap bindless design (`docs/DescriptorHeap-Bindless-Design.md`, [#211](https://github.com/v3c70r/Muyo/pull/211)). |
 | [`docs/README.md`](docs/README.md) | How to generate and check the docs. |
 | [`docs/Roadmap.md`](docs/Roadmap.md) | The plan: goal, phases, gates, debt policy, risks. Reasoning lives here; state lives in the GitHub milestones and project fields — the doc's "Where the plan lives" section is the contract between them. |
