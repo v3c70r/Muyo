@@ -204,7 +204,12 @@ jobs:
       - name: Verify lavapipe is selected
         shell: pwsh
         run: |
-          $vulkanInfo = Join-Path $env:VULKAN_SDK "Bin\vulkaninfo.exe"
+          # The pinned SDK ships the SDK build of vulkaninfo as vulkaninfoSDK.exe; there is no
+          # vulkaninfo.exe under Bin, which is why this looked for a name that never exists.
+          $vulkanInfo = Join-Path $env:VULKAN_SDK "Bin\vulkaninfoSDK.exe"
+          if (-not (Test-Path $vulkanInfo)) {
+            throw "The pinned Vulkan SDK has no Bin\vulkaninfoSDK.exe"
+          }
           $summary = & $vulkanInfo --summary 2>&1
           if ($LASTEXITCODE -ne 0) {
             $summary | Write-Output
