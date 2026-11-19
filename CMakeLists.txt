@@ -769,6 +769,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Catch2)
 add_executable(tests 
+    src/tests/ArcballTest.cpp
     src/tests/CaptureToolTest.cpp
     src/tests/DebugCallbackTests.cpp
     src/tests/DescriptorHeapProbeTests.cpp
