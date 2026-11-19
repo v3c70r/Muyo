@@ -221,7 +221,12 @@ public:
         mLastPos = mCurPos;
     }
 
-    /// Pan by a drag measured in screen pixels, so the scene follows the cursor.
+    /// Pan by a drag measured in screen pixels.
+    ///
+    /// Horizontal drags move the content with the cursor. Vertical drags move it the other way, because
+    /// the y delta is taken in the arcball's y-up convention (see `mGetArcballVector`) rather than
+    /// GLFW's y-down one: a downward drag moves the view up, so the camera follows the cursor. That is
+    /// the direction the orbit responds to the same drag, which is why it is the one shipped.
     ///
     /// The offset is accumulated in camera space and applied by `GetViewMat`, so it composes with the
     /// orbit rotation and with `AddZoom` instead of replacing them.
