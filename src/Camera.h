@@ -130,12 +130,20 @@ protected:
 class Arcball : public Camera
 {
 public:
+    /// What a mouse drag does. The app maps a button to a mode; the camera keeps one drag at a time.
+    enum class DragMode
+    {
+        NONE,   ///< No button is down.
+        ORBIT,  ///< Rotate about the pivot (left button).
+        PAN,    ///< Translate in the view plane, the scene following the cursor (middle button).
+    };
+
     Arcball(glm::mat4 proj, glm::mat4 view, float fNear, float fFar, float width, float height)
         : Camera(proj, view, fNear, fFar, width, height)
         , mLastPos(glm::vec2(0.0))
         , mCurPos(glm::vec2(0.0))
         , mArcballRotate(glm::mat4(1.0))
-        , mIsDragging(false)
+        , m_dragMode(DragMode::NONE)
         , mIsFirstPos(false)
         , mZoom(0.0)
 
@@ -144,23 +152,26 @@ public:
         // construction anyway; naming it makes that explicit (clang-analyzer VirtualCall).
         Arcball::Update();
     }
-    void StartDragging()
+    /// @param mode What the drag does; the default keeps the original left-button orbit behaviour.
+    void StartDragging(DragMode mode = DragMode::ORBIT)
     {
-        mIsDragging = true;
+        m_dragMode = mode;
         mIsFirstPos = true;
     }
     void StopDragging()
     {
-        mIsDragging = false;
+        m_dragMode = DragMode::NONE;
         mIsFirstPos = true;
     }
+
+    DragMode GetDragMode() const { return m_dragMode; }
 
     void AddZoom(float fZoom) { mZoom += fZoom; }
 
     bool IsDragging() const
     {
         // Hack: Set transformation updated when dragging
-        if (mIsDragging)
+        if (m_dragMode != DragMode::NONE)
         {
             m_bIsTransformationUpdated = true;
         }
@@ -168,7 +179,7 @@ public:
         {
             m_bIsTransformationUpdated = false;
         }
-        return mIsDragging;
+        return m_dragMode != DragMode::NONE;
     }
     void UpdateDrag(glm::vec2 screenCoord)
     {
@@ -178,34 +189,83 @@ public:
             mLastPos = mCurPos = screenCoord;
             mIsFirstPos = false;
         }
-        if (IsDragging())
+        if (!IsDragging())
         {
-            mCurPos = screenCoord;
-            if (mCurPos != mLastPos)
-            {
-                // https://en.wikibooks.org/wiki/OpenGL_Programming/Modern_OpenGL_Tutorial_Arcball
-                glm::vec3 va = mGetArcballVector(mLastPos);
-                glm::vec3 vb = mGetArcballVector(mCurPos);
-                float angle = acos(glm::min(1.0f, glm::dot(va, vb)));
-                glm::vec4 axisInCameraCoord(glm::cross(va, vb), 0.0);
-                axisInCameraCoord = glm::normalize(axisInCameraCoord);
-                glm::mat4 camera2World = glm::inverse(m_perViewData.mView);
-
-                glm::vec4 axisInWorld = glm::normalize(camera2World * axisInCameraCoord);
-                glm::mat4 world2obj = glm::inverse(mArcballRotate);
-                glm::vec4 axisInObj = world2obj * axisInWorld;
-
-                mArcballRotate = glm::rotate(mArcballRotate, angle, glm::vec3(axisInObj));
-
-                mLastPos = mCurPos;
-            }
+            return;
         }
+        mCurPos = screenCoord;
+        if (mCurPos == mLastPos)
+        {
+            return;
+        }
+        if (m_dragMode == DragMode::ORBIT)
+        {
+            // https://en.wikibooks.org/wiki/OpenGL_Programming/Modern_OpenGL_Tutorial_Arcball
+            glm::vec3 va = mGetArcballVector(mLastPos);
+            glm::vec3 vb = mGetArcballVector(mCurPos);
+            float angle = acos(glm::min(1.0f, glm::dot(va, vb)));
+            glm::vec4 axisInCameraCoord(glm::cross(va, vb), 0.0);
+            axisInCameraCoord = glm::normalize(axisInCameraCoord);
+            glm::mat4 camera2World = glm::inverse(m_perViewData.mView);
+
+            glm::vec4 axisInWorld = glm::normalize(camera2World * axisInCameraCoord);
+            glm::mat4 world2obj = glm::inverse(mArcballRotate);
+            glm::vec4 axisInObj = world2obj * axisInWorld;
+
+            mArcballRotate = glm::rotate(mArcballRotate, angle, glm::vec3(axisInObj));
+        }
+        else
+        {
+            Pan(mCurPos - mLastPos);
+        }
+        mLastPos = mCurPos;
+    }
+
+    /// Pan by a drag measured in screen pixels.
+    ///
+    /// Horizontal drags move the content with the cursor. Vertical drags move it the other way, because
+    /// the y delta is taken in the arcball's y-up convention (see `mGetArcballVector`) rather than
+    /// GLFW's y-down one: a downward drag moves the view up, so the camera follows the cursor. That is
+    /// the direction the orbit responds to the same drag, which is why it is the one shipped.
+    ///
+    /// The offset is accumulated in camera space and applied by `GetViewMat`, so it composes with the
+    /// orbit rotation and with `AddZoom` instead of replacing them.
+    void Pan(glm::vec2 screenDelta)
+    {
+        const float unitsPerPixel = GetWorldUnitsPerPixel();
+        // Both axes are taken as screen-space deltas, matching the y convention `mGetArcballVector` already
+        // uses for these same cursor coordinates: it maps y straight to NDC instead of negating it, so a
+        // positive y delta is up for the camera. Panning the same way keeps the two drags consistent; using
+        // GLFW's y-down reading instead would invert the pan against every orbit the user has done.
+        m_panOffset += screenDelta * unitsPerPixel;
+    }
+
+    /// @return World units covered by one screen pixel in the pivot plane.
+    ///
+    /// This is what makes a pan follow the cursor: the pivot (the world origin, which is what the arcball
+    /// orbits) sits at a known depth, and the projection says how much world space one pixel spans there.
+    float GetWorldUnitsPerPixel() const
+    {
+        const float extentY = m_perViewData.vScreenExtent.y;
+        if (extentY <= 0.0f || m_perViewData.mProj[1][1] == 0.0f)
+        {
+            return 0.0f;
+        }
+        // Pivot in camera space under the current zoom. Pan is not part of this: it does not change depth.
+        const glm::mat4 viewWithZoom = glm::translate(m_perViewData.mView, glm::vec3(0.0f, 0.0f, mZoom));
+        const glm::vec4 pivot = viewWithZoom * mArcballRotate * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        const float depth = glm::max(-pivot.z, 1e-4f);
+        // P[1][1] == 1 / tan(fovY / 2), so the visible half-height at `depth` is depth * P[1][1]^-1.
+        const float tanHalfFovY = 1.0f / m_perViewData.mProj[1][1];
+        return 2.0f * depth * tanHalfFovY / extentY;
     }
 
     glm::mat4 GetViewMat() const override
     {
-        glm::mat4 mViewMatrix = glm::translate(m_perViewData.mView, glm::vec3(0.0, 0.0, mZoom));
-        return mViewMatrix * mArcballRotate;
+        // The pan is leftmost so it acts in camera space: it keeps following the cursor after an orbit,
+        // which a world-space offset would not. The zoom stays where it was (world space, unchanged).
+        const glm::mat4 viewWithZoom = glm::translate(m_perViewData.mView, glm::vec3(0.0f, 0.0f, mZoom));
+        return glm::translate(glm::mat4(1.0f), glm::vec3(m_panOffset, 0.0f)) * viewWithZoom * mArcballRotate;
     }
 
     void Update() override {}
@@ -215,9 +275,11 @@ protected:
     glm::vec2 mCurPos;
     glm::mat4 mArcballRotate;
 
-    bool mIsDragging;
+    DragMode m_dragMode;
     bool mIsFirstPos;
     float mZoom;
+    /// Accumulated pan, in camera space; `GetViewMat` applies it with the zoom.
+    glm::vec2 m_panOffset = glm::vec2(0.0f);
 
 private:
     glm::vec3 mGetArcballVector(glm::vec2 position)

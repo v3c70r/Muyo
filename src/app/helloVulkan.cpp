@@ -99,16 +99,28 @@ static void clickArcballCallback(int button, int action)
 {
     if (Arcball *pArcball = s_pArcball)
     {
+        // Left orbits, middle pans (the Unity-like mapping); either release ends the drag, so a drag that
+        // changes buttons mid-way stops rather than continuing in the other mode.
+        Arcball::DragMode mode = Arcball::DragMode::NONE;
         if (button == Input::Button::BUTTON_LEFT)
         {
-            if (EventState::PRESSED == action)
-            {
-                pArcball->StartDragging();
-            }
-            else if (EventState::RELEASED == action)
-            {
-                pArcball->StopDragging();
-            }
+            mode = Arcball::DragMode::ORBIT;
+        }
+        else if (button == Input::Button::BUTTON_MIDDLE)
+        {
+            mode = Arcball::DragMode::PAN;
+        }
+        if (mode == Arcball::DragMode::NONE)
+        {
+            return;
+        }
+        if (EventState::PRESSED == action)
+        {
+            pArcball->StartDragging(mode);
+        }
+        else if (EventState::RELEASED == action)
+        {
+            pArcball->StopDragging();
         }
     }
 }
