@@ -91,7 +91,7 @@ TEST_CASE("Scene: a scene with no geometry has no bounds", "[SceneBounds]")
     scene.GetRoot()->AppendChild(new Muyo::SceneNode("just a transform"));
     // Not a zero-sized box at the origin: there is nothing to frame, and a caller that treats
     // nullopt as "unit box" has to say so.
-    CHECK(!scene.GetWorldAABB().has_value());
+    CHECK_FALSE(scene.GetWorldAABB().has_value());
 }
 
 TEST_CASE("SceneBounds: framing puts the whole box inside the frame", "[SceneBounds]")
