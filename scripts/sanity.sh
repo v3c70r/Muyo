@@ -159,24 +159,42 @@ cmd_tidy() {
     # work, and a new one on a changed line does. `clang-tidy-diff` returns non-zero only when a clang-tidy
     # invocation fails, so the diagnostic count is what decides the verdict here.
     local log=/tmp/muyo-tidy.log
-    local rc=0 count
+    local rc=0 count project_count vendored_count
     # `-clang-tidy-binary` pins the same version the comment above pins: clang-tidy-diff would otherwise
     # call whatever `clang-tidy` is first on PATH.
     printf '%s' "$diff" | "$differ" -clang-tidy-binary "$tool" -p1 -path build -j "$JOBS" >"$log" 2>&1 || rc=$?
-    count="$(grep -cE ':[0-9]+:[0-9]+: (warning|error):' "$log" || true)"
 
-    if [ "$count" -eq 0 ] && [ "$rc" -eq 0 ]; then
-        ok "tidy OK (no diagnostics on changed lines)"
+    # Split the diagnostics by whose lines they are. A `clang-analyzer-*` finding is reported where the
+    # analyser reached it, which can be a header under `_deps/`, `thirdparty/` or a build tree - not a line
+    # this change can fix, and this gate is about the lines a branch touched. Count those beside the
+    # project's instead of folding them into the verdict (#205 round 3; the split was lost in the #207
+    # rewrite that made this gate enforcing, and the first changed TU to include catch2 found it).
+    local diagnostics
+    diagnostics="$(grep -E ':[0-9]+:[0-9]+: (warning|error):' "$log" || true)"
+    count="$(printf '%s' "$diagnostics" | grep -c . || true)"
+    # Both separators: clang reports `C:/...` for some paths and `C:\...` for others.
+    project_count="$(printf '%s' "$diagnostics" |
+        grep -vE '[\\/](_deps|thirdparty|build[^\\/]*)[\\/]' | grep -c . || true)"
+    vendored_count=$((count - project_count))
+
+    if [ "$project_count" -eq 0 ] && [ "$rc" -eq 0 ]; then
+        if [ "$vendored_count" -gt 0 ]; then
+            ok "tidy OK (0 project, $vendored_count vendored not counted)"
+            printf '%s' "$diagnostics" | sed 's/^/  vendored: /' | head -5
+        else
+            ok "tidy OK (no diagnostics on changed lines)"
+        fi
         return
     fi
 
-    if [ "$count" -gt 0 ]; then
-        echo "diagnostics by check:"
+    if [ "$project_count" -gt 0 ]; then
+        echo "diagnostics by check (project lines):"
         # Dots and capitals are load-bearing: every `clang-analyzer-*` name has them.
-        grep -oE '\[[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*\]$' "$log" \
+        printf '%s' "$diagnostics" | grep -vE '[\\/](_deps|thirdparty|build[^\\/]*)[\\/]' \
+            | grep -oE '\[[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*\]$' \
             | sed 's/[][]//g' | tr ',' '\n' | sort | uniq -c | sort -rn | head -20
-        bad "tidy FAILED: $count diagnostic(s) on changed lines:"
-        grep -E ':[0-9]+:[0-9]+: (warning|error):' "$log" | head -40
+        bad "tidy FAILED: $project_count project diagnostic(s) on changed lines ($count total, $vendored_count vendored not counted):"
+        printf '%s' "$diagnostics" | grep -vE '[\\/](_deps|thirdparty|build[^\\/]*)[\\/]' | head -40
         printf '\nfull log: %s\n' "$log"
     fi
     if [ "$rc" -ne 0 ]; then

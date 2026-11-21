@@ -35,6 +35,50 @@ std::string Scene::ConstructDebugString() const
     return ss.str();
 }
 
+std::optional<AABB> Scene::GetWorldAABB() const
+{
+    std::optional<AABB> bounds;
+    std::function<void(const std::unique_ptr<SceneNode> &, const glm::mat4 &)> Walk =
+        [&](const std::unique_ptr<SceneNode> &pNode, const glm::mat4 &mParentToWorld)
+    {
+        const glm::mat4 mNodeToWorld = mParentToWorld * pNode->GetMatrix();
+        // Only geometry nodes carry bounds. Every other node defaults to a zero-sized box at the
+        // origin, which would silently drag the result towards the world origin.
+        if (dynamic_cast<const GeometrySceneNode *>(pNode.get()) != nullptr)
+        {
+            const AABB local = pNode->GetAABB();
+            // All eight corners: transforming min and max alone is wrong for any rotation, which is
+            // the case an axis-aligned box cannot express.
+            for (int corner = 0; corner < 8; ++corner)
+            {
+                const glm::vec3 vLocal(corner & 1 ? local.vMax.x : local.vMin.x,
+                                       corner & 2 ? local.vMax.y : local.vMin.y,
+                                       corner & 4 ? local.vMax.z : local.vMin.z);
+                const glm::vec3 vWorld = glm::vec3(mNodeToWorld * glm::vec4(vLocal, 1.0f));
+                if (!bounds.has_value())
+                {
+                    bounds = AABB{vWorld, vWorld};
+                }
+                else
+                {
+                    bounds->vMin = glm::min(bounds->vMin, vWorld);
+                    bounds->vMax = glm::max(bounds->vMax, vWorld);
+                }
+            }
+        }
+        for (const auto &pChild : pNode->GetChildren())
+        {
+            Walk(pChild, mNodeToWorld);
+        }
+    };
+    // Identity is the root's parent, so a root transform is applied exactly once. (`GatherDrawLists`
+    // hands the root matrix in as the parent and then multiplies by it again; the root is identity in
+    // every scene the importer builds, so the two agree today, and this walk is the correct one if that
+    // ever stops being true.)
+    Walk(m_pRoot, glm::mat4(1.0f));
+    return bounds;
+}
+
 const DrawLists &Scene::GatherDrawLists()
 {
     if (m_bAreDrawListsDirty)
