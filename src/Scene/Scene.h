@@ -2,6 +2,7 @@
 #include <array>
 #include <glm/glm.hpp>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -73,6 +74,14 @@ public:
     const std::unique_ptr<SceneNode>& GetRoot() const { return m_pRoot; }
     const DrawLists& GatherDrawLists();
     std::string ConstructDebugString() const;
+
+    /// @return The world-space bounds of every geometry node in the scene.
+    ///
+    /// Walked from the node tree rather than accumulated while gathering draw lists, so it is available
+    /// before the first frame (the app frames the camera from it) and so it can be tested without a
+    /// device. `std::nullopt` means the scene holds no geometry, which is not the same as bounds of
+    /// zero size: the caller has nothing to frame.
+    std::optional<AABB> GetWorldAABB() const;
 
     static bool IsMat4Valid(const glm::mat4& mat)
     {

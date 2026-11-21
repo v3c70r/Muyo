@@ -224,6 +224,16 @@ void cleanup()
 
 int main(int argc, char **argv)
 {
+    // Before the window, the device and the swapchain: a missing argument is not worth ten seconds of
+    // Vulkan start-up, and the usage text reads better as the first thing the process says.
+    if (argc != 2)
+    {
+        std::cerr << "usage: " << argv[0] << " <scene.gltf>" << std::endl
+                  << "  e.g. " << argv[0] << " assets/mazda_mx-5_spot/untitled.gltf" << std::endl
+                  << "  Paths are relative to the working directory; the .gltf's own buffers and" << std::endl
+                  << "  textures are resolved relative to the .gltf." << std::endl;
+        return 1;
+    }
     // Load mesh into memory
     if (!Window::Initialize("hello Vulkan", WIDTH, HEIGHT)) return -1;
 
@@ -275,40 +285,13 @@ int main(int argc, char **argv)
     InitEventHandlers();
 
     {
-        bool bFileFromArg = false;
-        if (argc == 2)
-        {
-            namespace fs = std::filesystem;
-            fs::path path(argv[1]);
-            if (fs::exists(path))
-            {
-                std::string sPath{path.relative_path().string()};
-                GetSceneManager()->LoadSceneFromFile(sPath);
-                bFileFromArg = true;
-            }
-        }
-
-        if (!bFileFromArg)
-        {
-            // Load scene
-            // GetSceneManager()->LoadSceneFromFile("assets/triangle/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5/scene.gltf");
-            GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spot/untitled.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/mazda_mx-5_spotlight/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/balls/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/Cars/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/Emissive/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_Emissive/untitled.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/Cornell_box/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/Cornell_box_spot/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/sofa_combination/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/StudioSetup/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/shiba/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/catherdral/scene.gltf");
-            // GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/source/repos/v3c70r/Muyo/assets/glTF-Sample-Models/2.0/MetalRoughSpheres/glTF/MetalRoughSpheres.gltf");
-            // GetSceneManager()->LoadSceneFromFile("C:/Users/mcvec/Documents/cars/New Folder/cars.gltf");
-            // GetSceneManager()->LoadSceneFromFile("assets/TestAssets/EnvironmentTest/glTF/EnvironmentTest.gltf");
-        }
+        // The scene is the only input this app has, and it used to be a hardcoded path with a dozen
+        // commented-out alternatives beside it, which made every scene change a source edit. It is an
+        // argument now (validated at the top of main), and the importer resolves the glTF's buffers and
+        // textures relative to the file.
+        // Passed through verbatim: the old code loaded `path.relative_path()`, which strips the root, so
+        // an absolute path passed its existence check and then loaded a relative spelling of itself.
+        GetSceneManager()->LoadSceneFromFile(argv[1]);
 
         // Finalize material buffer
         GetMaterialManager()->CreateDefaultMaterial();
@@ -317,18 +300,25 @@ int main(int argc, char **argv)
         // update framebuffer size
         Window::GetFramebufferSize(s_framebufferWidth, s_framebufferHeight);
 
-        // The app owns the camera now (#51): same parameters the manager used.
-        const float far = 100.0F;
-        auto pSceneCamera = std::make_unique<Arcball>(
-            glm::perspective(glm::radians(80.0f),
-                             static_cast<float>(s_framebufferWidth) / static_cast<float>(s_framebufferHeight), 0.1F,
-                             far),
-            glm::lookAt(glm::vec3(0.0f, 0.0f, -2.0f),  // Eye
-                        glm::vec3(0.0f, 0.0f, 0.0f),   // Center
-                        glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
-            0.1f,                                      // near
-            far,                                       // far
-            static_cast<float>(s_framebufferWidth), static_cast<float>(s_framebufferHeight));
+        // The app owns the camera now (#51), and it frames the scene it was given instead of assuming a
+        // scale: a hardcoded eye 2 units from the origin framed a ~4-unit car acceptably and put a
+        // 0.7-unit chess set edge-on, so every new scene needed a camera edit in this file too.
+        const float kFovY = glm::radians(80.0f);  // unchanged from the fixed camera this replaces
+        const std::optional<AABB> sceneBounds = GetSceneManager()->GetWorldAABB();
+        // A scene with no geometry has nothing to frame; a unit box keeps the projection sane rather than
+        // dividing by a zero radius.
+        const glm::vec3 boundsMin = sceneBounds ? sceneBounds->vMin : glm::vec3(-1.0F);
+        const glm::vec3 boundsMax = sceneBounds ? sceneBounds->vMax : glm::vec3(1.0F);
+        const float aspect = static_cast<float>(s_framebufferWidth) / static_cast<float>(s_framebufferHeight);
+        const FramedView framed = FrameBounds(boundsMin, boundsMax, kFovY, aspect);
+        auto pSceneCamera =
+            std::make_unique<Arcball>(glm::perspective(kFovY, aspect, framed.fNear, framed.fFar),
+                                      glm::lookAt(framed.eye,                    // Eye
+                                                  framed.center,                 // Center
+                                                  glm::vec3(0.0f, 1.0f, 0.0f)),  // Up
+                                      framed.fNear,                              // near
+                                      framed.fFar,                               // far
+                                      static_cast<float>(s_framebufferWidth), static_cast<float>(s_framebufferHeight));
         s_pArcball = pSceneCamera.get();
 
         // IBL used to load this as a side effect; the UI preview imports it by name, so the app loads it.
