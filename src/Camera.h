@@ -127,6 +127,51 @@ protected:
     mutable bool m_bIsTransformationUpdated = false;
 };
 
+/// A camera placement that frames a world-space box.
+struct FramedView
+{
+    glm::vec3 eye = glm::vec3(0.0f);
+    glm::vec3 center = glm::vec3(0.0f);
+    float fNear = 0.1f;
+    float fFar = 100.0f;
+};
+
+/// Place a camera so that `[vMin, vMax]` fills the frame with a margin.
+///
+/// The viewing direction is fixed - from -Z, 20 degrees above the horizon, looking down - rather than
+/// derived from the box: a scene has no "natural" direction, and a ground-plane scene seen from a
+/// horizontal camera is edge-on, which is how a chessboard ends up looking like a line.
+///
+/// Framing by the box's bounding *sphere* keeps the fit independent of orientation, and the distance is
+/// set by the *narrower* of the two half-angles: a tall frame is limited horizontally, so fitting only
+/// the vertical field of view would push a wide box's sides out of a portrait window.
+///
+/// @param vMin,vMax Opposite corners of the box in world space.
+/// @param fFovYRadians Vertical field of view, radians.
+/// @param fAspect Viewport width / height; the horizontal field is derived from it.
+/// @return The eye point, look-at centre, and the near/far planes that bracket the box.
+inline FramedView FrameBounds(const glm::vec3 &vMin, const glm::vec3 &vMax, float fFovYRadians, float fAspect)
+{
+    FramedView view;
+    view.center = (vMin + vMax) * 0.5f;
+    // A box with one flat side (a plane's wall, a single triangle) still needs a non-zero sphere.
+    const float radius = glm::max(glm::length(vMax - vMin) * 0.5f, 1e-4f);
+    const float halfFovY = glm::max(fFovYRadians * 0.5f, 1e-3f);
+    const float halfFovX = glm::atan(glm::tan(halfFovY) * glm::max(fAspect, 1e-3f));
+    const float halfFov = glm::min(halfFovY, halfFovX);
+    // Distance at which a sphere of `radius` exactly fills that field of view, plus a margin so the
+    // silhouette is not flush with the image edge.
+    const float distance = radius / glm::sin(halfFov) * 1.15f;
+    const float elevation = glm::radians(20.0f);
+    view.eye = view.center + glm::vec3(0.0f, glm::sin(elevation), -glm::cos(elevation)) * distance;
+    // Near is a fraction of the framing distance and far comfortably clears the box: the hardcoded
+    // 0.1/100 pair put a 0.7-unit chess set at the wrong end of the depth range and clipped anything
+    // larger than a car.
+    view.fNear = glm::max(distance * 0.01f, 1e-4f);
+    view.fFar = distance + radius * 8.0f;
+    return view;
+}
+
 class Arcball : public Camera
 {
 public:

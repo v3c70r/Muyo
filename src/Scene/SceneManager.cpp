@@ -46,6 +46,29 @@ DrawLists SceneManager::GatherDrawLists()
     return dls;
 }
 
+std::optional<AABB> SceneManager::GetWorldAABB() const
+{
+    std::optional<AABB> bounds;
+    for (const auto& [name, scene] : m_mScenes)
+    {
+        const std::optional<AABB> sceneBounds = scene.GetWorldAABB();
+        if (!sceneBounds.has_value())
+        {
+            continue;
+        }
+        if (!bounds.has_value())
+        {
+            bounds = sceneBounds;
+        }
+        else
+        {
+            bounds->vMin = glm::min(bounds->vMin, sceneBounds->vMin);
+            bounds->vMax = glm::max(bounds->vMax, sceneBounds->vMax);
+        }
+    }
+    return bounds;
+}
+
 StorageBuffer<LightData>* SceneManager::ConstructLightBufferFromDrawLists(const DrawLists& dl)
 {
     const std::vector<const SceneNode*> lightNodes = dl.m_aDrawLists[DrawLists::DL_LIGHT];
