@@ -104,7 +104,7 @@ gh project item-edit --project-id <project-id> --id <item-id> \
 
 ## 3. Development process
 
-- **Language/API floor: Vulkan 1.4.** The engine uses `synchronization2` and timeline semaphores
+- **Language/API floor: Vulkan 1.4.** `muyo_device` uses `synchronization2` and timeline semaphores
   only; the pre-1.0 synchronization API is not to be reintroduced. The descriptor-heap path also
   requires `VK_EXT_descriptor_heap` + `descriptorHeap` and `VK_KHR_shader_untyped_pointers` +
   `shaderUntypedPointers`; the ray-tracing path requires `VK_KHR_ray_tracing_pipeline`. Required
@@ -169,15 +169,21 @@ python3 scripts/render_graph_docs.py --check
 Two configurations, both must build and pass:
 
 ```bash
-cmake -S . -B build        && cmake --build build    --target tests -j"$(nproc)" && ./build/tests
+cmake -S . -B build        && cmake --build build    --target tests rg_tests Shaders -j"$(nproc)" \
+                           && ./build/tests && ./build/rg_tests
 cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON \
-                           && cmake --build build-rt --target tests -j"$(nproc)" && ./build-rt/tests
+                           && cmake --build build-rt --target tests rg_tests Shaders -j"$(nproc)" \
+                           && ./build-rt/tests && ./build-rt/rg_tests
 ```
+
+Two test binaries: `tests` is the device-free suite (capture tool, error reporting, PSO layouts, lane
+layout, trace, transient planner) and `rg_tests` is the graph/device one (standalone execution and the
+version check). Run both; `rg_tests` is what creates a device and prints `[test device]`.
 
 Operational notes, each of which has cost someone a red herring:
 
 - **`tests` does not depend on the `Shaders` target.** Build both — `cmake --build build --target
-  tests Shaders` — or the tests fail at runtime on missing `.spv` files (they are loaded from
+  tests rg_tests Shaders` — or the tests fail at runtime on missing `.spv` files (they are loaded from
   `shaders/` relative to the *working directory*, not the source tree).
 - **Shader lists are CMake `GLOB`s, evaluated at configure time.** An existing build directory does not
   see a newly added `.slang` file until it is reconfigured, so that one case fails with `Failed to open
@@ -189,49 +195,21 @@ Operational notes, each of which has cost someone a red herring:
   count warnings from a known state) empties `build/shaders/`, and the next run fails ten shader-loading
   cases that look exactly like a regression in whatever was just merged. It was reported as one. Rebuild
   `Shaders` after any `--clean-first`, or count warnings without it.
-- **`assets/` is also CWD-relative.** Run from the build directory and link the assets in once:
-  `ln -s "$PWD/assets" build/assets`. A missing assets dir fails as `SetData(nullptr)` deep in the
-  Mazda fixtures, which looks like a code bug and is not.
+- **`assets/` is no longer read by this repository's suite.** The tests that loaded the Mazda glTF moved
+  to `muyo-renderer` with the renderer (#318); link `assets/` beside the build directory only if you are
+  running a consumer that reads it. Shaders *are* still CWD-relative, so run from the build directory.
 - **The Vulkan SDK must be on the environment** (`source <sdk>/setup-env.sh` sets `VULKAN_SDK`,
   `PATH`, `VK_LAYER_PATH`, `LD_LIBRARY_PATH`): without it there is no `slangc`/`glslangValidator`
-  and no validation layer. On a machine without Wayland dev packages configure with
-  `-DGLFW_BUILD_WAYLAND=OFF`; the X11 path needs `libxrandr-dev`, `libxinerama-dev`,
-  `libxcursor-dev`, `libxi-dev`.
-- **RenderDoc capture on a Wayland session has to go through GLFW's X11 backend.** RenderDoc 1.46
-  (`e4bd23b6`) under its capture launcher stops advertising loader-provided instance extensions:
-  `VK_KHR_wayland_surface`, `VK_EXT_layer_settings`, `VK_KHR_portability_enumeration` and
-  `VK_LUNARG_direct_driver_loading` disappear, while the ICD-provided `VK_KHR_xcb_surface` /
-  `VK_KHR_xlib_surface` remain. GLFW then selects Wayland, `glfwGetRequiredInstanceExtensions`
-  returns NULL, and both `helloVulkan` and `helloVulkanRG` abort before Vulkan starts. The invocation
-  that gets past that, measured with loader 1.4.313 on RADV REMBRANDT:
-
-  ```bash
-  scripts/capture.sh -o /tmp/x.rdc build/helloVulkanRG
-  # equivalent by hand:
-  env -u WAYLAND_DISPLAY renderdoccmd capture -c /tmp/x.rdc "$PWD/build/helloVulkanRG"
-  ```
-
-  The script resolves the program to an absolute path (renderdoccmd `exec`s the argument and searches
-  neither the cwd nor `PATH`) and unsets `WAYLAND_DISPLAY` for renderdoccmd and its child, which makes
-  GLFW select Xwayland. It needs GLFW's X11 backend: a fresh configure of the vendored GLFW builds
-  both backends, and an existing build tree created before #220 keeps its cached `GLFW_BUILD_X11=OFF`
-  until reconfigured with `-DGLFW_BUILD_X11=ON`. **Wayland capture with RenderDoc 1.46 does not work
-  on this machine**; that is the capture layer's behaviour, not the application's, because without the
-  loader extension there is no Wayland surface to create. Do not re-investigate it without a newer
-  RenderDoc.
-- **RenderDoc 1.46 and 1.47 still cannot capture the graph applications, for a second reason: they
-  filter device extensions they do not support.** A probe linked against the same loader reports, under
-  the capture launcher, `AMD Radeon Graphics (RADV REMBRANDT)` at API 1.4.0 with 203 device extensions
-  and **no** `VK_EXT_descriptor_heap` / `VK_KHR_shader_untyped_pointers`; the same probe without
-  RenderDoc reports API 1.4.354 with 231 extensions and both present. RenderDoc's
-  `extension_support.md` lists both as unsupported in 1.47 as well
-  ([upstream #3781](https://github.com/baldurk/renderdoc/issues/3781)), and its layer filters
-  `vkEnumerateDeviceExtensionProperties` to that list. So the X11 recipe removes the WSI blocker but
-  `helloVulkanRG`/`helloVulkan` still stop at `CreateDevice` with
-  `does not support the requested extension: VK_EXT_descriptor_heap`. Capture of the heap path waits
-  on RenderDoc support ([#303](https://github.com/v3c70r/Muyo/issues/303)); Nsight Graphics 2026.2 is
-  the alternative that advertises it. Record the RenderDoc version with any future capture, because
-  this finding is version-bound.
+  and no validation layer.
+- **RenderDoc capture is the renderer's concern, and it moved with the renderer (#318).** The capture
+  recipes measured here - Wayland needs `env -u WAYLAND_DISPLAY` so the app runs under Xwayland, and
+  RenderDoc 1.46/1.47 filter `VK_EXT_descriptor_heap` out of device enumeration so the heap path cannot
+  be captured at all - are recorded in `muyo-renderer`, together with the GLFW backend settings they
+  need. Capture of the heap path still waits on RenderDoc support
+  ([#303](https://github.com/v3c70r/Muyo/issues/303)); Nsight Graphics 2026.2 is the alternative that
+  advertises it. The old `helloVulkan`/`helloVulkanRG` invocations in this section named binaries that
+  now live in `muyo-renderer`. Record the RenderDoc version with any future capture, because this
+  finding is version-bound.
 - **An unknown `CMAKE_BUILD_TYPE` configures successfully with no per-config flags.** `Release`
   misspelled (`rel`, `RELEASE` is fine but `Rel` is not, and so on) yields a build with **no `-O3`
   and no `-DNDEBUG`** that looks ordinary in every other way - asserts stay live and the optimiser
@@ -259,14 +237,14 @@ Operational notes, each of which has cost someone a red herring:
 
 - **CI exists, and it gates what a software device can prove.** `.github/workflows/ci.yml` runs on
 github-hosted runners with mesa's lavapipe as the Vulkan device - Linux and Windows. On Linux both
-configurations build, the checked-in reference matches the headers (`render_graph_docs.py --check`), the
-changed lines are `clang-format` clean, and the whole suite passes in Debug, Release, both ray-tracing
-shapes and under the sanitizers - with the validation layer on. The Windows job builds the same test and
-shader targets with MSVC and runs the suite on its own lavapipe. The generated reference is published to
-GitHub Pages on every push to `master` (`.github/workflows/docs.yml`), from the same pinned Doxygen the
-check uses; the deploy fails rather than publish when the checked-in `docs/RenderGraph-api.md` is stale.
-The workflow's header states the three axes it does **not** cover, and the job writes them into the run
-summary on every build:
+configurations build, the checked-in reference matches the headers (`render_graph_docs.py --check`),
+the changed lines are `clang-format` clean, and both test binaries pass in Debug, Release, both ray-
+tracing shapes and under the sanitizers - with the validation layer on. The Windows job builds the
+same two test binaries and shader target with MSVC and runs them on its own lavapipe. The generated
+reference is published to GitHub Pages on every push to `master` (`.github/workflows/docs.yml`),
+from the same pinned Doxygen the check uses; the deploy fails rather than publish when the checked-
+in `docs/RenderGraph-api.md` is stale. The workflow's header states the three axes it does **not**
+cover, and the job writes them into the run summary on every build:
 
   - **Queue topology.** lavapipe reports one queue family with one queue, so no cross-family ownership
 transfer and no dedicated compute queue is exercised; the suite takes the single-queue path. The
@@ -299,10 +277,11 @@ rather than left as configuration nothing executes.
   reported, and that a changed count is explained rather than silently absorbed.
 - **Record what the tests ran on.** A verification table names the *device*, not the vendor:
   `llvmpipe`, `RADV REMBRANDT`, `RTX 3090`. The same commit has run green on a software rasteriser
-  and on a real driver, and naming the vendor described neither correctly. `GraphicsTestEnv` logs the
-  selected device, driver and Mesa/loader versions, whether a dedicated compute family is present and
-  whether the descriptor-heap/untyped-pointer features are supported/enabled, so a run states its own
-  scope instead of leaving it to be assumed. A heap row that says "unsupported" is a gap.
+  and on a real driver, and naming the vendor described neither correctly. `rg_tests` prints a
+  `[test device]` line with the device, API, driver, loader, queue families and validation state, so
+  a run states its own scope instead of leaving it to be assumed. The descriptor-heap rows came from
+  the renderer's `GraphicsTestEnv`, which moved out in #318; a heap row that says "unsupported"
+  there is still a gap.
 - **Plan tests across the configuration axes, and say which ones each covers.** "It passes" has
   repeatedly meant less here than it sounded, because the axes differ silently:
 
@@ -382,9 +361,9 @@ Rules:
   `scripts/sanity.sh sanitize` now checks both the exit status **and** the diagnostic count, and prints the
   options it used, because a local run and a CI run have to be the same experiment.
 - **Sanitizers are scoped to this repository's targets.** `add_compile_options(${SANITIZE_FLAGS})` sits after
-  the vendored targets (`imgui`, `SPIRV-Reflect`, `tinygltf`, `stb`, ...), so UB inside a dependency cannot
-  abort our run. It also means a sanitizer report is always about our code — which is what makes "fix the
-  finding" the right response to one.
+  the only vendored target declared here (`SPIRV-Reflect`; VMA and Catch2 are fetched later), so UB
+  inside a dependency cannot abort our run. It also means a sanitizer report is always about our
+  code — which is what makes "fix the finding" the right response to one.
 - **Some checks are rejected for a measured reason, and the reason is recorded where the flags are.** Pointer
   pair checking (`-fsanitize=pointer-compare,pointer-subtract` +
   `ASAN_OPTIONS=detect_invalid_pointer_pairs=2`) aborts inside `vk_mem_alloc.h`: VMA's intrusive list compares
@@ -501,20 +480,14 @@ reports clean) and disclosed in the review comment.
 
 ```bash
 source /path/to/vulkansdk/setup-env.sh                    # SDK: slangc, layers, loader
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DGLFW_BUILD_WAYLAND=OFF
-cmake --build build --target tests Shaders -j"$(nproc)"
-ln -sfn "$PWD/assets" build/assets
-( cd build && ./tests >run.out 2>run.err )
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target tests rg_tests Shaders -j"$(nproc)"
+( cd build && ./tests >run.out 2>run.err && ./rg_tests >>run.out 2>>run.err )
 grep -E "All tests passed|test cases:" run.out            # reproduce the claimed counts
-grep -oE "#(VUID-[A-Za-z0-9-]+)" run.err \
-    | grep -v "VUID-vkWaitForFences-pFences-parameter" | wc -l
-                                                          # validation errors: expect 0. The
-                                                          # exclusion is standing, not noise: the
-                                                          # DebugCallback fork test (added with the
-                                                          # #52 roadmap merge) has a child that
-                                                          # deliberately trips that one VUID and
-                                                          # inherits the parent's stderr, so a clean
-                                                          # run reports 2 before the exclusion.
+grep -oE "#(VUID-[A-Za-z0-9-]+)" run.err | wc -l      # validation errors: expect 0.
+                                                          # No exclusion: the one deliberate VUID
+                                                          # (from the DebugCallback fork test) moved
+                                                          # to muyo-renderer in #318.
 grep -c "\[WARNING\]" run.err                            # >0 proves the layer is delivering
 grep "\[test device\]" run.err                           # what this run actually proved
 ```
@@ -694,7 +667,7 @@ been reproduced on the merged content.
   family 1), so the async-compute path and queue-family ownership transfers are exercised for real.
   This depends on the driver initialising: when it does not, Vulkan silently falls back to a software
   device (llvmpipe) with a single family and **nothing about the transfer path is validated** - a
-  green run looks identical either way. `GraphicsTestEnv` prints a `[test device] ...` line each run
+  green run looks identical either way. `rg_tests` prints a `[test device] ...` line each run
   saying which case it was, so read that line before treating a green run as evidence about
   transfers. A machine with one queue family takes the single-queue path, which is a legitimate
   configuration rather than a failure, but it cannot validate handover machinery.
@@ -705,11 +678,12 @@ been reproduced on the merged content.
   (Mesa 26.2.5): `UNIFORM_TEXEL_BUFFER` reports 16 and `STORAGE_IMAGE` 32, while the shader indexes
   those slots at 64. A heap region must therefore stride image-like descriptors by
   `imageDescriptorSize` and feed the shader that index, not `byteOffset / per-type size`; the probe
-  in `src/tests/DescriptorHeapProbeTests.cpp` is the evidence. Acceleration structures are the
-  separate case: Slang lowers `RaytracingAccelerationStructure.Handle` to an 8-byte value; llvmpipe
-  reports 8 (direct works), RADV reports 16 (mapping or rejection required), and an RTX 3090 also
-  reports 8 but loses the device on the direct trace, so it also needs mapping or rejection. The 3090
-  is the first implementation with non-zero reserved ranges (`minResourceHeapReservedRange = 96768`,
+  in `muyo-renderer`'s `src/tests/DescriptorHeapProbeTests.cpp` (moved in #318) is the evidence.
+  Acceleration structures are the separate case: Slang lowers
+  `RaytracingAccelerationStructure.Handle` to an 8-byte value; llvmpipe reports 8 (direct works),
+  RADV reports 16 (mapping or rejection required), and an RTX 3090 also reports 8 but loses the
+  device on the direct trace, so it also needs mapping or rejection. The 3090 is the first
+  implementation with non-zero reserved ranges (`minResourceHeapReservedRange = 96768`,
   `minSamplerHeapReservedRange = 512`) and finite heap maxima (32 MiB resource, 128 KiB sampler);
   size a heap as descriptor budget + reserved range and check the maximum before allocating.
 - **AMDVLK ships an *implicit* layer that replaces device enumeration, not just adds a driver.** With

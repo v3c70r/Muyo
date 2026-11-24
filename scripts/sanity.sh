@@ -213,7 +213,7 @@ cmd_static() {
         return
     fi
     echo "using $sb -- this rebuilds the whole project, expect several minutes"
-    cmake -S . -B build-static -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-static >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -246,20 +246,20 @@ sanitizer_env() {
 
 cmd_sanitize() {
     bold "sanitize: ASan + UBSan build and tests (UB aborts; the options are printed below)"
-    cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize >/dev/null || {
         bad "configure failed"
         fail=1
         return
     }
-    # Shaders and assets are both read relative to the working directory. Omitting them made a fresh
-    # `sanity.sh sanitize` fail with a shader-load error that looks like a code regression (AGENTS.md
-    # section 4).
+    # Shaders are read relative to the working directory; omitting them made a fresh `sanity.sh sanitize`
+    # fail with a shader-load error that looks like a code regression (AGENTS.md section 4). `assets/` is
+    # not read by this repository's suite any more: the tests that loaded a glTF moved with the renderer
+    # (#318).
     cmake --build build-san --target tests Shaders -j"$JOBS" || {
         bad "build failed"
         fail=1
         return
     }
-    ln -sfn "$ROOT/assets" build-san/assets
 
     sanitizer_env
     echo "ASAN_OPTIONS=$ASAN_OPTIONS"
@@ -296,7 +296,7 @@ cmd_thread() {
     # TSan and ASan cannot share a binary, so this is its own configuration rather than another
     # sanitizer flag. The emulator that makes test discovery work without root is set in CMakeLists.txt
     # (`CROSSCOMPILING_EMULATOR`), because `catch_discover_tests` runs the binary at build time.
-    cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Thread -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Thread >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -306,7 +306,7 @@ cmd_thread() {
         fail=1
         return
     }
-    ln -sfn "$ROOT/assets" build-tsan/assets
+    # No `assets/` link: the suite no longer reads it (#318). Shaders still come from the build directory.
     # A report count of zero is only evidence if the binary was instrumented. Linking libtsan is the
     # runtime's own precondition, so this rules out the silent case where the configuration name and the
     # flags disagree and the run is green because nothing was instrumented.
@@ -355,7 +355,7 @@ cmd_warnings() {
     # rather than a hand-written flag string that can drift from CMakeLists.txt (#25).
     # -DCMAKE_CXX_FLAGS= clears anything an earlier `warnings` run cached (it used to set an
     # -fanalyzer string here); this check must measure the flags CMakeLists.txt defines and nothing else.
-    cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -364,7 +364,7 @@ cmd_warnings() {
     # recompiles: a per-file count taken from one would read zero for every file that was already up to
     # date, and the comparison would be vacuous. The counts in the baseline are whole-build counts.
     local log=/tmp/muyo-warnings.log
-    if ! cmake --build build-warn --target tests helloVulkan helloVulkanRG --clean-first -j"$JOBS" >"$log" 2>&1; then
+    if ! cmake --build build-warn --target tests rg_tests --clean-first -j"$JOBS" >"$log" 2>&1; then
         bad "build failed (see $log)"
         tail -20 "$log"
         fail=1
@@ -386,7 +386,7 @@ cmd_analyzer() {
     # before they can be enforced. Kept separate from `warnings` so enabling one does not silently
     # enable the other (#25).
     local log=/tmp/muyo-analyzer.log
-    cmake -S . -B build-analyzer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fanalyzer" -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-analyzer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fanalyzer" >/dev/null || {
         bad "configure failed"
         fail=1
         return

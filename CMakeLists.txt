@@ -37,9 +37,9 @@ configure_file(
     @ONLY
 )
 
-# True when this project is the root of the build. Everything guarded by it - the demo app, the PSO
-# compiler, the test suite, the docs check - is for developing this project rather than consuming it,
-# and the guard is what keeps the Catch2 fetch, a network dependency, out of an embedder's configure.
+# True when this project is the root of the build. Everything guarded by it - the test binaries and the
+# docs check - is for developing this project rather than consuming it, and the guard is what keeps the
+# Catch2 fetch, a network dependency, out of an embedder's configure.
 # PROJECT_IS_TOP_LEVEL is the idiomatic spelling but needs CMake 3.21; this file declares 3.11, where
 # it would silently evaluate to false and the tests would quietly never be built.
 set(MUYO_TOP_LEVEL FALSE)
@@ -73,76 +73,14 @@ set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${MUYO_BINARY_ROOT}")
 set (CMAKE_ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${MUYO_BINARY_ROOT}")
 set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-## GLFW
-# Look for precompiled glfw library
-find_package(glfw3 3.2 QUIET)
-# Otherwise, build from source
-if (NOT ${glfw3_FOUND})
-# Build glfw from source
-set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-# A vendored dependency's install rules belong to the embedder, not to the prefix this project is
-# installed into: with GLFW_INSTALL left on, `cmake --install` tried to install `libglfw3.a` and failed
-# unless the demo had been built. Muyo's package installs only its own targets and headers (#73).
-set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-# Build both Unix backends. GLFW prefers Wayland at runtime, but RenderDoc's capture launcher stops
-# advertising loader-provided instance extensions (VK_KHR_wayland_surface among them), so a capture has
-# to run under Xwayland: `env -u WAYLAND_DISPLAY` then selects X11. Both backends compiled in is what
-# makes that possible, and `scripts/capture.sh` is the supported invocation (#220). Without FORCE, a
-# caller's -DGLFW_BUILD_X11=OFF / -DGLFW_BUILD_WAYLAND=OFF still wins on a machine that lacks one
-# backend's development packages.
-if (UNIX AND NOT APPLE)
-    set(GLFW_BUILD_X11 ON CACHE BOOL "Build GLFW's X11 backend (RenderDoc capture selects it via Xwayland)")
-    set(GLFW_BUILD_WAYLAND ON CACHE BOOL "Build GLFW's Wayland backend")
-endif()
-add_subdirectory(${MUYO_ROOT}/thirdparty/glfw)
-if (UNIX AND NOT APPLE AND NOT GLFW_BUILD_X11)
-    message(STATUS
-        "GLFW's X11 backend is disabled; RenderDoc capture on a Wayland session needs it. "
-        "Reconfigure with -DGLFW_BUILD_X11=ON (see AGENTS.md section 4).")
-endif()
-endif()
-add_compile_definitions(USE_GLFW)
-set(WINDOW_LIB glfw)
-
-## GLM
-find_package(glm QUIET)
-if (NOT ${glm_FOUND})
-    set(GLM_INCLUDE_DIRS ${MUYO_ROOT}/thirdparty/glm)
-endif()
-
-## imgui
-set(IMGUI_INCLUDE_DIRS ${MUYO_ROOT}/thirdparty/imgui)
-add_library(imgui
-    thirdparty/imgui/imgui.cpp
-    thirdparty/imgui/imgui_demo.cpp
-    thirdparty/imgui/imgui_draw.cpp
-    thirdparty/imgui/imgui_widgets.cpp
-    thirdparty/imgui/imgui_tables.cpp
-    )
-# Use a project-local imgui config (ImTextureID_Invalid override) instead of editing the submodule.
-target_include_directories(imgui PRIVATE ${MUYO_ROOT}/src)
-target_compile_definitions(imgui PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
-
+## SPIRV-Reflect
+# The reflection half of `muyo_device`: `ShaderReflectionFetcher.h` is part of the device's public
+# interface and includes `spirv_reflect.h`, so this vendored target stays and is exported with the
+# package (see the install rules below). Everything else the engine used to declare - GLFW, GLM, Dear
+# ImGui, ImGuizmo, imnodes, tinyobjloader, tinygltf, stb and meshoptimizer - moved to the renderer with
+# the pipeline it served (#318).
 set(SPIRV-Reflect_INCLUDE_DIRS ${MUYO_ROOT}/thirdparty/SPIRV-Reflect)
 add_library(SPIRV-Reflect ${MUYO_ROOT}/thirdparty/SPIRV-Reflect/spirv_reflect.cpp)
-
-## ImGuizmo
-set(IMGUIZMO_INCLUDE_DIRS ${MUYO_ROOT}/thirdparty/ImGuizmo/src)
-add_library(imguizmo ${IMGUIZMO_INCLUDE_DIRS}/ImGuizmo.cpp)
-#add_library(ImGuizmo STATIC
-#    ${IMGUIZMO_INCLUDE_DIRS}/ImGuizmo.cpp
-#    # Include these if you are also using the curve/gradient/graph editors
-#    ${IMGUIZMO_INCLUDE_DIRS}/ImCurveEdit.cpp
-#    ${IMGUIZMO_INCLUDE_DIRS}/ImGradient.cpp
-#    ${IMGUIZMO_INCLUDE_DIRS}/ImSequencer.cpp
-#    ${IMGUIZMO_INCLUDE_DIRS}/GraphEditor.cpp
-#)
-
-## imnodes
-set(IMNODES_INCLUDE_DIRS ${MUYO_ROOT}/thirdparty/imnodes)
-add_library(imnodes thirdparty/imnodes/imnodes.cpp)
 
 ## VULKAN
 if (NOT ENV{VULKAN_SDK} AND EXISTS ENV{VULKAN_SDK})
@@ -152,25 +90,6 @@ endif()
 # Cap vulkan version to avoid validation layer error
 find_package(Vulkan REQUIRED)
 
-
-## tiny obj
-include_directories(${MUYO_ROOT}/thirdparty/tinyobjloader)
-add_library(tinyobj ${MUYO_ROOT}/thirdparty/tinyobjloader/tiny_obj_loader.cc)
-
-## tiny gltf
-include_directories(${MUYO_ROOT}/thirdparty/tinygltf)
-add_library(tinygltf ${MUYO_ROOT}/thirdparty/tinygltf/tiny_gltf.cc)
-
-## stb images
-include_directories(${MUYO_ROOT}/thirdparty/stb)
-add_library(stb ${MUYO_ROOT}/thirdparty/stb/stb.cpp)
-
-## meshoptimizer
-# Same reason as GLFW_INSTALL above: a vendored target's install rules would otherwise put
-# `libmeshoptimizer.a` in Muyo's prefix and make `cmake --install` require a full dev build (#73).
-set(MESHOPT_INSTALL OFF CACHE BOOL "" FORCE)
-add_subdirectory(${MUYO_ROOT}/thirdparty/meshoptimizer)
-include_directories(${MUYO_ROOT}/thirdparty/meshoptimizer/src)
 
 if(NOT EXISTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE})
     message(FATAL_ERROR "Can't find glslangValidator at ${GLSL_VALIDATOR}")
@@ -212,10 +131,9 @@ if (UNIX)
     # whatever a toolchain file or `-DCMAKE_CXX_FLAGS` provided, which is why
     # `scripts/sanity.sh warnings` was not actually applying its own flags (#36).
     # `-pthread` also goes on the link line, where it used to reach via CMAKE_CXX_FLAGS.
-    # Targets created before this point (the third-party libraries above) no longer inherit these
-    # warnings or -pthread: none of them creates threads, and scoping warnings to this project's
-    # targets is the direction #36 asks for. Their language level is still C++20 from
-    # CMAKE_CXX_STANDARD above, so meshoptimizer moves from the default gnu++17 to C++20.
+    # Targets created before this point (the vendored SPIRV-Reflect library above) do not inherit these
+    # warnings or -pthread: it creates no threads, and scoping warnings to this project's targets is the
+    # direction #36 asks for. Its language level is still C++20 from CMAKE_CXX_STANDARD above.
     # `-Wextra` is on. `-Wmissing-field-initializers` is off, and not because it is noisy: it fires on
     # exactly the initialisation style AGENTS.md section 3 mandates. `{VK_STRUCTURE_TYPE_...}` and partial
     # designated initialisers omit fields on purpose - positional initialisation of a Vulkan struct is
@@ -255,9 +173,9 @@ elseif(MSVC)
     add_compile_options("$<${SANITIZE_CONDITION}:/Zi>")
 endif()
 
-# Deliberately *after* the third-party targets above (imgui, SPIRV-Reflect, tinygltf, stb, ...): only the
-# project's own targets inherit these, so UB inside a vendored library cannot abort our run and a vendored
-# warning cannot be mistaken for ours. The Sanitize build is a statement about this repository's code.
+# Deliberately *after* the vendored target above (SPIRV-Reflect): only the project's own targets inherit
+# these, so UB inside a vendored library cannot abort our run and a vendored warning cannot be mistaken
+# for ours. The Sanitize build is a statement about this repository's code.
 add_compile_options(${SANITIZE_FLAGS})
 add_link_options(${SANITIZE_FLAGS})
 # Same placement and the same reasoning: a TSan report is a statement about this repository's code, so
@@ -301,40 +219,16 @@ include_directories(
 # include surface; this split is what the `-Wextra` baseline needs until then.
 include_directories(SYSTEM
     ${Vulkan_INCLUDE_DIR}
-    ${GLFW3_INCLUDE_DIR}
-    ${GLM_INCLUDE_DIRS}
-    ${IMGUI_INCLUDE_DIRS}
-    ${IMGUIZMO_INCLUDE_DIRS}
-    ${IMNODES_INCLUDE_DIRS}
     ${SPIRV-Reflect_INCLUDE_DIRS}
-    # RenderDoc's API is a single header, and `src/Debug/RenderDoc.h` lives in this target. It compiled only because
-    # `tests` added this path for the vendor-specific test helper; the capture backend makes it a real dependency of
-    # `muyo`, so the path belongs here rather than in one consumer (#167).
+    # RenderDoc's API is a single header, and `src/Debug/RenderDoc.h` is part of `muyo_debug`. It compiled
+    # only because `tests` added this path for the vendor-specific test helper; the capture backend makes
+    # it a real dependency of `muyo_debug`, so the path belongs here rather than in one consumer (#167).
     ${MUYO_ROOT}/thirdparty/RenderDoc
     )
 
     
 #Enable CPPCHECK
 # set(CMAKE_CXX_CPPCHECK "cppcheck")
-
-include_directories(
-    "src/RenderDevice"
-    "src/RenderResources"
-    "src/Scene"
-    "src/Debug"
-    "src"
-    )
-
-file(GLOB muyo_SRC
-    "src/*.h"
-    "src/*.cpp"
-    "src/Debug/*.h"
-    "src/Debug/*.cpp"
-    "src/RenderResources/*.h"
-    "src/RenderResources/*.cpp"
-    "src/Scene/*.h"
-    "src/Scene/*.cpp"
-    )
 
 # The device layer is its own target: instance, device, queues, memory, sync primitives, command pools and
 # the debug-messenger hook. The graph links it directly rather than receiving Vulkan device code through
@@ -344,8 +238,6 @@ file(GLOB muyo_device_SRC
     "src/RenderDevice/*.h"
     "src/RenderDevice/*.cpp"
     )
-
-add_library(muyo STATIC ${muyo_SRC})
 
 add_library(muyo_rg
     "src/RenderGraph/RenderGraphBuilder.cpp"
@@ -373,14 +265,12 @@ FetchContent_MakeAvailable(VMA)
 
 # `muyo_device` is the bottom of the stack (docs/RenderGraph-Library-Design.md §2): instance, device,
 # queues, memory, sync primitives and command pools. It depends on Vulkan and VMA; a headless client links
-# it without the engine, a window or a surface. Validation-layer and debug-messenger *policy* is
-# deliberately not part of it; the device exposes the hook, the host decides (#58). STATIC for the same
-# reason as the other targets here: a shared/exported artifact is the packaging decision (#73).
+# it without a window or a surface. Validation-layer and debug-messenger *policy* is deliberately not part
+# of it; the device exposes the hook, the host decides (#58). STATIC for the same reason as the other
+# targets here: a shared/exported artifact is the packaging decision (#73).
 add_library(muyo_device STATIC ${muyo_device_SRC})
-target_compile_features(muyo PUBLIC cxx_std_20)
 target_compile_features(muyo_device PUBLIC cxx_std_20)
 target_compile_features(muyo_rg PUBLIC cxx_std_20)
-muyo_enable_deprecation_errors(muyo)
 muyo_enable_deprecation_errors(muyo_device)
 muyo_enable_deprecation_errors(muyo_rg)
 
@@ -406,10 +296,10 @@ if (FEATURE_RAY_TRACING)
 endif()
 
 # The device's public headers include each other by bare name ("VkRenderDevice.h"), so `src/RenderDevice`
-# is the whole include interface. `ScopedMarker` moved to `src/Debug/ScopedMarker.h`: it composes the
-# engine's capture-tool interface, which is host policy, and keeping it here made `muyo_device` depend on
-# an engine header and an engine link edge (#275). A consumer of `muyo_device` therefore needs no `src`
-# include and no `muyo` link.
+# is the whole include interface. `ScopedMarker` lives in `src/Debug/ScopedMarker.h` instead: it composes
+# the host's capture-tool interface, which is host policy, and keeping it here made `muyo_device` depend
+# on a header outside the device layer and an extra link edge (#275). A consumer of `muyo_device`
+# therefore needs no `src` include and no debug-target link.
 target_include_directories(muyo_device
     PUBLIC
         $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderDevice>
@@ -426,43 +316,15 @@ target_include_directories(muyo_device
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/RenderGraph>
     )
-# VMA is in VkMemoryAllocator.h's public interface, so a consumer compiles against its headers.
-target_include_directories(muyo_device SYSTEM PUBLIC $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
+# VMA is in VkMemoryAllocator.h's public interface, so a consumer compiles against its headers. So is
+# SPIRV-Reflect: `ShaderReflectionFetcher.h` is a device public header and includes `spirv_reflect.h`
+# itself. Both belong in the *build* interface as well, because a consumer that adds this project as a
+# subdirectory does not inherit the directory-scoped `include_directories(... SYSTEM ...)` above - that is
+# what made the renderer fail on `spirv_reflect.h` while Muyo's own tests compiled (#318).
+target_include_directories(muyo_device SYSTEM PUBLIC
+    $<BUILD_INTERFACE:${SPIRV-Reflect_INCLUDE_DIRS}>
+    $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>)
 
-
-# PUBLIC interface, so a consumer of these targets can compile against them. The include_directories()
-# calls above are directory-scoped and do not propagate across a project boundary, which is why
-# linking muyo_rg previously exported no includes at all (#68). The INSTALL_INTERFACE half of these
-# belongs with the install rules, where the installed layout is decided (#73).
-target_include_directories(muyo
-    PUBLIC
-        $<BUILD_INTERFACE:${MUYO_ROOT}/src>
-        # The engine's own headers include each other by bare name ("Geometry.h"), so every
-        # directory the top-level include_directories() lists has to be part of the interface too.
-        # That these are needed at all is #53's finding arriving from the packaging side: the
-        # surface is not a surface, it is the whole tree.
-        $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderDevice>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/src/RenderResources>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/src/Scene>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/src/Debug>
-        $<BUILD_INTERFACE:${SHARED_HEADER_DIR}>
-    )
-
-# The dependency half of the same interface, marked SYSTEM so a consumer that turns on extra warnings is
-# not handed ours-vs-vendored ambiguity by this project's interface.
-target_include_directories(muyo SYSTEM
-    PUBLIC
-        $<BUILD_INTERFACE:${GLM_INCLUDE_DIRS}>
-        $<BUILD_INTERFACE:${IMGUI_INCLUDE_DIRS}>
-        $<BUILD_INTERFACE:${IMGUIZMO_INCLUDE_DIRS}>
-        $<BUILD_INTERFACE:${IMNODES_INCLUDE_DIRS}>
-        $<BUILD_INTERFACE:${SPIRV-Reflect_INCLUDE_DIRS}>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/thirdparty/tinyobjloader>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/thirdparty/tinygltf>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/thirdparty/stb>
-        $<BUILD_INTERFACE:${MUYO_ROOT}/thirdparty/meshoptimizer/src>
-        $<BUILD_INTERFACE:${vma_SOURCE_DIR}/include>
-    )
 
 # RenderGraphResourceDesc.h uses VmaMemoryUsage in a public struct, so VMA is part of muyo_rg's
 # stated public interface whether or not that is desirable - a consumer cannot compile the surface
@@ -490,18 +352,38 @@ target_include_directories(muyo_rg
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
 
-# SPIRV-Reflect is PUBLIC because it is genuinely part of the interface: `RenderGraphShader.h` includes
-# ShaderReflectionFetcher.h, which includes spirv_reflect.h, so a consumer compiles against its headers
-# - and `muyo` compiles ShaderReflectionFetcher.cpp, which calls spvReflect*. Only the in-tree `tests`
-# target named it, so an embedder linking muyo_rg got "undefined reference to spvReflectCreateShaderModule"
-# from an object the linker pulled in on demand (filed by muyo-llm as Finding F1).
-target_link_libraries(muyo imgui imguizmo imnodes SPIRV-Reflect ${Vulkan_LIBRARIES} ${WINDOW_LIB} VulkanMemoryAllocator stb tinygltf tinyobj meshoptimizer muyo_device)
-
 # The graph depends on the device and on nothing else. Resource allocation is injected as
 # `RenderGraph::IGraphResourceAllocator`, implemented by `muyo_device`'s `VkGraphResourceAllocator`;
-# shader reflection lives in `muyo_device` too. The engine link edge is gone (#272), and #53's header
+# shader reflection lives in `muyo_device` too. The renderer link edge is gone (#272), and #53's header
 # split/packaging is separate.
 target_link_libraries(muyo_rg PUBLIC muyo_device)
+
+# `muyo_debug` is the development-only support surface the remaining tests need: validation-layer policy,
+# the capture-tool abstraction with its RenderDoc backend, and the graph trace lane layout. It is a
+# separate small STATIC target rather than part of either library because the device layer deliberately
+# keeps host policy out (#58), and the tests are its only consumer. Deliberately not installed or
+# exported: nothing here is a consumer-facing guarantee. The renderer keeps its own copies of the
+# host-policy half (#318).
+add_library(muyo_debug STATIC
+    "src/Debug/Validation.cpp"
+    "src/Debug/CaptureTool.cpp"
+    "src/Debug/RenderDocCaptureTool.cpp"
+    "src/Debug/RenderGraphLaneLayout.cpp"
+    )
+target_compile_features(muyo_debug PUBLIC cxx_std_20)
+# `src` is what makes `Debug/...` resolvable, and it is the include root the tests are written against.
+# `src/Debug` is private: the kept debug sources include each other by bare name ("CaptureTool.h").
+target_include_directories(muyo_debug
+    PUBLIC
+        $<BUILD_INTERFACE:${MUYO_ROOT}/src>
+    PRIVATE
+        $<BUILD_INTERFACE:${MUYO_ROOT}/src/Debug>
+    )
+# `src/Debug/RenderDoc.h` includes `renderdoc_app.h`, so the vendored header root is part of the
+# target's interface.
+target_include_directories(muyo_debug SYSTEM PUBLIC $<BUILD_INTERFACE:${MUYO_ROOT}/thirdparty/RenderDoc>)
+target_link_libraries(muyo_debug PUBLIC muyo_device)
+muyo_enable_deprecation_errors(muyo_debug)
 
 if(MUYO_RG_INSTALL)
     # ── Install rules and the `muyo_rg` CMake package (#73) ──────────────────────
@@ -607,38 +489,6 @@ if(MUYO_RG_INSTALL)
             DESTINATION "${MUYO_RG_INSTALL_CMAKEDIR}")
 endif()
 
-file(GLOB main_SRC
-    "src/app/helloVulkan.cpp"
-    )
-
-file(GLOB rgMain_SRC
-    "src/app/helloVulkanRG.cpp"
-    )
-
-file(GLOB PSOCompiler_SRC
-    "src/app/PSOCompiler.cpp"
-    )
-
-if (MUYO_TOP_LEVEL)
-add_executable(helloVulkan ${main_SRC})
-# The frame's FINAL pass is a graph node, so the app links the graph library as well as the engine.
-target_link_libraries(helloVulkan PUBLIC muyo muyo_rg)
-muyo_enable_deprecation_errors(helloVulkan)
-
-# The render graph's first consumer: the same frame through the graph. It links both `muyo` (the
-# engine's resources, device and managers) and `muyo_rg`.
-add_executable(helloVulkanRG ${rgMain_SRC})
-target_link_libraries(helloVulkanRG PUBLIC muyo muyo_rg)
-target_compile_definitions(helloVulkanRG PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
-muyo_enable_deprecation_errors(helloVulkanRG)
-
-
-add_executable(PSOCompiler ${PSOCompiler_SRC})
-target_link_libraries(PSOCompiler PUBLIC muyo)
-muyo_enable_deprecation_errors(PSOCompiler)
-endif()
-
-
 # Build glsl shaders
 file(GLOB_RECURSE GLSL_SOURCE_FILES
     "${MUYO_ROOT}/shaders/*.frag"
@@ -735,17 +585,6 @@ add_custom_target(
     DEPENDS ${SPIRV_BINARY_FILES}
     )
 
-if (MUYO_TOP_LEVEL)
-add_dependencies(helloVulkan Shaders)
-add_dependencies(helloVulkanRG Shaders)
-
-# Copy over asset
-add_custom_command(
-    TARGET helloVulkan
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${MUYO_ROOT}/assets ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets
-    )
-endif()
 message(STATUS "runtime dir" ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 # Everything from here to the end of the docs block is a development concern: it declares targets a
@@ -768,42 +607,27 @@ FetchContent_Declare(
 )
 
 FetchContent_MakeAvailable(Catch2)
-add_executable(tests 
-    src/tests/ArcballTest.cpp
+add_executable(tests
     src/tests/CaptureToolTest.cpp
-    src/tests/DebugCallbackTests.cpp
-    src/tests/DescriptorHeapProbeTests.cpp
-    src/tests/DescriptorHeapServiceTests.cpp
-    src/tests/DeviceCapabilityTests.cpp
     src/tests/ErrorReportingTests.cpp
-    src/tests/FrameSyncTest.cpp
-    src/tests/RenderGraphBuilderTest.cpp
-    src/tests/RenderGraphFinalNodeTest.cpp
-    src/tests/RenderGraphGBufferLightingTest.cpp
-    src/tests/RenderGraphHeapTests.cpp
-    src/tests/RenderGraphPipelineCacheTests.cpp
-    src/tests/RenderGraphShaderCacheTests.cpp
     src/tests/PSODescTest.cpp
     src/tests/RenderGraphLaneLayoutTest.cpp
     src/tests/RenderGraphTraceTest.cpp
-    src/tests/SceneBoundsTest.cpp
-    src/tests/SceneImporterTests.cpp
-    src/tests/ShaderReflectionTests.cpp
     src/tests/TransientMemoryPlannerTest.cpp
 )
 message(STATUS "Catch2 source dir: ${catch2_SOURCE_DIR}")
 target_include_directories(tests PRIVATE ${catch2_SOURCE_DIR}/src thirdparty/RenderDoc)
-# `muyo` and `muyo_rg` already provide every source this binary needs, and `muyo` links
-# `SPIRV-Reflect`, so the duplicated source list and the explicit `SPIRV-Reflect` are gone: they
-# were compiling a second copy of the fetcher and the graph, and the redundant link line was
-# covering for it rather than the libraries (#76).
-target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo muyo_rg)
+# The two libraries and the debug support target provide every source this binary needs. `muyo_rg`
+# links `muyo_device`, and `muyo_device` links `SPIRV-Reflect`, so no source is compiled twice and the
+# link line names no vendored target directly (#76). The renderer's sources and tests left with the
+# `muyo` target (#318), so this binary covers `muyo_rg` and `muyo_device` only.
+target_link_libraries(tests PRIVATE Catch2::Catch2WithMain muyo_rg muyo_device muyo_debug)
 muyo_enable_deprecation_errors(tests)
 include(Catch)
 
-# The graph's own test binary: it links `muyo_rg` and `muyo_device` and nothing from the engine. This is
-# issue #272's "`muyo_rg` builds and its tests run without linking `muyo`" as an executable rather than a
-# claim: a reintroduced engine dependency fails this link.
+# The graph's own test binary: it links `muyo_rg` and `muyo_device` and nothing else. This is
+# issue #272's "`muyo_rg` builds and its tests run without linking the engine" as an executable rather than
+# a claim: a reintroduced engine dependency fails this link.
 add_executable(rg_tests
     src/tests/RenderGraphStandaloneTests.cpp
     src/tests/MuyoVersionTest.cpp)
@@ -841,14 +665,6 @@ endif()
 
 catch_discover_tests(tests)
 
-# Keep ImTextureID_Invalid consistent (see src/ImGuiUserConfig.h) across all imgui consumers.
-target_compile_definitions(muyo PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
-if (MUYO_TOP_LEVEL)
-target_compile_definitions(helloVulkan PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
-target_compile_definitions(PSOCompiler PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
-target_compile_definitions(tests PRIVATE IMGUI_USER_CONFIG="ImGuiUserConfig.h")
-endif()
-
 # ── RenderGraph API documentation ────────────────────────────────────────────
 # Doxygen + Python are optional. When both are present, `render_graph_docs`
 # regenerates docs/RenderGraph-api.md and fails if any public RenderGraph entity
@@ -875,23 +691,4 @@ else()
     message(STATUS "RenderGraph docs disabled (doxygen/Python3 not found); see docs/README.md")
 endif()
 
-endif() # MUYO_TOP_LEVEL: tests, demo, PSO compiler, docs check
-
-# Disable tests for now until proper method has been found to load the gltf
-#add_executable(testSceneImporter
-#    src/Geometry.cpp
-#    src/SceneImporter.cpp
-#    src/Scene.cpp
-#
-#    src/tests/testSceneImporter.cpp
-#)
-
-#target_link_libraries(testSceneImporter tinygltf stb)
-
-#add_custom_command(TARGET helloVulkan POST_BUILD
-#    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:helloVulkan>/shaders/"
-#    COMMAND ${CMAKE_COMMAND} -E copy_directory
-#    "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders"
-#    "$<TARGET_FILE_DIR:helloVulkan>/shaders"
-#    )
-#
+endif() # MUYO_TOP_LEVEL: tests and docs check

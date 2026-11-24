@@ -2,12 +2,35 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 
-#include "MeshVertex.h"
 #include "RenderGraph/PSODesc.h"
 
 using namespace Muyo::RenderGraph;
+
+// The `VertexType` table states its stride and offsets as numbers, and the cases below pin them. The
+// structs they used to be compared against - `Muyo::Vertex` and Dear ImGui's `ImDrawVert` - described the
+// renderer's vertex formats and left with it (#318), so the shapes are mirrored here instead. That the
+// real structs still have this layout is `static_assert`ed in the renderer's
+// `src/RenderResources/MeshVertex.h` against the same declared numbers; between the two, a change on
+// either side is a compile error rather than a pipeline whose input layout does not match its vertices.
+namespace
+{
+struct GenericVertex
+{
+    float pos[3];
+    float normal[3];
+    float textureCoord[4];
+};
+
+struct UiVertex
+{
+    float pos[2];
+    float uv[2];
+    uint32_t col;
+};
+}  // namespace
 
 // #174. Every conversion in PSODesc.h used to be an exhaustive-looking `switch` with no `return` after it, so a value
 // outside the enum fell off the end of a non-void function - undefined behaviour - and `-Wreturn-type` had been
@@ -88,34 +111,34 @@ TEST_CASE("PSODesc: every vertex type maps to its documented input layout", "[PS
 {
     const VertexInputLayout generic = ToVertexLayout(VertexType::GENERIC);
     CHECK(generic.binding.binding == 0);
-    CHECK(generic.binding.stride == sizeof(Muyo::Vertex));
+    CHECK(generic.binding.stride == sizeof(GenericVertex));
     CHECK(generic.binding.inputRate == VK_VERTEX_INPUT_RATE_VERTEX);
     REQUIRE(generic.attributes.size() == 3);
     CHECK(generic.attributes[0].location == 0);
     CHECK(generic.attributes[0].binding == 0);
     CHECK(generic.attributes[0].format == VK_FORMAT_R32G32B32_SFLOAT);
-    CHECK(generic.attributes[0].offset == offsetof(Muyo::Vertex, pos));
+    CHECK(generic.attributes[0].offset == offsetof(GenericVertex, pos));
     CHECK(generic.attributes[1].location == 1);
     CHECK(generic.attributes[1].format == VK_FORMAT_R32G32B32_SFLOAT);
-    CHECK(generic.attributes[1].offset == offsetof(Muyo::Vertex, normal));
+    CHECK(generic.attributes[1].offset == offsetof(GenericVertex, normal));
     CHECK(generic.attributes[2].location == 2);
     CHECK(generic.attributes[2].format == VK_FORMAT_R32G32B32A32_SFLOAT);
-    CHECK(generic.attributes[2].offset == offsetof(Muyo::Vertex, textureCoord));
+    CHECK(generic.attributes[2].offset == offsetof(GenericVertex, textureCoord));
 
     const VertexInputLayout ui = ToVertexLayout(VertexType::UI);
     CHECK(ui.binding.binding == 0);
-    CHECK(ui.binding.stride == sizeof(ImDrawVert));
+    CHECK(ui.binding.stride == sizeof(UiVertex));
     CHECK(ui.binding.inputRate == VK_VERTEX_INPUT_RATE_VERTEX);
     REQUIRE(ui.attributes.size() == 3);
     CHECK(ui.attributes[0].location == 0);
     CHECK(ui.attributes[0].format == VK_FORMAT_R32G32_SFLOAT);
-    CHECK(ui.attributes[0].offset == offsetof(ImDrawVert, pos));
+    CHECK(ui.attributes[0].offset == offsetof(UiVertex, pos));
     CHECK(ui.attributes[1].location == 1);
     CHECK(ui.attributes[1].format == VK_FORMAT_R32G32_SFLOAT);
-    CHECK(ui.attributes[1].offset == offsetof(ImDrawVert, uv));
+    CHECK(ui.attributes[1].offset == offsetof(UiVertex, uv));
     CHECK(ui.attributes[2].location == 2);
     CHECK(ui.attributes[2].format == VK_FORMAT_R8G8B8A8_UNORM);
-    CHECK(ui.attributes[2].offset == offsetof(ImDrawVert, col));
+    CHECK(ui.attributes[2].offset == offsetof(UiVertex, col));
 
     // The two layouts must be different, or the table could be returning one of them for both enumerators and every
     // check above would still pass for whichever it returned first.

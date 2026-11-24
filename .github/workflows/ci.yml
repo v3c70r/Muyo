@@ -118,8 +118,7 @@ jobs:
 
       - name: Configure (the compile database is all clang-tidy needs)
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DFEATURE_RAY_TRACING=OFF \
-                -DGLFW_BUILD_WAYLAND=OFF
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DFEATURE_RAY_TRACING=OFF
 
       - name: Tidy the lines this change touched
         run: |
@@ -214,7 +213,9 @@ jobs:
           -DFEATURE_RAY_TRACING=OFF
 
       - name: Build tests and shaders
-        run: cmake --build build --config Debug --target tests Shaders --parallel 2
+        # Both test binaries: since the renderer split (#318) `tests` covers `muyo_rg`/`muyo_device`
+        # without a device, and `rg_tests` is the one that runs a graph on it and prints `[test device]`.
+        run: cmake --build build --config Debug --target tests rg_tests Shaders --parallel 2
 
       - name: Verify lavapipe is selected
         shell: pwsh
@@ -252,28 +253,36 @@ jobs:
       - name: Run the suite on lavapipe
         shell: pwsh
         run: |
-          cmake -E copy_directory assets build/assets
           Push-Location build
           try {
+            # Both binaries, one log: `tests` and `rg_tests` are the suite after the renderer split
+            # (#318), and `rg_tests` is what prints `[test device]`.
             & .\tests.exe *> tests.log
             $testExitCode = $LASTEXITCODE
+            & .\rg_tests.exe *>> tests.log
+            $rgExitCode = $LASTEXITCODE
             Get-Content tests.log | Write-Output
             if ($testExitCode -ne 0) {
-              throw "Tests failed with exit code $testExitCode"
+              throw "tests.exe failed with exit code $testExitCode"
+            }
+            if ($rgExitCode -ne 0) {
+              throw "rg_tests.exe failed with exit code $rgExitCode"
             }
             $testDevice = Select-String -Path tests.log -Pattern '\[test device\]' | Select-Object -First 1
-            $testCount = Select-String -Path tests.log -Pattern 'test cases:' | Select-Object -Last 1
+            # One "test cases:" line per binary; report both rather than only the last.
+            $testCounts = (Select-String -Path tests.log -Pattern 'test cases:' |
+              ForEach-Object { $_.Line.Trim() }) -join ' | '
             if ($null -eq $testDevice -or $testDevice.Line -notmatch 'llvmpipe|lavapipe') {
               throw 'The test run did not report lavapipe as its Vulkan device'
             }
-            if ($null -eq $testCount) {
+            if ([string]::IsNullOrEmpty($testCounts)) {
               throw 'The test run did not report a Catch2 test count'
             }
             @(
               '### Windows tests (MSVC + lavapipe)'
               ''
               $testDevice.Line
-              $testCount.Line
+              $testCounts
             ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           }
           finally {
@@ -322,14 +331,13 @@ jobs:
 
       - name: Configure and build
         run: |
-          cmake -S . -B ${{ matrix.dir }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-                -DFEATURE_RAY_TRACING=${{ matrix.rt }} -DGLFW_BUILD_WAYLAND=OFF
-          cmake --build ${{ matrix.dir }} --target tests Shaders -j"$(nproc)"
+          cmake -S . -B ${{ matrix.dir }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DFEATURE_RAY_TRACING=${{ matrix.rt }}
+          # Both binaries: `tests` is the device-free suite and `rg_tests` is the graph/device one. Since
+          # the renderer split (#318) neither alone is "the suite".
+          cmake --build ${{ matrix.dir }} --target tests rg_tests Shaders -j"$(nproc)"
 
       - name: Run the suite
         run: |
-          # tests and assets are both read relative to the working directory (AGENTS.md section 4).
-          ln -sfn "$PWD/assets" ${{ matrix.dir }}/assets
           cd ${{ matrix.dir }}
           set +e
           # Kept identical to `sanitizer_env` in scripts/sanity.sh: a local run and a CI run must be the
@@ -344,8 +352,21 @@ jobs:
           # State the experiment in the log it belongs to: the report that named the loader leak (#189)
           # had to be reconstructible from the run, not inferred from the workflow file.
           printf 'run env: %s\n' "${run_env[@]}"
+          # One log pair for both binaries, so the `[test device]` line, the validation VUIDs and the
+          # sanitizer report are all in the files the later steps read. `rg_tests` is what creates the
+          # device and prints that line now.
           env "${run_env[@]}" ./tests > tests.out 2> tests.err
           status=$?
+          env "${run_env[@]}" ./rg_tests >> tests.out 2>> tests.err
+          rg_status=$?
+          if [ "$status" -eq 0 ] && [ "$rg_status" -ne 0 ]; then
+            status=$rg_status
+          fi
+          # "The suite passed" must mean both binaries said so: one Catch2 summary line per binary.
+          suite_passed=0
+          if [ "$(grep -c 'All tests passed' tests.out)" -ge 2 ]; then
+            suite_passed=1
+          fi
           set -e
           tail -3 tests.out
           # The sanitizer writes its report to stderr. Printing only the stdout tail made a failure read as
@@ -354,15 +375,15 @@ jobs:
           # version showed only the lines matching the pattern, so a leak's frames - which match neither
           # `leak` nor `ERROR` - were exactly what it hid (#189).
           if [ $status -ne 0 ]; then
-            echo "─ sanitizer report (complete block, first 200 lines) ─"
+            echo "â”€ sanitizer report (complete block, first 200 lines) â”€"
             sed -n '/ERROR: \(Address\|Leak\)Sanitizer/,$p' tests.err | head -200 || true
-            echo "─ tests.err tail ─"
+            echo "â”€ tests.err tail â”€"
             tail -40 tests.err || true
             # The hosted runner's software driver and loader allocate inside uninstrumented modules, so
             # LeakSanitizer reports their allocations with no symbolizable frame (#189). Fail only when a
             # leak's allocation is attributable to this repository - and only when the suite itself passed
             # and exited 1, so this cannot excuse a test failure or an abort from a validation error.
-            if [ "$status" -eq 1 ] && grep -q "All tests passed" tests.out \
+            if [ "$status" -eq 1 ] && [ "$suite_passed" -eq 1 ] \
                && python3 ../scripts/check_sanitizer_report.py --err tests.err; then
               echo "::warning::the suite passed; every leak is allocated outside this repository (#189)"
               exit 0
@@ -396,14 +417,12 @@ jobs:
             vulkaninfo 2>/dev/null | grep -m1 "KHRONOS_validation" || echo "no validation layer line"
             echo "queue counts: $(vulkaninfo 2>/dev/null | grep -c queueCount) families reported below"
             vulkaninfo 2>/dev/null | grep -E "queueCount" || true
-            # The one expected exclusion is computed rather than left to the reader. The fork test
-            # deliberately passes a bad pointer to vkWaitForFences and inherits the parent's stderr, so
-            # two occurrences of that VUID are the *clean* result (AGENTS.md section 6) - and the
-            # difference between a clean run and a run with one real validation error is otherwise a
-            # memory test. Printing the delta makes "clean" one number.
-            expected="VUID-vkWaitForFences-pFences-parameter"
+            # No exclusion is subtracted. The one deliberate VUID this used to forgive
+            # (`VUID-vkWaitForFences-pFences-parameter`) came from the fork test in `DebugCallbackTests`,
+            # which moved to muyo-renderer with the renderer suite (#318); every VUID seen here is
+            # unexpected.
             seen=$(grep -oE "#?VUID-[A-Za-z0-9-]+" tests.err 2>/dev/null | tr -d '#' | sort -u || true)
-            unexpected=$(printf '%s\n' "$seen" | grep -v -x "$expected" | grep -c . || true)
+            unexpected=$(printf '%s\n' "$seen" | grep -c . || true)
             # The toolchain states itself in the same block as the device does: a result is only evidence
             # about the compiler and sanitizer configuration that produced it, and both machines switch
             # between several. `-fno-sanitize-recover` is checked rather than assumed, because a build that
@@ -474,8 +493,7 @@ jobs:
 
       - name: Configure and build Release
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFEATURE_RAY_TRACING=OFF \
-                -DGLFW_BUILD_WAYLAND=OFF
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFEATURE_RAY_TRACING=OFF
           cmake --build build --target muyo_rg -j"$(nproc)"
 
       - name: Install to a throwaway prefix
