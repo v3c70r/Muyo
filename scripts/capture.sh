@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Capture a Muyo application with RenderDoc through GLFW's X11 backend.
+# Capture a Vulkan application with RenderDoc through GLFW's X11 backend.
 #
 # RenderDoc 1.46's capture launcher stops advertising loader-provided instance extensions, including
 # VK_KHR_wayland_surface. GLFW therefore selects Wayland, finds no WSI extension, and the application
@@ -21,8 +21,9 @@
 # Environment:
 #   RENDERDOC_CMD  renderdoccmd executable (default: renderdoccmd from PATH).
 #
-# The program must be built with GLFW's X11 backend. A fresh configure builds both backends; an
-# existing build tree created before #220 needs -DGLFW_BUILD_X11=ON (see AGENTS.md section 4).
+# The program must be built with GLFW's X11 backend (the renderer's helloVulkan, which moved to
+# muyo-renderer in #318). A fresh configure of that build tree builds both backends; an existing tree
+# created before #220 needs -DGLFW_BUILD_X11=ON.
 
 set -euo pipefail
 
@@ -30,7 +31,7 @@ usage() {
     cat <<'EOF'
 Usage: scripts/capture.sh [-f] [-o output.rdc] <program> [program arguments...]
 
-Capture a Muyo application with RenderDoc through GLFW's X11 backend (Xwayland).
+Capture a Vulkan application with RenderDoc through GLFW's X11 backend (Xwayland).
 
 Options:
   -o output.rdc  Capture file to write (default: <program name>.rdc in the current directory).

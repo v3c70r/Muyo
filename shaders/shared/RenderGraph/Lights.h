@@ -57,7 +57,7 @@ Light LoadLight(StructuredBuffer<LightDataRaw> lightBuffer, uint index)
     return light;
 }
 
-// Mirrors Muyo::LightingPush in src/app/ScenePushData.h, which static_asserts the offsets.
+// Mirrors Muyo::LightingPush in muyo-renderer's src/app/ScenePushData.h, which static_asserts the offsets.
 struct LightingPush
 {
     float4x4 mView;

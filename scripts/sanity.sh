@@ -245,7 +245,7 @@ sanitizer_env() {
 }
 
 cmd_sanitize() {
-    bold "sanitize: ASan + UBSan build and tests (UB aborts; the options are printed below)"
+    bold "sanitize: ASan + UBSan over both test binaries (UB aborts; the options are printed below)"
     cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize >/dev/null || {
         bad "configure failed"
         fail=1
@@ -255,7 +255,10 @@ cmd_sanitize() {
     # fail with a shader-load error that looks like a code regression (AGENTS.md section 4). `assets/` is
     # not read by this repository's suite any more: the tests that loaded a glTF moved with the renderer
     # (#318).
-    cmake --build build-san --target tests Shaders -j"$JOBS" || {
+    # Both binaries: `tests` is the device-free suite, and `rg_tests` is the one that creates a device,
+    # runs the graph and prints `[test device]`. Instrumenting only `tests` after the split would leave
+    # the device path out of the sanitizer run this repository asks for before merge (#318).
+    cmake --build build-san --target tests rg_tests Shaders -j"$JOBS" || {
         bad "build failed"
         fail=1
         return
@@ -266,28 +269,34 @@ cmd_sanitize() {
     echo "UBSAN_OPTIONS=$UBSAN_OPTIONS"
     echo "LSAN_OPTIONS=$LSAN_OPTIONS"
 
-    local log=/tmp/muyo-sanitize.err
-    (cd build-san && ./tests >/tmp/muyo-sanitize.out 2>"$log")
-    local status=$?
-    tail -3 /tmp/muyo-sanitize.out
+    # One out/err pair for both binaries, so the diagnostic grep below sees every sanitizer report.
+    local out=/tmp/muyo-sanitize.out log=/tmp/muyo-sanitize.err
+    : >"$out"
+    : >"$log"
+    local status=0 rg_status=0
+    (cd build-san && ./tests >>"$out" 2>>"$log")
+    status=$?
+    (cd build-san && ./rg_tests >>"$out" 2>>"$log")
+    rg_status=$?
+    tail -3 "$out"
 
     # Two independent verdicts, because the exit status alone is not enough: a build whose UBSan was
     # configured to recover prints `runtime error:` and still exits 0, which is how UB stayed invisible
     # here until `-fno-sanitize-recover=undefined` was added. The grep catches that configuration as well
-    # as this one.
+    # as this one, across both binaries' output.
     local diagnostics
     diagnostics="$(grep -cE 'ERROR: (Address|Leak)Sanitizer|runtime error:' "$log" || true)"
-    if [ "$status" -ne 0 ]; then
-        bad "tests failed under sanitizers (exit $status)"
+    if [ "$status" -ne 0 ] || [ "$rg_status" -ne 0 ]; then
+        bad "test binaries failed under sanitizers (tests exit $status, rg_tests exit $rg_status)"
         echo "first 20 diagnostic lines:"
         grep -E 'ERROR: (Address|Leak)Sanitizer|runtime error:' "$log" | head -20 || true
         fail=1
     elif [ "$diagnostics" != "0" ]; then
-        bad "sanitizer reported $diagnostics line(s) but the run exited 0 - the build is recovering, see CMakeLists.txt"
+        bad "sanitizer reported $diagnostics line(s) but both binaries exited 0 - the build is recovering, see CMakeLists.txt"
         head -20 "$log"
         fail=1
     else
-        ok "sanitize OK (exit 0, no sanitizer diagnostics)"
+        ok "sanitize OK (both binaries exit 0, no sanitizer diagnostics)"
     fi
 }
 

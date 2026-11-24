@@ -375,9 +375,9 @@ jobs:
           # version showed only the lines matching the pattern, so a leak's frames - which match neither
           # `leak` nor `ERROR` - were exactly what it hid (#189).
           if [ $status -ne 0 ]; then
-            echo "â”€ sanitizer report (complete block, first 200 lines) â”€"
+            echo "─ sanitizer report (complete block, first 200 lines) ─"
             sed -n '/ERROR: \(Address\|Leak\)Sanitizer/,$p' tests.err | head -200 || true
-            echo "â”€ tests.err tail â”€"
+            echo "─ tests.err tail ─"
             tail -40 tests.err || true
             # The hosted runner's software driver and loader allocate inside uninstrumented modules, so
             # LeakSanitizer reports their allocations with no symbolizable frame (#189). Fail only when a
