@@ -168,7 +168,7 @@ gh api graphql -f query='query($p:ID!,$q:String){ node(id:$p){ ... on ProjectV2 
 
 # source measurements at this snapshot
 cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h') | wc -l   # 8,429
-wc -l src/app/helloVulkan.cpp src/app/helloVulkanRG.cpp            # 1,037 / 426
+wc -l src/app/helloVulkan.cpp src/app/helloVulkanRG.cpp            # 1,037 / 426 at this snapshot; both moved to muyo-renderer in #318
 grep -rnE 'GetRenderDevice\(\)|GetRenderResourceManager\(\)|GetDescriptorManager\(\)' \
   --include=*.cpp src/RenderGraph/ | wc -l                          # 1 (GetRenderResourceManager); +GetMemoryAllocator() = 13 in *.cpp (#272)
 

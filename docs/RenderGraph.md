@@ -9,11 +9,13 @@ GPU-driven rendering (compute-generated draws, frustum culling), async compute a
 
 ## Status
 
-The RenderGraph drives the **tests**, and `helloVulkan` presents and shades entirely through it:
-`FrameSync` owns acquire/present and the `GBUFFER`, direct `OPAQUE_LIGHTING`, `UI` and `FINAL` passes are
-graph nodes over graph-owned transients (#20, closed). `RenderPassManager` and `src/RenderPasses/` are
-deleted (#51, closed). IBL, RSM and the legacy RT pass were dropped rather than ported; direct lighting
-is deliberately direct-only, and the app still loads the environment map for the UI preview. Note the
+The RenderGraph drives the **tests**, and the renderer's `helloVulkan` presents and shades entirely
+through it. That renderer is a separate repository
+([muyo-renderer](https://github.com/v3c70r/muyo-renderer)) since the split (#318): `FrameSync` owns
+acquire/present and the `GBUFFER`, direct `OPAQUE_LIGHTING`, `UI` and `FINAL` passes are graph nodes over
+graph-owned transients (#20, closed). `RenderPassManager` and `src/RenderPasses/` are deleted (#51,
+closed). IBL, RSM and the legacy RT pass were dropped rather than ported; direct lighting is deliberately
+direct-only, and the renderer's app still loads the environment map for the UI preview. Note the
 following while the library and its consumers evolve:
 
 - **Ordering is explicit.** `AddDependency(from, to)` is the only thing that orders nodes; sharing a
@@ -40,10 +42,10 @@ following while the library and its consumers evolve:
   `RenderGraphNodeContext::PushData` (and optionally `AllocateRoot`). Nothing in the graph path calls
   `vkCmdBindDescriptorSets`, `vkCmdPushConstants`, `vkCreateDescriptorSetLayout` or
   `vkCreatePipelineLayout`; `scripts/check_descriptor_path.py` enforces that in CI. The material
-  descriptor-set path (`DescriptorManager`) remains outside the graph; the graph never uses it. The
-  historical descriptor-set design (`DescriptorSet-Lifecycle-Design.md`) is kept in the repository,
-  outside this reference.
-- **Device floor.** The engine requires Vulkan 1.4 and enables `synchronization2` and
+  descriptor-set path (`DescriptorManager`) was never used by the graph and moved to `muyo-renderer` in
+  #318. The historical descriptor-set design (`DescriptorSet-Lifecycle-Design.md`) is kept in the
+  repository, outside this reference.
+- **Device floor.** `muyo_device` requires Vulkan 1.4 and enables `synchronization2` and
   `timelineSemaphore` at device creation; both are verified against `vkGetPhysicalDeviceFeatures2`
   and device creation fails with a named error if either is missing. The descriptor-heap path also
   requires `VK_EXT_descriptor_heap` (`descriptorHeap`) and `VK_KHR_shader_untyped_pointers`
@@ -264,9 +266,9 @@ RenderGraphBuilder builder(RenderGraphServices{
     .descriptorHeap  = &heap,
 });
 
-// There is also RenderGraphBuilder(VkRenderDevice*), which fills the resource manager from the engine's
-// globals and creates an owned heap service when the device supports the extension. A consumer that
-// wants to run a graph without the renderer's singletons uses the form above.
+// There is also RenderGraphBuilder(VkRenderDevice*), which fills the resource manager from the
+// process-wide device globals and creates an owned heap service when the device supports the extension. A
+// consumer that wants to run a graph without those globals uses the form above.
 
 // Graph-owned resources.
 builder.AddResource("Color", ImageResourceDesc{
@@ -326,8 +328,8 @@ anything the driver reads therefore get different pipelines; nothing descriptor-
 the key, because the heap path passes `layout = VK_NULL_HANDLE` and binds no sets. Ray tracing pipelines
 are not cached: their shader binding table is per node.
 
-Without any extra object a builder caches its own pipelines for as long as it lives, which is what
-`helloVulkanRG` relies on: it keeps one builder and calls `Build()` per frame. To share pipelines
+Without any extra object a builder caches its own pipelines for as long as it lives, which is what the
+renderer's app relies on: it keeps one builder and calls `Build()` per frame. To share pipelines
 **across builders and graphs** — a second graph, or a builder recreated after a swapchain change — inject
 a caller-owned `PipelineCache`:
 
@@ -369,11 +371,13 @@ PipelineCache pipelines(GetRenderDevice(), blob);
 ```
 
 `GetSerializedData()` returns what `vkGetPipelineCacheData` produces; the span constructor hands those
-bytes to `vkCreatePipelineCache`. Saving and loading the file is caller policy, exactly as it is in
-`src/app/PSOCompiler.cpp`. The bytes are meaningful only on the device that produced them — Vulkan's
-header carries the vendor, device and pipeline-cache UUID — and a reloaded cache starts with an empty map
-of `VkPipeline` handles: the driver's data is reused, the process-local handles are not. The device must
-be idle while data is read, like any other host access to a `VkPipelineCache`.
+bytes to `vkCreatePipelineCache`. Saving and loading the file is caller policy: the in-tree `PSOCompiler`
+tool that did it was deleted with the engine (#318), because it serialised through the removed
+descriptor-set path and `PipelineCache::GetSerializedData()` supersedes it. The bytes are meaningful only
+on the device that produced them — Vulkan's header carries the vendor, device and pipeline-cache UUID —
+and a reloaded cache starts with an empty map of `VkPipeline` handles: the driver's data is reused, the
+process-local handles are not. The device must be idle while data is read, like any other host access to a
+`VkPipelineCache`.
 
 ## Shader sources
 
@@ -464,7 +468,7 @@ const Push push{*tlas, 0};
 ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 ```
 
-The graph imposes no set or binding convention; the root layout is the host's. The engine's legacy
+The graph imposes no set or binding convention; the root layout is the host's. The legacy renderer's
 descriptor-set names (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) are kept in
 `shaders/shared/RenderGraph/bindings.h` for the remaining legacy shaders and tests, not something the
 library knows about.

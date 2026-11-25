@@ -5,8 +5,9 @@
 //
 // The camera arrives inline rather than through a PerViewData heap read: a heap struct-member read
 // with a non-zero offset silently reads the buffer start on NVIDIA (#233), and mProj lives at byte
-// 64. The layout is mirrored by Muyo::GBufferPush in src/app/ScenePushData.h, which static_asserts
-// every offset; a change here has to make that assert fail rather than silently shift a field.
+// 64. The layout is mirrored by Muyo::GBufferPush in muyo-renderer's src/app/ScenePushData.h (it moved
+// there with the renderer in #318), which static_asserts every offset; a change here has to make that
+// assert fail rather than silently shift a field.
 struct GBufferPush
 {
     float4x4 mView;
@@ -26,8 +27,8 @@ struct GBufferPush
 };
 
 // One material in the form the heap path reads: every field is a scalar or vector, so no member-array
-// access is emitted. Mirrors Muyo::GBufferMaterial in src/app/ScenePushData.h; the offsets there are
-// static_asserted against this definition.
+// access is emitted. Mirrors Muyo::GBufferMaterial in muyo-renderer's src/app/ScenePushData.h; the
+// offsets there are static_asserted against this definition.
 struct GBufferMaterial
 {
     float4 vBaseColorFactors;

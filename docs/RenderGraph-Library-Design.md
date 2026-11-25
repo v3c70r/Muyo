@@ -51,7 +51,8 @@ detail of the renderer.
 
 **(b) The render pipeline is a consumer of the public API only.** If it cannot be written against the
 public surface, the surface is wrong. This is the boundary test the roadmap asks for, and it is
-checkable: `helloVulkan`'s passes must not include anything under `src/RenderGraph/` that is not public.
+checkable: the renderer's `helloVulkan` passes must not include anything under `src/RenderGraph/` that is
+not public.
 
 **(c) The graph owns orchestration, not the device.**
 
@@ -204,21 +205,22 @@ implements the graph interface. The engine's `BufferResource`, `ImageResource` a
 a node callback without the graph naming its class. `muyo_rg` links `muyo_device` and nothing else; the
 graph-only test binary `rg_tests` builds and passes against those two targets.
 
-This is also what turns the stack's two bottom layers into a repo boundary: `muyo_device` + `muyo_rg`
-stay in this repository, while the host and the render pipeline move to a consumer repository
-(`muyo-renderer`) built on the graph the way `muyo-llm` is. The render pipeline (layer (b)) remains a
-consumer of the public surface only; the resource boundary is the prerequisite that lets it stop linking
-the engine.
+This is also what turned the stack's two bottom layers into a repo boundary, and #318 finished it:
+`muyo_device` + `muyo_rg` stay in this repository, while the host and the render pipeline live in
+`muyo-renderer`, built on the graph the way `muyo-llm` is. The render pipeline (layer (b)) remains a
+consumer of the public surface only; the resource boundary was the prerequisite that let it stop linking
+the engine. This repository now builds `muyo_rg`, `muyo_device` and the test-only `muyo_debug`, and its
+suite covers the two libraries.
 
 ## The device layer and validation policy (landed, #58)
 
 `muyo_device` is now a target built from `src/RenderDevice/`: instance, device, queues, memory, sync
 primitives, command pools, the VMA allocator, the descriptor-heap service, the extension loader,
-barriers, the pipeline-state builder and the debug utilities. The engine and the graph link it
-(`muyo` publicly, and `muyo_rg` directly), so the bottom of the stack no longer arrives through the
-engine's target. `ScopedMarker` - the composition of a Vulkan label with a capture-tool marker - moved
-to `src/Debug/ScopedMarker.h`: the capture backend is host policy, and keeping the composition out of
-the device header is what lets a client link `muyo_device` without the engine (#275).
+barriers, the pipeline-state builder and the debug utilities. `muyo_rg` links it directly, so the bottom
+of the stack does not arrive through an engine target - there is none since #318. `ScopedMarker` - the
+composition of a Vulkan label with a capture-tool marker - lives in `src/Debug/ScopedMarker.h` and is
+compiled into the test-only `muyo_debug` target: the capture backend is host policy, and keeping the
+composition out of the device header is what lets a client link `muyo_device` without it (#275).
 
 The validation policy is the host's, which is the behaviour change that was the reason to file #58
 separately from a mechanical target split:
@@ -227,10 +229,11 @@ separately from a mechanical target split:
   `VK_EXT_debug_utils`, and creates no messenger. The minimal call is a headless, unvalidated device.
 - `VkRenderDevice::InitializeDebugMessenger` is the hook a host can give itself. The device never
   installs the callback on its own, and `Unintialize` destroys it if it was installed.
-- This repository's hosts keep their previous behaviour by opting in through
-  `Muyo::InitializeDeviceWithValidation` (`src/Debug/Validation.h`). That is policy in the engine, not
-  in the library: an inference service linking `muyo_device` may pass an empty layer list and pay
-  nothing for diagnostics it did not ask for.
+- The in-tree test hosts keep their previous behaviour by opting in through
+  `Muyo::InitializeDeviceWithValidation` (`src/Debug/Validation.h`, compiled into `muyo_debug`), and the
+  renderer's host does the same with its own copy. That is policy outside the library, not in it: an
+  inference service linking `muyo_device` may pass an empty layer list and pay nothing for diagnostics it
+  did not ask for.
 
 The device still selects a physical device, but a null surface is a supported argument to
 `CreateDevice`: no present-capable queue family is selected and `GetPresentQueue()` stays null, so a
@@ -339,12 +342,12 @@ the public headers are self-contained because `RenderGraphBuilder`'s private sta
 #68 made embedding work. These are the properties that came with it, because "embeddable" that hides
 them is a different promise from the one the probe verified.
 
-**Development targets are guarded; build dependencies are not.** The demo app, the PSO compiler, the test
-suite and the docs check are `MUYO_TOP_LEVEL`-only, which is also what keeps the Catch2 fetch — a network
+**Development targets are guarded; build dependencies are not.** The test binaries and the docs check are
+`MUYO_TOP_LEVEL`-only, which is also what keeps the Catch2 fetch — a network
 dependency on a framework the consumer will never build — out of an embedder's configure. Two things stay
-deliberately: VMA's `FetchContent`, because it is a build dependency of `muyo` rather than a development
-one, and the `Shaders` target, because it costs no network and a consumer may want this project's
-shaders — which means an embed building `all` still compiles them.
+deliberately: VMA's `FetchContent`, because it is a build dependency of `muyo_device` rather than a
+development one, and the `Shaders` target, because it costs no network and a consumer may want this
+project's shaders — which means an embed building `all` still compiles them.
 
 **The embed still requires network, for VMA.** A consumer with no network access cannot configure at all,
 not because of the tests but because `vk_mem_alloc.h` is fetched from GitHub and is on the public header
@@ -404,7 +407,7 @@ compiles against a new version is told by their own compiler.
 
 ### First-party consumers are named, and are expected not to lag
 
-Third-party consumers pull. **First-party** ones - `muyo-llm` today, `helloVulkan` as it adopts the graph -
+Third-party consumers pull. **First-party** ones - `muyo-llm` today, and the renderer's `helloVulkan` -
 are a small known set and are named, because they are not only consumers: they are how the library's
 coverage is measured. A first-party consumer on an older version leaves the library's claims about the
 current version unverified, which is a worse problem than a notification one.
@@ -507,8 +510,9 @@ backends are what remain.
 queue families, transfers, timeline values, resource dependencies. `RenderGraphTrace.h` records that as
 data: `SetTraceSink` receives one trace per execution, `MUYO_RG_TRACE` writes it as well, and
 `ToJson`/`ToText` serialise it (`ToGraph` feeds `ToDot`/`ToMermaid` for diagrams). The
-`[RenderGraphTrace]` cases assert on the plan rather than on pixels, and the debug page in `helloVulkanRG`
-consumes it. **Pending (#197, the phase-2 half of #56):** the timings. `TraceInterval` is reserved and left
+`[RenderGraphTrace]` cases assert on the plan rather than on pixels, and the renderer's trace page
+consumes it (it lived in `helloVulkanRG`, which moved out in #318). **Pending (#197, the phase-2 half of
+#56):** the timings. `TraceInterval` is reserved and left
 invalid, and `TraceScope` reports `bKnown = false` for the timestamp capability, so the fields exist before
 the values do. Timings are also what #59's cost measurement consumes.
 

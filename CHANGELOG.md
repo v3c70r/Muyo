@@ -95,6 +95,15 @@ commit that deprecated it (#87).
 - **Breaking: the engine resource model from the graph's public surface.** `muyo_rg` no longer subclasses
   `BufferResource` / `ImageResource`, `dynamic_cast`s to them, or reaches `GetMemoryAllocator()` and
   `GetRenderResourceManager()`. See the `Changed` entry (#272, #285).
+- **Breaking: the engine target, its third-party stack and the applications.** The `muyo` STATIC
+  library, its GLFW / GLM / Dear ImGui / ImGuizmo / imnodes / tinyobjloader / tinygltf / stb /
+  meshoptimizer declarations, their vendored checkouts and submodule entries, and the `helloVulkan`,
+  `helloVulkanRG` and `PSOCompiler` executables are deleted. This repository now builds `muyo_rg`,
+  `muyo_device` and a test-only `muyo_debug`. The render
+  pipeline, the host, and the fifteen test files (plus `GraphicsTestEnv.h`) that exercised it live in
+  [muyo-renderer](https://github.com/v3c70r/muyo-renderer), which owns them from here; the suite kept
+  here covers `muyo_rg` and `muyo_device` and references no renderer type (#318). A first-party consumer
+  that linked `muyo` (`muyo-llm`) has to link the renderer repository's target instead.
 - **Breaking: the legacy render-pass path.** `RenderPassManager` and `src/RenderPasses/` are deleted; the
   `helloVulkan` frame runs through the graph (#51, #264).
 

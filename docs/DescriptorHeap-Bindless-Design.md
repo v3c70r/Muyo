@@ -98,7 +98,7 @@ and requires the following, each verified at device creation rather than enabled
 | Vulkan 1.4 | core (includes the `maintenance5` / extended-flags path the extension depends on) | instance/device creation |
 | Descriptor heaps | `VK_EXT_descriptor_heap`, `descriptorHeap` | device creation |
 | Direct heap access SPIR-V | `VK_KHR_shader_untyped_pointers`, `shaderUntypedPointers` | device creation |
-| Root/device pointers | `bufferDeviceAddress` and `shaderInt64` (already required by the engine) | device creation |
+| Root/device pointers | `bufferDeviceAddress` and `shaderInt64` (already required by `muyo_device`) | device creation |
 | Ray tracing | `VK_KHR_ray_tracing_pipeline` (RT path only) | RT device creation |
 
 The implementation PR updates `AGENTS.md` section 3 and `Consumers.md`; this design note does not change the
@@ -329,8 +329,8 @@ public:
 };
 ```
 
-`RenderGraphServices::descriptorManager` is replaced by this service. The engine still owns
-`DescriptorManager` for the legacy renderer; the graph no longer sees it.
+`RenderGraphServices::descriptorManager` is replaced by this service. The graph does not see
+`DescriptorManager` at all; what remained of it moved to `muyo-renderer` with the renderer (#318).
 
 ### Two physical heaps, typed regions
 
@@ -376,8 +376,9 @@ how many heap indices its root data carries; the graph does not impose a root la
 
 - **One resource heap**, `VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT`,
   device-local, with the implementation's reserved range at the end (`minResourceHeapReservedRange`).
-  Buffers placed in it need `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT` too; the engine already creates
-  its VMA allocator with the device-address flag, so this is a usage bit to add, not a new allocator.
+  Buffers placed in it need `VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT` too; `muyo_device` already
+  creates its VMA allocator with the device-address flag, so this is a usage bit to add, not a new
+  allocator.
 - **One sampler heap**, same rules, `VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT`.
 - The heap range address is aligned to `max(samplerHeapAlignment, resourceHeapAlignment)`. The NVIDIA
   sample records that the driver's buffer memory requirement can be **smaller** than the heap alignment,
@@ -473,9 +474,9 @@ implemented.
 
 ### Samplers
 
-`vkWriteSamplerDescriptorsEXT` takes `VkSamplerCreateInfo`, not a `VkSampler`. The engine currently
+`vkWriteSamplerDescriptorsEXT` takes `VkSamplerCreateInfo`, not a `VkSampler`. The renderer currently
 creates samplers from local create-info structs and does not retain them
-(`Texture.h:167`, `SamplerManager.h:36`). The heap service therefore needs a **sampler cache keyed on
+(`Texture.h:167`, `SamplerManager.h:36` in `muyo-renderer`). The heap service therefore needs a **sampler cache keyed on
 create info**, or the resources must retain the create info. That is a prerequisite, not a detail.
 
 **Custom border colors have a lifecycle.** A sampler whose `borderColor` is
@@ -652,8 +653,9 @@ Two ordering rules matter:
 
 Push data is not per-stage the way push-constant ranges are; every stage sees the same blob. The host's
 block layout is responsible for placing stage-specific values at the offsets each shader expects. The
-common single-block case is unchanged. `helloVulkanRG.cpp:273` is the worked migration: the block stays,
-the `pipelineLayout` argument and `vkCmdPushConstants` call go.
+common single-block case is unchanged. `helloVulkanRG.cpp:273` was the worked migration: the block
+stays, the `pipelineLayout` argument and `vkCmdPushConstants` call go. That file moved to
+`muyo-renderer` with the renderer in #318, so the line number refers to the pre-split tree.
 
 ## 10. Synchronization
 
@@ -785,7 +787,7 @@ commands contain.
    `Execute()` error. If it owns the memory, it owns both. The graph imposes no root table or size.
 5. **`GENERAL` layout cost.** Unmeasured. Unified layouts are deferred because RADV 1.4.354 does not
    expose them; a measured regression is the trigger for a per-resource policy, not for blocking B1.
-6. **Sampler create info and lifecycle.** The engine does not retain create info; custom-border samplers
+6. **Sampler create info and lifecycle.** The renderer does not retain create info; custom-border samplers
    need registered indices and unregistration; YCbCr/subsampled samplers cannot use the standalone
    sampler heap and need the mapping path. B1 rejects the latter with named diagnostics until then.
 7. **Ray tracing** is spec-compatible with the heap: the flag requires a null layout

@@ -15,10 +15,10 @@ claim about that version and no other.
 
 | Consumer | Kind | Where | What it exercises |
 | --- | --- | --- | --- |
-| `helloVulkan` | renderer, first consumer | this repository | The full graphics pipeline. `FrameSync` owns acquire/present and the `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes over graph-owned transients (#20); the legacy renderer and `src/RenderPasses/` are deleted (#51), with IBL/RSM/RT dropped rather than ported. |
+| `helloVulkan` | renderer, first consumer | `muyo-renderer` (#318) | The full graphics pipeline. `FrameSync` owns acquire/present and the `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes over graph-owned transients (#20); the legacy renderer and `src/RenderPasses/` are deleted (#51), with IBL/RSM/RT dropped rather than ported. |
 | in-tree tests | test suite | `src/tests/` | Every graph guarantee, in isolation, on one device at a time. |
 | **muyo-llm** | **first-party architecture validation** | <https://github.com/v3c70r/muyo-llm> | A compute-only, windowless, long-running LLM decode workload. |
-| **muyo-renderer** | **host + render pipeline, future consumer** | separate repository (planned) | The window/swapchain/present host and the GBuffer/lighting/UI/FINAL pipeline, built on the graph the way `muyo-llm` is — the split `#272` unblocks. |
+| **muyo-renderer** | **host + render pipeline, first-party consumer** | <https://github.com/v3c70r/muyo-renderer> | The window/swapchain/present host and the GBuffer/lighting/UI/FINAL pipeline, built on the graph the way `muyo-llm` is. It owns the renderer sources and the renderer-coupled tests since #318. |
 
 ### muyo-llm — first-party architecture validation
 
@@ -66,7 +66,7 @@ tracking issue and, where it blocks a consumer, is marked.
   keeps this file an inventory instead of a registry: it scales by promise, and a third party finds the
   change through the version and the changelog (`docs/RenderGraph-Library-Design.md`, "Versioning the
   library"). The row is the contract; leaving it stale is the drift `AGENTS.md` §5 has a rule about.
-- **First-party consumers are named as well.** `muyo-llm`, and `helloVulkan` as it adopts the graph, are
+- **First-party consumers are named as well.** `muyo-llm` and the renderer's `helloVulkan` are
   how the library's coverage is measured rather than only who consumes it, so a change that breaks one
   names it and does not merge with that upgrade unplanned.
 - **Rows describe the current version, `0.1.0`.** Only the current version is supported, so a first-party

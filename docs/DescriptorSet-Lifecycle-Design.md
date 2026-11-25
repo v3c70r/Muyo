@@ -188,5 +188,5 @@ remaining open half is cross-frame retention, which only applies while descripto
 - `src/RenderGraph/RenderGraphBuilder.cpp` — `CompileRenderGraphNode` derives layouts from reflection and
   obtains sets from `DescriptorSetCache`; identical contents are shared, so the per-node duplication this
   note describes is gone. `DestroyCompiledRenderGraphNode` is gone.
-- `src/RenderResources/DescriptorManager.h` — pool sizes; still present.
+- `src/RenderResources/DescriptorManager.h` — pool sizes; it left with the renderer in #318.
 - PR #9 review, findings C5/C6/N2/A4.

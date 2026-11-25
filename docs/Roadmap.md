@@ -49,15 +49,19 @@ at all (the subsumed `TODO`s, which live in code). If a fact can be a field, mak
 
 ## Where we are
 
-Measured on 2026-11-05 at `ada2c1d`, after #20 and #51 closed: `helloVulkan` presents, draws its UI and shades the opaque scene through the graph, and the legacy renderer is deleted.
+Measured on 2026-11-05 at `ada2c1d`, after #20 and #51 closed: `helloVulkan` presents, draws its UI
+and shades the opaque scene through the graph, and the legacy renderer is deleted. The rows for the
+app and `FrameSync` are the pre-split tree: since #318 the renderer (host, apps, `FrameSync`,
+resources, scene) lives in [muyo-renderer](https://github.com/v3c70r/muyo-renderer), and this
+repository builds `muyo_rg`, `muyo_device` and a test-only `muyo_debug`.
 
 | | Lines | State |
 | --- | --- | --- |
-| `src/RenderGraph/` | 8,429 | Drives the **tests**, `helloVulkanRG`, `helloVulkan`'s frame loop and present, and the external `muyo-llm`. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
+| `src/RenderGraph/` | 8,429 | Drives the **tests**, the external `muyo-llm`, and — in the renderer repository — the app's frame loop and present. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
 | `src/RenderPasses/` | 0 | Deleted (#51). The graph owns the frame and the raster scene; IBL/RSM/RT were dropped rather than ported. |
-| `src/app/helloVulkan.cpp` | 1,037 | `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
-| `src/app/helloVulkanRG.cpp` | 426 | The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
-| `src/FrameSync.{h,cpp}` | 252 | The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
+| `src/app/helloVulkan.cpp` | 1,037 | Moved to muyo-renderer (#318). `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
+| `src/app/helloVulkanRG.cpp` | 426 | Moved to muyo-renderer (#318). The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
+| `src/FrameSync.{h,cpp}` | 252 | Moved to muyo-renderer (#318). The client-side frame helper (#57), deliberately outside `src/RenderGraph/`. |
 
 The counts are each tree's `*.cpp` and `*.h` concatenated and `wc -l`-ed —
 `cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h' | sort) | wc -l` — and they are a size signal rather
@@ -69,12 +73,12 @@ The other two boundary measurements below are commands, not prose:
 counts the singleton call sites, and the external-include scan is the Python block in
 [`Roadmap-Visual.md`](Roadmap-Visual.md) section 7. Both were re-run at this head.
 
-**Adoption is complete in the in-repo renderer.** `helloVulkan` acquires and presents through `FrameSync`,
-and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph nodes; the app owns the camera and
-the environment-map preview. The legacy renderer is deleted (#51): IBL, RSM and the RT pass were dropped
-rather than ported and would be rebuilt from scratch if wanted. The suite, `helloVulkanRG`, `helloVulkan` and the external `muyo-llm`
-consumer now all exercise the graph. Closing the pass gap is the risk this roadmap exists to close — see
-Risks.
+**Adoption is complete in the renderer, which is now a separate repository.** `helloVulkan` acquires and
+presents through `FrameSync`, and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph
+nodes; the app owns the camera and the environment-map preview. The legacy renderer is deleted (#51): IBL,
+RSM and the RT pass were dropped rather than ported and would be rebuilt from scratch if wanted. The suite
+here, the renderer's app and the external `muyo-llm` consumer all exercise the graph; the renderer and its
+tests moved out in #318. Closing the pass gap is the risk this roadmap exists to close — see Risks.
 
 **The descriptor-heap direction is recorded, accepted, and implemented through B2.** `docs/DescriptorHeap-Bindless-Design.md`
 merged in #211 (`80465ff`); it replaced the descriptor-set path with two physical heaps, null-layout
@@ -150,6 +154,12 @@ an order, and the difference is one doubled workstream.
 ### Distance to a shippable library
 
 Measured, not estimated:
+
+> **Resolved since this was measured.** The bullets below are the pre-#272 state, kept as the record of
+> what the split had to remove. `muyo_rg` now links `muyo_device` alone, the graph owns a narrow
+> resource/allocator interface instead of subclassing the engine's resource types, and the host, the
+> pipeline and the renderer-coupled tests live in `muyo-renderer` (#318). This repository builds
+> `muyo_rg`, `muyo_device` and a test-only `muyo_debug`.
 
 - **`muyo_rg` is already a separate target, but a library in name only.** It now declares a dependency -
   `target_link_libraries(muyo_rg PUBLIC muyo)` - but that is the engine, not a standalone set of
@@ -253,7 +263,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | Every `TODO(#n)`-style marker under `src/` names an open issue (`#253`, `#274`, `#279`) or is a historical comment; the lowercase `// todo: remove this` in `Swapchain.h` is outside that set and owned by the A1.5 debt row. #268 closed the two markers the reconciliation had retargeted: the glTF point-light `range` work is now #279, and the `DockSpace` viewport setup stays in `DebugUI` by decision. It also removed three `TODO(#17)` notes whose issue had closed, so this row no longer counts #17. #265 removed its two markers by resolving the question they asked: the `shaderInt64` enable now names the descriptor-heap ray-generation modules that declare `OpCapability Int64`, and `helloVulkan` stopped requesting `VK_EXT_mesh_shader` because no built shader declares a mesh stage. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
+| **TODO hygiene** | Every `TODO(#n)`-style marker under `src/` names an open issue (`#253`, `#274`, `#279`) or is a historical comment; the lowercase `// todo: remove this` in `Swapchain.h` left with the renderer in #318. #268 closed the two markers the reconciliation had retargeted: the glTF point-light `range` work is now #279, and the `DockSpace` viewport setup stays in `DebugUI` by decision. It also removed three `TODO(#17)` notes whose issue had closed, so this row no longer counts #17. #265 removed its two markers by resolving the question they asked: the `shaderInt64` enable now names the descriptor-heap ray-generation modules that declare `OpCapability Int64`, and `helloVulkan` stopped requesting `VK_EXT_mesh_shader` because no built shader declares a mesh stage. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
@@ -261,7 +271,7 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | Debt | Replaced by | Note |
 | --- | --- | --- |
 | Legacy rows: `TODO` under `src/RenderPasses/`, the `helloVulkan` resize hook, the old frame-sync bugs, the `RenderPassParameters` assert | **Deleted with #51** | The files and callers are gone. The remaining resize issue is #186 (Backlog), not this table. |
-| `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. |
+| `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. The file moved to `muyo-renderer` with the host (#318), so the marker is no longer in this repository. |
 
 ### Not on the parity path — schedule after P3
 
@@ -341,8 +351,8 @@ otherwise be read differently by each session that touched it.
    assuming the boundary is continuously verified.
 5. **CI now gates the cheap classes, and hardware still gates the rest.** `.github/workflows/ci.yml` runs
    on github-hosted runners against mesa's lavapipe: both configurations build, the reference and the
-   formatting are checked, and the suite passes in Debug, Release, both ray-tracing shapes and under the
-   sanitizers. It **cannot** gate the two axes that need a driver — a second queue *family* (lavapipe
+   formatting are checked, and the suite — both test binaries, `tests` and `rg_tests` — passes in Debug, Release, both
+   ray-tracing shapes and under the sanitizers. It **cannot** gate the two axes that need a driver — a second queue *family* (lavapipe
    reports one family with one queue, so no ownership transfer and no dedicated compute queue) and
    driver-specific behaviour — and the job records both on every run so a green check states its own
    scope. The changed lines are also clang-tidy clean (#207), a job of its own. **Verification is therefore still manual where it matters most, which is not the same as

@@ -213,7 +213,7 @@ cmd_static() {
         return
     fi
     echo "using $sb -- this rebuilds the whole project, expect several minutes"
-    cmake -S . -B build-static -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-static >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -245,49 +245,58 @@ sanitizer_env() {
 }
 
 cmd_sanitize() {
-    bold "sanitize: ASan + UBSan build and tests (UB aborts; the options are printed below)"
-    cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    bold "sanitize: ASan + UBSan over both test binaries (UB aborts; the options are printed below)"
+    cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Sanitize >/dev/null || {
         bad "configure failed"
         fail=1
         return
     }
-    # Shaders and assets are both read relative to the working directory. Omitting them made a fresh
-    # `sanity.sh sanitize` fail with a shader-load error that looks like a code regression (AGENTS.md
-    # section 4).
-    cmake --build build-san --target tests Shaders -j"$JOBS" || {
+    # Shaders are read relative to the working directory; omitting them made a fresh `sanity.sh sanitize`
+    # fail with a shader-load error that looks like a code regression (AGENTS.md section 4). `assets/` is
+    # not read by this repository's suite any more: the tests that loaded a glTF moved with the renderer
+    # (#318).
+    # Both binaries: `tests` is the device-free suite, and `rg_tests` is the one that creates a device,
+    # runs the graph and prints `[test device]`. Instrumenting only `tests` after the split would leave
+    # the device path out of the sanitizer run this repository asks for before merge (#318).
+    cmake --build build-san --target tests rg_tests Shaders -j"$JOBS" || {
         bad "build failed"
         fail=1
         return
     }
-    ln -sfn "$ROOT/assets" build-san/assets
 
     sanitizer_env
     echo "ASAN_OPTIONS=$ASAN_OPTIONS"
     echo "UBSAN_OPTIONS=$UBSAN_OPTIONS"
     echo "LSAN_OPTIONS=$LSAN_OPTIONS"
 
-    local log=/tmp/muyo-sanitize.err
-    (cd build-san && ./tests >/tmp/muyo-sanitize.out 2>"$log")
-    local status=$?
-    tail -3 /tmp/muyo-sanitize.out
+    # One out/err pair for both binaries, so the diagnostic grep below sees every sanitizer report.
+    local out=/tmp/muyo-sanitize.out log=/tmp/muyo-sanitize.err
+    : >"$out"
+    : >"$log"
+    local status=0 rg_status=0
+    (cd build-san && ./tests >>"$out" 2>>"$log")
+    status=$?
+    (cd build-san && ./rg_tests >>"$out" 2>>"$log")
+    rg_status=$?
+    tail -3 "$out"
 
     # Two independent verdicts, because the exit status alone is not enough: a build whose UBSan was
     # configured to recover prints `runtime error:` and still exits 0, which is how UB stayed invisible
     # here until `-fno-sanitize-recover=undefined` was added. The grep catches that configuration as well
-    # as this one.
+    # as this one, across both binaries' output.
     local diagnostics
     diagnostics="$(grep -cE 'ERROR: (Address|Leak)Sanitizer|runtime error:' "$log" || true)"
-    if [ "$status" -ne 0 ]; then
-        bad "tests failed under sanitizers (exit $status)"
+    if [ "$status" -ne 0 ] || [ "$rg_status" -ne 0 ]; then
+        bad "test binaries failed under sanitizers (tests exit $status, rg_tests exit $rg_status)"
         echo "first 20 diagnostic lines:"
         grep -E 'ERROR: (Address|Leak)Sanitizer|runtime error:' "$log" | head -20 || true
         fail=1
     elif [ "$diagnostics" != "0" ]; then
-        bad "sanitizer reported $diagnostics line(s) but the run exited 0 - the build is recovering, see CMakeLists.txt"
+        bad "sanitizer reported $diagnostics line(s) but both binaries exited 0 - the build is recovering, see CMakeLists.txt"
         head -20 "$log"
         fail=1
     else
-        ok "sanitize OK (exit 0, no sanitizer diagnostics)"
+        ok "sanitize OK (both binaries exit 0, no sanitizer diagnostics)"
     fi
 }
 
@@ -296,7 +305,7 @@ cmd_thread() {
     # TSan and ASan cannot share a binary, so this is its own configuration rather than another
     # sanitizer flag. The emulator that makes test discovery work without root is set in CMakeLists.txt
     # (`CROSSCOMPILING_EMULATOR`), because `catch_discover_tests` runs the binary at build time.
-    cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Thread -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Thread >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -306,7 +315,7 @@ cmd_thread() {
         fail=1
         return
     }
-    ln -sfn "$ROOT/assets" build-tsan/assets
+    # No `assets/` link: the suite no longer reads it (#318). Shaders still come from the build directory.
     # A report count of zero is only evidence if the binary was instrumented. Linking libtsan is the
     # runtime's own precondition, so this rules out the silent case where the configuration name and the
     # flags disagree and the run is green because nothing was instrumented.
@@ -355,7 +364,7 @@ cmd_warnings() {
     # rather than a hand-written flag string that can drift from CMakeLists.txt (#25).
     # -DCMAKE_CXX_FLAGS= clears anything an earlier `warnings` run cached (it used to set an
     # -fanalyzer string here); this check must measure the flags CMakeLists.txt defines and nothing else.
-    cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-warn -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= >/dev/null || {
         bad "configure failed"
         fail=1
         return
@@ -364,7 +373,7 @@ cmd_warnings() {
     # recompiles: a per-file count taken from one would read zero for every file that was already up to
     # date, and the comparison would be vacuous. The counts in the baseline are whole-build counts.
     local log=/tmp/muyo-warnings.log
-    if ! cmake --build build-warn --target tests helloVulkan helloVulkanRG --clean-first -j"$JOBS" >"$log" 2>&1; then
+    if ! cmake --build build-warn --target tests rg_tests --clean-first -j"$JOBS" >"$log" 2>&1; then
         bad "build failed (see $log)"
         tail -20 "$log"
         fail=1
@@ -386,7 +395,7 @@ cmd_analyzer() {
     # before they can be enforced. Kept separate from `warnings` so enabling one does not silently
     # enable the other (#25).
     local log=/tmp/muyo-analyzer.log
-    cmake -S . -B build-analyzer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fanalyzer" -DGLFW_BUILD_WAYLAND=OFF >/dev/null || {
+    cmake -S . -B build-analyzer -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fanalyzer" >/dev/null || {
         bad "configure failed"
         fail=1
         return
