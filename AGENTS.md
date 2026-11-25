@@ -204,8 +204,9 @@ Operational notes, each of which has cost someone a red herring:
 - **RenderDoc capture is the renderer's concern, and it moved with the renderer (#318).** The capture
   recipes measured here - Wayland needs `env -u WAYLAND_DISPLAY` so the app runs under Xwayland, and
   RenderDoc 1.46/1.47 filter `VK_EXT_descriptor_heap` out of device enumeration so the heap path cannot
-  be captured at all - are recorded in `muyo-renderer`, together with the GLFW backend settings they
-  need. Capture of the heap path still waits on RenderDoc support
+  be captured at all - are recorded on
+  [muyo-renderer#6](https://github.com/v3c70r/muyo-renderer/issues/6) until that repository's docs carry
+  them, together with the GLFW backend settings they need. Capture of the heap path still waits on RenderDoc support
   ([#303](https://github.com/v3c70r/Muyo/issues/303)); Nsight Graphics 2026.2 is the alternative that
   advertises it. The old `helloVulkan`/`helloVulkanRG` invocations in this section named binaries that
   now live in `muyo-renderer`. Record the RenderDoc version with any future capture, because this
@@ -250,12 +251,11 @@ cover, and the job writes them into the run summary on every build:
 transfer and no dedicated compute queue is exercised; the suite takes the single-queue path. The
 `[test device]` line says so on every run.
   - **Driver-specific behaviour.** A software device passing is not evidence about a driver.
-  - **Descriptor heap.** Whether the heap extensions exist is a property of the runner's Mesa build,
-not of the job, and the two runners differ. The Windows job pins Mesa 26.2.5, whose lavapipe exposes
-`VK_EXT_descriptor_heap` and `shaderUntypedPointers`, so that job executes the `[DescriptorHeap]` cases;
-the `[test device]` line records the bits. The Linux runner's Mesa may not, in which case they skip with
-the reason. Neither runner is the evidence for the heap path: the B0 hardware matrix (RADV, RTX 3090,
-and a qualifying llvmpipe) remains that evidence.
+  - **Descriptor heap.** The `[DescriptorHeap]` cases moved to `muyo-renderer` with the renderer suite
+(#318), and that repository has no CI yet ([v3c70r/muyo-renderer#4](https://github.com/v3c70r/muyo-renderer/issues/4)).
+This workflow exercises no heap path at all, so a runner's Mesa extensions no longer change what runs
+here. The B0 hardware matrix (RADV, RTX 3090, and a qualifying llvmpipe) remains the evidence for the
+heap path, reproducible through the renderer's suite.
 
 Those three stay with the development machine and the review machine. **A green check is not a substitute
 for the hardware run in section 6**, and it never was: a clean run is evidence about a *code and
@@ -318,7 +318,7 @@ tooling is adopted in passes, so the current state is visible rather than discov
 | --- | --- | --- |
 | `clang-format` 18 + `clang-format-diff` | yes | The one-time pass ([#23](https://github.com/v3c70r/Muyo/pull/29)) landed: all files under `src/` conform (verified with 18.1.3). Keep new and edited lines clean via `scripts/sanity.sh format`. |
 | `clang-tidy` | yes (18.1.3) | Curated `.clang-tidy`: `bugprone-*` and `clang-analyzer-*`, with the exclusions and their measured reasons recorded in the file (compiler diagnostics stay with GCC -Wall/-Wextra; switched-without-default conflicts with the exhaustive-switch rule; narrowing conversions, swappable parameters, Vulkan padding and `performance-*` are out for now). `scripts/sanity.sh tidy` **enforces** it on the lines a branch changed, through `clang-tidy-diff` (the tidy analogue of the format gate: a pre-existing finding does not block, a new one on a changed line does). Headers are included - clang-tidy interpolates a compile command from a TU that includes them - and a header that does not compile standalone fails the gate, which is how `TransientResources.h`'s missing include was found. See [#24](https://github.com/v3c70r/Muyo/issues/24). |
-| `-Wextra` | yes | On for the project's targets, with `-Wno-missing-field-initializers`. The exclusion is required by section 3's initialisation rule, not noise tolerance: the check fires on `{VK_STRUCTURE_TYPE_...}` and on partial designated initialisers, which is the style this repository mandates (3824 of 3942 `-Wextra` warnings were that one check when it was measured). Vendored and SDK include directories are `SYSTEM`, so their warnings are not attributed to our translation units. Remaining warnings are owned: [#169](https://github.com/v3c70r/Muyo/issues/169) and [#186](https://github.com/v3c70r/Muyo/issues/186), plus one diagnostic inside the vendored tinygltf target. `scripts/sanity.sh warnings` compares the changed files against `scripts/warning-baseline.txt` and fails if one gains a warning; files the branch did not touch only produce a note. |
+| `-Wextra` | yes | On for the project's targets, with `-Wno-missing-field-initializers`. The exclusion is required by section 3's initialisation rule, not noise tolerance: the check fires on `{VK_STRUCTURE_TYPE_...}` and on partial designated initialisers, which is the style this repository mandates (3824 of 3942 `-Wextra` warnings were that one check when it was measured). Vendored and SDK include directories are `SYSTEM`, so their warnings are not attributed to our translation units. Remaining warnings are owned: [#169](https://github.com/v3c70r/Muyo/issues/169) and [#186](https://github.com/v3c70r/Muyo/issues/186). `scripts/sanity.sh warnings` compares the changed files against `scripts/warning-baseline.txt` and fails if one gains a warning; files the branch did not touch only produce a note. |
 | Clang static analyzer (`scan-build`) | yes | Not yet baselined: `scripts/sanity.sh static`. |
 | GCC `-fanalyzer` | yes (gcc 13.3) | Not yet baselined: `scripts/sanity.sh analyzer` (report only; separate from the `warnings` gate). |
 | Sanitizers (ASan + UBSan) | yes | `-DCMAKE_BUILD_TYPE=Sanitize`; suppressions in `san.supp`. `san.supp` carries a scoped entry for the Vulkan loader's terminator device enumeration (`setup_loader_term_phys_devs`). The CI job also runs `scripts/check_sanitizer_report.py` when the suite exited 1 with `All tests passed`: it fails when a leak's allocation is attributable to this repository and passes otherwise. The allocator's **first resolvable frame** decides, and an unsymbolised frame is always external, whatever module it names - including frames ASan attributes to the test binary's own address range, because unwinds through uninstrumented driver code land there (#189). A symbolised frame from this repository still fails the run. The complete sanitizer block is printed and `tests.err` uploaded on failure, because the previous filtered grep hid exactly the frames that named the leaker. **UB aborts**: `-fno-sanitize-recover=undefined` is set, without which a `runtime error:` prints and the run still exits 0. Runtime options live in `sanitizer_env` in `scripts/sanity.sh` and are duplicated in `.github/workflows/ci.yml` on purpose. |
@@ -708,8 +708,8 @@ been reproduced on the merged content.
 
   The cleaner fix is to remove the layer registration itself, which needs root and covers processes that do
   not inherit the user environment: `sudo mv /etc/vulkan/implicit_layer.d/amd_icd64.json{,.disabled}`.
-- `thirdparty/*` submodules frequently show as dirty. Do not commit submodule pointer churn unless
-  the pointer change is intentional.
+- `thirdparty/SPIRV-Reflect` is the only submodule left and occasionally shows as dirty. Do not commit
+  its pointer change unless the change is intentional.
 
 ## 9. Key documents
 

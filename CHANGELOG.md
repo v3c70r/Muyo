@@ -97,8 +97,9 @@ commit that deprecated it (#87).
   `GetRenderResourceManager()`. See the `Changed` entry (#272, #285).
 - **Breaking: the engine target, its third-party stack and the applications.** The `muyo` STATIC
   library, its GLFW / GLM / Dear ImGui / ImGuizmo / imnodes / tinyobjloader / tinygltf / stb /
-  meshoptimizer declarations, and the `helloVulkan`, `helloVulkanRG` and `PSOCompiler` executables are
-  deleted. This repository now builds `muyo_rg`, `muyo_device` and a test-only `muyo_debug`. The render
+  meshoptimizer declarations, their vendored checkouts and submodule entries, and the `helloVulkan`,
+  `helloVulkanRG` and `PSOCompiler` executables are deleted. This repository now builds `muyo_rg`,
+  `muyo_device` and a test-only `muyo_debug`. The render
   pipeline, the host, and the fifteen test files (plus `GraphicsTestEnv.h`) that exercised it live in
   [muyo-renderer](https://github.com/v3c70r/muyo-renderer), which owns them from here; the suite kept
   here covers `muyo_rg` and `muyo_device` and references no renderer type (#318). A first-party consumer
