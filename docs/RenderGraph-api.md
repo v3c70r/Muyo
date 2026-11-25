@@ -1538,7 +1538,7 @@ Missing and empty files. A file that cannot be opened throws std::runtime_error(
 
 Where the graph gets a shader's SPIR-V from (#292).
 
-Every shader a node declares is loaded during AddNode(). With no provider in RenderGraphServices::shaderSource the graph reads shaders/<shaderName>.spv from the process's working directory, which is what every in-tree consumer does. A host with no .spv files - an embedded runtime, a compiler that produces the words in memory, a test - implements this interface and passes it in RenderGraphServices::shaderSource; the graph then asks it for the words instead of opening a file.
+Every shader a node declares is loaded during AddNode(). With no provider in RenderGraphServices::shaderSource the graph reads shaders/<shaderName>.spv from the process's working directory, which is what the renderer does. A host with no .spv files - an embedded runtime, a compiler that produces the words in memory, a test - implements this interface and passes it in RenderGraphServices::shaderSource; the graph then asks it for the words instead of opening a file.
 
 The provider is host-owned. The graph neither copies nor destroys it: it must outlive every builder that refers to it, and every ShaderCache call that is given it. LoadShader() returns the words by value, so their lifetime is the caller's from the moment the call returns.
 

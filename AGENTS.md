@@ -169,10 +169,10 @@ python3 scripts/render_graph_docs.py --check
 Two configurations, both must build and pass:
 
 ```bash
-cmake -S . -B build        && cmake --build build    --target tests rg_tests Shaders -j"$(nproc)" \
+cmake -S . -B build        && cmake --build build    --target tests rg_tests -j"$(nproc)" \
                            && ./build/tests && ./build/rg_tests
 cmake -S . -B build-rt -DFEATURE_RAY_TRACING=ON \
-                           && cmake --build build-rt --target tests rg_tests Shaders -j"$(nproc)" \
+                           && cmake --build build-rt --target tests rg_tests -j"$(nproc)" \
                            && ./build-rt/tests && ./build-rt/rg_tests
 ```
 
@@ -182,25 +182,16 @@ version check). Run both; `rg_tests` is what creates a device and prints `[test 
 
 Operational notes, each of which has cost someone a red herring:
 
-- **`tests` does not depend on the `Shaders` target.** Build both — `cmake --build build --target
-  tests rg_tests Shaders` — or the tests fail at runtime on missing `.spv` files (they are loaded from
-  `shaders/` relative to the *working directory*, not the source tree).
-- **Shader lists are CMake `GLOB`s, evaluated at configure time.** An existing build directory does not
-  see a newly added `.slang` file until it is reconfigured, so that one case fails with `Failed to open
-  file` while everything around it passes — and the fix is `cmake -S . -B build`, not the shader. Both
-  sessions on the specialization-constants PR hit it inside an hour, one of them after *adding* the shader
-  and building successfully in a different directory.
-- **`--clean-first` deletes the generated `.spv` files too**, so this trap also fires in an *existing*
-  build directory, not just a fresh one: `cmake --build build --target tests --clean-first` (used to
-  count warnings from a known state) empties `build/shaders/`, and the next run fails ten shader-loading
-  cases that look exactly like a regression in whatever was just merged. It was reported as one. Rebuild
-  `Shaders` after any `--clean-first`, or count warnings without it.
-- **`assets/` is no longer read by this repository's suite.** The tests that loaded the Mazda glTF moved
-  to `muyo-renderer` with the renderer (#318); link `assets/` beside the build directory only if you are
-  running a consumer that reads it. Shaders *are* still CWD-relative, so run from the build directory.
+- **There is no `Shaders` target and no shader corpus here.** The shaders, `assets/` and the target that
+  compiled them moved to `muyo-renderer` with the pipeline (#318), because neither test binary loads a
+  `.spv` and no library source includes a shader-side header. A fresh build directory is therefore
+  self-contained, and configuring this project no longer requires `slangc` or `glslangValidator` — a
+  consumer of the package does not need them either.
 - **The Vulkan SDK must be on the environment** (`source <sdk>/setup-env.sh` sets `VULKAN_SDK`,
-  `PATH`, `VK_LAYER_PATH`, `LD_LIBRARY_PATH`): without it there is no `slangc`/`glslangValidator`
-  and no validation layer.
+  `PATH`, `VK_LAYER_PATH`, `LD_LIBRARY_PATH`): without it there is no validation layer, and on Windows no
+  Vulkan headers or loader either. The shader compilers the SDK also ships are not used here (#318).
+- **`assets/` is not in this repository any more.** The sample scenes moved to `muyo-renderer` with the
+  suite that loaded them (#318); a consumer that reads `assets/` supplies its own.
 - **RenderDoc capture is the renderer's concern, and it moved with the renderer (#318).** The capture
   recipes measured here - Wayland needs `env -u WAYLAND_DISPLAY` so the app runs under Xwayland, and
   RenderDoc 1.46/1.47 filter `VK_EXT_descriptor_heap` out of device enumeration so the heap path cannot
@@ -241,7 +232,7 @@ github-hosted runners with mesa's lavapipe as the Vulkan device - Linux and Wind
 configurations build, the checked-in reference matches the headers (`render_graph_docs.py --check`),
 the changed lines are `clang-format` clean, and both test binaries pass in Debug, Release, both ray-
 tracing shapes and under the sanitizers - with the validation layer on. The Windows job builds the
-same two test binaries and shader target with MSVC and runs them on its own lavapipe. The generated
+same two test binaries with MSVC and runs them on its own lavapipe. The generated
 reference is published to GitHub Pages on every push to `master` (`.github/workflows/docs.yml`),
 from the same pinned Doxygen the check uses; the deploy fails rather than publish when the checked-
 in `docs/RenderGraph-api.md` is stale. The workflow's header states the three axes it does **not**
@@ -479,9 +470,9 @@ reports clean) and disclosed in the review comment.
 **The standard matrix**, in a Debug build of both configurations:
 
 ```bash
-source /path/to/vulkansdk/setup-env.sh                    # SDK: slangc, layers, loader
+source /path/to/vulkansdk/setup-env.sh                    # SDK: layers and loader
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target tests rg_tests Shaders -j"$(nproc)"
+cmake --build build --target tests rg_tests -j"$(nproc)"
 ( cd build && ./tests >run.out 2>run.err && ./rg_tests >>run.out 2>>run.err )
 grep -E "All tests passed|test cases:" run.out            # reproduce the claimed counts
 grep -oE "#(VUID-[A-Za-z0-9-]+)" run.err | wc -l      # validation errors: expect 0.

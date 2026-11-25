@@ -344,10 +344,12 @@ them is a different promise from the one the probe verified.
 
 **Development targets are guarded; build dependencies are not.** The test binaries and the docs check are
 `MUYO_TOP_LEVEL`-only, which is also what keeps the Catch2 fetch — a network
-dependency on a framework the consumer will never build — out of an embedder's configure. Two things stay
-deliberately: VMA's `FetchContent`, because it is a build dependency of `muyo_device` rather than a
-development one, and the `Shaders` target, because it costs no network and a consumer may want this
-project's shaders — which means an embed building `all` still compiles them.
+dependency on a framework the consumer will never build — out of an embedder's configure. One build
+dependency stays deliberately: VMA's `FetchContent`, because `muyo_device` cannot compile without
+`vk_mem_alloc.h` and it is fetched rather than vendored. The `Shaders` target that used to stay for the
+same reason is gone: the shaders and `assets/` moved to `muyo-renderer` with the pipeline (#318), so an
+embed's configure no longer evaluates shader globs or carries a `Shaders` target it did not ask for, and
+configuring this project no longer needs `slangc` or `glslangValidator`.
 
 **The embed still requires network, for VMA.** A consumer with no network access cannot configure at all,
 not because of the tests but because `vk_mem_alloc.h` is fetched from GitHub and is on the public header

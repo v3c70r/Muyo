@@ -18,8 +18,8 @@ commit that deprecated it (#87).
 
 ### Added
 
-- **Windows CI with Visual Studio 2026 and lavapipe.** The Windows workflow builds the test and shader
-  targets with C4996 treated as an error, verifies lavapipe selection, and runs the test suite.
+- **Windows CI with Visual Studio 2026 and lavapipe.** The Windows workflow builds both test targets
+  with C4996 treated as an error, verifies lavapipe selection, and runs the test suite.
 - **A published API reference.** Every push to `master` regenerates the reference's HTML with the pinned
   Doxygen and deploys it to GitHub Pages, with a landing page linking the handbooks. A checked-in
   `docs/RenderGraph-api.md` that does not match the generator fails the deploy rather than publishing a
@@ -48,7 +48,7 @@ commit that deprecated it (#87).
   `IShaderSourceProvider`, so a consumer can return a shader's SPIR-V words from memory (a compiler, an
   archive, a test) instead of the graph reading `shaders/<name>.spv`. `FileShaderSourceProvider` is the
   public default with a configurable search path; leaving the service null keeps the current
-  `shaders/<name>.spv` behaviour, so every in-tree consumer is unchanged. The provider is borrowed and
+  `shaders/<name>.spv` behaviour, so the renderer's files are unchanged. The provider is borrowed and
   must outlive the builder; `ShaderCache::LoadShader()` gained an overload that takes one, and the
   one-argument overload keeps using the default file source. This closes the `docs/Consumers.md`
   guarantee "A client can supply SPIR-V bytes / a shader search path, not only a file name" (#292).
@@ -104,6 +104,16 @@ commit that deprecated it (#87).
   [muyo-renderer](https://github.com/v3c70r/muyo-renderer), which owns them from here; the suite kept
   here covers `muyo_rg` and `muyo_device` and references no renderer type (#318). A first-party consumer
   that linked `muyo` (`muyo-llm`) has to link the renderer repository's target instead.
+- **Breaking: the shaders, `assets/` and the `Shaders` build target.** The shader corpus (59 files,
+  including the shader-side shared headers) and the sample assets (165 files) move to
+  [muyo-renderer](https://github.com/v3c70r/muyo-renderer) with the pipeline that reads them (#318).
+  This project defines no `Shaders` target, ships no shader or asset files, and no longer requires
+  `slangc` or `glslangValidator` at configure time, so an embed's configure evaluates no shader globs
+  and carries no target it did not ask for. `muyo_rg`'s loading contract is unchanged: with no
+  `RenderGraphServices::shaderSource`
+  the graph still reads `shaders/<name>.spv` from the working directory, and a host supplies its own
+  corpus. A consumer that copied `.spv` files or `assets/` from this checkout takes them from
+  `muyo-renderer` instead.
 - **Breaking: the legacy render-pass path.** `RenderPassManager` and `src/RenderPasses/` are deleted; the
   `helloVulkan` frame runs through the graph (#51, #264).
 

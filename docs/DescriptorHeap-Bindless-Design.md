@@ -777,9 +777,11 @@ commands contain.
 2. **API floor.** Vulkan 1.4 is a deliberate break from the current 1.3 floor in `AGENTS.md`; it must
    be recorded there and in `Consumers.md`, not only in code.
 3. **Shader rewrite cost.** B1b converted every graph shader, and the legacy renderer needed a second
-   variant until P3 (#51, landed). The count is small (19 Slang shaders; 8 with explicit `[[vk::binding]]` or a
+   variant until P3 (#51, landed). The count is small (19 Slang shaders when the corpus moved to
+   `muyo-renderer` in #318; 8 with explicit `[[vk::binding]]` or a
    `SET_(PER_VIEW|PER_OBJ|MATERIAL)` mention by
-   `grep -lE '\[\[vk::binding|SET_(PER_VIEW|PER_OBJ|MATERIAL)' shaders/*.slang | wc -l`) but the
+   `grep -lE '\[\[vk::binding|SET_(PER_VIEW|PER_OBJ|MATERIAL)' shaders/*.slang | wc -l` in the
+   `muyo-renderer` checkout) but the
    overlap is real.
 4. **Host root memory.** If the host uses a raw pointer/`PhysicalStorageBuffer`, there are no bounds
    checks: a bad pointer is a GPU fault, not a validation error. If it uses the graph's optional
@@ -849,8 +851,9 @@ positive probes must have no `Binding` decoration. The migration examples are fu
 `-borderColor-11444` / `-borderColor-11205` were checked against the SDK 1.4.363 `validusage.json` by the
 review; they exist on the commands the note cites them for.
 
-**Shader counts.** `ls shaders/*.slang | wc -l` is 19;
-`grep -lE '\[\[vk::binding|SET_(PER_VIEW|PER_OBJ|MATERIAL)' shaders/*.slang | wc -l` is 8. The earlier
+**Shader counts.** Measured before the shaders moved to `muyo-renderer` (#318):
+`ls shaders/*.slang | wc -l` was 19;
+`grep -lE '\[\[vk::binding|SET_(PER_VIEW|PER_OBJ|MATERIAL)' shaders/*.slang | wc -l` was 8. The earlier
 "9 with bindings" was wrong.
 
 **Descriptor-size definitions.** `imageDescriptorSize` covers images and texel buffers;

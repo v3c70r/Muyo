@@ -251,14 +251,13 @@ cmd_sanitize() {
         fail=1
         return
     }
-    # Shaders are read relative to the working directory; omitting them made a fresh `sanity.sh sanitize`
-    # fail with a shader-load error that looks like a code regression (AGENTS.md section 4). `assets/` is
-    # not read by this repository's suite any more: the tests that loaded a glTF moved with the renderer
-    # (#318).
+    # No shader or asset inputs: the shader corpus and `assets/` moved to `muyo-renderer` with the
+    # renderer (#318), and neither test binary loads either one. The working directory therefore does
+    # not matter to a sanitizer run any more.
     # Both binaries: `tests` is the device-free suite, and `rg_tests` is the one that creates a device,
     # runs the graph and prints `[test device]`. Instrumenting only `tests` after the split would leave
     # the device path out of the sanitizer run this repository asks for before merge (#318).
-    cmake --build build-san --target tests rg_tests Shaders -j"$JOBS" || {
+    cmake --build build-san --target tests rg_tests -j"$JOBS" || {
         bad "build failed"
         fail=1
         return
@@ -310,12 +309,13 @@ cmd_thread() {
         fail=1
         return
     }
-    cmake --build build-tsan --target tests Shaders -j"$JOBS" || {
+    cmake --build build-tsan --target tests -j"$JOBS" || {
         bad "build failed"
         fail=1
         return
     }
-    # No `assets/` link: the suite no longer reads it (#318). Shaders still come from the build directory.
+    # No `assets/` and no `shaders/`: both moved to `muyo-renderer` (#318), and the device-free cases
+    # read neither.
     # A report count of zero is only evidence if the binary was instrumented. Linking libtsan is the
     # runtime's own precondition, so this rules out the silent case where the configuration name and the
     # flags disagree and the run is green because nothing was instrumented.

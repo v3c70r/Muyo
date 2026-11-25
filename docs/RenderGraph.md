@@ -382,8 +382,8 @@ process-local handles are not. The device must be idle while data is read, like 
 ## Shader sources
 
 A node names its shaders, and the graph loads each one during `AddNode()`. With no source configured it
-reads `shaders/<shaderName>.spv` from the process's working directory, which is what every in-tree
-consumer does. A host that has no `.spv` files supplies a source instead, through
+reads `shaders/<shaderName>.spv` from the process's working directory, which is what the renderer does.
+A host that has no `.spv` files supplies a source instead, through
 `RenderGraphServices::shaderSource`:
 
 ```cpp
@@ -406,8 +406,8 @@ public:
 };
 ```
 
-`shaderSource` is optional; null selects the default `FileShaderSourceProvider("shaders")`, so every
-in-tree consumer is unchanged. The provider is **borrowed**: the graph neither copies nor destroys it, so
+`shaderSource` is optional; null selects the default `FileShaderSourceProvider("shaders")`, so the
+renderer's files are unchanged. The provider is **borrowed**: the graph neither copies nor destroys it, so
 it has to outlive every builder that refers to it. `IShaderSourceProvider::LoadShader()` returns the
 words by value, so the graph owns them from the moment the call returns and a provider may reuse or
 free its internal buffer afterwards.
@@ -469,9 +469,8 @@ ctx.PushData(0, std::as_bytes(std::span{&push, 1}));
 ```
 
 The graph imposes no set or binding convention; the root layout is the host's. The legacy renderer's
-descriptor-set names (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) are kept in
-`shaders/shared/RenderGraph/bindings.h` for the remaining legacy shaders and tests, not something the
-library knows about.
+descriptor-set names (`PER_VIEW` / `PER_OBJ` / `MATERIAL`) live in its own
+`shaders/shared/RenderGraph/bindings.h`, not something the library knows about.
 
 To bind part of a buffer rather than all of it, add a `bufferRange` to the use:
 
@@ -500,8 +499,8 @@ weights buffer, or one row of a KV cache, as if it were the whole buffer. Three 
 ## GPU-driven rendering
 
 A compute node can generate `VkDrawIndexedIndirectCommand`s and an atomic count that a graphics
-node then consumes with `vkCmdDrawIndexedIndirectCount`. See
-`shaders/prepareDrawCmdBuffer.comp.slang` and the `[AsyncCompute]` test.
+node then consumes with `vkCmdDrawIndexedIndirectCount`. See the renderer's
+`shaders/prepareDrawCmdBuffer.comp.slang` and its `[AsyncCompute]` test.
 
 ## Async compute
 
