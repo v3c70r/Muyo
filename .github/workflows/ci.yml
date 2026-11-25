@@ -96,15 +96,15 @@ jobs:
         run: |
           sudo apt-get update
           # clang-tidy-18 is the pinned version (AGENTS.md section 5); a bump is a measured change.
-          # No Vulkan SDK: clang-tidy needs a compilation database and the project's headers, not
-          # slangc or the validation layer.
           sudo apt-get install -y --no-install-recommends \
             clang-tidy-18 cmake ninja-build python3 \
             libgl1-mesa-dev libx11-dev libxi-dev libxcursor-dev libxinerama-dev libxrandr-dev \
             libvulkan1 libvulkan-dev
 
-      # The configure step needs both shader compilers: `glslangValidator` and `slangc` are FATAL_ERRORs
-      # (CMakeLists.txt:136, 146), and only the SDK ships `slangc`. Cached by version, like the test jobs.
+      # The SDK stays on this job for its Vulkan 1.4 headers, not for shader compilers: the
+      # distribution's libvulkan-dev is older and has no VK_EXT_descriptor_heap types, so clang-tidy
+      # cannot compile VkRenderDevice.h against it. No `slangc`/`glslangValidator` runs here now that
+      # the shader corpus moved out (#318).
       - name: Install the Vulkan SDK (pinned)
         uses: ./.github/actions/install-vulkan-sdk
         with:
@@ -157,8 +157,10 @@ jobs:
             throw "Vulkan SDK installer failed with exit code $($process.ExitCode)"
           }
           $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
-          if (-not (Test-Path (Join-Path $sdk "Bin\slangc.exe"))) {
-            throw "Vulkan SDK install is missing slangc.exe at $sdk"
+          # The build consumes the SDK's Vulkan 1.4 headers, layer and loader. It no longer uses
+          # `slangc` (#318), so checking for that component would fail installs over an unused tool.
+          if (-not (Test-Path (Join-Path $sdk "Include\vulkan\vulkan.h"))) {
+            throw "Vulkan SDK install is missing Include\vulkan\vulkan.h at $sdk"
           }
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "VK_LAYER_PATH=$(Join-Path $sdk 'Bin')" >> $env:GITHUB_ENV
@@ -211,10 +213,11 @@ jobs:
           -G "Visual Studio 18 2026" -A x64
           -DFEATURE_RAY_TRACING=OFF
 
-      - name: Build tests and shaders
+      - name: Build both test binaries
         # Both test binaries: since the renderer split (#318) `tests` covers `muyo_rg`/`muyo_device`
         # without a device, and `rg_tests` is the one that runs a graph on it and prints `[test device]`.
-        run: cmake --build build --config Debug --target tests rg_tests Shaders --parallel 2
+        # No `Shaders` target: the shader corpus moved to `muyo-renderer` (#318).
+        run: cmake --build build --config Debug --target tests rg_tests --parallel 2
 
       - name: Verify lavapipe is selected
         shell: pwsh
@@ -334,8 +337,8 @@ jobs:
         run: |
           cmake -S . -B ${{ matrix.dir }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DFEATURE_RAY_TRACING=${{ matrix.rt }}
           # Both binaries: `tests` is the device-free suite and `rg_tests` is the graph/device one. Since
-          # the renderer split (#318) neither alone is "the suite".
-          cmake --build ${{ matrix.dir }} --target tests rg_tests Shaders -j"$(nproc)"
+          # the renderer split (#318) neither alone is "the suite", and neither needs a `Shaders` build.
+          cmake --build ${{ matrix.dir }} --target tests rg_tests -j"$(nproc)"
 
       - name: Run the suite
         run: |
@@ -489,7 +492,6 @@ jobs:
             echo "Vulkan SDK: ${VULKAN_SDK_VERSION} (${VULKAN_SDK})"
             echo "cmake: $(cmake --version | head -1)"
             echo "compiler: $(c++ --version | head -1)"
-            echo "slangc: $(slangc --version 2>/dev/null | head -1)"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Configure and build Release

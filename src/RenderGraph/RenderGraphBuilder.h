@@ -158,7 +158,7 @@ struct RenderGraphServices
     /// Optional source of every shader a node declares (#292).
     ///
     /// Null selects the graph's default, which reads `shaders/<shaderName>.spv` from the process's
-    /// working directory - the behaviour every in-tree consumer relies on. Set this to a
+    /// working directory - the behaviour the renderer relies on. Set this to a
     /// `FileShaderSourceProvider` with another search path, or to a host implementation that returns
     /// SPIR-V words from memory, and the graph asks it instead of opening a file. The builder does not
     /// own the provider: it must outlive the builder, and every shader is loaded during `AddNode()`.

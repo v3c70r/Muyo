@@ -422,7 +422,8 @@ void VkRenderDevice::CreateDevice(const std::vector<const char*>& vDeviceExtensi
     features2.features.multiDrawIndirect = VK_TRUE;
     // shaderInt64 has a consumer: the descriptor-heap ray-generation modules (`testPrimary.rgen.heap`,
     // `heapProbe.rgen.heap`) declare OpCapability Int64 because `RaytracingAccelerationStructure.Handle()`
-    // lowers the 64-bit heap handle into an untyped pointer. Check the built tree with
+    // lowers the 64-bit heap handle into an untyped pointer. Measured in this repository before the
+    // shaders moved to `muyo-renderer` (#318), with
     //   for f in build/shaders/*.spv; do spirv-dis "$f" | grep -q 'OpCapability Int64' && echo "$f"; done
     // -> those two of 44 modules. Dropping this enable fails their vkCreateShaderModule with
     // VUID-VkShaderModuleCreateInfo-pCode-08740 ("SPIR-V Capability Int64 was declared, but ... shaderInt64"),
