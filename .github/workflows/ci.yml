@@ -269,8 +269,10 @@ jobs:
               throw "rg_tests.exe failed with exit code $rgExitCode"
             }
             $testDevice = Select-String -Path tests.log -Pattern '\[test device\]' | Select-Object -First 1
-            # One "test cases:" line per binary; report both rather than only the last.
-            $testCounts = (Select-String -Path tests.log -Pattern 'test cases:' |
+            # One summary line per binary: Catch2 prints "test cases: N | ..." when a case is skipped
+            # or fails, and "All tests passed (N assertions in M test cases)" when every case passes -
+            # the form the Windows lavapipe run produces. Accept both.
+            $testCounts = (Select-String -Path tests.log -Pattern 'All tests passed|test cases:' |
               ForEach-Object { $_.Line.Trim() }) -join ' | '
             if ($null -eq $testDevice -or $testDevice.Line -notmatch 'llvmpipe|lavapipe') {
               throw 'The test run did not report lavapipe as its Vulkan device'
