@@ -380,7 +380,7 @@ cmd_warnings() {
         return
     fi
     # Changed files may keep their recorded count and not one warning more. Files this branch did not
-    # touch cannot block it, which is what makes a baseline usable while #169/#186 are still open.
+    # touch cannot block it, which is what keeps a pre-existing warning from blocking unrelated work.
     if python3 scripts/warning_baseline.py --log "$log" --baseline scripts/warning-baseline.txt --base "$BASE"; then
         ok "warnings OK (no new warning in a changed file)"
     else

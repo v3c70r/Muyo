@@ -118,7 +118,8 @@ if (UNIX)
     # designated initialisers omit fields on purpose - positional initialisation of a Vulkan struct is
     # banned because the layouts do not match the specification order - so the check reports a style that
     # is required here. Measured on the 2026-10-20 tree: 3824 of 3942 `-Wextra` warnings were this check;
-    # excluding it left 118, of which 40 are owned by #169/#186 and the rest were fixed or are vendored.
+    # excluding it left 118, of which 40 were owned by #169/#186 (both since closed or moved — #186 is
+    # now muyo-renderer#14) and the rest were fixed or are vendored.
     add_compile_options(-Wall -Wextra -Wno-missing-field-initializers -Wno-missing-braces -pthread)
     add_link_options(-pthread)
     # -g is left to the per-configuration defaults: Debug carries it via CMAKE_CXX_FLAGS_DEBUG, and

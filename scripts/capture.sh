@@ -5,7 +5,7 @@
 # RenderDoc 1.46's capture launcher stops advertising loader-provided instance extensions, including
 # VK_KHR_wayland_surface. GLFW therefore selects Wayland, finds no WSI extension, and the application
 # aborts before Vulkan starts. Hiding WAYLAND_DISPLAY makes GLFW select Xwayland instead, which is the
-# one combination that captures on a Wayland session (#220).
+# one combination that captures on a Wayland session (muyo-renderer#15).
 #
 # renderdoccmd execs the program argument directly: it searches neither the cwd nor PATH, and a bare
 # name fails in milliseconds with an error that points at the wrong cause. This script resolves the
@@ -23,7 +23,7 @@
 #
 # The program must be built with GLFW's X11 backend (the renderer's helloVulkan, which moved to
 # muyo-renderer in #318). A fresh configure of that build tree builds both backends; an existing tree
-# created before #220 needs -DGLFW_BUILD_X11=ON.
+# created before muyo-renderer#15 needs -DGLFW_BUILD_X11=ON.
 
 set -euo pipefail
 

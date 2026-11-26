@@ -58,7 +58,7 @@ repository builds `muyo_rg`, `muyo_device` and a test-only `muyo_debug`.
 
 | | Lines | State |
 | --- | --- | --- |
-| `src/RenderGraph/` | 8,885 | Drives the **tests**, the external `muyo-llm`, and — in the renderer repository — the app's frame loop and present. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
+| `src/RenderGraph/` | 9,679 | Drives the **tests**, the external `muyo-llm`, and — in the renderer repository — the app's frame loop and present. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
 | `src/RenderPasses/` | 0 | Deleted (#51). The graph owns the frame and the raster scene; IBL/RSM/RT were dropped rather than ported. |
 | `src/app/helloVulkan.cpp` | 1,037 | Moved to muyo-renderer (#318). `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
 | `src/app/helloVulkanRG.cpp` | 426 | Moved to muyo-renderer (#318). The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
@@ -368,9 +368,8 @@ otherwise be read differently by each session that touched it.
    separation a rule: an approving review runs on a host other than any of the author's and states
    its host and device line. **The two-machine matrix is the standard for anything touching
    present or images-in-flight** — the renderer's FrameSync and app, which live in muyo-renderer
-   since #318 — because that is where a
-   single-vendor, single-topology check is weakest and where the test suite is thinnest. For everything
-   else one machine is enough.
+   since #318 — because that is where a single-vendor, single-topology check is weakest and where
+   the test suite is thinnest. For everything else one machine is enough.
 6. **The B track is a hard platform break, gated by B0.** It requires Vulkan 1.4 plus
    `VK_EXT_descriptor_heap` and `VK_KHR_shader_untyped_pointers` at device creation, and it replaces the
    descriptor path rather than adding a fallback. B0 (`#213`) was the go/no-go: driver features, heap

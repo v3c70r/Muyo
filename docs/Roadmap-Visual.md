@@ -5,7 +5,7 @@ audit. **Adoption is complete and the library is extracted:** this repository bu
 `muyo_device` and a test-only `muyo_debug`; the renderer (host, apps, pipeline, renderer-coupled
 tests, shaders, assets) lives in [muyo-renderer](https://github.com/v3c70r/muyo-renderer). P0, P2 and
 P3 are closed milestones; P1, L and Backlog remain open with **29 open issues** (P1 9, L 7,
-Backlog 13 — every open Muyo issue now carries a milestone). The board also carries **15
+Backlog 13 — every open Muyo issue now carries a milestone). The board also carries **15 open
 muyo-renderer issues**, which have no milestones of their own. The B track is complete through B2.
 
 **Authority:** phase membership is the six GitHub milestones; an issue's state is its `Status`,
@@ -199,7 +199,7 @@ gh api graphql -f query='query($p:ID!,$q:String){ node(id:$p){ ... on ProjectV2 
   -f p=PVT_kwHOACw01s4BmAfF -f q='critical-path:Yes' --jq '.data.node.items.totalCount'
 
 # source measurements at this snapshot
-cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h') | wc -l   # 8,885
+cat $(find src/RenderGraph -name '*.cpp' -o -name '*.h') | wc -l   # 9,679
 grep -rnE 'GetRenderDevice\(\)|GetRenderResourceManager\(\)|GetDescriptorManager\(\)' \
   --include=*.cpp src/RenderGraph/ | wc -l                          # 0 since #272/#318
 
