@@ -195,9 +195,9 @@ Operational notes, each of which has cost someone a red herring:
 - **RenderDoc capture is the renderer's concern, and it moved with the renderer (#318).** The capture
   recipes measured here - Wayland needs `env -u WAYLAND_DISPLAY` so the app runs under Xwayland, and
   RenderDoc 1.46/1.47 filter `VK_EXT_descriptor_heap` out of device enumeration so the heap path cannot
-  be captured at all - are recorded on
-  [muyo-renderer#6](https://github.com/v3c70r/muyo-renderer/issues/6) until that repository's docs carry
-  them, together with the GLFW backend settings they need. Capture of the heap path still waits on RenderDoc support
+  be captured at all - are recorded in
+  [muyo-renderer/docs/Capture.md](https://github.com/v3c70r/muyo-renderer/blob/main/docs/Capture.md),
+  together with the GLFW backend settings they need. Capture of the heap path still waits on RenderDoc support
   ([#303](https://github.com/v3c70r/Muyo/issues/303)); Nsight Graphics 2026.2 is the alternative that
   advertises it. The old `helloVulkan`/`helloVulkanRG` invocations in this section named binaries that
   now live in `muyo-renderer`. Record the RenderDoc version with any future capture, because this
@@ -643,7 +643,7 @@ gh api graphql --paginate -f query='query($endCursor:String){repository(owner:"v
   --jq '.data.repository.pullRequests.nodes[] | . as $pr | select([$pr.reviews.nodes[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED") | .author.login] | index($pr.author.login)) | "self-reviewed #\($pr.number)"'
 
 # Approving reviews whose body names the author's GPU are candidates for a same-host review. The string
-# match only narrows; read the passage to tell "ran on" from "cited" (#256, #306 and #313 cite the
+# match only narrows; read the passage to tell "ran on" from "cited" (#256 and #313 cite the
 # author's Windows rows from the 3090). Run against muyo-renderer by changing owner/name.
 gh api graphql --paginate -f query='query($endCursor:String){repository(owner:"v3c70r",name:"Muyo"){pullRequests(first:100,after:$endCursor,states:[OPEN,CLOSED,MERGED]){pageInfo{hasNextPage endCursor} nodes{number reviews(first:100){nodes{state author{login} submittedAt body}}}}}}' \
   --jq '.data.repository.pullRequests.nodes[] | . as $pr | .reviews.nodes[] | select(.state=="APPROVED" and .author.login=="qgu-reviewer") | select(.body|test("3060")) | "#\($pr.number) \(.submittedAt)"'
