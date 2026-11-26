@@ -462,6 +462,26 @@ different queue-family topology. The fixer works that list item by item and repo
 The counterpart to the section above: how a reviewer with a GPU verifies a PR end to end. This is
 the sequence used on the render-graph PRs; a fresh session can repeat it without rediscovery.
 
+**The review runs on a different host from the author.** The author's machines are the Windows/RTX 3060
+workstation and the Linux/RADV REMBRANDT desktop (Mesa 26.2.5); the second machine is the Linux/RTX 3090
+build host (`qgu-builder`, driver 595.99.02 when this was written). Two accounts on one machine are still
+one machine: an agent session on any author host approving that host's work is self-review, whatever
+account posts the approval. The review body states the host it ran on (`uname -a` or hostname) and, when
+it ran the suite, the `[test device]` line; a review whose host or device line is an author's own is not
+an independent review. A review with no device run — a docs-only change — states the host and says that
+no device run was part of the verification. The rule covers reviews in every repository that uses this
+file as its process contract, including `muyo-renderer`. CI does not substitute for this — a
+GitHub-hosted runner is a different *machine*, but it is not the reviewer and cannot submit an approving
+review. If the only machine available is an author's, the PR waits; it does not merge on a local
+approval.
+
+This rule was paid for on 2026-11-25: `#327` and `v3c70r/muyo-renderer#7` were approved by a reviewer
+agent running on one of the author's own hosts (Windows/RTX 3060). The accounts were separate, but the
+`[test device]` line in both reviews named the author's GPU, and the approvals were corrected in the PR
+threads — GitHub will not dismiss a review once the PR is merged, so the `APPROVED` state cannot be
+changed and the correction comment is the record. [#328](https://github.com/v3c70r/Muyo/issues/328)
+re-reviews the merged commits from a second machine.
+
 **Workspace.** One worktree per PR under `/tmp`, built and run there; the developer's checkout is
 never touched, and nothing is ever pushed from a review worktree. Every local patch —
 instrumentation, mutations, workarounds — is reverted before finishing (`git status --porcelain`
@@ -550,6 +570,12 @@ comment saying "approve". That is what makes `gh pr view <n> --json reviewDecisi
 is why the reviews before 2026-10-12 read as comments: a single account cannot approve its own pull
 request.
 
+But two accounts are not two machines. The approving review must also be **executed on a host other
+than any of the author's**, and its body must say which host it ran on and, when it ran the suite, the
+`[test device]` line (a review with no device run says so instead; see "The reviewer's hardware
+runbook"). A `qgu-reviewer` approval produced on an author's host is identity separation without
+independence, and §7 treats it as a missing approval.
+
 **The author and the approving reviewer must not be the same actor, and the approval must be submitted as a
 review.** Both halves were paid for, and both are checkable.
 
@@ -569,6 +595,14 @@ review.** Both halves were paid for, and both are checkable.
   written by the author in the PR thread, however honest, is a self-review, and the reason the second
   account exists is to make one impossible rather than to make it impolite. A session that both wrote the
   branch and reviewed it has produced no review, whatever the thread says.
+
+- **The review must also be a different machine.** Account separation is necessary and not sufficient.
+  A reviewer agent running on any of the author's hosts has the author's filesystem, toolchain and GPU,
+  so its "independent" run is not independent evidence; the host and `[test device]` line expose it. Run
+  the review on the second machine, state `uname -a` (or hostname) and, when the suite ran, the device
+  line; a review with no device run states that explicitly. If that machine is unavailable leave the PR
+  open rather than approving from here. This is the rule #327 and `v3c70r/muyo-renderer#7` cost us on
+  2026-11-25; [#328](https://github.com/v3c70r/Muyo/issues/328) is the re-review.
 
 - **The two identities are also two git emails.** GitHub attributes authorship by commit *email*, so a
   commit authored with the reviewer account's address puts the reviewer inside the author set - and the
@@ -603,14 +637,24 @@ review.** Both halves were paid for, and both are checkable.
 The check is the evidence, so run it rather than recalling it:
 
 ```bash
-# No pull request may be approved by its own author. Expect no output.
-gh api graphql -f query='{repository(owner:"v3c70r",name:"Muyo"){pullRequests(first:100,states:[OPEN,CLOSED,MERGED]){nodes{number author{login} reviews(first:30){nodes{state author{login}}}}}}}' \
+# No pull request may be approved by its own author. Paginated: the repository has more than 100
+# pull requests, and the unpaginated form silently skipped the rest.
+gh api graphql --paginate -f query='query($endCursor:String){repository(owner:"v3c70r",name:"Muyo"){pullRequests(first:100,after:$endCursor,states:[OPEN,CLOSED,MERGED]){pageInfo{hasNextPage endCursor} nodes{number author{login} reviews(first:100){nodes{state author{login}}}}}}}' \
   --jq '.data.repository.pullRequests.nodes[] | . as $pr | select([$pr.reviews.nodes[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED") | .author.login] | index($pr.author.login)) | "self-reviewed #\($pr.number)"'
+
+# Approving reviews whose body names the author's GPU are candidates for a same-host review. The string
+# match only narrows; read the passage to tell "ran on" from "cited" (#256, #306 and #313 cite the
+# author's Windows rows from the 3090). Run against muyo-renderer by changing owner/name.
+gh api graphql --paginate -f query='query($endCursor:String){repository(owner:"v3c70r",name:"Muyo"){pullRequests(first:100,after:$endCursor,states:[OPEN,CLOSED,MERGED]){pageInfo{hasNextPage endCursor} nodes{number reviews(first:100){nodes{state author{login} submittedAt body}}}}}}' \
+  --jq '.data.repository.pullRequests.nodes[] | . as $pr | .reviews.nodes[] | select(.state=="APPROVED" and .author.login=="qgu-reviewer") | select(.body|test("3060")) | "#\($pr.number) \(.submittedAt)"'
 ```
 
-Run on 2026-10-13: 47 pull requests, **no self-reviewed one**, and 42 merged before the gate whose approval
-survives only as a comment — which is why those old merges cannot be re-audited as approvals, only read as
-the review that happened.
+Run on 2026-10-13 the self-review query covered 47 pull requests, **no self-reviewed one**, and 42 merged
+before the gate whose approval survives only as a comment — which is why those old merges cannot be
+re-audited as approvals, only read as the review that happened. Re-run on 2026-11-26 with pagination, the
+repository had 180 pull requests and still **no self-reviewed one**; the device query narrowed to #256,
+#313 and #327 (twice), where the first two cite the author's Windows rows from the 3090 rather than
+having run there, and #327 is the incident.
 
 Triage **every** finding and say which you did:
 
@@ -621,12 +665,13 @@ Triage **every** finding and say which you did:
   synchronization semantics that a refactor PR promised not to change. Leave a `TODO(<phase>)`
   marker and reference the issue.
 
-**Who reproduces the verification:** the developer reproduces before merge; a reviewer with the
-hardware re-runs when available. A static-only reviewer is never the sole confirmation of a runtime
-claim — test counts, validation cleanliness, dedicated-compute-queue behaviour.
+**Who reproduces the verification:** the developer reproduces before merge; the approving reviewer
+re-runs the runtime verification on the second machine before approving, and a review with no device run
+says so. A static-only reviewer is never the sole confirmation of a runtime claim — test counts,
+validation cleanliness, dedicated-compute-queue behaviour.
 
 Merge only when the review is approve-worthy, the fixups are pushed, and the verification table has
-been reproduced on the merged content.
+been reproduced on the merged content **by a reviewer on a different host**.
 
 ## 7. Definition of done
 
@@ -640,6 +685,9 @@ been reproduced on the merged content.
       A change that breaks a `docs/Consumers.md` guarantee names the guarantee and the first-party
       consumer that has to move, and the PR carries the `api-change` label.
 - [ ] Deferred work is filed as issues and referenced from the code and the PR.
+- [ ] The approving review was executed on a host other than any of the author's, and its body names
+      that host and the `[test device]` line it ran on (or states that the review ran no device suite)
+      (section 6).
 - [ ] `AGENTS.md` is updated if the process itself changed.
 
 ## 8. Environment notes

@@ -22,8 +22,10 @@ context, so fill this in for someone reading the diff cold.
 
 ## Verification
 
-<!-- Reproduced by the developer before merge. A reviewer with the hardware re-runs when available;
-     a static-only reviewer is never the sole confirmation of a runtime claim. -->
+<!-- Reproduced by the developer before merge. The approving reviewer re-runs it on the second
+     machine, not on any of the author's hosts, and states its host and the `[test device]` line; a
+     review that runs no device suite says so and names its host. A static-only reviewer is never the
+     sole confirmation of a runtime claim. -->
 
 | Check | Result |
 | --- | --- |
