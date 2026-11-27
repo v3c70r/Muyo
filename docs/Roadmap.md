@@ -49,7 +49,8 @@ at all (the subsumed `TODO`s, which live in code). If a fact can be a field, mak
 
 ## Where we are
 
-Measured on 2026-11-05 at `ada2c1d`, after #20 and #51 closed: `helloVulkan` presents, draws its UI
+Measured on 2026-11-05 at `ada2c1d`, after #20 and #51 closed, and re-measured at `e79d909` on
+2026-11-26 after the #318 split: `helloVulkan` presents, draws its UI
 and shades the opaque scene through the graph, and the legacy renderer is deleted. The rows for the
 app and `FrameSync` are the pre-split tree: since #318 the renderer (host, apps, `FrameSync`,
 resources, scene) lives in [muyo-renderer](https://github.com/v3c70r/muyo-renderer), and this
@@ -57,7 +58,7 @@ repository builds `muyo_rg`, `muyo_device` and a test-only `muyo_debug`.
 
 | | Lines | State |
 | --- | --- | --- |
-| `src/RenderGraph/` | 8,429 | Drives the **tests**, the external `muyo-llm`, and — in the renderer repository — the app's frame loop and present. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
+| `src/RenderGraph/` | 9,679 | Drives the **tests**, the external `muyo-llm`, and — in the renderer repository — the app's frame loop and present. Foundation, sync2, timeline execution, trace, heap-only bindless, per-frame `Build()` caches, per-execution rings and transient arenas. |
 | `src/RenderPasses/` | 0 | Deleted (#51). The graph owns the frame and the raster scene; IBL/RSM/RT were dropped rather than ported. |
 | `src/app/helloVulkan.cpp` | 1,037 | Moved to muyo-renderer (#318). `FrameSync` owns acquire/present; `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` are graph nodes, and the app owns the camera and environment-map preview. No legacy renderer remains. |
 | `src/app/helloVulkanRG.cpp` | 426 | Moved to muyo-renderer (#318). The graph-first app: `FrameSync` acquires/presents, the graph owns the frame. |
@@ -71,7 +72,9 @@ from `#18`, `#85`, `#90`, `#92` and `#94` alone.
 The other two boundary measurements below are commands, not prose:
 `grep -rnE 'GetRenderDevice\(\)|GetRenderResourceManager\(\)|GetDescriptorManager\(\)' --include=*.cpp src/RenderGraph/ | wc -l`
 counts the singleton call sites, and the external-include scan is the Python block in
-[`Roadmap-Visual.md`](Roadmap-Visual.md) section 7. Both were re-run at this head.
+[`Roadmap-Visual.md`](Roadmap-Visual.md) section 7. Both were re-run at `e79d909`: the singleton count
+is **0**, and the 9 files with external includes all resolve to `src/RenderDevice/` headers — the
+declared `muyo_device` dependency — with no engine or renderer header among them.
 
 **Adoption is complete in the renderer, which is now a separate repository.** `helloVulkan` acquires and
 presents through `FrameSync`, and its `GBUFFER`, direct `LIGHTING`, `UI` and `FINAL` passes are graph
@@ -263,14 +266,14 @@ amount of code, and work spent polishing what is about to be removed is worse th
 | **#36** `CMAKE_CXX_FLAGS` assigned after `project()` | A build flag that silently does not apply is a class of confusion on its own, and it costs one commit. |
 | **#46** finish the assert audit | The class already produced a real bug (#42: an `assert`-gated check that could not fire, leaving a descriptor unwritten). Debt that already bit once. |
 | **#47** swapchain four-image assumption and mis-named images | A live out-of-bounds index plus three wrong resource names. **And the proper fix — a container sized from the actual image count — is what A1.5 needs anyway**, so it pays into P0 instead of being thrown away. |
-| **TODO hygiene** | Every `TODO(#n)`-style marker under `src/` names an open issue (`#253`, `#274`, `#279`) or is a historical comment; the lowercase `// todo: remove this` in `Swapchain.h` left with the renderer in #318. #268 closed the two markers the reconciliation had retargeted: the glTF point-light `range` work is now #279, and the `DockSpace` viewport setup stays in `DebugUI` by decision. It also removed three `TODO(#17)` notes whose issue had closed, so this row no longer counts #17. #265 removed its two markers by resolving the question they asked: the `shaderInt64` enable now names the descriptor-heap ray-generation modules that declare `OpCapability Int64`, and `helloVulkan` stopped requesting `VK_EXT_mesh_shader` because no built shader declares a mesh stage. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
+| **TODO hygiene** | No live `TODO(#n)` marker remains under `src/`: the last one, `TODO(#279)` in `SceneImporter.cpp`, left with the renderer in #318 and is now [muyo-renderer#17](https://github.com/v3c70r/muyo-renderer/issues/17) (renumbered in the renderer's sync PR); what remains here is historical comment. #268 closed the two markers the reconciliation had retargeted, and #265 removed its two markers by resolving the question they asked. Count them with `grep -rn 'TODO' src/ --include=*.cpp --include=*.h` — deliberately not quoted, because a number is the part that rots. AGENTS.md requires a marker to name what will handle it; without that, deferred work is invisible. |
 | **#30**, **#35** | Landed in #45: the startup, device and validation error paths that `NDEBUG` removed. `#30` is closed; its remainder is `#46`. |
 
 ### Do not fix — a planned feature replaces it
 
 | Debt | Replaced by | Note |
 | --- | --- | --- |
-| Legacy rows: `TODO` under `src/RenderPasses/`, the `helloVulkan` resize hook, the old frame-sync bugs, the `RenderPassParameters` assert | **Deleted with #51** | The files and callers are gone. The remaining resize issue is #186 (Backlog), not this table. |
+| Legacy rows: `TODO` under `src/RenderPasses/`, the `helloVulkan` resize hook, the old frame-sync bugs, the `RenderPassParameters` assert | **Deleted with #51** | The files and callers are gone. The remaining resize issue is #186 — transferred to [muyo-renderer#14](https://github.com/v3c70r/muyo-renderer/issues/14) in the 2026-11-26 sync, since `Camera` is renderer code — not this table. |
 | `Swapchain.h` `m_swapchainImageViews  // todo: remove this` | **A1.5** | Image bookkeeping is FrameSync's subject. The file moved to `muyo-renderer` with the host (#318), so the marker is no longer in this repository. |
 
 ### Not on the parity path — schedule after P3
@@ -283,15 +286,16 @@ amount of code, and work spent polishing what is about to be removed is worse th
 
 ## Critical path
 
-There are two chains: the library shipping, and closing P1. **The first-consumer adoption chain is
-complete**, so it no longer has an open item; what remains is the library and P1's non-gate work. The
-project's `Critical path` field marks the union and the **Critical path** view filters on it — the issues
-are not listed here, for the reason above.
+There are two chains: the library shipping, and closing P1. **Both the library chain and the
+first-consumer adoption chain are complete** — the split (#318) was the library chain's last step —
+so the only open critical-path items are P1's cost pair. The project's `Critical path` field marks
+the union and the **Critical path** view filters on it — the issues are not listed here, for the
+reason above.
 
-- **Library** — frame sync (`#11` ✅) → the graph boundary (`#53`) → the device boundary (`#58`) → the
-  resource/allocator boundary (`#272`, the resource half of `#53`; it lands after `#58` so the concrete
-  resource types have a home) → the boundary test (`#54`). Nothing on this chain can slip without moving
-  the goal.
+- **Library — complete.** Frame sync (`#11` ✅) → the graph boundary (`#53` ✅) → the device boundary
+  (`#58` ✅) → the resource/allocator boundary (`#272` ✅) → the boundary test (`#54` ✅) → the
+  repository split (`#318` ✅). Nothing on this chain can slip without moving the goal; nothing on it
+  is open.
 - **First consumer — complete.** Transfer and clear usages (`#18` ✅) → the client-side frame helper
   (`#57` ✅) → **B0 (`#213`) → B1a → B1b → B2** (all ✅; B2 is `#217`/#254) → the final port
   (`#20` ✅; increment 1 was the #111 UI pass, accepted double conversion) → `#48` ✅ → the deletion
@@ -314,7 +318,9 @@ leaving it marked would have the Critical path view claiming a finished item sti
 `#18` and `#68` were cleared the same way, on the same reasoning, when they landed. The B-track and B2
 items — `#17`, `#40`, `#83`, `#213`, `#215`, `#216`, `#217` — were cleared on the same rule after
 2026-10-28. The P2/P3 items `#48`, `#49`, `#20` and `#51` are closed and clear; the adoption chain has no
-open `Critical path` item. `#59` and `#197` remain marked because P1 cannot close without them.
+open `Critical path` item. The library chain's `#53`, `#58`, `#272` and `#54` were cleared in the
+2026-11-26 sync audit, which found them still marked after closing. `#59` and `#197` remain marked
+because P1 cannot close without them — they are the field's only open items.
 
 **The field is scoped to this project.** It answers "whose slippage moves *Muyo's* end date", so a
 consumer's own schedule does not belong on it: `muyo-llm`'s M1 blocking list is tracked in muyo-llm's
@@ -356,12 +362,14 @@ otherwise be read differently by each session that touched it.
    reports one family with one queue, so no ownership transfer and no dedicated compute queue) and
    driver-specific behaviour — and the job records both on every run so a green check states its own
    scope. The changed lines are also clang-tidy clean (#207), a job of its own. **Verification is therefore still manual where it matters most, which is not the same as
-   single-vendor:** the project has two machines on different vendors (RADV REMBRANDT and an RTX 3090,
-   both with a dedicated compute family), and the runbook in AGENTS.md section 6 already treats a
-   hardware re-run as part of review. **The two-machine matrix is the standard for anything touching
-   present or images-in-flight** — P0's client half and all of P2 — because that is where a
-   single-vendor, single-topology check is weakest and where the test suite is thinnest. For everything
-   else one machine is enough.
+   single-vendor:** the project has machines on different vendors — the author's Windows/RTX 3060
+   workstation and Linux/RADV REMBRANDT desktop, and the Linux/RTX 3090 review host (qgu-builder),
+   all with a dedicated compute family. Since #329 the runbook in AGENTS.md section 6 makes the
+   separation a rule: an approving review runs on a host other than any of the author's and states
+   its host and device line. **The two-machine matrix is the standard for anything touching
+   present or images-in-flight** — the renderer's FrameSync and app, which live in muyo-renderer
+   since #318 — because that is where a single-vendor, single-topology check is weakest and where
+   the test suite is thinnest. For everything else one machine is enough.
 6. **The B track is a hard platform break, gated by B0.** It requires Vulkan 1.4 plus
    `VK_EXT_descriptor_heap` and `VK_KHR_shader_untyped_pointers` at device creation, and it replaces the
    descriptor path rather than adding a fallback. B0 (`#213`) was the go/no-go: driver features, heap
@@ -383,6 +391,11 @@ has two halves — P0–P3 is the *first consumer*, L is the *library itself* �
 verdict rather than an absence of one. The B descriptor-heap track is cross-cutting inside P1 rather than
 a seventh milestone; the B issues carry the P1 milestone, and the tracking issue #212 closed when B2
 landed.
+
+**The board is cross-repository.** It also carries `muyo-renderer` issues: the renderer has no
+milestones of its own, so their state is the `Status` field, and the 2026-11-26 sync audit transferred
+eight renderer-subject issues out of Muyo into that repository (old URLs redirect). The milestone
+contract above applies to Muyo issues; a renderer issue's phase is not a Muyo milestone.
 
 **Four custom fields:** `Area` (single-select), `Depends on` (text, sparse), `Critical path`
 (single-select), and `Debt` (`Fix early` / `Subsumes debt` / `After P3`). The rest are GitHub's

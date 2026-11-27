@@ -3,11 +3,11 @@
 All notable changes to the RenderGraph library (`muyo_rg`) are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The library uses semantic versioning with the
 pre-1.0 caveat recorded in [`docs/RenderGraph-Library-Design.md`](docs/RenderGraph-Library-Design.md)
-("Versioning the library"): until 1.0 the public surface is still being stated (#53), so a minor release
-may break source compatibility — but each break is listed here, and a spelling that survives is marked
-`[[deprecated("use X")]]` for one release before removal. A breaking entry is prefixed **Breaking:** in
-the `Changed` / `Removed` list, because Keep a Changelog has no separate `Breaking` heading and the
-policy's `Breaking` label is the marker a consumer greps for.
+("Versioning the library"): until 1.0 a minor release may break source compatibility — the surface is
+stated (#53) and coverage-enforced, but still moving — and each break is listed here, and a spelling
+that survives is marked `[[deprecated("use X")]]` for one release before removal. A breaking entry is
+prefixed **Breaking:** in the `Changed` / `Removed` list, because Keep a Changelog has no separate
+`Breaking` heading and the policy's `Breaking` label is the marker a consumer greps for.
 
 Since there are no tags yet, `0.1.0` is **unreleased**: the entries below seed the record with the
 landed changes a consumer of this version can observe. From here on, a PR that changes behaviour adds
