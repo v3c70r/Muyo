@@ -14,7 +14,7 @@ namespace Muyo::RenderGraph
 /// @param format         Image format.
 /// @return True when the format supports an optimal-tiling depth/stencil attachment.
 ///
-/// Device-level format facts used to be reachable only through the engine's resource manager, which is
+/// Device-level format facts used to be reachable only through the consumer's resource manager, which is
 /// one of the things that kept the graph on that header. They take the physical device as an argument so
 /// the graph's own image paths and the consumer's agree on one implementation.
 inline bool FormatSupportsOptimalTilingDepthAttachment(VkPhysicalDevice physicalDevice, VkFormat format)
@@ -36,7 +36,7 @@ inline bool FormatSupportsOptimalTilingColorAttachment(VkPhysicalDevice physical
 
 /// The usage flags an image of this format is created with, before the caller's own are added.
 ///
-/// A shared function rather than a line inside one allocator because two paths create images: the engine's
+/// A shared function rather than a line inside one allocator because two paths create images: the consumer's
 /// resource manager and the graph allocating a transient unbound so it can be bound into a shared block.
 /// If those two disagreed about the usage flags, the same declaration would produce two different create
 /// infos - which is exactly what the graph's aliasing classes assume cannot happen, since they key an
@@ -73,8 +73,8 @@ struct GraphMemoryBlock
 /// The one thing every resource answers: what kind of Vulkan object it is.
 ///
 /// The graph's barrier, descriptor and binding paths switch on `GetResourceKind()` instead of casting to
-/// a concrete engine class. The kind is a property of the resource rather than of its C++ type, which is
-/// what lets an imported engine resource and a graph-owned transient be handled by the same code.
+/// a concrete consumer class. The kind is a property of the resource rather than of its C++ type, which is
+/// what lets an imported consumer resource and a graph-owned transient be handled by the same code.
 class IGraphResource
 {
 public:
@@ -91,10 +91,10 @@ public:
 /// A buffer the graph can address, look at and map without knowing whose class it is.
 ///
 /// Implemented by the graph's own transients, by the device's VMA-backed resources
-/// (`VkGraphResourceAllocator`) and by the engine's `BufferResource`, so an imported buffer and a
+/// (`VkGraphResourceAllocator`) and by the consumer's `BufferResource`, so an imported buffer and a
 /// graph-allocated one are the same thing to the barrier, descriptor and binding paths. This is what
-/// replaces the graph's old cast to the engine's concrete buffer class: the graph asks a resource what
-/// it is instead of asking whether it is one particular engine class.
+/// replaces the graph's old cast to the consumer's concrete buffer class: the graph asks a resource what
+/// it is instead of asking whether it is one particular consumer class.
 class IGraphBuffer : public IGraphResource
 {
 public:
@@ -121,8 +121,8 @@ public:
 
 /// An image the graph can barrier, describe and bind without knowing whose class it is.
 ///
-/// The image counterpart of `IGraphBuffer`, and the reason the graph no longer casts to the engine's
-/// `ImageResource`: an imported swapchain image, an engine render target and a graph transient all answer
+/// The image counterpart of `IGraphBuffer`, and the reason the graph no longer casts to the consumer's
+/// `ImageResource`: an imported swapchain image, a consumer render target and a graph transient all answer
 /// these questions.
 class IGraphImage : public IGraphResource
 {

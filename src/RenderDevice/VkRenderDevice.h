@@ -12,7 +12,6 @@
 namespace Muyo
 {
 class IResourceBarrier;
-class RenderResourceManager;
 
 /// @param vSupportedExtensions Extensions enumerated from the instance.
 /// @param sName Extension name to look for.
